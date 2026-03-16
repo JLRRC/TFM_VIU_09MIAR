@@ -1,0 +1,28 @@
+╔════════════════════════════════════════════════════════════════╗
+║  PREFLIGHT REPORT - lun 16 mar 2026 00:59:27 CET                ║
+╚════════════════════════════════════════════════════════════════╝
+
+  ✓ Ubuntu 24.04 LTS detectado
+  ✓ Python 3.12.3 detectado
+  ✓ Todas las herramientas build disponibles
+  ✓ Git 2.43.0 disponible
+  ✓ ROS2 Jazzy setup.bash encontrado
+  ✓ colcon  disponible
+  ✓ Gazebo disponible: The 'gz' command provides a command line interface to the Gazebo Tools.
+  ✓ Estructura base del workspace presente
+  ✓ Espacio disponible: 815GB
+  ✓ venv disponible
+
+╔════════════════════════════════════════════════════════════════╗
+║  RESUMEN FINAL                                                 ║
+╚════════════════════════════════════════════════════════════════╝
+✓ Passed: 10
+⚠ Warnings: 0
+✗ Failed: 0
+
+RESULTADO: ✓ PASS - Sistema listo para Fase 1 (Instalación)
+
+Próximos pasos:
+  1. Si PASS: ejecutar 01_install_ros2_jazzy.sh
+  2. Si warnings: revisar detalles en este reporte
+  3. Si FAIL: instalar componentes faltantes antes de continuar

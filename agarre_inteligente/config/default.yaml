@@ -1,0 +1,51 @@
+# Configuración base para nuevos experimentos Cornell-style
+
+experiment:
+  name: "EXP_TEMPLATE"
+  description: "Plantilla de experimento"
+  seeds: [0]
+  split_protocol: "object-wise"
+
+model:
+  name: "SimpleGraspCNN"
+  architecture: "simple_cnn"
+  input_channels: 3
+  output_params: ["cx", "cy", "w", "h", "angle_deg"]
+  dropout: 0.2
+
+data:
+  modality: "rgb"
+  data_root: "data/processed/cornell"
+  train_csv: "data/processed/cornell/splits/object_wise/train.csv"
+  val_csv: "data/processed/cornell/splits/object_wise/val.csv"
+  image_size: 224
+  augmentation: false
+
+training:
+  epochs: 10
+  batch_size: 32
+  optimizer:
+    name: "adam"
+    lr: 0.0005
+    weight_decay: 0.0001
+  scheduler:
+    name: "none"
+  criterion: "smooth_l1"
+  device: "cuda"
+
+metrics:
+  protocol: "cornell"
+  iou_threshold: 0.25
+  angle_threshold_deg: 30.0
+  monitor: "val_success"
+
+checkpointing:
+  save_best: true
+  save_last: true
+
+outputs:
+  experiments_root: "experiments"
+  reports_root: "reports"
+
+benchmark:
+  device: "cpu"

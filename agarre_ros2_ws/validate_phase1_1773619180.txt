@@ -1,0 +1,32 @@
+═══════════════════════════════════════════════════════════════
+ROS2 JAZZY POST-INSTALLATION VALIDATION
+Timestamp: lun 16 mar 2026 00:59:41 CET
+═══════════════════════════════════════════════════════════════
+
+[✓] ROS2 setup.bash exists
+[✓] ROS_DISTRO is 'jazzy'
+[✓] ros2 CLI available
+[✓] ROS2 package: ros-core
+[✓] ROS2 package: std-msgs
+[✓] ROS2 package: geometry-msgs
+[✓] colcon build tool
+[⚠] colcon CMake extensions - Some colcon extensions may not be installed
+[✓] rosdep dependency manager
+[✓] rosdep sources initialized
+[✓] System package: python3-pip
+[✓] System package: python3-venv
+[✓] Build tool: gcc
+[✓] Build tool: g++
+[✓] Build tool: make
+[✓] Build tool: cmake
+[✓] Gazebo simulator
+[✓] MoveIt motion planning
+
+═══════════════════════════════════════════════════════════════
+VALIDATION RESULT
+═══════════════════════════════════════════════════════════════
+✓ Passed: 17
+⚠ Warnings: 1
+✗ Failed: 0
+
+Status: ✓ PASS

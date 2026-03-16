@@ -1,0 +1,56 @@
+# EXP4_RESNET18_RGBD
+# Modelo A: ResNet18Grasp en RGB-D
+
+experiment:
+  name: "EXP4_RESNET18_RGBD"
+  description: "ResNet18Grasp RGB-D"
+  seeds: [0, 1, 2]
+  split_protocol: "object-wise"
+  train_size_expected: 2121
+  val_size_expected: 531
+
+model:
+  name: "ResNet18Grasp"
+  architecture: "resnet18"
+  pretrained: true
+  input_channels: 4
+  output_params: ["cx", "cy", "w", "h", "angle_deg"]
+  freeze_backbone: false
+  dropout: 0.2
+
+data:
+  modality: "rgbd"
+  data_root: "."
+  train_csv: "data/processed/cornell/splits/object_wise/train.csv"
+  val_csv: "data/processed/cornell/splits/object_wise/val.csv"
+  image_size: 224
+  augmentation: false
+
+training:
+  epochs: 50
+  batch_size: 32
+  optimizer:
+    name: "adam"
+    lr: 0.0005
+    weight_decay: 0.0001
+  scheduler:
+    name: "none"
+  criterion: "smooth_l1"
+  device: "cuda"
+
+metrics:
+  protocol: "cornell"
+  iou_threshold: 0.25
+  angle_threshold_deg: 30.0
+  monitor: "val_success"
+
+checkpointing:
+  save_best: true
+  save_last: true
+
+outputs:
+  experiments_root: "experiments"
+  reports_root: "reports"
+
+benchmark:
+  device: "cpu"

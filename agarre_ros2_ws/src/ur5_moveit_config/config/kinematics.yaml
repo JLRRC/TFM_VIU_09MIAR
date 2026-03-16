@@ -1,0 +1,7 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_moveit_config/config/kinematics.yaml
+# Contenido: Configuracion MoveIt del UR5 para planificacion y ejecucion.
+# Uso breve: MoveIt y ros2 launch lo usan durante el bringup del robot.
+manipulator:
+  kinematics_solver: kdl_kinematics_plugin/KDLKinematicsPlugin
+  kinematics_solver_timeout: 0.1
+  kinematics_solver_search_resolution: 0.01

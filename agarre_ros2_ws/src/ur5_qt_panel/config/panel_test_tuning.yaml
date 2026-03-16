@@ -1,0 +1,132 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/config/panel_test_tuning.yaml
+# Contenido: Codigo del panel Qt y de la logica ROS 2 asociada al UR5.
+# Uso breve: Se usa en build con colcon y en ejecucion mediante el entry point panel_v2.
+# Tuning en caliente para TEST ROBOT (sin recompilar).
+# Uso:
+#   export PANEL_TEST_TUNING_FILE="$WS_DIR/src/ur5_qt_panel/config/panel_test_tuning.yaml"
+#
+# Prioridad de valores:
+#   1) Variables de entorno PANEL_TEST_* / PANEL_MOVEIT_BRIDGE_*
+#   2) Este fichero (robot_test.*)
+
+robot_test:
+  # Chequeo de seguridad de mesa durante TEST ROBOT
+  # (si HOME te bloquea el test, deja skip_home=true).
+  PANEL_TEST_TABLE_CHECK_ENABLED: false
+  PANEL_TEST_TABLE_CHECK_SKIP_HOME: true
+  # Control fino del chequeo de mesa (sin recompilar):
+  # - mode=list: vigila solo los frames listados en PANEL_TEST_TABLE_FRAMES
+  # - mode=all: vigila todos los frames del robot que existan en TF
+  PANEL_TEST_TABLE_MODE: list
+  PANEL_TEST_TABLE_FRAMES: "rg2_tcp,tool0,ee_link,flange,gripper_link,wrist_3_link"
+  # Margen XY para considerar que un frame está "encima de la mesa".
+  PANEL_TEST_TABLE_XY_MARGIN_M: 0.00
+  # Tolerancia Z para el límite de superficie (evita falsos positivos por ruido TF).
+  PANEL_TEST_TABLE_Z_EPS_M: 0.02
+
+  # Habilitar/omitir pruebas
+  # Probe de ejes en base_link. Se deja opcional porque en sesiones con reset
+  # frecuente de simulación puede contaminarse por TF_OLD_DATA y alargar TEST ROBOT.
+  PANEL_TEST_FRAME_PROBE: false
+  PANEL_TEST_CORNER_PROBE: true
+
+  # Probe de ejes X/Y/Z
+  # Si true, valida desplazamientos en frame world (Gazebo) para detectar
+  # inversiones de marco respecto al entorno visual.
+  PANEL_TEST_FRAME_REFERENCE_WORLD: false
+  PANEL_TEST_FRAME_STEP_XY_M: 0.03
+  PANEL_TEST_FRAME_STEP_Z_M: 0.03
+  PANEL_TEST_MOVEIT_READY_TIMEOUT_SEC: 35.0
+  PANEL_TEST_FRAME_RESULT_TIMEOUT_SEC: 35.0
+  PANEL_TEST_FRAME_MIN_AXIS_GAIN: 0.45
+  PANEL_TEST_FRAME_MAX_CROSS_AXIS_M: 0.08
+  PANEL_TEST_FRAME_MIN_Z_MARGIN_M: 0.05
+  PANEL_TEST_FRAME_SAFE_PROBE_MARGIN_M: 0.02
+  # Espera tras cada execute para que TF converja al target antes de medir delta.
+  PANEL_TEST_FRAME_TF_SETTLE_SEC: 2.5
+  PANEL_TEST_FRAME_TARGET_TOL_M: 0.040
+  # Edad máxima permitida para una muestra TF (sim clock); evita usar lecturas viejas.
+  PANEL_TEST_FRAME_TF_MAX_AGE_SEC: 0.9
+  # Salto máximo permitido entre lecturas consecutivas del TCP durante el probe.
+  PANEL_TEST_FRAME_MAX_STEP_JUMP_M: 0.35
+  PANEL_TEST_FRAME_ANCHOR_ENABLED: false
+  PANEL_TEST_FRAME_ANCHOR_Z_OFFSET_M: 0.10
+  # Si false, no falla el step cuando la muestra TF del TCP llega inestable
+  # (settle_timeout); deja evidencia WARN y continúa.
+  PANEL_TEST_FRAME_STRICT_MEASUREMENTS: false
+  # Signos esperados por eje en el frame de referencia del probe (1 o -1).
+  PANEL_TEST_FRAME_SIGN_X: 1
+  PANEL_TEST_FRAME_SIGN_Y: 1
+  PANEL_TEST_FRAME_SIGN_Z: 1
+  # Suelo de seguridad en frame world para el probe (evita forzar alturas
+  # inalcanzables al comenzar desde HOME).
+  PANEL_TEST_FRAME_WORLD_SAFE_MIN_Z_M: 0.55
+
+  # Probe de esquinas delanteras de mesa
+  PANEL_TEST_CORNER_HOVER_M: 0.11
+  # FASE 3: Tolerancias reducidas de 6.5cm/4.5cm a 2cm/2cm para mayor precisión
+  PANEL_TEST_CORNER_TOL_XY_M: 0.020
+  PANEL_TEST_CORNER_TOL_Z_M: 0.020
+  PANEL_TEST_CORNER_RESULT_TIMEOUT_SEC: 60.0
+  # Espera tras cada resultado MoveIt antes de leer TF del TCP.
+  PANEL_TEST_CORNER_TF_SETTLE_SEC: 0.60
+  # Edad máxima de la muestra TF aceptada (sim clock). 0 desactiva este filtro
+  # cuando hay mezcla de reloj sim/wall en la sesión.
+  PANEL_TEST_CORNER_TF_MAX_AGE_SEC: 0.0
+  # Salto máximo aceptado entre lecturas consecutivas del TCP.
+  PANEL_TEST_CORNER_MAX_STEP_JUMP_M: 0.25
+  # Si false, ante TF inestable usa la última lectura válida (con WARN).
+  PANEL_TEST_CORNER_STRICT_TF: false
+
+  # Reintentos adaptativos por esquina (intenta "tocar" el objetivo)
+  # FASE 3: Aumentado de 6 a 8 intentos y ganancia de 0.45 a 0.65 para mejor convergencia
+  PANEL_TEST_CORNER_MAX_ATTEMPTS: 8
+  PANEL_TEST_CORNER_ADAPT_GAIN: 0.65
+  PANEL_TEST_CORNER_ADAPT_MAX_XY_M: 0.030
+  PANEL_TEST_CORNER_ADAPT_MAX_Z_M: 0.025
+  PANEL_TEST_CORNER_LIVE_TRACE: true
+
+  # TEST solicitado:
+  # 1) barrido de cada joint ±30° + medida TCP world/base
+  # 2) MESA -> tocar marca derecha -> tocar marca izquierda -> HOME -> MESA -> HOME
+  PANEL_TEST_JOINT_SWEEP_ENABLED: true
+  PANEL_TEST_JOINT_SWEEP_DELTA_DEG: 30.0
+  PANEL_TEST_JOINT_SWEEP_MOVE_SEC: 2.0
+  PANEL_TEST_JOINT_SWEEP_SETTLE_SEC: 0.35
+
+  # Secuencia de toque de marcas (por nombre interno del test)
+  PANEL_TEST_TOUCH_ORDER: "FRONT_LEFT,FRONT_RIGHT"
+  PANEL_TEST_TOUCH_HOVER_M: 0.10
+  # Ajuste fino TCP->marca en Z (evidencia en logs: error residual ~0.04-0.06 m).
+  # Mantener este valor configurable para iterar sin recompilar.
+  PANEL_TEST_TOUCH_Z_OFFSET_M: 0.105
+  # Compensación de evaluación TCP en Z (base_link). Útil cuando EE_FRAME (rg2_tcp)
+  # no coincide exactamente con la punta física de contacto.
+  PANEL_TEST_TOUCH_TCP_Z_COMP_M: 0.000
+  # Límite inferior de Z respecto a la marca (en frame base) para evitar mandar
+  # objetivos imposibles durante la adaptación iterativa.
+  PANEL_TEST_TOUCH_MIN_OFFSET_FROM_MARK_M: -0.04
+  PANEL_TEST_TOUCH_RESULT_TIMEOUT_SEC: 120.0
+  PANEL_TEST_TOUCH_SETTLE_SEC: 0.80
+  # Reintentos por fase PRE/TOUCH/RETREAT cuando hay timeout de ejecución
+  # (p.ej. fjt_result_timeout). Reduce falsos FAIL por latencia puntual.
+  PANEL_TEST_TOUCH_PHASE_MAX_RETRIES: 2
+  PANEL_TEST_TOUCH_PHASE_RETRY_BACKOFF_SEC: 0.50
+  # Tolerancias de posición para evaluar PASS/FAIL
+  PANEL_TEST_TOUCH_TOL_XY_M: 0.020
+  PANEL_TEST_TOUCH_TOL_Z_M: 0.020
+  # Max intentos por marcador (fail-fast: 3 intentos para 2 rondas de correccion)
+  PANEL_TEST_TOUCH_MAX_ATTEMPTS: 3
+  # Corrección proporcional saturada (k * error, clamped a max_step)
+  # k_xy = k_z = ADAPT_GAIN  (ganancia proporcional)
+  PANEL_TEST_TOUCH_ADAPT_GAIN: 0.60
+  # max_step_xy = ADAPT_MAX_XY_M  (saturación corrección XY por intento)
+  PANEL_TEST_TOUCH_ADAPT_MAX_XY_M: 0.025
+  # max_step_z = ADAPT_MAX_Z_M  (saturación corrección Z por intento)
+  PANEL_TEST_TOUCH_ADAPT_MAX_Z_M: 0.020
+  PANEL_TEST_TOUCH_LIVE_TRACE: true
+  PANEL_TEST_TOUCH_CARTESIAN: false
+  PANEL_TEST_TOUCH_STRICT: true
+
+  # Habilitar smoke opcional de pinza al final (por defecto OFF para no contaminar test)
+  PANEL_TEST_GRIPPER_SMOKE: false

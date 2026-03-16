@@ -1,0 +1,18 @@
+# Ruta/archivo: agarre_ros2_ws/ruff.toml
+# Contenido: Configuracion de linting con Ruff para el workspace ROS 2.
+# Uso breve: Las herramientas de analisis estatico la leen automaticamente.
+line-length = 120
+target-version = "py312"
+
+exclude = [
+  "build",
+  "install",
+  "log",
+  "src/ur5_qt_panel/ur5_qt_panel.egg-info",
+]
+
+[lint]
+select = ["F"]
+
+[lint.per-file-ignores]
+"src/ur5_qt_panel/ur5_qt_panel/panel_v2.py" = ["E402", "F401", "F541", "F811", "F821", "F841"]

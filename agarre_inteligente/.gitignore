@@ -1,0 +1,90 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+.venv-tfm/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Data (large files, no subir a git)
+data/raw/*
+data/processed/*
+data/external/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/external/.gitkeep
+!data/README.md
+
+# Experiments output (no subir a git)
+experiments/runs/*
+experiments/checkpoints/*
+experiments/results/*
+!experiments/runs/.gitkeep
+!experiments/checkpoints/.gitkeep
+!experiments/results/.gitkeep
+!experiments/README.md
+
+# Models (grandes, no subir a git)
+models/*
+!models/.gitkeep
+!models/README.md
+
+# Logs
+*.log
+logs/
+
+# TensorBoard
+events.out.tfevents.*
+
+# PyTorch
+*.pth
+*.pt
+*.ckpt
+
+# Sistema
+.cache/
+*.tmp
+*.temp
+
+# Inventario antiguo (mantener documentado pero no modificar)
+inventario/
+
+# Documentos temporales
+PROMT01.TXT
+

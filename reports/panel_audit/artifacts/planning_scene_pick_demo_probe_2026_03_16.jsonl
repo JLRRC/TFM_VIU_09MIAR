@@ -1,0 +1,158 @@
+{"t_rel_s": 0.0, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 13.02, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 26.04, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 39.06, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 52.07, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 65.09, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 78.11, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 91.13, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 104.15, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 117.16, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 130.18, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 143.2, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 156.22, "error": "Command '['ros2', 'service', 'call', '/get_planning_scene', 'moveit_msgs/srv/GetPlanningScene', '{components: {components: 30719}}']' timed out after 12 seconds", "has_world_pick_demo": false, "has_attached_pick_demo": false}
+{"t_rel_s": 169.23, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 180.9, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 183.8, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 186.22, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 188.37, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 190.33, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 192.24, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 196.11, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 198.01, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 199.89, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 201.76, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 203.64, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 208.09, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 211.24, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 214.12, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 217.26, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 220.14, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 222.02, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 226.16, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 228.07, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 232.19, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 234.1, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 235.96, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 238.08, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 240.06, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 244.23, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 247.12, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 249.03, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 250.91, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 253.32, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 256.21, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 258.14, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 260.07, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 261.98, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 265.15, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 268.11, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 271.1, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 274.11, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 277.29, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 280.25, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 282.22, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 284.74, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 287.73, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 289.63, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 292.09, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 293.98, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 296.88, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 298.81, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 300.72, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 302.6, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 305.79, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 308.71, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 310.63, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 313.28, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 316.17, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 318.24, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 320.14, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 322.26, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 324.2, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 326.84, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 328.71, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 330.61, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 332.74, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 334.63, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 337.06, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 338.96, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 341.84, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 344.56, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 346.92, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": false, "pick_demo_mentions": 1}
+{"t_rel_s": 348.82, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 351.51, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 353.41, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": true, "pick_demo_mentions": 1}
+{"t_rel_s": 355.24, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "pick_demo_mentions": 0}
+{"t_rel_s": 357.34, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": true, "pick_demo_mentions": 1}
+{"t_rel_s": 359.18, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": true, "pick_demo_mentions": 1}
+{"t_rel_s": 361.01, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": true, "pick_demo_mentions": 1}
+{"t_rel_s": 364.1, "rc": 0, "has_world_pick_demo": true, "has_attached_pick_demo": true, "pick_demo_mentions": 1}
+, "attached_excerpt": ""}
+{"t_rel_s": 105.49, "sample": 43, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 108.57, "sample": 44, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=0.0018000714968909866, y=0.0007062926089440177, z=0.00947653862369036), orientation=geometry_msgs.msg.Quaternion(x=-0.001658843387211839"}
+{"t_rel_s": 110.41, "sample": 45, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0013569164487523685, y=-0.1328636253209835, z=-0.21763763311764703), orientation=geometry_msgs.msg.Quaternion(x=0.2941327483798616, y"}
+{"t_rel_s": 112.96, "sample": 46, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.14060469918185864, y=0.09299091007134648, z=-0.21150676239837835), orientation=geometry_msgs.msg.Quaternion(x=-0.05956999414078916, y"}
+{"t_rel_s": 114.8, "sample": 47, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.15816385524315968, y=0.0987791060822416, z=-0.31837153198864765), orientation=geometry_msgs.msg.Quaternion(x=-0.22881441746499204, y="}
+{"t_rel_s": 116.6, "sample": 48, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 118.44, "sample": 49, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0495823040397223, y=-0.2762449289517701, z=-0.39233026267003746), orientation=geometry_msgs.msg.Quaternion(x=0.012984929725267774, y="}
+{"t_rel_s": 120.27, "sample": 50, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=0.11812467783113402, y=0.3028215289885136, z=-0.36138814753922405), orientation=geometry_msgs.msg.Quaternion(x=0.17993704528941662, y=-0"}
+{"t_rel_s": 123.11, "sample": 51, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 124.91, "sample": 52, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 126.76, "sample": 53, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 129.58, "sample": 54, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 132.46, "sample": 55, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 135.58, "sample": 56, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 137.39, "sample": 57, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=0.07143681332187757, y=-0.30194563722630136, z=0.12243803037097967), orientation=geometry_msgs.msg.Quaternion(x=-0.029710898106414325, y"}
+{"t_rel_s": 139.21, "sample": 58, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 141.51, "sample": 59, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=1.0252410355022414, y=0.029731772067970397, z=-0.4752546676429412), orientation=geometry_msgs.msg.Quaternion(x=-2.6855521861770915e-12, "}
+{"t_rel_s": 143.33, "sample": 60, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=1.1759938007767587, y=-0.08910159725393185, z=-0.21567117818010487), orientation=geometry_msgs.msg.Quaternion(x=-3.989863994746657e-15, "}
+{"t_rel_s": 145.9, "sample": 61, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=0.0023486465560672368, y=-0.40341400082472983, z=0.005952614078031715), orientation=geometry_msgs.msg.Quaternion(x=1.9165924796811825e-1"}
+{"t_rel_s": 147.73, "sample": 62, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 150.54, "sample": 63, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 153.59, "sample": 64, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0018318312949136377, y=-0.7490556997818646, z=0.0038828484721877277), orientation=geometry_msgs.msg.Quaternion(x=1.9905885185729822e-"}
+{"t_rel_s": 155.49, "sample": 65, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 157.58, "sample": 66, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 159.64, "sample": 67, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 162.47, "sample": 68, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 164.51, "sample": 69, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 166.35, "sample": 70, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 169.21, "sample": 71, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0018318312949133844, y=-0.0168417725003277, z=0.0007657695026561107), orientation=geometry_msgs.msg.Quaternion(x=1.9885497534908393e-"}
+{"t_rel_s": 171.03, "sample": 72, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 174.61, "sample": 73, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 176.68, "sample": 74, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 178.78, "sample": 75, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0018318312949134122, y=-0.09274903241610633, z=0.0008959487690554657), orientation=geometry_msgs.msg.Quaternion(x=2.775557561562892e-"}
+{"t_rel_s": 180.57, "sample": 76, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 182.42, "sample": 77, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.001831831294913388, y=-0.02310970790934852, z=0.0007533244092463032), orientation=geometry_msgs.msg.Quaternion(x=1.9903752719842622e-"}
+{"t_rel_s": 184.99, "sample": 78, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0018318312949134642, y=-0.2495894902464838, z=0.0018607658758982293), orientation=geometry_msgs.msg.Quaternion(x=1.9909797282393367e-"}
+{"t_rel_s": 186.82, "sample": 79, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0018318312949134226, y=-0.12273183047643199, z=0.0009519344424637755), orientation=geometry_msgs.msg.Quaternion(x=1.994338221754644e-"}
+{"t_rel_s": 188.64, "sample": 80, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 191.47, "sample": 81, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 193.3, "sample": 82, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 195.61, "sample": 83, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.001831831294913381, y=-0.00841938441170087, z=0.0007148828884913083), orientation=geometry_msgs.msg.Quaternion(x=2.4980018054066017e-"}
+{"t_rel_s": 197.44, "sample": 84, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.001831831294913485, y=-0.31002735638524026, z=0.002129772275743347), orientation=geometry_msgs.msg.Quaternion(x=1.3877787807814457e-1"}
+{"t_rel_s": 199.27, "sample": 85, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 201.33, "sample": 86, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0018318312949137903, y=-0.545185858264128, z=0.0031911140176387742), orientation=geometry_msgs.msg.Quaternion(x=1.987093302429404e-16"}
+{"t_rel_s": 203.18, "sample": 87, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0018318312949132873, y=-0.05703052964142452, z=0.0008381032431510338), orientation=geometry_msgs.msg.Quaternion(x=1.110223024625157e-"}
+{"t_rel_s": 205.04, "sample": 88, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.00183183129491344, y=-0.17143884811381405, z=0.0014690203125168888), orientation=geometry_msgs.msg.Quaternion(x=2.220446049250313e-16"}
+{"t_rel_s": 206.89, "sample": 89, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0018318312949133948, y=-0.040863103172085635, z=0.0007377370192984123), orientation=geometry_msgs.msg.Quaternion(x=1.9945078033946681"}
+{"t_rel_s": 208.96, "sample": 90, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0018318312949134746, y=-0.2740818732241856, z=0.0015921173476138861), orientation=geometry_msgs.msg.Quaternion(x=1.9882886947979147e-"}
+{"t_rel_s": 210.96, "sample": 91, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 213.52, "sample": 92, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 216.59, "sample": 93, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 219.46, "sample": 94, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 221.3, "sample": 95, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.001831831294913499, y=-0.348917725267073, z=0.00085561810525836), orientation=geometry_msgs.msg.Quaternion(x=1.3877787807814452e-16, "}
+{"t_rel_s": 223.14, "sample": 96, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 225.47, "sample": 97, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 227.57, "sample": 98, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 229.39, "sample": 99, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 231.49, "sample": 100, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 234.57, "sample": 101, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 237.64, "sample": 102, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 240.44, "sample": 103, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 243.55, "sample": 104, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 246.64, "sample": 105, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 248.72, "sample": 106, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0018318312949136065, y=-0.016678088732339003, z=0.0007316515300314075), orientation=geometry_msgs.msg.Quaternion(x=2.7755575615628914"}
+{"t_rel_s": 250.83, "sample": 107, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": true, "attached_excerpt": "moveit_msgs.msg.AttachedCollisionObject(link_name='rg2_tcp', object=moveit_msgs.msg.CollisionObject(header=std_msgs.msg.Header(stamp=builtin_interfaces.msg.Time(sec=0, nanosec=0), frame_id='rg2_tcp'), pose=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.0018318312949134469, y=-0.1909288867818505, z=0.0016237316758156428), orientation=geometry_msgs.msg.Quaternion(x=1.9889929291619233e-"}
+{"t_rel_s": 252.65, "sample": 108, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}
+{"t_rel_s": 255.46, "sample": 109, "rc": 0, "has_world_pick_demo": false, "has_attached_pick_demo": false, "attached_excerpt": ""}

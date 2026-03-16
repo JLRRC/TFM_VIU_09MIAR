@@ -1,0 +1,7 @@
+BORRAR/
+agarre_inteligente/reports/
+agarre_ros2_ws/reports/
+reports/archive/BORRAR/
+*.log
+.DS_Store
+

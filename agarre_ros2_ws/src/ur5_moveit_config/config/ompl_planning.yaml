@@ -1,0 +1,26 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_moveit_config/config/ompl_planning.yaml
+# Contenido: Configuracion MoveIt del UR5 para planificacion y ejecucion.
+# Uso breve: MoveIt y ros2 launch lo usan durante el bringup del robot.
+planning_plugins:
+  - ompl_interface/OMPLPlanner
+request_adapters:
+  - default_planning_request_adapters/ResolveConstraintFrames
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  - default_planning_request_adapters/CheckStartStateCollision
+response_adapters:
+  - default_planning_response_adapters/AddTimeOptimalParameterization
+  - default_planning_response_adapters/ValidateSolution
+  - default_planning_response_adapters/DisplayMotionPath
+start_state_max_bounds_error: 0.1
+use_different_state_validity_filter: false
+planner_configs:
+  RRTConnectkConfigDefault:
+    type: geometric::RRTConnect
+    range: 0.0
+    goal_joint_tolerance: 0.001
+    goal_position_tolerance: 0.001
+    goal_orientation_tolerance: 0.001
+manipulator:
+  planner_configs:
+    - RRTConnectkConfigDefault

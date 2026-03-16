@@ -1,0 +1,7 @@
+# Ruta/archivo: agarre_ros2_ws/requirements-dev.txt
+# Contenido: Dependencias de desarrollo del workspace ROS 2.
+# Uso breve: Se usa para instalar utilidades de test, lint o soporte local.
+ruff==0.14.1
+pytest==9.0.1
+flake8==7.3.0
+pydocstyle==6.3.0

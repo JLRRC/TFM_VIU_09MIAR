@@ -1,0 +1,51 @@
+<!-- Ruta/archivo: agarre_ros2_ws/src/ur5_moveit_config/config/ur5.srdf -->
+<!-- Contenido: Configuracion MoveIt del UR5 para planificacion y ejecucion. -->
+<!-- Uso breve: MoveIt y ros2 launch lo usan durante el bringup del robot. -->
+<robot name="ur5_rg2">
+  <virtual_joint name="world_joint" parent_frame="world" child_link="base_link" type="fixed" />
+
+  <group name="manipulator">
+    <chain base_link="base_link" tip_link="rg2_tcp" />
+    <joint name="shoulder_pan_joint" />
+    <joint name="shoulder_lift_joint" />
+    <joint name="elbow_joint" />
+    <joint name="wrist_1_joint" />
+    <joint name="wrist_2_joint" />
+    <joint name="wrist_3_joint" />
+  </group>
+
+  <!-- Disable collisions between adjacent links and known fixed pairs. -->
+  <disable_collisions link1="base_link_inertia" link2="shoulder_link" reason="Adjacent"/>
+  <disable_collisions link1="shoulder_link" link2="upper_arm_link" reason="Adjacent"/>
+  <disable_collisions link1="upper_arm_link" link2="forearm_link" reason="Adjacent"/>
+  <disable_collisions link1="forearm_link" link2="wrist_1_link" reason="Adjacent"/>
+  <disable_collisions link1="wrist_1_link" link2="wrist_2_link" reason="Adjacent"/>
+  <disable_collisions link1="wrist_2_link" link2="wrist_3_link" reason="Adjacent"/>
+  <disable_collisions link1="wrist_3_link" link2="tool0" reason="Adjacent"/>
+  <disable_collisions link1="tool0" link2="rg2_tcp" reason="Adjacent"/>
+  <disable_collisions link1="tool0" link2="rg2_base_link" reason="Adjacent"/>
+  <disable_collisions link1="rg2_base_link" link2="rg2_finger_link1" reason="Adjacent"/>
+  <disable_collisions link1="rg2_base_link" link2="rg2_finger_link2" reason="Adjacent"/>
+
+  <!-- Non-adjacent pairs that never collide (standard UR5 geometry/joint limits). -->
+  <disable_collisions link1="base_link_inertia" link2="forearm_link" reason="Never"/>
+  <disable_collisions link1="base_link_inertia" link2="upper_arm_link" reason="Never"/>
+  <disable_collisions link1="base_link_inertia" link2="wrist_1_link" reason="Never"/>
+  <disable_collisions link1="base_link_inertia" link2="wrist_2_link" reason="Never"/>
+  <disable_collisions link1="forearm_link" link2="wrist_2_link" reason="Never"/>
+  <disable_collisions link1="forearm_link" link2="wrist_3_link" reason="Never"/>
+  <disable_collisions link1="shoulder_link" link2="forearm_link" reason="Never"/>
+  <disable_collisions link1="shoulder_link" link2="wrist_1_link" reason="Never"/>
+  <disable_collisions link1="shoulder_link" link2="wrist_2_link" reason="Never"/>
+  <disable_collisions link1="upper_arm_link" link2="wrist_1_link" reason="Never"/>
+  <disable_collisions link1="upper_arm_link" link2="wrist_2_link" reason="Never"/>
+  <disable_collisions link1="upper_arm_link" link2="wrist_3_link" reason="Never"/>
+
+  <!-- RG2 gripper pairs that never collide. -->
+  <disable_collisions link1="rg2_finger_link1" link2="rg2_finger_link2" reason="Never"/>
+  <disable_collisions link1="wrist_3_link" link2="rg2_base_link" reason="Never"/>
+  <disable_collisions link1="wrist_3_link" link2="rg2_tcp" reason="Never"/>
+  <disable_collisions link1="wrist_2_link" link2="rg2_base_link" reason="Never"/>
+  <disable_collisions link1="wrist_2_link" link2="tool0" reason="Never"/>
+  <disable_collisions link1="wrist_1_link" link2="wrist_3_link" reason="Never"/>
+</robot>

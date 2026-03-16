@@ -1,0 +1,46 @@
+# Ruta/archivo: agarre_ros2_ws/.gitignore
+# Contenido: Patrones ignorados por Git dentro del subproyecto.
+# Uso breve: Git lo usa automaticamente para excluir artefactos no versionables.
+# URL: /home/laboratorio/TFM/agarre_ros2_ws/.gitignore
+# Summary: Git ignore rules for build, install, log, and local artifacts.
+# --- ROS 2 / colcon ---
+build/
+install/
+log/
+logs/
+.colcon/
+.colcon_install_layout
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Logs sueltos ---
+*.log
+*.db3
+*.db3-journal
+*.bag
+*.bag.active
+BORRAR/
+bags/
+experiments/
+.venv*/
+.venv_ai/
+.matplotlib_cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.png
+src/tfm_grasping/models/*.pth
+src/tfm_grasping/models/*.pt
+src/tfm_grasping/models/*.ckpt

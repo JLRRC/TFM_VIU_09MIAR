@@ -1,0 +1,42 @@
+# ====================================
+# REQUIREMENTS - Agarre Inteligente
+# Deep Learning para Agarre Robótico
+# ====================================
+
+# Deep Learning Framework
+torch==2.2.0
+torchvision==0.17.0
+
+# Procesamiento de imágenes
+opencv-python-headless==4.9.0.80
+Pillow==10.2.0
+PyQt5==5.15.11
+
+# Computación numérica
+numpy==1.26.4
+scipy==1.12.0
+
+# Visualización y plots
+matplotlib==3.8.3
+seaborn==0.13.2
+
+# Métricas y ML utilities
+scikit-learn==1.4.1.post1
+
+# Configuración YAML
+PyYAML==6.0.1
+
+# Logging y tracking
+tensorboard==2.16.2
+tqdm==4.66.2
+
+# Utilidades
+pandas==2.2.1
+
+# Data augmentation (opcional, ya incluido en torchvision)
+# albumentations==1.4.0
+
+# Development tools (opcional)
+pytest==8.0.2
+black==24.2.0
+flake8==7.0.0

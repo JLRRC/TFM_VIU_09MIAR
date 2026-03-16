@@ -1,0 +1,38 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/config/panel_settings.yaml
+# Contenido: Codigo del panel Qt y de la logica ROS 2 asociada al UR5.
+# Uso breve: Se usa en build con colcon y en ejecucion mediante el entry point panel_v2.
+panel_settings:
+  base_frame: base_link
+  world_frame: null
+  camera_topic: /camera_overhead/image
+  camera_required: null
+  use_sim_time: true
+  pose_info_max_age_sec: 1.0
+  pose_info_poll_sec: 0.5
+  pose_info_log_period: 2.0
+  critical_clock_timeout_sec: 5.0
+  critical_pose_timeout_sec: 60.0
+  camera_ready_frames: 3
+  camera_init_grace_sec: 4.0
+  camera_ready_max_age_sec: 2.5
+  tf_init_grace_sec: 3.0
+  controller_start_grace_sec: 12.0
+  controller_ready_timeout_sec: 20.0
+  moveit_ready_timeout_sec: 20.0
+  gz_launch_timeout_sec: 20.0
+  bridge_launch_timeout_sec: 12.0
+  moveit_launch_timeout_sec: 25.0
+  moveit_bridge_launch_timeout_sec: 15.0
+  controller_drop_grace_sec: 3.0
+  gripper_tcp_z_offset: 0.10
+  pick_tf_retry_sec: 0.2
+  pick_tf_timeout_sec: 3.0
+  selection_timeout_sec: 12.0
+  allow_unsettled_on_timeout: false
+  panel_managed: false
+  panel_moveit_required: true
+  auto_start_bridge: true
+  auto_start_bridge_delay_ms: 1200
+  auto_start_bridge_max_retries: 30
+  table_object_z_min: 0.0
+  table_object_z_max: 0.2

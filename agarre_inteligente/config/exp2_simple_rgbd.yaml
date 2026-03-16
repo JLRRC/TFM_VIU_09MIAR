@@ -1,0 +1,57 @@
+# EXP2_SIMPLE_RGBD
+# Modelo B: SimpleGraspCNN
+# Modalidad: RGB-D
+# Augmentation: moderado
+
+experiment:
+  name: "EXP2_SIMPLE_RGBD"
+  description: "SimpleGraspCNN con RGB-D y augmentation moderado"
+  seeds: [0, 1, 2]
+  split_protocol: "object-wise"
+  train_size_expected: 2121
+  val_size_expected: 531
+
+model:
+  name: "SimpleGraspCNN"
+  architecture: "simple_cnn"
+  input_channels: 4
+  output_params: ["cx", "cy", "w", "h", "angle_deg"]
+  dropout: 0.2
+
+data:
+  modality: "rgbd"
+  data_root: "."
+  train_csv: "data/processed/cornell/splits/object_wise/train.csv"
+  val_csv: "data/processed/cornell/splits/object_wise/val.csv"
+  image_size: 224
+  augmentation: true
+  augmentation_level: "moderate"
+
+training:
+  epochs: 10
+  batch_size: 32
+  optimizer:
+    name: "adam"
+    lr: 0.001
+    weight_decay: 0.0
+  scheduler:
+    name: "none"
+  criterion: "smooth_l1"
+  device: "cuda"
+
+metrics:
+  protocol: "cornell"
+  iou_threshold: 0.25
+  angle_threshold_deg: 30.0
+  monitor: "val_success"
+
+checkpointing:
+  save_best: true
+  save_last: true
+
+outputs:
+  experiments_root: "experiments"
+  reports_root: "reports"
+
+benchmark:
+  device: "cpu"

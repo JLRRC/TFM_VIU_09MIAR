@@ -1,0 +1,30 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_bringup/config/system_state_manager.yaml
+# Contenido: Configuracion de bringup ROS 2 para lanzar el sistema UR5.
+# Uso breve: Colcon/ros2 launch lo usan para arrancar simulacion y componentes principales.
+system_state_manager:
+  ros__parameters:
+    world_name: ur5_mesa_objetos
+    model_name: ur5_rg2
+    base_frame: base_link
+    world_frame: world
+    ee_frame: rg2_tcp
+    pose_topic: ""
+    camera_topic: /camera_overhead/image
+    controller_manager: /controller_manager
+    required_controllers:
+      - joint_state_broadcaster
+      - joint_trajectory_controller
+      - gripper_controller
+    moveit_required: false
+    moveit_service_names:
+      - /get_planning_scene
+      - /move_group/get_planning_scene
+    moveit_check_sec: 1.0
+    clock_timeout_sec: 1.5
+    pose_timeout_sec: 1.0
+    camera_timeout_sec: 1.5
+    tf_timeout_sec: 0.2
+    controller_check_sec: 1.0
+    controller_future_timeout_sec: 2.0
+    state_publish_hz: 2.0
+    startup_timeout_sec: 5.0

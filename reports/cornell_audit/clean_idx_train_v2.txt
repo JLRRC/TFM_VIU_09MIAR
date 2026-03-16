@@ -1,0 +1,2 @@
+# Índices train: N=3542
+# Generado automáticamente por prepare_cornell_csv.py

@@ -1,0 +1,866 @@
+<sdf version="1.10">
+  <world name="ur5_mesa_objetos">
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics" />
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands" />
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster" />
+    
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre</render_engine>
+    </plugin>
+
+    <gravity>0 0 -9.81</gravity>
+
+    <scene>
+      <ambient>0.6 0.6 0.6 1</ambient>
+      <background>0.95 0.95 0.95 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <physics name="ode_physics" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    
+    <light name="sun_world" type="directional">
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>1 1 1 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <direction>-0.5 0.5 -1</direction>
+      <cast_shadows>true</cast_shadows>
+    </light>
+
+    
+    <model name="ground_plane">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material><diffuse>0.85 0.85 0.85 1</diffuse></material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+        <publish_pose>true</publish_pose>
+        <publish_link_pose>true</publish_link_pose>
+        <publish_visual_pose>false</publish_visual_pose>
+        <publish_collision_pose>false</publish_collision_pose>
+        <static_publisher>false</static_publisher>
+      </plugin>
+    </model>
+
+    
+    <model name="mesa_pro">
+      <static>true</static>
+      <pose>-0.17 0 0.075 0 0 0</pose>
+      <link name="link">
+
+        <collision name="tablero_collision">
+          <pose>0 0 0.75 0 0 0</pose>
+          <geometry><box><size>0.768 0.80 0.05</size></box></geometry>
+        </collision>
+        <visual name="tablero_visual">
+          <pose>0 0 0.75 0 0 0</pose>
+          <geometry><box><size>0.768 0.80 0.05</size></box></geometry>
+          <material><diffuse>0.92 0.92 0.92 1</diffuse></material>
+        </visual>
+
+        
+        
+        <collision name="wall_far_x_pos_c">
+          <pose>0.374 0 0.875 0 0 0</pose>
+          <geometry><box><size>0.02 0.76 0.20</size></box></geometry>
+        </collision>
+        <visual name="wall_far_x_pos_v">
+          <pose>0.374 0 0.875 0 0 0</pose>
+          <geometry><box><size>0.02 0.76 0.20</size></box></geometry>
+          <material><diffuse>0.35 0.35 0.35 1</diffuse></material>
+        </visual>
+
+        <collision name="wall_near_x_neg_c">
+          <pose>-0.374 0 0.785 0 0 0</pose>
+          <geometry><box><size>0.02 0.76 0.02</size></box></geometry>
+        </collision>
+        <visual name="wall_near_x_neg_v">
+          <pose>-0.374 0 0.785 0 0 0</pose>
+          <geometry><box><size>0.02 0.76 0.02</size></box></geometry>
+          <material><diffuse>0.35 0.35 0.35 1</diffuse></material>
+        </visual>
+
+        <collision name="wall_north_c">
+          <pose>0 0.39 0.785 0 0 0</pose>
+          <geometry><box><size>0.728 0.02 0.02</size></box></geometry>
+        </collision>
+        <visual name="wall_north_v">
+          <pose>0 0.39 0.785 0 0 0</pose>
+          <geometry><box><size>0.728 0.02 0.02</size></box></geometry>
+          <material><diffuse>0.35 0.35 0.35 1</diffuse></material>
+        </visual>
+
+        <collision name="wall_south_c">
+          <pose>0 -0.39 0.785 0 0 0</pose>
+          <geometry><box><size>0.728 0.02 0.02</size></box></geometry>
+        </collision>
+        <visual name="wall_south_v">
+          <pose>0 -0.39 0.785 0 0 0</pose>
+          <geometry><box><size>0.728 0.02 0.02</size></box></geometry>
+          <material><diffuse>0.35 0.35 0.35 1</diffuse></material>
+        </visual>
+
+        <!-- TEST markers physically painted on top of the table (inside front corners). -->
+        <!-- They match PANEL_TEST_CORNER_INSET_M=0.06 with current table geometry. -->
+        <visual name="test_marker_front_left_disk_v">
+          <pose>-0.324 0.340 0.776 0 0 0</pose>
+          <geometry><cylinder><radius>0.025</radius><length>0.003</length></cylinder></geometry>
+          <material>
+            <ambient>0.96 0.96 0.96 1</ambient>
+            <diffuse>0.96 0.96 0.96 1</diffuse>
+            <emissive>0.05 0.05 0.05 1</emissive>
+          </material>
+        </visual>
+        <visual name="test_marker_front_left_cross_h_v">
+          <pose>-0.324 0.340 0.778 0 0 0</pose>
+          <geometry><box><size>0.034 0.005 0.002</size></box></geometry>
+          <material><ambient>0.12 0.12 0.12 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+        </visual>
+        <visual name="test_marker_front_left_cross_v_v">
+          <pose>-0.324 0.340 0.778 0 0 0</pose>
+          <geometry><box><size>0.005 0.034 0.002</size></box></geometry>
+          <material><ambient>0.12 0.12 0.12 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+        </visual>
+
+        <visual name="test_marker_front_right_disk_v">
+          <pose>-0.324 -0.340 0.776 0 0 0</pose>
+          <geometry><cylinder><radius>0.025</radius><length>0.003</length></cylinder></geometry>
+          <material>
+            <ambient>0.96 0.96 0.96 1</ambient>
+            <diffuse>0.96 0.96 0.96 1</diffuse>
+            <emissive>0.05 0.05 0.05 1</emissive>
+          </material>
+        </visual>
+        <visual name="test_marker_front_right_cross_h_v">
+          <pose>-0.324 -0.340 0.778 0 0 0</pose>
+          <geometry><box><size>0.034 0.005 0.002</size></box></geometry>
+          <material><ambient>0.12 0.12 0.12 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+        </visual>
+        <visual name="test_marker_front_right_cross_v_v">
+          <pose>-0.324 -0.340 0.778 0 0 0</pose>
+          <geometry><box><size>0.005 0.034 0.002</size></box></geometry>
+          <material><ambient>0.12 0.12 0.12 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+        </visual>
+
+        
+        <collision name="p1c"><pose> 0.334  0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <visual name="p1v"><pose> 0.334  0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.15 0.15 0.15 1</diffuse></material></visual>
+
+        <collision name="p2c"><pose> 0.334 -0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <visual name="p2v"><pose> 0.334 -0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.15 0.15 0.15 1</diffuse></material></visual>
+
+        <collision name="p3c"><pose>-0.334  0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <visual name="p3v"><pose>-0.334  0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.15 0.15 0.15 1</diffuse></material></visual>
+
+        <collision name="p4c"><pose>-0.334 -0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <visual name="p4v"><pose>-0.334 -0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.15 0.15 0.15 1</diffuse></material></visual>
+
+      </link>
+    </model>
+
+    
+    <model name="pick_demo">
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.42 0.00 0.875 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.08</mass>
+          <inertia>
+            <ixx>0.0002</ixx><iyy>0.0002</iyy><izz>0.0002</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.025</radius><length>0.05</length></cylinder></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>2.0</mu>
+                <mu2>2.0</mu2>
+              </ode>
+            </friction>
+            <bounce>
+              <restitution_coefficient>0.0</restitution_coefficient>
+              <threshold>100000</threshold>
+            </bounce>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+                <max_vel>0.1</max_vel>
+                <min_depth>0.001</min_depth>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="visual"><geometry><cylinder><radius>0.025</radius><length>0.05</length></cylinder></geometry><material><diffuse>0.95 0.70 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <model name="drop_anchor">
+      <static>true</static>
+      <pose>0 0 0 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.1</mass>
+          <inertia>
+            <ixx>0.0001</ixx><iyy>0.0001</iyy><izz>0.0001</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+      </link>
+      <!-- Detachable joints to keep DROP objects frozen until Soltar/Obj. -->
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>link</parent_link>
+        <child_model>box_red</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/drop_anchor/box_red/attach</attach_topic>
+        <detach_topic>/drop_anchor/box_red/detach</detach_topic>
+        <output_topic>/drop_anchor/box_red/state</output_topic>
+      </plugin>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>link</parent_link>
+        <child_model>box_blue</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/drop_anchor/box_blue/attach</attach_topic>
+        <detach_topic>/drop_anchor/box_blue/detach</detach_topic>
+        <output_topic>/drop_anchor/box_blue/state</output_topic>
+      </plugin>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>link</parent_link>
+        <child_model>box_green</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/drop_anchor/box_green/attach</attach_topic>
+        <detach_topic>/drop_anchor/box_green/detach</detach_topic>
+        <output_topic>/drop_anchor/box_green/state</output_topic>
+      </plugin>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>link</parent_link>
+        <child_model>box_lightblue</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/drop_anchor/box_lightblue/attach</attach_topic>
+        <detach_topic>/drop_anchor/box_lightblue/detach</detach_topic>
+        <output_topic>/drop_anchor/box_lightblue/state</output_topic>
+      </plugin>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>link</parent_link>
+        <child_model>box_yellow</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/drop_anchor/box_yellow/attach</attach_topic>
+        <detach_topic>/drop_anchor/box_yellow/detach</detach_topic>
+        <output_topic>/drop_anchor/box_yellow/state</output_topic>
+      </plugin>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>link</parent_link>
+        <child_model>cross_cyan</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/drop_anchor/cross_cyan/attach</attach_topic>
+        <detach_topic>/drop_anchor/cross_cyan/detach</detach_topic>
+        <output_topic>/drop_anchor/cross_cyan/state</output_topic>
+      </plugin>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>link</parent_link>
+        <child_model>cyl_gray</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/drop_anchor/cyl_gray/attach</attach_topic>
+        <detach_topic>/drop_anchor/cyl_gray/detach</detach_topic>
+        <output_topic>/drop_anchor/cyl_gray/state</output_topic>
+      </plugin>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>link</parent_link>
+        <child_model>cyl_green</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/drop_anchor/cyl_green/attach</attach_topic>
+        <detach_topic>/drop_anchor/cyl_green/detach</detach_topic>
+        <output_topic>/drop_anchor/cyl_green/state</output_topic>
+      </plugin>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>link</parent_link>
+        <child_model>cyl_orange</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/drop_anchor/cyl_orange/attach</attach_topic>
+        <detach_topic>/drop_anchor/cyl_orange/detach</detach_topic>
+        <output_topic>/drop_anchor/cyl_orange/state</output_topic>
+      </plugin>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>link</parent_link>
+        <child_model>cyl_purple</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/drop_anchor/cyl_purple/attach</attach_topic>
+        <detach_topic>/drop_anchor/cyl_purple/detach</detach_topic>
+        <output_topic>/drop_anchor/cyl_purple/state</output_topic>
+      </plugin>
+    </model>
+
+    
+    <model name="mesa_robot">
+      <static>true</static>
+      <pose>-1.10 0.00 0 0 0 0</pose>
+      <link name="link">
+
+        <collision name="tablero_collision">
+          <pose>0 0 0.75 0 0 0</pose>
+          <geometry><box><size>0.70 0.50 0.05</size></box></geometry>
+        </collision>
+        <visual name="tablero_visual">
+          <pose>0 0 0.75 0 0 0</pose>
+          <geometry><box><size>0.70 0.50 0.05</size></box></geometry>
+          <material><diffuse>0.65 0.65 0.65 1</diffuse></material>
+        </visual>
+
+        
+        <collision name="p1"><pose> 0.30  0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <visual name="p1v"><pose> 0.30  0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.10 0.10 0.10 1</diffuse></material></visual>
+
+        <collision name="p2"><pose> 0.30 -0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <visual name="p2v"><pose> 0.30 -0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.10 0.10 0.10 1</diffuse></material></visual>
+
+        <collision name="p3"><pose>-0.30  0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <visual name="p3v"><pose>-0.30  0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.10 0.10 0.10 1</diffuse></material></visual>
+
+        <collision name="p4"><pose>-0.30 -0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <visual name="p4v"><pose>-0.30 -0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.10 0.10 0.10 1</diffuse></material></visual>
+
+        
+</link>
+    </model>
+    
+    <model name="bandeja_deposito">
+      <static>true</static>
+      
+      
+      <pose>-1.30 0.00 0.780 0 0 0</pose>
+      <link name="link">
+        
+        <collision name="base_c">
+          <geometry><box><size>0.28 0.22 0.01</size></box></geometry>
+        </collision>
+        <visual name="base_v">
+          <geometry><box><size>0.28 0.22 0.01</size></box></geometry>
+          <material><diffuse>0.95 0.85 0.20 1</diffuse></material>
+        </visual>
+
+        
+        <collision name="wall_n_c">
+          <pose>0 0.105 0.035 0 0 0</pose>
+          <geometry><box><size>0.28 0.01 0.07</size></box></geometry>
+        </collision>
+        <visual name="wall_n_v">
+          <pose>0 0.105 0.035 0 0 0</pose>
+          <geometry><box><size>0.28 0.01 0.07</size></box></geometry>
+          <material><diffuse>0.30 0.30 0.30 1</diffuse></material>
+        </visual>
+
+        <collision name="wall_s_c">
+          <pose>0 -0.105 0.035 0 0 0</pose>
+          <geometry><box><size>0.28 0.01 0.07</size></box></geometry>
+        </collision>
+        <visual name="wall_s_v">
+          <pose>0 -0.105 0.035 0 0 0</pose>
+          <geometry><box><size>0.28 0.01 0.07</size></box></geometry>
+          <material><diffuse>0.30 0.30 0.30 1</diffuse></material>
+        </visual>
+
+        <collision name="wall_e_c">
+          <pose>0.135 0 0.035 0 0 0</pose>
+          <geometry><box><size>0.01 0.22 0.07</size></box></geometry>
+        </collision>
+        <visual name="wall_e_v">
+          <pose>0.135 0 0.035 0 0 0</pose>
+          <geometry><box><size>0.01 0.22 0.07</size></box></geometry>
+          <material><diffuse>0.30 0.30 0.30 1</diffuse></material>
+        </visual>
+
+        <collision name="wall_w_c">
+          <pose>-0.135 0 0.035 0 0 0</pose>
+          <geometry><box><size>0.01 0.22 0.07</size></box></geometry>
+        </collision>
+        <visual name="wall_w_v">
+          <pose>-0.135 0 0.035 0 0 0</pose>
+          <geometry><box><size>0.01 0.22 0.07</size></box></geometry>
+          <material><diffuse>0.30 0.30 0.30 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+
+    
+
+    <include>
+      <uri>model://ur5_rg2</uri>
+      <name>ur5_rg2</name>
+      
+      <pose>-0.85 0.00 0.775 0 0 0</pose>
+      
+    </include>
+    <joint name="ur5_rg2_fixed_to_world" type="fixed">
+      <parent>world</parent>
+      <pose>-0.85 0.00 0.775 0 0 0</pose>
+      <child>ur5_rg2::base_link</child>
+    </joint>
+
+    
+
+    
+    <model name="camera_overhead">
+      <static>true</static>
+      <pose>-0.85 0.00 1.85 0 1.02 0</pose>
+      <link name="link">
+        <sensor name="camera_overhead_rgb" type="camera">
+          <always_on>true</always_on>
+          <update_rate>30</update_rate>
+          <topic>/camera_overhead/image</topic>
+          <camera>
+            <horizontal_fov>0.75</horizontal_fov>
+            <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>10.0</far></clip>
+          </camera>
+        </sensor>
+        <sensor name="camera_overhead_depth" type="depth_camera">
+          <always_on>true</always_on>
+          <update_rate>30</update_rate>
+          <topic>/camera_overhead/depth_image</topic>
+          <camera>
+            <horizontal_fov>0.75</horizontal_fov>
+            <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>10.0</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    
+    
+    
+
+    <model name="camera_north">
+      <static>true</static>
+      <pose>-0.95 0.75 0 0 0 0</pose>
+      <link name="link">
+        <sensor name="camera_north_rgbd" type="rgbd_camera">
+          <pose>0 0 2.90 0 1.05 -0.668</pose>
+          <always_on>true</always_on>
+          <update_rate>30</update_rate>
+          <topic>/camera_north</topic>
+          <camera>
+            <horizontal_fov>1.047</horizontal_fov>
+            <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>10.0</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <model name="camera_east">
+      <static>true</static>
+      <pose>0.95 0.75 0 0 0 0</pose>
+      <link name="link">
+        <sensor name="camera_east_rgbd" type="rgbd_camera">
+          <pose>0 0 2.90 0 1.05 -2.475</pose>
+          <always_on>true</always_on>
+          <update_rate>60</update_rate>
+          <topic>/camera_east</topic>
+          <camera>
+            <horizontal_fov>1.047</horizontal_fov>
+            <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>10.0</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <model name="camera_south">
+      <static>true</static>
+      <pose>-2.00 0.00 0 0 0 0</pose>
+      <link name="link">
+        <sensor name="camera_south_rgbd" type="camera">
+          <pose>0 0 2.10 0 0.75 0</pose>
+          <always_on>true</always_on>
+          <update_rate>60</update_rate>
+          <topic>/camera_south/image</topic>
+          <camera>
+            <horizontal_fov>1.047</horizontal_fov>
+            <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>10.0</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <model name="camera_west">
+      <static>true</static>
+      <pose>1.30 0.00 0 0 0 0</pose>
+      <link name="link">
+        <sensor name="camera_west_rgbd" type="camera">
+          <pose>0 0 2.00 0 0.85 3.1416</pose>
+          <always_on>true</always_on>
+          <update_rate>60</update_rate>
+          <topic>/camera_west/image</topic>
+          <camera>
+            <horizontal_fov>1.047</horizontal_fov>
+            <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>10.0</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    
+
+    <model name="box_red">
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.170 0.000 2.775 0 0 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <kinematic>false</kinematic>
+        <inertial><mass>0.12</mass><inertia><ixx>7.199999999999999e-05</ixx><iyy>7.199999999999999e-05</iyy><izz>7.199999999999999e-05</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+        <collision name="c">
+          <geometry><box><size>0.06 0.06 0.06</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="v"><geometry><box><size>0.06 0.06 0.06</size></box></geometry><material><diffuse>0.85 0.20 0.20 1</diffuse></material></visual>
+      </link>
+    </model>
+
+
+    <model name="box_blue">
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.130 0.000 2.775 0 0 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <kinematic>false</kinematic>
+        <inertial><mass>0.1</mass><inertia><ixx>3.75e-05</ixx><iyy>9.083333333333335e-05</iyy><izz>0.00011333333333333334</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+        <collision name="c">
+          <geometry><box><size>0.1 0.06 0.03</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="v"><geometry><box><size>0.1 0.06 0.03</size></box></geometry><material><diffuse>0.20 0.35 0.90 1</diffuse></material></visual>
+      </link>
+    </model>
+
+
+    <model name="box_green">
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.210 0.000 2.775 0 0 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <kinematic>false</kinematic>
+        <inertial><mass>0.11</mass><inertia><ixx>0.00014666666666666666</ixx><iyy>0.00014666666666666666</iyy><izz>2.9333333333333336e-05</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+        <collision name="c">
+          <geometry><box><size>0.04 0.04 0.12</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="v"><geometry><box><size>0.04 0.04 0.12</size></box></geometry><material><diffuse>0.20 0.80 0.20 1</diffuse></material></visual>
+      </link>
+    </model>
+
+
+    <model name="cyl_gray">
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.170 0.040 2.775 0 0 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <kinematic>false</kinematic>
+        <inertial><mass>0.1</mass><inertia><ixx>0.00017333333333333336</ixx><iyy>0.00017333333333333336</iyy><izz>2e-05</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+        <collision name="c">
+          <geometry><cylinder><radius>0.02</radius><length>0.14</length></cylinder></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="v"><geometry><cylinder><radius>0.02</radius><length>0.14</length></cylinder></geometry><material><diffuse>0.35 0.35 0.35 1</diffuse></material></visual>
+      </link>
+    </model>
+
+
+    <model name="cyl_orange">
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.170 -0.040 2.775 0 0 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <kinematic>false</kinematic>
+        <inertial><mass>0.09</mass><inertia><ixx>6.825e-05</ixx><iyy>6.825e-05</iyy><izz>4.0499999999999995e-05</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+        <collision name="c">
+          <geometry><cylinder><radius>0.03</radius><length>0.08</length></cylinder></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="v"><geometry><cylinder><radius>0.03</radius><length>0.08</length></cylinder></geometry><material><diffuse>0.95 0.55 0.10 1</diffuse></material></visual>
+      </link>
+    </model>
+
+
+    <model name="cyl_purple">
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.120 0.050 2.775 0 0 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <kinematic>false</kinematic>
+        <inertial><mass>0.08</mass><inertia><ixx>4.316666666666667e-05</ixx><iyy>4.316666666666667e-05</iyy><izz>8.099999999999999e-05</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+        <collision name="c">
+          <geometry><cylinder><radius>0.045</radius><length>0.02</length></cylinder></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="v"><geometry><cylinder><radius>0.045</radius><length>0.02</length></cylinder></geometry><material><diffuse>0.55 0.25 0.70 1</diffuse></material></visual>
+      </link>
+    </model>
+
+
+    <model name="box_lightblue">
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.220 0.050 2.775 0 0 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <kinematic>false</kinematic>
+        <inertial><mass>0.09</mass><inertia><ixx>5.4e-05</ixx><iyy>5.4e-05</iyy><izz>5.4e-05</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+        <collision name="c">
+          <geometry><box><size>0.06 0.06 0.06</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="v"><geometry><box><size>0.06 0.06 0.06</size></box></geometry><material><diffuse>0.70 0.85 0.95 1</diffuse></material></visual>
+      </link>
+    </model>
+
+
+    <model name="cyl_green">
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.120 -0.050 2.775 0 0 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <kinematic>false</kinematic>
+        <inertial><mass>0.05</mass><inertia><ixx>1.16e-05</ixx><iyy>1.16e-05</iyy><izz>1.56e-05</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+        <collision name="c">
+          <geometry><cylinder><radius>0.025</radius><length>0.03</length></cylinder></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="v"><geometry><cylinder><radius>0.025</radius><length>0.03</length></cylinder></geometry><material><diffuse>0.20 0.70 0.40 1</diffuse></material></visual>
+      </link>
+    </model>
+
+
+    <model name="box_yellow">
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.220 -0.050 2.775 0 0 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <kinematic>false</kinematic>
+        <inertial><mass>0.1</mass><inertia><ixx>1.4999999999999999e-05</ixx><iyy>0.00017083333333333336</iyy><izz>0.00017083333333333336</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+        <collision name="c">
+          <geometry><box><size>0.14 0.03 0.03</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="v"><geometry><box><size>0.14 0.03 0.03</size></box></geometry><material><diffuse>0.95 0.85 0.20 1</diffuse></material></visual>
+      </link>
+    </model>
+
+
+    <model name="cross_cyan">
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.090 0.000 2.775 0 0 0</pose>
+
+      <link name="link">
+        <pose>0 0 0 0 0 0</pose>
+        <gravity>true</gravity>
+        <kinematic>false</kinematic>
+        <inertial><mass>0.07</mass><inertia><ixx>8.925e-05</ixx><iyy>8.925e-05</iyy><izz>0.000168</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+        <collision name="c1">
+          <geometry><box><size>0.12 0.03 0.03</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="v1"><geometry><box><size>0.12 0.03 0.03</size></box></geometry><material><diffuse>0.10 0.75 0.75 1</diffuse></material></visual>
+      </link>
+
+      <link name="link_b">
+        <pose>0 0 0 0 0 0</pose>
+        <gravity>true</gravity>
+        <kinematic>false</kinematic>
+        <inertial><mass>0.07</mass><inertia><ixx>8.925e-05</ixx><iyy>8.925e-05</iyy><izz>0.000168</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+        <collision name="c2">
+          <geometry><box><size>0.03 0.12 0.03</size></box></geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1.0</mu>
+                <mu2>1.0</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>200000</kp>
+                <kd>50.0</kd>
+              </ode>
+            </contact>
+          </surface>
+        </collision>
+        <visual name="v2"><geometry><box><size>0.03 0.12 0.03</size></box></geometry><material><diffuse>0.10 0.75 0.75 1</diffuse></material></visual>
+      </link>
+
+      <joint name="fixed_joint" type="fixed">
+        <parent>link</parent>
+        <child>link_b</child>
+      </joint>
+    </model>
+
+    
+
+  </world>
+</sdf>

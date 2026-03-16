@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-03-16T11:34:27",
+  "experiment": {
+    "id": "EXP3_RESNET18_RGB_AUGMENT",
+    "base": "EXP3_RESNET18_RGB_AUGMENT",
+    "model": "ResNet18Grasp",
+    "modality": "RGB",
+    "seed": "0",
+    "epoch": "10",
+    "weights": "best.pth",
+    "weights_path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/seed_0/checkpoints/best.pth",
+    "config_path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/seed_0/config_snapshot.yaml"
+  },
+  "grasp": {
+    "image": {
+      "cx": 154.09438133239746,
+      "cy": 124.66850280761719,
+      "w": 22.657663822174072,
+      "h": 16.130998134613037,
+      "angle_deg": -2.1316785737872124
+    },
+    "base": {
+      "x": 0.5973872102997781,
+      "y": 0.01719302057430888,
+      "z": 0.07499999999999996,
+      "yaw_deg": -83.35042211668554
+    },
+    "frame": "/camera_overhead/image",
+    "source": "infer_model"
+  },
+  "evaluation": {
+    "iou": 0.2305175450735805,
+    "delta_theta_deg": 2.1316785737872124,
+    "success": false,
+    "note": "Evaluaci\u00f3n geom\u00e9trica en simulaci\u00f3n. No validaci\u00f3n f\u00edsica."
+  },
+  "latency": {
+    "inference_ms": 17.80557632446289,
+    "perception_ms": 139.5566463470459,
+    "fps": 15.044051054244687,
+    "fps_avg": 14.44905326161372
+  },
+  "frames": {
+    "image_topic": "/camera_overhead/image",
+    "image_size": [
+      320,
+      240
+    ],
+    "image_timestamp": 1773657267.805855
+  },
+  "artifacts": {
+    "image_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/frame_20260316_113401.png",
+    "grasp_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/grasp_20260316_113401.json"
+  }
+}

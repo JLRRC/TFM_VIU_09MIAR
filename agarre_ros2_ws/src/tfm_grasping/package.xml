@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!-- Ruta/archivo: agarre_ros2_ws/src/tfm_grasping/package.xml -->
+<!-- Contenido: Codigo de percepcion y agarre del paquete tfm_grasping. -->
+<!-- Uso breve: Se importa desde el stack ROS 2 para calculo y publicacion de informacion de agarre. -->
+
+<package format="3">
+  <name>tfm_grasping</name>
+  <version>0.0.0</version>
+  <description>TFM grasping module (perception, grasp representation, ROS publishing).</description>
+  <maintainer email="jesus.lozano.rodriguez@gmail.com">laboratorio</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
