@@ -1,11 +1,13 @@
 # Tabla 4-5
 
-- Titulo: Configuracion experimental por experimento
+- Titulo: Configuración experimental por experimento
 - Capitulo: 04. Metodologia
 - Rango del capitulo en el PDF: 33-54
 - Pagina en el PDF: 45
 - Tipo: Tabla
-- Estado: referencia documental sin fichero independiente localizado fuera del PDF
+- Estado: artefacto materializado dentro de reports/capitulos
+- Ficheros asociados:
+  - Tabla_4-5_configuracion_experimental_por_experimento_pagina.png
 - Fuentes de trazabilidad:
   - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

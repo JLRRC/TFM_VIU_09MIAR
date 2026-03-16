@@ -10,7 +10,7 @@
 - Sin elementos catalogados para este apartado.
 ### Tablas
 
-- Tabla 6-1: Sintesis de cumplimiento de objetivos
+- Tabla 6-1: Síntesis de cumplimiento de objetivos
 ### Artefactos
 
 - Sin elementos catalogados para este apartado.

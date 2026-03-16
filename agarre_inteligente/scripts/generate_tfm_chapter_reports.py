@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import csv
+import subprocess
 import shutil
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -19,6 +20,7 @@ class Item:
     assets: tuple[str, ...] = ()
     references: tuple[str, ...] = ()
     notes: str | None = None
+    render_pdf_page: bool = False
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,45 @@ def copy_assets(root: Path, destination_dir: Path, item: Item) -> list[Path]:
         shutil.copy2(src, dst)
         copied.append(dst)
     return copied
+
+
+def render_pdf_page(root: Path, destination_dir: Path, item: Item, pdf_rel: str) -> list[Path]:
+    if not item.render_pdf_page or not item.page:
+        return []
+    pdf_path = root / pdf_rel
+    if not pdf_path.exists():
+        return []
+
+    stem = stem_for(item)
+    out_prefix = destination_dir / f"{stem}_pagina"
+    expected = destination_dir / f"{stem}_pagina-{item.page}.png"
+    final = destination_dir / f"{stem}_pagina.png"
+
+    try:
+        subprocess.run(
+            [
+                "pdftoppm",
+                "-png",
+                "-f",
+                item.page,
+                "-l",
+                item.page,
+                str(pdf_path),
+                str(out_prefix),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return []
+
+    if expected.exists():
+        expected.replace(final)
+        return [final]
+    if final.exists():
+        return [final]
+    return []
 
 
 def write_manifest(path: Path, chapter: Chapter, item: Item, copied_assets: Iterable[Path]) -> None:
@@ -299,12 +340,12 @@ def build_chapters() -> tuple[Chapter, ...]:
             title="Introduccion",
             page_range="11-13",
             illustrations=(
-                Item("illustration", "1-1", "Ejemplos de escenarios no estructurados para deteccion de poses de agarre", "11", references=(pdf_ref,)),
-                Item("illustration", "1-2", "Representacion 2D/2.5D del agarre como rectangulo orientado", "12", references=(pdf_ref,)),
+                Item("illustration", "1-1", "Ejemplos de escenarios no estructurados para detección de poses de agarre", "11", references=(pdf_ref,), render_pdf_page=True),
+                Item("illustration", "1-2", "Representación 2D/2.5D del agarre como rectángulo orientado", "12", references=(pdf_ref,), render_pdf_page=True),
                 Item(
                     "illustration",
                     "1-3",
-                    "Diagrama general del pipeline del trabajo e integracion",
+                    "Diagrama general del pipeline del trabajo e integración",
                     "13",
                     assets=("reports/figures/diagrama_pipeline.png",),
                     references=(pdf_ref, trace_ref),
@@ -317,11 +358,11 @@ def build_chapters() -> tuple[Chapter, ...]:
             title="Objetivos y alcance",
             page_range="14-17",
             illustrations=(
-                Item("illustration", "2-1", "Mapa de trazabilidad del pipeline (dataset -> modelo -> metricas -> ROS 2/Gazebo)", "15", references=(pdf_ref, trace_ref)),
+                Item("illustration", "2-1", "Mapa de trazabilidad del pipeline (dataset → modelo → métricas → ROS 2/Gazebo)", "15", references=(pdf_ref, trace_ref), render_pdf_page=True),
             ),
             tables=(
-                Item("table", "2-1", "Trazabilidad entre objetivos especificos y evidencias en el documento", "15", references=(pdf_ref, trace_ref)),
-                Item("table", "2-2", "Fuera de alcance vs extensiones futuras", "17", references=(pdf_ref,)),
+                Item("table", "2-1", "Trazabilidad entre objetivos específicos y evidencias en el documento", "15", references=(pdf_ref, trace_ref), render_pdf_page=True),
+                Item("table", "2-2", "Fuera de alcance vs. extensiones futuras", "17", references=(pdf_ref,), render_pdf_page=True),
             ),
         ),
         Chapter(
@@ -330,16 +371,16 @@ def build_chapters() -> tuple[Chapter, ...]:
             title="Estado del Arte y Marco teorico",
             page_range="18-32",
             illustrations=(
-                Item("illustration", "3-1", "Taxonomia del problema de agarre: 2D/2.5D vs 6-DoF", "19", references=(pdf_ref,)),
-                Item("illustration", "3-2", "Ejemplo conceptual de mapas densos (calidad, angulo, apertura) estilo GG-CNN", "20", references=(pdf_ref,)),
-                Item("illustration", "3-3", "Ejemplos de degradacion por oclusion/fondo: tipologia de fallos", "22", references=(pdf_ref,)),
-                Item("illustration", "3-4", "Mapa de posicionamiento: estado del arte -> decisiones del trabajo", "24", references=(pdf_ref,)),
-                Item("illustration", "3-5", "Parametros del rectangulo de agarre (Cx, Cy, w, h, theta) sobre una imagen", "28", references=(pdf_ref,)),
-                Item("illustration", "3-6", "Interpretacion geometrica de IoU y delta theta en rectangulos orientados", "32", references=(pdf_ref,)),
+                Item("illustration", "3-1", "Taxonomía del problema de agarre: 2D/2.5D vs 6-DoF", "19", references=(pdf_ref,), render_pdf_page=True),
+                Item("illustration", "3-2", "Ejemplo conceptual de mapas densos (calidad, ángulo, apertura) estilo GG-CNN", "20", references=(pdf_ref,), render_pdf_page=True),
+                Item("illustration", "3-3", "Ejemplos de degradación por oclusión/fondo: tipología de fallos", "22", references=(pdf_ref,), render_pdf_page=True),
+                Item("illustration", "3-4", "Mapa de posicionamiento: estado del arte → decisiones del trabajo", "24", references=(pdf_ref,), render_pdf_page=True),
+                Item("illustration", "3-5", "Parámetros del rectángulo de agarre (Cx, Cy, w, h, θ) sobre una imagen", "28", references=(pdf_ref,), render_pdf_page=True),
+                Item("illustration", "3-6", "Interpretación geométrica de IoU y Δθ en rectángulos orientados", "32", references=(pdf_ref,), render_pdf_page=True),
             ),
             tables=(
-                Item("table", "3-1", "Comparativa sintetica de enfoques 2D/2.5D: mapas densos vs regresion parametrica", "21", references=(pdf_ref,)),
-                Item("table", "3-2", "Datasets relevantes: Cornell/Jacquard vs GraspNet/ACRONYM", "25", references=(pdf_ref,)),
+                Item("table", "3-1", "Comparativa sintética de enfoques 2D/2.5D: mapas densos vs regresión paramétrica", "21", references=(pdf_ref,), render_pdf_page=True),
+                Item("table", "3-2", "Datasets relevantes: Cornell/Jacquard (2D/2.5D) vs GraspNet/ACRONYM (6-DoF)", "25", references=(pdf_ref,), render_pdf_page=True),
             ),
         ),
         Chapter(
@@ -349,23 +390,23 @@ def build_chapters() -> tuple[Chapter, ...]:
             page_range="33-54",
             illustrations=(
                 Item("illustration", "4-1", "Vision global del pipeline experimental", "33", assets=("reports/figures/diagrama_pipeline.png",), references=(pdf_ref, trace_ref)),
-                Item("illustration", "4-2", "Ejemplo de anotaciones Cornell sobre una imagen", "36", references=(pdf_ref,)),
-                Item("illustration", "4-3", "Flujo del pipeline: auditoria -> indices limpios -> dataset Subset estricto", "38", references=(pdf_ref, trace_ref)),
-                Item("illustration", "4-4", "Ejemplo de evaluacion tipo Cornell con fallo por incumplimiento de umbrales de IoU y/o delta theta", "47", references=(pdf_ref,)),
-                Item("illustration", "4-5", "Galeria cualitativa: 4 aciertos + 4 fallos con explicacion del tipo de fallo", "48", references=(pdf_ref,)),
-                Item("illustration", "4-6", "Arquitectura ROS 2 del entorno simulado (nodos y topicos)", "50", references=(pdf_ref, validation_ref)),
-                Item("illustration", "4-7", "Entorno de emulacion ROS 2/Gazebo: ejemplo de consistencia visual y consumo de la hipotesis de agarre", "52", assets=("reports/tfm_ros_gazebo_results/evidence/images/ros_gazebo_imagen_camara.png",), references=(pdf_ref, validation_ref), notes="Se usa la captura de escena simulada como soporte visual mas fiel a la descripcion editorial de entorno y adquisicion."),
+                Item("illustration", "4-2", "Ejemplo de anotaciones Cornell sobre una imagen", "36", references=(pdf_ref,), render_pdf_page=True),
+                Item("illustration", "4-3", "Flujo del pipeline: auditoría → índices limpios → dataset Subset estricto", "38", references=(pdf_ref, trace_ref), render_pdf_page=True),
+                Item("illustration", "4-4", "Ejemplo de evaluación tipo Cornell con fallo por incumplimiento de umbrales de IoU y/o Δθ", "47", references=(pdf_ref,), render_pdf_page=True),
+                Item("illustration", "4-5", "Galería cualitativa: 4 aciertos + 4 fallos con explicación del tipo de fallo", "48", references=(pdf_ref,), render_pdf_page=True),
+                Item("illustration", "4-6", "Arquitectura ROS 2 del entorno simulado (nodos y tópicos)", "50", references=(pdf_ref, validation_ref), render_pdf_page=True),
+                Item("illustration", "4-7", "Entorno de emulación ROS 2/Gazebo: ejemplo de consistencia visual (overlay) y consumo de la hipótesis de agarre en la escena table-top", "52", assets=("reports/tfm_ros_gazebo_results/evidence/images/ros_gazebo_imagen_camara.png",), references=(pdf_ref, validation_ref), notes="Se usa la captura de escena simulada como soporte visual más fiel a la descripción editorial de entorno y adquisición."),
             ),
             tables=(
-                Item("table", "4-1", "Fases del trabajo, entradas, salidas y evidencias de verificacion", "35", references=(pdf_ref, trace_ref)),
-                Item("table", "4-2", "Estadisticas del split utilizado en el conjunto experimental final", "37", references=(pdf_ref,)),
-                Item("table", "4-3", "Transformaciones de data augmentation y como se actualizan las etiquetas", "39", references=(pdf_ref,)),
-                Item("table", "4-4", "Comparativa estructural de los modelos (A vs B)", "44", references=(pdf_ref,)),
-                Item("table", "4-5", "Configuracion experimental por experimento", "45", references=(pdf_ref, trace_ref)),
-                Item("table", "4-6", "Hiperparametros de entrenamiento por experimento", "46", references=(pdf_ref, trace_ref)),
-                Item("table", "4-7", "Definicion de metricas de evaluacion (Cornell): IoU, delta theta y grasp success", "47", references=(pdf_ref, trace_ref)),
-                Item("table", "4-8", "Protocolo de medicion de latencia", "49", references=(pdf_ref, trace_ref)),
-                Item("table", "4-9", "Especificaciones de hardware utilizadas", "53", references=(pdf_ref, validation_ref)),
+                Item("table", "4-1", "Fases del trabajo, entradas, salidas y evidencias de verificación", "35", references=(pdf_ref, trace_ref), render_pdf_page=True),
+                Item("table", "4-2", "Estadísticas del split utilizado en el conjunto experimental final", "37", references=(pdf_ref,), render_pdf_page=True),
+                Item("table", "4-3", "Transformaciones de data augmentation y cómo se actualizan las etiquetas Cx, Cy, w, h, θ", "40", references=(pdf_ref,), render_pdf_page=True),
+                Item("table", "4-4", "Comparativa estructural de los modelos (A vs B)", "44", references=(pdf_ref,), render_pdf_page=True),
+                Item("table", "4-5", "Configuración experimental por experimento", "45", references=(pdf_ref, trace_ref), render_pdf_page=True),
+                Item("table", "4-6", "Hiperparámetros de entrenamiento por experimento (según YAML asociado)", "46", references=(pdf_ref, trace_ref), render_pdf_page=True),
+                Item("table", "4-7", "Definición de métricas de evaluación (Cornell): IoU, Δθ y grasp success", "47", references=(pdf_ref, trace_ref), render_pdf_page=True),
+                Item("table", "4-8", "Protocolo de medición de latencia", "49", references=(pdf_ref, trace_ref), render_pdf_page=True),
+                Item("table", "4-9", "Especificaciones de hardware utilizadas", "53", references=(pdf_ref, validation_ref), render_pdf_page=True),
             ),
             artifacts=(
                 Item("artifact", "4-A1", "Diagrama de arquitectura del modelo ResNet18Grasp", "41", assets=("reports/figures/diagrama_arquitectura_resnet18.png",), references=(trace_ref,)),
@@ -415,7 +456,7 @@ def build_chapters() -> tuple[Chapter, ...]:
             title="Conclusiones y trabajos futuros",
             page_range="78-83",
             tables=(
-                Item("table", "6-1", "Sintesis de cumplimiento de objetivos", "79", references=(pdf_ref, validation_ref, trace_ref)),
+                Item("table", "6-1", "Síntesis de cumplimiento de objetivos", "79", references=(pdf_ref, validation_ref, trace_ref), render_pdf_page=True),
             ),
         ),
         Chapter(
@@ -431,9 +472,9 @@ def build_chapters() -> tuple[Chapter, ...]:
             page_range="86-88",
             tables=(
                 Item("table", "8-1", "Resultados por semilla y experimento en la mejor epoca de validacion", "86", assets=("reports/tables/results_by_seed.csv",), references=(pdf_ref, trace_ref)),
-                Item("table", "8-2", "Resultados de validacion del experimento de referencia para la integracion ROS 2 (EXP4_RESNET18_RGBD)", "87", references=(pdf_ref, validation_ref), notes="Se materializa a partir de summary_results.csv filtrando el experimento de referencia citado en el PDF actual."),
-                Item("table", "8-3", "Resumen de experimentos base en validacion", "87", assets=("reports/tables/summary_results.csv",), references=(pdf_ref, trace_ref)),
-                Item("table", "8-4", "Comparativa por modalidad entre SimpleGraspCNN y ResNet18Grasp", "88", assets=("reports/tables/table_ab_comparison_by_modality.csv",), references=(pdf_ref, trace_ref)),
+                Item("table", "8-2", "Resultados de validación del experimento de referencia para la integración ROS 2 (EXP4_RESNET18_RGBD), reportados por semilla en best_epoch", "86", references=(pdf_ref, validation_ref), notes="Se materializa a partir de summary_results.csv filtrando el experimento de referencia citado en el PDF actual."),
+                Item("table", "8-3", "Resumen de experimentos base en validación (media ± desviación estándar cuando procede, n = 3 semillas por experimento)", "87", assets=("reports/tables/summary_results.csv",), references=(pdf_ref, trace_ref)),
+                Item("table", "8-4", "Comparativa por modalidad entre SimpleGraspCNN y ResNet18Grasp (mejor época de validación)", "87", assets=("reports/tables/table_ab_comparison_by_modality.csv",), references=(pdf_ref, trace_ref)),
             ),
             artifacts=(
                 Item("artifact", "8-A1", "Documento PDF del TFM utilizado como referencia editorial", assets=(pdf_ref,), references=(trace_ref, release_ref)),
@@ -446,6 +487,7 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     reports_dir = repo_root / "reports"
     chapters_dir = reports_dir / "capitulos"
+    pdf_rel = "agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf"
 
     if chapters_dir.exists():
         shutil.rmtree(chapters_dir)
@@ -462,6 +504,8 @@ def main() -> None:
             for item in items:
                 folder = item_dir(chapter_path, item.kind)
                 copied_assets = copy_assets(repo_root, folder, item)
+                if not copied_assets:
+                    copied_assets = render_pdf_page(repo_root, folder, item, pdf_rel)
                 manifest_path = folder / f"{stem_for(item)}.md"
                 write_manifest(manifest_path, chapter, item, copied_assets)
 

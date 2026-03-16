@@ -9,9 +9,9 @@ La tabla maestra de correspondencia adicional queda en `reports/CORRESPONDENCIA_
 
 ### Ilustraciones
 
-- Ilustracion 1-1: Ejemplos de escenarios no estructurados para deteccion de poses de agarre (p. 11)
-- Ilustracion 1-2: Representacion 2D/2.5D del agarre como rectangulo orientado (p. 12)
-- Ilustracion 1-3: Diagrama general del pipeline del trabajo e integracion (p. 13)
+- Ilustracion 1-1: Ejemplos de escenarios no estructurados para detección de poses de agarre (p. 11)
+- Ilustracion 1-2: Representación 2D/2.5D del agarre como rectángulo orientado (p. 12)
+- Ilustracion 1-3: Diagrama general del pipeline del trabajo e integración (p. 13)
 
 ### Tablas
 
@@ -27,12 +27,12 @@ La tabla maestra de correspondencia adicional queda en `reports/CORRESPONDENCIA_
 
 ### Ilustraciones
 
-- Ilustracion 2-1: Mapa de trazabilidad del pipeline (dataset -> modelo -> metricas -> ROS 2/Gazebo) (p. 15)
+- Ilustracion 2-1: Mapa de trazabilidad del pipeline (dataset → modelo → métricas → ROS 2/Gazebo) (p. 15)
 
 ### Tablas
 
-- Tabla 2-1: Trazabilidad entre objetivos especificos y evidencias en el documento (p. 15)
-- Tabla 2-2: Fuera de alcance vs extensiones futuras (p. 17)
+- Tabla 2-1: Trazabilidad entre objetivos específicos y evidencias en el documento (p. 15)
+- Tabla 2-2: Fuera de alcance vs. extensiones futuras (p. 17)
 
 ### Artefactos
 
@@ -44,17 +44,17 @@ La tabla maestra de correspondencia adicional queda en `reports/CORRESPONDENCIA_
 
 ### Ilustraciones
 
-- Ilustracion 3-1: Taxonomia del problema de agarre: 2D/2.5D vs 6-DoF (p. 19)
-- Ilustracion 3-2: Ejemplo conceptual de mapas densos (calidad, angulo, apertura) estilo GG-CNN (p. 20)
-- Ilustracion 3-3: Ejemplos de degradacion por oclusion/fondo: tipologia de fallos (p. 22)
-- Ilustracion 3-4: Mapa de posicionamiento: estado del arte -> decisiones del trabajo (p. 24)
-- Ilustracion 3-5: Parametros del rectangulo de agarre (Cx, Cy, w, h, theta) sobre una imagen (p. 28)
-- Ilustracion 3-6: Interpretacion geometrica de IoU y delta theta en rectangulos orientados (p. 32)
+- Ilustracion 3-1: Taxonomía del problema de agarre: 2D/2.5D vs 6-DoF (p. 19)
+- Ilustracion 3-2: Ejemplo conceptual de mapas densos (calidad, ángulo, apertura) estilo GG-CNN (p. 20)
+- Ilustracion 3-3: Ejemplos de degradación por oclusión/fondo: tipología de fallos (p. 22)
+- Ilustracion 3-4: Mapa de posicionamiento: estado del arte → decisiones del trabajo (p. 24)
+- Ilustracion 3-5: Parámetros del rectángulo de agarre (Cx, Cy, w, h, θ) sobre una imagen (p. 28)
+- Ilustracion 3-6: Interpretación geométrica de IoU y Δθ en rectángulos orientados (p. 32)
 
 ### Tablas
 
-- Tabla 3-1: Comparativa sintetica de enfoques 2D/2.5D: mapas densos vs regresion parametrica (p. 21)
-- Tabla 3-2: Datasets relevantes: Cornell/Jacquard vs GraspNet/ACRONYM (p. 25)
+- Tabla 3-1: Comparativa sintética de enfoques 2D/2.5D: mapas densos vs regresión paramétrica (p. 21)
+- Tabla 3-2: Datasets relevantes: Cornell/Jacquard (2D/2.5D) vs GraspNet/ACRONYM (6-DoF) (p. 25)
 
 ### Artefactos
 
@@ -68,22 +68,22 @@ La tabla maestra de correspondencia adicional queda en `reports/CORRESPONDENCIA_
 
 - Ilustracion 4-1: Vision global del pipeline experimental (p. 33)
 - Ilustracion 4-2: Ejemplo de anotaciones Cornell sobre una imagen (p. 36)
-- Ilustracion 4-3: Flujo del pipeline: auditoria -> indices limpios -> dataset Subset estricto (p. 38)
-- Ilustracion 4-4: Ejemplo de evaluacion tipo Cornell con fallo por incumplimiento de umbrales de IoU y/o delta theta (p. 47)
-- Ilustracion 4-5: Galeria cualitativa: 4 aciertos + 4 fallos con explicacion del tipo de fallo (p. 48)
-- Ilustracion 4-6: Arquitectura ROS 2 del entorno simulado (nodos y topicos) (p. 50)
-- Ilustracion 4-7: Entorno de emulacion ROS 2/Gazebo: ejemplo de consistencia visual y consumo de la hipotesis de agarre (p. 52)
+- Ilustracion 4-3: Flujo del pipeline: auditoría → índices limpios → dataset Subset estricto (p. 38)
+- Ilustracion 4-4: Ejemplo de evaluación tipo Cornell con fallo por incumplimiento de umbrales de IoU y/o Δθ (p. 47)
+- Ilustracion 4-5: Galería cualitativa: 4 aciertos + 4 fallos con explicación del tipo de fallo (p. 48)
+- Ilustracion 4-6: Arquitectura ROS 2 del entorno simulado (nodos y tópicos) (p. 50)
+- Ilustracion 4-7: Entorno de emulación ROS 2/Gazebo: ejemplo de consistencia visual (overlay) y consumo de la hipótesis de agarre en la escena table-top (p. 52)
 
 ### Tablas
 
-- Tabla 4-1: Fases del trabajo, entradas, salidas y evidencias de verificacion (p. 35)
-- Tabla 4-2: Estadisticas del split utilizado en el conjunto experimental final (p. 37)
-- Tabla 4-3: Transformaciones de data augmentation y como se actualizan las etiquetas (p. 39)
+- Tabla 4-1: Fases del trabajo, entradas, salidas y evidencias de verificación (p. 35)
+- Tabla 4-2: Estadísticas del split utilizado en el conjunto experimental final (p. 37)
+- Tabla 4-3: Transformaciones de data augmentation y cómo se actualizan las etiquetas Cx, Cy, w, h, θ (p. 40)
 - Tabla 4-4: Comparativa estructural de los modelos (A vs B) (p. 44)
-- Tabla 4-5: Configuracion experimental por experimento (p. 45)
-- Tabla 4-6: Hiperparametros de entrenamiento por experimento (p. 46)
-- Tabla 4-7: Definicion de metricas de evaluacion (Cornell): IoU, delta theta y grasp success (p. 47)
-- Tabla 4-8: Protocolo de medicion de latencia (p. 49)
+- Tabla 4-5: Configuración experimental por experimento (p. 45)
+- Tabla 4-6: Hiperparámetros de entrenamiento por experimento (según YAML asociado) (p. 46)
+- Tabla 4-7: Definición de métricas de evaluación (Cornell): IoU, Δθ y grasp success (p. 47)
+- Tabla 4-8: Protocolo de medición de latencia (p. 49)
 - Tabla 4-9: Especificaciones de hardware utilizadas (p. 53)
 
 ### Artefactos
@@ -139,7 +139,7 @@ La tabla maestra de correspondencia adicional queda en `reports/CORRESPONDENCIA_
 
 ### Tablas
 
-- Tabla 6-1: Sintesis de cumplimiento de objetivos (p. 79)
+- Tabla 6-1: Síntesis de cumplimiento de objetivos (p. 79)
 
 ### Artefactos
 
@@ -172,9 +172,9 @@ La tabla maestra de correspondencia adicional queda en `reports/CORRESPONDENCIA_
 ### Tablas
 
 - Tabla 8-1: Resultados por semilla y experimento en la mejor epoca de validacion (p. 86)
-- Tabla 8-2: Resultados de validacion del experimento de referencia para la integracion ROS 2 (EXP4_RESNET18_RGBD) (p. 87)
-- Tabla 8-3: Resumen de experimentos base en validacion (p. 87)
-- Tabla 8-4: Comparativa por modalidad entre SimpleGraspCNN y ResNet18Grasp (p. 88)
+- Tabla 8-2: Resultados de validación del experimento de referencia para la integración ROS 2 (EXP4_RESNET18_RGBD), reportados por semilla en best_epoch (p. 86)
+- Tabla 8-3: Resumen de experimentos base en validación (media ± desviación estándar cuando procede, n = 3 semillas por experimento) (p. 87)
+- Tabla 8-4: Comparativa por modalidad entre SimpleGraspCNN y ResNet18Grasp (mejor época de validación) (p. 87)
 
 ### Artefactos
 

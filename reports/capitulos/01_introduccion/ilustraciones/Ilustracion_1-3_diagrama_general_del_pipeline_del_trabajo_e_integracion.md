@@ -1,6 +1,6 @@
 # Ilustracion 1-3
 
-- Titulo: Diagrama general del pipeline del trabajo e integracion
+- Titulo: Diagrama general del pipeline del trabajo e integración
 - Capitulo: 01. Introduccion
 - Rango del capitulo en el PDF: 11-13
 - Pagina en el PDF: 13

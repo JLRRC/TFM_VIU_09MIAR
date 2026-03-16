@@ -7,11 +7,11 @@
 
 ### Ilustraciones
 
-- Ilustracion 2-1: Mapa de trazabilidad del pipeline (dataset -> modelo -> metricas -> ROS 2/Gazebo)
+- Ilustracion 2-1: Mapa de trazabilidad del pipeline (dataset → modelo → métricas → ROS 2/Gazebo)
 ### Tablas
 
-- Tabla 2-1: Trazabilidad entre objetivos especificos y evidencias en el documento
-- Tabla 2-2: Fuera de alcance vs extensiones futuras
+- Tabla 2-1: Trazabilidad entre objetivos específicos y evidencias en el documento
+- Tabla 2-2: Fuera de alcance vs. extensiones futuras
 ### Artefactos
 
 - Sin elementos catalogados para este apartado.
