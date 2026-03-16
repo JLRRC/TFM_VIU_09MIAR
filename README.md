@@ -8,6 +8,51 @@ Este workspace contiene la version consolidada del TFM de agarre inteligente. La
 - `lanzar_panelv2.sh`: script raiz para arrancar el panel V2.
 - `actualizar_reports.sh`: script raiz para actualizar el contenido consolidado de `reports/`.
 
+## 0. Clonado y puesta en marcha rapida
+
+Prerequisitos minimos:
+
+- Linux con ROS 2 Jazzy disponible en `/opt/ros/jazzy`
+- Python 3 con soporte para `venv`
+- `git`
+
+Clonado:
+
+```bash
+git clone https://github.com/JLRRC/TFM_VIU_09MIAR.git
+cd TFM_VIU_09MIAR
+```
+
+Preparacion del entorno de vision:
+
+```bash
+cd agarre_inteligente
+./bootstrap.sh
+cd ..
+```
+
+Build del workspace ROS 2:
+
+```bash
+cd agarre_ros2_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install
+cd ..
+```
+
+Arranque recomendado:
+
+```bash
+./lanzar_panelv2.sh
+```
+
+Arranque sin display grafico visible:
+
+```bash
+export PANEL_FORCE_OFFSCREEN=1
+./lanzar_panelv2.sh
+```
+
 ## 1. Estructura del workspace
 
 ### `agarre_inteligente/`
