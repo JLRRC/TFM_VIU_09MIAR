@@ -1,0 +1,2 @@
+experiment,n_seeds,val_success_mean,val_success_std,val_iou_mean,val_iou_std,val_angle_deg_mean,val_angle_deg_std,val_loss_mean,val_loss_std
+EXP4_RESNET18_RGBD,3,0.6541321436158912,0.013672906657917235,0.38203668238818683,0.0043934717227390825,11.661295244351615,1.2073352659108074,0.0286020985230182,0.0011233430817595956

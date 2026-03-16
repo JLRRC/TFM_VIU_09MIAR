@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-03-16T13:03:41",
+  "status": "OK",
+  "source": "infer_model",
+  "grasp": {
+    "cx": 73.06046962738037,
+    "cy": 90.54139852523804,
+    "w": 20.779807567596436,
+    "h": 9.109375476837158,
+    "angle_deg": -20.10276630520821
+  },
+  "grasp_base": {
+    "x": 0.7169636393590392,
+    "y": 0.2626935518765937,
+    "z": 0.07499999999999996,
+    "yaw_deg": -59.84399858823108
+  },
+  "frame": "/camera_overhead/image",
+  "cornell": {
+    "iou": 0.0,
+    "dtheta": 20.10276630520821,
+    "success": false
+  },
+  "cornell_reason": "Ref box_lightblue: pred 20.8x9.1px vs ref 18.4x21.5px",
+  "perf": {
+    "infer_ms": 47.33133316040039,
+    "total_ms": 98.4342098236084
+  },
+  "frame_info": {
+    "w": 320,
+    "h": 240,
+    "ts": 1773662620.984881
+  },
+  "artifacts": {
+    "image_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/frame_20260316_130341.png",
+    "grasp_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/grasp_20260316_130341.json"
+  }
+}

@@ -1,78 +1,181 @@
 # Inventario de artefactos del TFM
 
-Este documento inventaria el contenido que debe existir en la carpeta `reports/` del workspace consolidado de TFM. Los nombres se mantienen como aparecen en los artefactos finales del TFM.
+Inventario alineado con la numeracion del documento `TFM_Jesus_Lozano_V10.pdf`.
+La tabla maestra de correspondencia adicional queda en `reports/CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.md` y `reports/CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.csv`.
 
-## Estructura canónica de reports
+## Capitulo 01. Introduccion
 
-- `bench/`
-- `cornell_audit/`
-- `docs/workspace/`
-- `figures/`
-- `panel_audit/`
-- `panel_logs/`
-- `tables/`
-- `tfm_figuras_cap5_1/`
-- `tfm_ros_gazebo_results/`
-- `tfm_visual_revision/`
-- `validation/`
+- Paginas: 11-13
 
-## Tablas finales
+### Ilustraciones
 
-- `TABLES_SUMMARY.md`
-- `latency_results.csv`
-- `latency_results_combined.csv`
-- `latency_results_gpu.csv`
-- `results_by_seed.csv`
-- `summary_results.csv`
-- `table_ab_comparison_by_modality.csv`
-- `table_latency.csv`
-- `table_metrics_final.csv`
-- `table_validation_aggregated.csv`
+- Ilustracion 1-1: Ejemplos de escenarios no estructurados para deteccion de poses de agarre (p. 11)
+- Ilustracion 1-2: Representacion 2D/2.5D del agarre como rectangulo orientado (p. 12)
+- Ilustracion 1-3: Diagrama general del pipeline del trabajo e integracion (p. 13)
 
-## Figuras e ilustraciones generales
+### Tablas
 
-- `bar_val_angle_final.png`
-- `bar_val_iou_final.png`
-- `bar_val_success_final.png`
-- `cap5_aciertos_cualitativos_v1.pdf`
-- `cap5_aciertos_cualitativos_v1.png`
-- `cap5_caso_ilustrativo_v1.pdf`
-- `cap5_caso_ilustrativo_v1.png`
-- `cap5_fallos_cualitativos_E1_E4_v1.pdf`
-- `cap5_fallos_cualitativos_E1_E4_v1.png`
-- `diagrama_arquitectura_resnet18.png`
-- `diagrama_arquitectura_simplecnn.png`
-- `diagrama_pipeline.png`
-- `loss_train_by_epoch.png`
-- `loss_val_by_epoch.png`
-- `val_angle_deg_by_epoch.png`
-- `val_iou_by_epoch.png`
-- `val_success_by_epoch.png`
-- `visualizaciones_cualitativas_EXP1_SIMPLE_RGB.png`
-- `visualizaciones_cualitativas_EXP3_RESNET18_RGB_AUGMENT.png`
+- Sin elementos catalogados.
 
-## Ilustraciones del TFM capitulo 5
+### Artefactos
 
-- `Ilustracion 5.2`: `ilustracion_5_2_curvas_loss_exp1_simple_rgb.png` (curvas loss exp1 simple rgb)
-- `Ilustracion 5.3`: `ilustracion_5_3_curvas_loss_exp2_simple_rgbd.png` (curvas loss exp2 simple rgbd)
-- `Ilustracion 5.4`: `ilustracion_5_4_curvas_loss_exp3_resnet18_rgb_augment.png` (curvas loss exp3 resnet18 rgb augment)
-- `Ilustracion 5.5`: `ilustracion_5_5_curvas_loss_exp4_resnet18_rgbd.png` (curvas loss exp4 resnet18 rgbd)
-- `Ilustracion 5.6`: `ilustracion_5_6_val_success_por_seed_y_experimento.png` (val success por seed y experimento)
-- `Ilustracion 5.7`: `ilustracion_5_7_val_loss_por_seed_y_experimento.png` (val loss por seed y experimento)
+- Sin elementos catalogados.
 
-## Evidencia ROS 2 / Gazebo / panel
+## Capitulo 02. Objetivos y alcance
 
-- `panel_audit/artifacts/`
-- `panel_audit/figures/`
-- `panel_audit/logs/`
-- `panel_logs/`
-- `tfm_ros_gazebo_results/`
-- `tfm_visual_revision/`
+- Paginas: 14-17
 
-## Validacion y trazabilidad
+### Ilustraciones
 
-- `VALIDATION_REPORT_2026_03_11.txt`
-- `docs/workspace/AUDITORIA_MOVEIT_GAZEBO_QT.md`
-- `docs/workspace/VALIDACION_WORKSPACE_2026_03_16.md`
-- `docs/workspace/ENTREGA_WORKSPACE_2026_03_16.md`
+- Ilustracion 2-1: Mapa de trazabilidad del pipeline (dataset -> modelo -> metricas -> ROS 2/Gazebo) (p. 15)
 
+### Tablas
+
+- Tabla 2-1: Trazabilidad entre objetivos especificos y evidencias en el documento (p. 15)
+- Tabla 2-2: Fuera de alcance vs extensiones futuras (p. 17)
+
+### Artefactos
+
+- Sin elementos catalogados.
+
+## Capitulo 03. Estado del Arte y Marco teorico
+
+- Paginas: 18-32
+
+### Ilustraciones
+
+- Ilustracion 3-1: Taxonomia del problema de agarre: 2D/2.5D vs 6-DoF (p. 19)
+- Ilustracion 3-2: Ejemplo conceptual de mapas densos (calidad, angulo, apertura) estilo GG-CNN (p. 20)
+- Ilustracion 3-3: Ejemplos de degradacion por oclusion/fondo: tipologia de fallos (p. 22)
+- Ilustracion 3-4: Mapa de posicionamiento: estado del arte -> decisiones del trabajo (p. 24)
+- Ilustracion 3-5: Parametros del rectangulo de agarre (Cx, Cy, w, h, theta) sobre una imagen (p. 28)
+- Ilustracion 3-6: Interpretacion geometrica de IoU y delta theta en rectangulos orientados (p. 32)
+
+### Tablas
+
+- Tabla 3-1: Comparativa sintetica de enfoques 2D/2.5D: mapas densos vs regresion parametrica (p. 21)
+- Tabla 3-2: Datasets relevantes: Cornell/Jacquard vs GraspNet/ACRONYM (p. 25)
+
+### Artefactos
+
+- Sin elementos catalogados.
+
+## Capitulo 04. Metodologia
+
+- Paginas: 33-54
+
+### Ilustraciones
+
+- Ilustracion 4-1: Vision global del pipeline experimental (p. 33)
+- Ilustracion 4-2: Ejemplo de anotaciones Cornell sobre una imagen (p. 36)
+- Ilustracion 4-3: Flujo del pipeline: auditoria -> indices limpios -> dataset Subset estricto (p. 38)
+- Ilustracion 4-4: Ejemplo de evaluacion tipo Cornell con fallo por incumplimiento de umbrales de IoU y/o delta theta (p. 47)
+- Ilustracion 4-5: Galeria cualitativa: 4 aciertos + 4 fallos con explicacion del tipo de fallo (p. 48)
+- Ilustracion 4-6: Arquitectura ROS 2 del entorno simulado (nodos y topicos) (p. 50)
+- Ilustracion 4-7: Entorno de emulacion ROS 2/Gazebo: ejemplo de consistencia visual y consumo de la hipotesis de agarre (p. 52)
+
+### Tablas
+
+- Tabla 4-1: Fases del trabajo, entradas, salidas y evidencias de verificacion (p. 35)
+- Tabla 4-2: Estadisticas del split utilizado en el conjunto experimental final (p. 37)
+- Tabla 4-3: Transformaciones de data augmentation y como se actualizan las etiquetas (p. 39)
+- Tabla 4-4: Comparativa estructural de los modelos (A vs B) (p. 44)
+- Tabla 4-5: Configuracion experimental por experimento (p. 45)
+- Tabla 4-6: Hiperparametros de entrenamiento por experimento (p. 46)
+- Tabla 4-7: Definicion de metricas de evaluacion (Cornell): IoU, delta theta y grasp success (p. 47)
+- Tabla 4-8: Protocolo de medicion de latencia (p. 49)
+- Tabla 4-9: Especificaciones de hardware utilizadas (p. 53)
+
+### Artefactos
+
+- Artefacto 4-A1: Diagrama de arquitectura del modelo ResNet18Grasp (p. 41)
+- Artefacto 4-A2: Diagrama de arquitectura del modelo SimpleGraspCNN (p. 42)
+
+## Capitulo 05. Resultados y discusion
+
+- Paginas: 56-77
+
+### Ilustraciones
+
+- Ilustracion 5-1: Curvas de perdida (train_loss y val_loss) para EXP1 (p. 57)
+- Ilustracion 5-2: Curvas de perdida (train_loss y val_loss) para EXP2 (p. 57)
+- Ilustracion 5-3: Curvas de perdida (train_loss y val_loss) para EXP3 (p. 57)
+- Ilustracion 5-4: Curvas de perdida (train_loss y val_loss) para EXP4 (p. 57)
+- Ilustracion 5-5: Comparativa de val_success por seed y experimento en best_epoch (p. 58)
+- Ilustracion 5-6: Comparativa de val_loss por seed y experimento en best_epoch (p. 59)
+- Ilustracion 5-7: Evolucion del exito de agarre en validacion por epoca (p. 59)
+- Ilustracion 5-8: Evolucion del IoU medio en validacion por epoca (p. 60)
+- Ilustracion 5-9: Evolucion del error angular medio en validacion por epoca (p. 60)
+- Ilustracion 5-10: Exito final de agarre en validacion agregado por experimento (p. 62)
+- Ilustracion 5-11: IoU medio final en validacion agregado por experimento (p. 62)
+- Ilustracion 5-12: Error angular medio final en validacion agregado por experimento (p. 62)
+- Ilustracion 5-13: Aciertos representativos en validacion para EXP3_RESNET18_RGB_AUGMENT (p. 64)
+- Ilustracion 5-14: Fallos cualitativos representativos en validacion organizados por tipologia (p. 66)
+- Ilustracion 5-15: Caso ilustrativo de objeto pequeno en la escena (p. 68)
+- Ilustracion 5-16: Evidencia funcional del pipeline percepcion-publicacion-consumo en ROS 2 (p. 71)
+- Ilustracion 5-17: Resultado de inferencia del modelo EXP3_RESNET18_RGB_AUGMENT sobre la imagen simulada (p. 72)
+- Ilustracion 5-18: Evidencia funcional adicional del pipeline percepcion-publicacion-consumo en ROS 2 (p. 73)
+
+### Tablas
+
+- Tabla 5-1: Resultados agregados en validacion (best_epoch por ejecucion) bajo split object-wise (p. 61)
+- Tabla 5-2: Resumen de metricas finales por experimento en validacion (p. 62)
+- Tabla 5-3: Medicion de latencia de inferencia por experimento y dispositivo (p. 69)
+- Tabla 5-4: Comparativa por modalidad entre SimpleGraspCNN y ResNet18Grasp (p. 77)
+
+### Artefactos
+
+- Artefacto 5-A1: Resumen tecnico para la redaccion de la subseccion ROS 2 + Gazebo
+- Artefacto 5-A2: Artefacto principal de inferencia y grasp publicado
+- Artefacto 5-A3: Resumen tabular completo del bloque experimental
+
+## Capitulo 06. Conclusiones y trabajos futuros
+
+- Paginas: 78-83
+
+### Ilustraciones
+
+- Sin elementos catalogados.
+
+### Tablas
+
+- Tabla 6-1: Sintesis de cumplimiento de objetivos (p. 79)
+
+### Artefactos
+
+- Sin elementos catalogados.
+
+## Capitulo 07. Referencias bibliograficas
+
+- Paginas: 84-85
+
+### Ilustraciones
+
+- Sin elementos catalogados.
+
+### Tablas
+
+- Sin elementos catalogados.
+
+### Artefactos
+
+- Sin elementos catalogados.
+
+## Capitulo 08. Anexos
+
+- Paginas: 86-88
+
+### Ilustraciones
+
+- Sin elementos catalogados.
+
+### Tablas
+
+- Tabla 8-1: Resultados por semilla y experimento en la mejor epoca de validacion (p. 86)
+- Tabla 8-2: Resultados de validacion del experimento de referencia para la integracion ROS 2 (EXP4_RESNET18_RGBD) (p. 87)
+- Tabla 8-3: Resumen de experimentos base en validacion (p. 87)
+- Tabla 8-4: Comparativa por modalidad entre SimpleGraspCNN y ResNet18Grasp (p. 88)
+
+### Artefactos
+
+- Artefacto 8-A1: Documento PDF del TFM utilizado como referencia editorial

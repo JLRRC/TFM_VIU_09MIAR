@@ -41,6 +41,7 @@ ensure_structure() {
   mkdir -p \
     "$REPORTS_DIR/archive" \
     "$REPORTS_DIR/bench" \
+    "$REPORTS_DIR/capitulos" \
     "$REPORTS_DIR/cornell_audit" \
     "$REPORTS_DIR/docs/workspace" \
     "$REPORTS_DIR/figures" \
@@ -98,96 +99,8 @@ update_workspace_docs() {
 }
 
 generate_inventory_md() {
-  log "Regenerando inventario maestro de artefactos..."
-  python3 - "$REPORTS_DIR" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-reports = Path(sys.argv[1])
-out = reports / "INVENTARIO_ARTEFACTOS_TFM.md"
-
-def list_files(folder: str, patterns=None):
-    base = reports / folder
-    if not base.exists():
-        return []
-    files = [p for p in sorted(base.iterdir()) if p.is_file()]
-    if patterns:
-        files = [p for p in files if any(p.name.endswith(ext) for ext in patterns)]
-    return files
-
-tables = list_files("tables")
-figures = list_files("figures", [".png", ".pdf"])
-illustrations = list_files("tfm_figuras_cap5_1", [".png"])
-validation = list_files("validation")
-
-lines = []
-lines.append("# Inventario de artefactos del TFM")
-lines.append("")
-lines.append("Este documento inventaria el contenido que debe existir en la carpeta `reports/` del workspace consolidado de TFM. Los nombres se mantienen como aparecen en los artefactos finales del TFM.")
-lines.append("")
-lines.append("## Estructura canónica de reports")
-lines.append("")
-for folder in [
-    "bench",
-    "cornell_audit",
-    "docs/workspace",
-    "figures",
-    "panel_audit",
-    "panel_logs",
-    "tables",
-    "tfm_figuras_cap5_1",
-    "tfm_ros_gazebo_results",
-    "tfm_visual_revision",
-    "validation",
-]:
-    lines.append(f"- `{folder}/`")
-lines.append("")
-lines.append("## Tablas finales")
-lines.append("")
-for path in tables:
-    if path.name == ".gitkeep":
-        continue
-    lines.append(f"- `{path.name}`")
-lines.append("")
-lines.append("## Figuras e ilustraciones generales")
-lines.append("")
-for path in figures:
-    if path.name == ".gitkeep":
-        continue
-    lines.append(f"- `{path.name}`")
-lines.append("")
-lines.append("## Ilustraciones del TFM capitulo 5")
-lines.append("")
-for path in illustrations:
-    label = path.stem
-    match = re.match(r"ilustracion_(\d+)_(\d+)_(.*)", label)
-    if match:
-        cap, num, rest = match.groups()
-        pretty = rest.replace("_", " ")
-        lines.append(f"- `Ilustracion {cap}.{num}`: `{path.name}` ({pretty})")
-    else:
-        lines.append(f"- `{path.name}`")
-lines.append("")
-lines.append("## Evidencia ROS 2 / Gazebo / panel")
-lines.append("")
-lines.append("- `panel_audit/artifacts/`")
-lines.append("- `panel_audit/figures/`")
-lines.append("- `panel_audit/logs/`")
-lines.append("- `panel_logs/`")
-lines.append("- `tfm_ros_gazebo_results/`")
-lines.append("- `tfm_visual_revision/`")
-lines.append("")
-lines.append("## Validacion y trazabilidad")
-lines.append("")
-for path in validation:
-    lines.append(f"- `{path.name}`")
-lines.append("- `docs/workspace/AUDITORIA_MOVEIT_GAZEBO_QT.md`")
-lines.append("- `docs/workspace/VALIDACION_WORKSPACE_2026_03_16.md`")
-lines.append("- `docs/workspace/ENTREGA_WORKSPACE_2026_03_16.md`")
-lines.append("")
-out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-PY
+  log "Regenerando inventario maestro de artefactos y vista por capitulos..."
+  python3 "$AI_DIR/scripts/generate_tfm_chapter_reports.py"
 }
 
 cleanup_nested_reports() {
