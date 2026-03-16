@@ -230,6 +230,7 @@ def inventory_text(chapters: Iterable[Chapter]) -> str:
         "",
         "Inventario alineado con la numeracion del documento `TFM_Jesus_Lozano_V10.pdf`.",
         "La tabla maestra de correspondencia adicional queda en `reports/CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.md` y `reports/CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.csv`.",
+        "El PDF maestro del TFM se conserva en `reports/TFM_Jesus_Lozano_V10.pdf`.",
         "",
     ]
     for chapter in chapters:
@@ -328,7 +329,7 @@ def write_master_mapping(reports_dir: Path, chapters: Iterable[Chapter]) -> None
 
 
 def build_chapters() -> tuple[Chapter, ...]:
-    pdf_ref = "agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf"
+    pdf_ref = "reports/TFM_Jesus_Lozano_V10.pdf"
     trace_ref = "agarre_inteligente/docs/TRAZABILIDAD_TFM.md"
     validation_ref = "reports/docs/workspace/VALIDACION_WORKSPACE_2026_03_16.md"
     release_ref = "reports/docs/workspace/RELEASE_v1.0.0.md"
@@ -487,7 +488,7 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     reports_dir = repo_root / "reports"
     chapters_dir = reports_dir / "capitulos"
-    pdf_rel = "agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf"
+    pdf_rel = "reports/TFM_Jesus_Lozano_V10.pdf"
 
     if chapters_dir.exists():
         shutil.rmtree(chapters_dir)

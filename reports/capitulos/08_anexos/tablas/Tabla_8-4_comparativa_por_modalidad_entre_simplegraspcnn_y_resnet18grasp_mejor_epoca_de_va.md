@@ -10,5 +10,5 @@
   - Tabla_8-4_comparativa_por_modalidad_entre_simplegraspcnn_y_resnet18grasp_mejor_epoca_de_va.csv
 - Fuentes de trazabilidad:
   - reports/tables/table_ab_comparison_by_modality.csv
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

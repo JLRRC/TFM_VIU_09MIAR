@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Tabla_4-4_comparativa_estructural_de_los_modelos_a_vs_b_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

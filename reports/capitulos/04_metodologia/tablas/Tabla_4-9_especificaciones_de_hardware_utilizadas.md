@@ -9,5 +9,5 @@
 - Ficheros asociados:
   - Tabla_4-9_especificaciones_de_hardware_utilizadas_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - reports/docs/workspace/VALIDACION_WORKSPACE_2026_03_16.md

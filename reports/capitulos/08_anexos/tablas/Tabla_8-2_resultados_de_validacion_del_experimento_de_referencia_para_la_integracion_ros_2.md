@@ -8,5 +8,5 @@
 - Estado: referencia documental sin fichero independiente localizado fuera del PDF
 - Nota: Se materializa a partir de summary_results.csv filtrando el experimento de referencia citado en el PDF actual.
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - reports/docs/workspace/VALIDACION_WORKSPACE_2026_03_16.md

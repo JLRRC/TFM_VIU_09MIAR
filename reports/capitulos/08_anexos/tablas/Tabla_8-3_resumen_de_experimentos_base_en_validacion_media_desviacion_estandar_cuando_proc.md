@@ -10,5 +10,5 @@
   - Tabla_8-3_resumen_de_experimentos_base_en_validacion_media_desviacion_estandar_cuando_proc.csv
 - Fuentes de trazabilidad:
   - reports/tables/summary_results.csv
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

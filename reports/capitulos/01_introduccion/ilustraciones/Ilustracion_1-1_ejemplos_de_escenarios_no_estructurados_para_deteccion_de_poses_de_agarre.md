@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Ilustracion_1-1_ejemplos_de_escenarios_no_estructurados_para_deteccion_de_poses_de_agarre_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

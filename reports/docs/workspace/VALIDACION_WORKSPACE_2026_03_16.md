@@ -149,7 +149,7 @@ Por tanto:
 
 Se contrasto:
 
-- `agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf`
+- `reports/TFM_Jesus_Lozano_V10.pdf`
 - `agarre_inteligente/docs/TRAZABILIDAD_TFM.md`
 - `agarre_inteligente/docs/EXPERIMENTS.md`
 - inventario de integracion ROS 2 + Gazebo en `reports/tfm_ros_gazebo_results/`

@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Ilustracion_3-2_ejemplo_conceptual_de_mapas_densos_calidad_angulo_apertura_estilo_gg_cnn_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

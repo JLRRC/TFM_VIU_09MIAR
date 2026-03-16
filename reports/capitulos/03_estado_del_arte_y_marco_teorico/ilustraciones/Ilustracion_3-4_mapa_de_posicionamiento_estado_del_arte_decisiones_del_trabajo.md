@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Ilustracion_3-4_mapa_de_posicionamiento_estado_del_arte_decisiones_del_trabajo_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

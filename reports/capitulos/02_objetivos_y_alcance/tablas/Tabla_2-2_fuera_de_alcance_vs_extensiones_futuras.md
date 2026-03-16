@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Tabla_2-2_fuera_de_alcance_vs_extensiones_futuras_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

@@ -11,5 +11,5 @@
   - Ilustracion_5-5_comparativa_de_val_success_por_seed_y_experimento_en_best_epoch.png
 - Fuentes de trazabilidad:
   - reports/tfm_figuras_cap5_1/ilustracion_5_6_val_success_por_seed_y_experimento.png
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

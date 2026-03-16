@@ -5,12 +5,9 @@
 - Rango del capitulo en el PDF: 56-77
 - Pagina en el PDF: 69
 - Tipo: Tabla
-- Estado: artefacto materializado dentro de reports/capitulos
-- Ficheros asociados:
-  - Tabla_5-3_medicion_de_latencia_de_inferencia_por_experimento_y_dispositivo.csv
-  - Tabla_5-3_medicion_de_latencia_de_inferencia_por_experimento_y_dispositivo.csv
+- Estado: referencia documental sin fichero independiente localizado fuera del PDF
 - Fuentes de trazabilidad:
   - reports/tables/table_latency.csv
   - reports/bench/latency_results.csv
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Ilustracion_3-5_parametros_del_rectangulo_de_agarre_cx_cy_w_h_sobre_una_imagen_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

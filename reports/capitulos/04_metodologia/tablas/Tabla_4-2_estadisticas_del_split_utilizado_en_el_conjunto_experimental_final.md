@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Tabla_4-2_estadisticas_del_split_utilizado_en_el_conjunto_experimental_final_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

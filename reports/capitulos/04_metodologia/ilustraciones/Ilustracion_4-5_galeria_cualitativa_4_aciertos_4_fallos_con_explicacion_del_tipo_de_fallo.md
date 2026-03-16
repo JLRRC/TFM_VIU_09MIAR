@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Ilustracion_4-5_galeria_cualitativa_4_aciertos_4_fallos_con_explicacion_del_tipo_de_fallo_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

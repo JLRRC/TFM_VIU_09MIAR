@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Ilustracion_4-4_ejemplo_de_evaluacion_tipo_cornell_con_fallo_por_incumplimiento_de_umbrales_de_i_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

@@ -10,5 +10,5 @@
   - Ilustracion_5-7_evolucion_del_exito_de_agarre_en_validacion_por_epoca.png
 - Fuentes de trazabilidad:
   - reports/figures/val_success_by_epoch.png
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

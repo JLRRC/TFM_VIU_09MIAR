@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Tabla_3-1_comparativa_sintetica_de_enfoques_2d_2_5d_mapas_densos_vs_regresion_parametrica_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

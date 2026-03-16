@@ -5,10 +5,8 @@
 - Rango del capitulo en el PDF: 11-13
 - Pagina en el PDF: 13
 - Tipo: Ilustracion
-- Estado: artefacto materializado dentro de reports/capitulos
-- Ficheros asociados:
-  - Ilustracion_1-3_diagrama_general_del_pipeline_del_trabajo_e_integracion.png
+- Estado: referencia documental sin fichero independiente localizado fuera del PDF
 - Fuentes de trazabilidad:
   - reports/figures/diagrama_pipeline.png
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

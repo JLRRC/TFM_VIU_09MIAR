@@ -9,5 +9,5 @@
 - Ficheros asociados:
   - Ilustracion_4-3_flujo_del_pipeline_auditoria_indices_limpios_dataset_subset_estricto_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

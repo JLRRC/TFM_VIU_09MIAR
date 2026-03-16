@@ -9,5 +9,5 @@
 - Ficheros asociados:
   - Tabla_4-1_fases_del_trabajo_entradas_salidas_y_evidencias_de_verificacion_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

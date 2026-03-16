@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Ilustracion_3-1_taxonomia_del_problema_de_agarre_2d_2_5d_vs_6_dof_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

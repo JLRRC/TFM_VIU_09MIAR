@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Ilustracion_3-6_interpretacion_geometrica_de_iou_y_en_rectangulos_orientados_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

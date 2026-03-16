@@ -9,5 +9,5 @@
 - Ficheros asociados:
   - Tabla_4-5_configuracion_experimental_por_experimento_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Ilustracion_1-2_representacion_2d_2_5d_del_agarre_como_rectangulo_orientado_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

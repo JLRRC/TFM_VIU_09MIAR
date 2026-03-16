@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Tabla_3-2_datasets_relevantes_cornell_jacquard_2d_2_5d_vs_graspnet_acronym_6_dof_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf

@@ -9,5 +9,5 @@
 - Ficheros asociados:
   - Ilustracion_2-1_mapa_de_trazabilidad_del_pipeline_dataset_modelo_metricas_ros_2_gazebo_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

@@ -10,5 +10,5 @@
   - Tabla_5-1_resultados_agregados_en_validacion_best_epoch_por_ejecucion_bajo_split_object_wi.csv
 - Fuentes de trazabilidad:
   - reports/tables/table_validation_aggregated.csv
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

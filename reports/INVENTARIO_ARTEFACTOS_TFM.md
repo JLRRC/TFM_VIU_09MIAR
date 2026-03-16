@@ -2,6 +2,7 @@
 
 Inventario alineado con la numeracion del documento `TFM_Jesus_Lozano_V10.pdf`.
 La tabla maestra de correspondencia adicional queda en `reports/CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.md` y `reports/CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.csv`.
+El PDF maestro del TFM se conserva en `reports/TFM_Jesus_Lozano_V10.pdf`.
 
 ## Capitulo 01. Introduccion
 

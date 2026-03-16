@@ -10,5 +10,5 @@
   - Tabla_5-2_resumen_de_metricas_finales_por_experimento_en_validacion.csv
 - Fuentes de trazabilidad:
   - reports/tables/table_metrics_final.csv
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

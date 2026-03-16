@@ -9,5 +9,5 @@
 - Ficheros asociados:
   - Ilustracion_4-6_arquitectura_ros_2_del_entorno_simulado_nodos_y_topicos_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - reports/docs/workspace/VALIDACION_WORKSPACE_2026_03_16.md

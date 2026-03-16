@@ -10,5 +10,5 @@
   - Tabla_8-1_resultados_por_semilla_y_experimento_en_la_mejor_epoca_de_validacion.csv
 - Fuentes de trazabilidad:
   - reports/tables/results_by_seed.csv
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

@@ -9,5 +9,5 @@
 - Ficheros asociados:
   - Tabla_4-6_hiperparametros_de_entrenamiento_por_experimento_segun_yaml_asociado_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

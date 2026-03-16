@@ -5,9 +5,7 @@
 - Rango del capitulo en el PDF: 33-54
 - Pagina en el PDF: 42
 - Tipo: Artefacto
-- Estado: artefacto materializado dentro de reports/capitulos
-- Ficheros asociados:
-  - Artefacto_4-A2_diagrama_de_arquitectura_del_modelo_simplegraspcnn.png
+- Estado: referencia documental sin fichero independiente localizado fuera del PDF
 - Fuentes de trazabilidad:
   - reports/figures/diagrama_arquitectura_simplecnn.png
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md

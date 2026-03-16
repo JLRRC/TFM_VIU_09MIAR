@@ -8,6 +8,6 @@
 - Ficheros asociados:
   - Artefacto_8-A1_documento_pdf_del_tfm_utilizado_como_referencia_editorial.pdf
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
   - agarre_inteligente/docs/TRAZABILIDAD_TFM.md
   - reports/docs/workspace/RELEASE_v1.0.0.md

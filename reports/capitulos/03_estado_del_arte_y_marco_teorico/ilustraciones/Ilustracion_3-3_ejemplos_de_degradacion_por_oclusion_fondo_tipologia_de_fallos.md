@@ -9,4 +9,4 @@
 - Ficheros asociados:
   - Ilustracion_3-3_ejemplos_de_degradacion_por_oclusion_fondo_tipologia_de_fallos_pagina.png
 - Fuentes de trazabilidad:
-  - agarre_inteligente/docs/TFM_Jesus_Lozano_V10.pdf
+  - reports/TFM_Jesus_Lozano_V10.pdf
