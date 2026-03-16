@@ -1,2 +1,0 @@
-# Índices val: N=1569
-# Generado automáticamente por prepare_cornell_csv.py

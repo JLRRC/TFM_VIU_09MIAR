@@ -39,19 +39,8 @@ copy_if_exists() {
 
 ensure_structure() {
   mkdir -p \
-    "$REPORTS_DIR/archive" \
-    "$REPORTS_DIR/bench" \
     "$REPORTS_DIR/capitulos" \
-    "$REPORTS_DIR/cornell_audit" \
-    "$REPORTS_DIR/docs/workspace" \
-    "$REPORTS_DIR/figures" \
-    "$REPORTS_DIR/panel_audit" \
-    "$REPORTS_DIR/panel_logs" \
-    "$REPORTS_DIR/tables" \
-    "$REPORTS_DIR/tfm_figuras_cap5_1" \
-    "$REPORTS_DIR/tfm_ros_gazebo_results" \
-    "$REPORTS_DIR/tfm_visual_revision" \
-    "$REPORTS_DIR/validation"
+    "$REPORTS_DIR/docs/workspace"
 }
 
 regenerate_ai_reports() {
@@ -108,12 +97,29 @@ cleanup_nested_reports() {
   rm -rf "$AI_DIR/reports" "$ROS2_DIR/reports"
 }
 
+cleanup_legacy_views() {
+  log "Eliminando vistas tecnicas antiguas dentro de reports y conservando solo la estructura nueva..."
+  rm -rf \
+    "$REPORTS_DIR/archive" \
+    "$REPORTS_DIR/bench" \
+    "$REPORTS_DIR/cornell_audit" \
+    "$REPORTS_DIR/figures" \
+    "$REPORTS_DIR/panel_audit" \
+    "$REPORTS_DIR/panel_logs" \
+    "$REPORTS_DIR/tables" \
+    "$REPORTS_DIR/tfm_figuras_cap5_1" \
+    "$REPORTS_DIR/tfm_ros_gazebo_results" \
+    "$REPORTS_DIR/tfm_visual_revision" \
+    "$REPORTS_DIR/validation"
+}
+
 main() {
   ensure_structure
   regenerate_ai_reports
   sync_legacy_reports
   update_workspace_docs
   generate_inventory_md
+  cleanup_legacy_views
   cleanup_nested_reports
   log "Reports consolidados y actualizados en $REPORTS_DIR"
 }

@@ -1,38 +1,38 @@
 {
-  "timestamp": "2026-03-16T14:16:15",
+  "timestamp": "2026-03-16T14:21:14",
   "status": "OK",
   "source": "infer_model",
   "grasp": {
-    "cx": 155.26843070983887,
-    "cy": 129.4624900817871,
-    "w": 22.11495876312256,
-    "h": 16.69952630996704,
-    "angle_deg": -0.36513062193989754
+    "cx": 130.11358261108398,
+    "cy": 138.26464176177979,
+    "w": 29.8580265045166,
+    "h": 16.83323621749878,
+    "angle_deg": -10.704248249530792
   },
   "grasp_base": {
-    "x": 0.5841163232774895,
-    "y": 0.014242081352962946,
+    "x": 0.5548278412888612,
+    "y": 0.08432116148093821,
     "z": 0.07499999999999996,
-    "yaw_deg": -90.0
+    "yaw_deg": -77.01829344688163
   },
   "frame": "/camera_overhead/image",
   "cornell": {
-    "iou": 0.17325328051995095,
-    "dtheta": 0.36513062193989754,
+    "iou": 0.0,
+    "dtheta": 10.704248249530792,
     "success": false
   },
-  "cornell_reason": "Ref box_lightblue: pred 22.1x16.7px vs ref 18.5x21.6px",
+  "cornell_reason": "Ref box_green: pred 29.9x16.8px vs ref 11.9x14.4px",
   "perf": {
-    "infer_ms": 217.35477447509766,
-    "total_ms": 256.9150924682617
+    "infer_ms": 10.982751846313477,
+    "total_ms": 81.31098747253418
   },
   "frame_info": {
     "w": 320,
     "h": 240,
-    "ts": 1773666974.7859435
+    "ts": 1773667274.2214656
   },
   "artifacts": {
-    "image_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/frame_20260316_141614.png",
-    "grasp_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/grasp_20260316_141614.json"
+    "image_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/frame_20260316_142114.png",
+    "grasp_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/grasp_20260316_142114.json"
   }
 }
