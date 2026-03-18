@@ -67,9 +67,9 @@ JOINT_BASKET_DEMO_RELEASE_POSE_RAD = [
 ]
 JOINT_HOME_POSE_RAD = [
     math.radians(0.0),
+    math.radians(-90.0),
     math.radians(0.0),
-    math.radians(0.0),
-    math.radians(0.0),
+    math.radians(-90.0),
     math.radians(0.0),
     math.radians(0.0),
 ]

@@ -58,6 +58,8 @@ class JointTrajectorySmokeTest(Node):
         self.declare_parameter("move_sec", 2.0)
         self.declare_parameter("timeout_sec", 5.0)
         self.declare_parameter("min_change_rad", 0.02)
+        if not self.has_parameter("use_sim_time"):
+            self.declare_parameter("use_sim_time", True)
 
         self._traj_topic = read_str_param(
             self,
@@ -157,7 +159,8 @@ class JointTrajectorySmokeTest(Node):
         if self._initial is None:
             return
         traj = JointTrajectory()
-        traj.header.stamp = self.get_clock().now().to_msg()
+        traj.header.stamp.sec = 0
+        traj.header.stamp.nanosec = 0
         traj.joint_names = list(self._joints)
         point = JointTrajectoryPoint()
         point.positions = self._build_target(self._initial)

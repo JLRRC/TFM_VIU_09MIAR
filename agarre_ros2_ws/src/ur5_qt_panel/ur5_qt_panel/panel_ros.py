@@ -266,6 +266,16 @@ class RosWorker(QObject):
         except Exception:
             return []
 
+    def list_action_names(self) -> List[str]:
+        with self._lock:
+            node = self._node
+        if node is None:
+            return []
+        try:
+            return [name for name, _ in node.get_action_names_and_types()]
+        except Exception:
+            return []
+
     def topic_has_publishers(self, topic: str) -> bool:
         topic = (topic or "").strip()
         if not topic:

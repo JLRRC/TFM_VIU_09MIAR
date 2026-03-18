@@ -704,13 +704,16 @@ def start_moveit_bridge(panel):
         min_plan_interval = _env_float_opt("PANEL_MOVEIT_BRIDGE_MIN_PLAN_INTERVAL_SEC")
         stale_ttl = _env_float_opt("PANEL_MOVEIT_BRIDGE_STALE_REQUEST_TTL_SEC")
         heartbeat_rate = _env_float_opt("PANEL_MOVEIT_BRIDGE_HEARTBEAT_RATE_HZ")
+        joint_state_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC")
+        joint_state_max_age = _env_float_opt("PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC")
+        force_fjt_direct = _env_flag("PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT", False)
         require_rid = _env_flag("PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID", True)
         drop_pending = _env_flag("PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED", True)
         dry_run_plan_only = _env_flag("PANEL_MOVEIT_BRIDGE_DRY_RUN", False)
         if exec_timeout is None:
-            exec_timeout = 30.0
+            exec_timeout = 150.0
         if req_timeout is None:
-            req_timeout = 35.0
+            req_timeout = 180.0
         if exec_timeout is not None:
             ros_args.extend(["-p", f"execute_timeout_sec:={max(1.0, exec_timeout):.3f}"])
         if req_timeout is not None:
@@ -723,6 +726,16 @@ def start_moveit_bridge(panel):
             ros_args.extend(["-p", f"stale_request_ttl_sec:={max(1.0, stale_ttl):.3f}"])
         if heartbeat_rate is not None:
             ros_args.extend(["-p", f"heartbeat_rate_hz:={max(0.2, heartbeat_rate):.3f}"])
+        if joint_state_timeout is None:
+            joint_state_timeout = 6.0
+        if joint_state_max_age is None:
+            joint_state_max_age = 2.5
+        ros_args.extend(
+            ["-p", f"joint_state_valid_timeout_sec:={max(0.2, joint_state_timeout):.3f}"]
+        )
+        ros_args.extend(
+            ["-p", f"joint_state_valid_max_age_sec:={max(0.1, joint_state_max_age):.3f}"]
+        )
         ros_args.extend(["-p", f"require_request_id:={'true' if require_rid else 'false'}"])
         ros_args.extend(
             [
@@ -738,17 +751,24 @@ def start_moveit_bridge(panel):
                 + ("true" if dry_run_plan_only else "false"),
             ]
         )
+        ros_args.extend(
+            [
+                "-p",
+                "force_fjt_direct_for_walltime_sim:="
+                + ("true" if force_fjt_direct else "false"),
+            ]
+        )
         path_constraint_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD")
         if path_constraint_tol is None:
             path_constraint_tol = 1.5
         ros_args.extend(["-p", f"path_constraint_joint_tolerance_rad:={max(0.0, path_constraint_tol):.3f}"])
-        # Speed scaling for TEST ROBOT (default 0.80 for fast touch probe)
+        # Conservative default scaling improves simulated tracking stability.
         vel_scale = _env_float_opt("PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE")
         if vel_scale is None:
-            vel_scale = 0.80
+            vel_scale = 0.35
         accel_scale = _env_float_opt("PANEL_MOVEIT_BRIDGE_ACCEL_SCALE")
         if accel_scale is None:
-            accel_scale = 0.80
+            accel_scale = 0.35
         ros_args.extend(["-p", f"max_velocity_scaling_factor:={max(0.05, min(1.0, vel_scale)):.2f}"])
         ros_args.extend(["-p", f"max_acceleration_scaling_factor:={max(0.05, min(1.0, accel_scale)):.2f}"])
         panel._emit_log(
@@ -763,9 +783,12 @@ def start_moveit_bridge(panel):
             f"min_plan_interval_sec={min_plan_interval if min_plan_interval is not None else 'default'} "
             f"stale_request_ttl_sec={stale_ttl if stale_ttl is not None else 'default'} "
             f"heartbeat_rate_hz={heartbeat_rate if heartbeat_rate is not None else 'default'} "
+            f"joint_state_valid_timeout_sec={joint_state_timeout if joint_state_timeout is not None else 'default'} "
+            f"joint_state_valid_max_age_sec={joint_state_max_age if joint_state_max_age is not None else 'default'} "
             f"require_request_id={'true' if require_rid else 'false'} "
             f"drop_pending_on_tagged_request={'true' if drop_pending else 'false'} "
             f"dry_run_plan_only={'true' if dry_run_plan_only else 'false'} "
+            f"force_fjt_direct_for_walltime_sim={'true' if force_fjt_direct else 'false'} "
             f"velocity_scaling={vel_scale:.2f} accel_scaling={accel_scale:.2f}"
         )
         cmd_core = with_line_buffer(

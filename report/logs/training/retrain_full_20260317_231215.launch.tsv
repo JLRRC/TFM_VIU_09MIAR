@@ -1,0 +1,6 @@
+key	value
+timestamp	20260317_231215
+backup_dir	/home/laboratorio/TFM/BORRAR/agarre_inteligente_extra/experiments_pre_retrain_20260317_231215
+log_file	/home/laboratorio/TFM/report/logs/training/retrain_full_20260317_231215.log
+pid_file	/home/laboratorio/TFM/report/logs/training/retrain_full_20260317_231215.pid
+pid	1519167

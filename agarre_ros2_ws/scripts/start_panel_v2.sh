@@ -33,6 +33,30 @@ setup_traps() {
   trap on_tstp TSTP
 }
 
+runtime_sanity_check() {
+  local strict_sanity="${PANEL_STRICT_RUNTIME_SANITY:-1}"
+  if [[ "$strict_sanity" != "1" ]]; then
+    return 0
+  fi
+  local foreign_ros
+  local foreign_gz
+  foreign_ros="$(ps -ef | grep -E 'ros2 launch .*simple_arm|simple_arm_bringup|agarre_ros2_ws_moveit2' | grep -v grep || true)"
+  foreign_gz="$(ps -ef | grep -E 'gz sim' | grep -E 'simple_world\.sdf|agarre_ros2_ws_moveit2' | grep -v grep || true)"
+  if [[ -n "$foreign_ros" || -n "$foreign_gz" ]]; then
+    err "Preflight runtime fallido: se detectaron procesos de otro workspace/robot activos."
+    if [[ -n "$foreign_ros" ]]; then
+      err "Procesos ROS externos detectados:"
+      echo "$foreign_ros" >&2
+    fi
+    if [[ -n "$foreign_gz" ]]; then
+      err "Procesos Gazebo externos detectados:"
+      echo "$foreign_gz" >&2
+    fi
+    err "Detén esos procesos o exporta PANEL_STRICT_RUNTIME_SANITY=0 bajo tu responsabilidad."
+    exit 3
+  fi
+}
+
 # Detectar WS_DIR (raíz del repo)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -50,6 +74,9 @@ export WS_DIR
 : "${PANEL_PROMPT_PID:=0}"         # 1 = preguntar si se quiere pidfile (solo TTY)
 : "${PANEL_VENV_AUTO:=1}"          # 1 = activa venv automaticamente si existe
 : "${PANEL_VENV_DIR:=}"
+: "${PANEL_STRICT_PHYSICS_MODE:=0}" # 1 = desactiva attach asistido y usa self-collision mas estricta
+: "${PANEL_STRICT_RUNTIME_SANITY:=1}" # 1 = bloquea arranque si detecta otro stack ROS activo
+: "${PANEL_MOVEIT_MODE:=auto}"        # auto|move_group|bridge
 : "${RMW_IMPLEMENTATION:=rmw_fastrtps_cpp}"
 export RMW_IMPLEMENTATION
 export PANEL_CONTROLLER_MANAGER
@@ -248,8 +275,37 @@ fi
 export PANEL_SETTINGS_YAML="${PANEL_SETTINGS_YAML:-$WS_DIR/src/ur5_qt_panel/config/panel_settings.yaml}"
 export PANEL_CRITICAL_POSE_TIMEOUT_SEC="${PANEL_CRITICAL_POSE_TIMEOUT_SEC:-60.0}"
 export PANEL_CRITICAL_CLOCK_TIMEOUT_SEC="${PANEL_CRITICAL_CLOCK_TIMEOUT_SEC:-5.0}"
-export PANEL_PICK_OBJECT_EXTRA_DOWN_Z="${PANEL_PICK_OBJECT_EXTRA_DOWN_Z:-0.060}"
-export PANEL_PICK_OBJECT_CONTACT_DOWN_Z_M="${PANEL_PICK_OBJECT_CONTACT_DOWN_Z_M:-0.060}"
+export PANEL_PICK_OBJECT_EXTRA_DOWN_Z="${PANEL_PICK_OBJECT_EXTRA_DOWN_Z:-0.020}"
+export PANEL_PICK_OBJECT_CONTACT_DOWN_Z_M="${PANEL_PICK_OBJECT_CONTACT_DOWN_Z_M:-0.020}"
+export PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M="${PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M:-0.18}"
+export PANEL_PICK_OBJECT_POST_LIFT_MIN_CONSECUTIVE="${PANEL_PICK_OBJECT_POST_LIFT_MIN_CONSECUTIVE:-2}"
+export PANEL_PICK_OBJECT_CARRY_JOINT_TIME_SEC="${PANEL_PICK_OBJECT_CARRY_JOINT_TIME_SEC:-12.0}"
+export PANEL_PICK_OBJECT_MOVEIT_EXCLUSIVE="${PANEL_PICK_OBJECT_MOVEIT_EXCLUSIVE:-1}"
+export PANEL_PICK_OBJECT_PREFLIGHT_MODE="${PANEL_PICK_OBJECT_PREFLIGHT_MODE:-home}"
+export PANEL_PICK_OBJECT_APPROACH_JOINT_FALLBACK="${PANEL_PICK_OBJECT_APPROACH_JOINT_FALLBACK:-1}"
+export PANEL_PICK_OBJECT_APPROACH_SKIP_RETRY_ON_FALLBACK="${PANEL_PICK_OBJECT_APPROACH_SKIP_RETRY_ON_FALLBACK:-1}"
+export PANEL_PICK_OBJECT_PRE_GRASP_TOL_M="${PANEL_PICK_OBJECT_PRE_GRASP_TOL_M:-0.10}"
+export PANEL_PICK_OBJECT_TRANSPORT_JOINT_FALLBACK="${PANEL_PICK_OBJECT_TRANSPORT_JOINT_FALLBACK:-0}"
+export PANEL_PICK_OBJECT_TRANSPORT_JOINT_ONLY="${PANEL_PICK_OBJECT_TRANSPORT_JOINT_ONLY:-0}"
+export PANEL_PICK_OBJECT_RETURN_TO_MESA="${PANEL_PICK_OBJECT_RETURN_TO_MESA:-0}"
+export PANEL_PICK_OBJECT_HOME_BEFORE_CESTA="${PANEL_PICK_OBJECT_HOME_BEFORE_CESTA:-0}"
+export PANEL_PICK_OBJECT_FORCE_HOME_START="${PANEL_PICK_OBJECT_FORCE_HOME_START:-1}"
+export PANEL_PICK_OBJECT_HOME_TOL_RAD="${PANEL_PICK_OBJECT_HOME_TOL_RAD:-0.08}"
+export PANEL_PICK_OBJECT_ORIENTATION_XYZW="${PANEL_PICK_OBJECT_ORIENTATION_XYZW:-0.70710678,0.0,0.70710678,0.0}"
+export PANEL_PICK_OBJECT_APPROACH_CARTESIAN="${PANEL_PICK_OBJECT_APPROACH_CARTESIAN:-1}"
+export PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC="${PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC:-150.0}"
+export PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC="${PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC:-180.0}"
+export PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC="${PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC:-6.0}"
+export PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC="${PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC:-2.5}"
+export PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT="${PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT:-0}"
+export PANEL_PICK_OBJECT_MOVEIT_WAIT_SEC="${PANEL_PICK_OBJECT_MOVEIT_WAIT_SEC:-200.0}"
+export PANEL_PICK_OBJECT_MOVEIT_WAIT_RECOVERED_SEC="${PANEL_PICK_OBJECT_MOVEIT_WAIT_RECOVERED_SEC:-220.0}"
+export PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE="${PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE:-0.15}"
+export PANEL_MOVEIT_BRIDGE_ACCEL_SCALE="${PANEL_MOVEIT_BRIDGE_ACCEL_SCALE:-0.15}"
+export ATTACH_BACKEND_MAX_POSE_AGE_SEC="${ATTACH_BACKEND_MAX_POSE_AGE_SEC:-2.5}"
+export ATTACH_BACKEND_FOLLOW_RATE_HZ="${ATTACH_BACKEND_FOLLOW_RATE_HZ:-30.0}"
+export ATTACH_BACKEND_FOLLOW_BREAK_DIST_M="${ATTACH_BACKEND_FOLLOW_BREAK_DIST_M:-0.30}"
+export ATTACH_BACKEND_MODE="${ATTACH_BACKEND_MODE:-follow_tcp}"
 PYQT_PLUGINS_DIR=""
 if [[ -n "${PANEL_VENV_DIR:-}" ]]; then
   for pyqt_candidate in \
@@ -343,7 +399,8 @@ fi
 
 if [[ -z "${GZ_RENDER_ENGINE:-}" ]]; then
   if [[ "$HEADLESS" == "true" ]]; then
-    export GZ_RENDER_ENGINE="ogre2"
+    # En headless priorizamos estabilidad del simulador para evitar caidas durante pick.
+    export GZ_RENDER_ENGINE="ogre"
   else
     export GZ_RENDER_ENGINE="ogre"
   fi
@@ -380,6 +437,26 @@ LAUNCH_MOVEIT="false"
 if [[ "${PANEL_LAUNCH_MOVEIT}" == "1" ]]; then
   LAUNCH_MOVEIT="true"
 fi
+
+MOVEIT_MODE="$(echo "${PANEL_MOVEIT_MODE}" | tr '[:upper:]' '[:lower:]' | xargs)"
+case "$MOVEIT_MODE" in
+  auto|move_group|bridge)
+    ;;
+  *)
+    log "PANEL_MOVEIT_MODE desconocido (${PANEL_MOVEIT_MODE}); usando auto"
+    MOVEIT_MODE="auto"
+    ;;
+esac
+if [[ "$MOVEIT_MODE" == "move_group" ]]; then
+  LAUNCH_MOVEIT="true"
+  export PANEL_AUTO_BRIDGE="0"
+elif [[ "$MOVEIT_MODE" == "bridge" ]]; then
+  LAUNCH_MOVEIT="false"
+fi
+export PANEL_MOVEIT_MODE="$MOVEIT_MODE"
+
+runtime_sanity_check
+
 if [[ "$LAUNCH_GZ" == "true" || "$LAUNCH_RSP" == "true" || "$LAUNCH_BRIDGE" == "true" || "$LAUNCH_ROS2_CONTROL" == "true" || "$LAUNCH_WORLD_TF" == "true" || "$LAUNCH_SYSTEM_STATE" == "true" ]]; then
   PANEL_MANAGED="1"
 fi
@@ -411,6 +488,8 @@ if [[ "${DEBUG_LOGS_TO_STDOUT}" == "1" ]]; then
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
+    moveit_mode:="$MOVEIT_MODE" \
+    strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
     camera_required:="$PANEL_CAMERA_REQUIRED" \
     panel_auto_bridge:="${PANEL_AUTO_BRIDGE:-0}" \
@@ -454,6 +533,8 @@ if [[ "${PANEL_WRITE_PID}" == "1" ]]; then
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
+    moveit_mode:="$MOVEIT_MODE" \
+    strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
     panel_auto_bridge:="${PANEL_AUTO_BRIDGE:-0}" \
     panel_auto_bridge_delay_ms:="${PANEL_AUTO_BRIDGE_DELAY_MS:-1200}" \
@@ -479,6 +560,8 @@ if [[ "${PANEL_AUTO_EXIT_ON_PANEL}" == "1" ]]; then
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
+    moveit_mode:="$MOVEIT_MODE" \
+    strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
     panel_auto_bridge:="${PANEL_AUTO_BRIDGE:-0}" \
     panel_auto_bridge_delay_ms:="${PANEL_AUTO_BRIDGE_DELAY_MS:-1200}" \
@@ -517,6 +600,8 @@ if [[ "$PANEL_LOG_FILTER" == "1" ]]; then
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
+    moveit_mode:="$MOVEIT_MODE" \
+    strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
     camera_required:="$PANEL_CAMERA_REQUIRED" \
     panel_auto_bridge:="${PANEL_AUTO_BRIDGE:-0}" \
@@ -538,6 +623,8 @@ else
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
+    moveit_mode:="$MOVEIT_MODE" \
+    strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
     camera_required:="$PANEL_CAMERA_REQUIRED" \
     panel_auto_bridge:="${PANEL_AUTO_BRIDGE:-0}" \

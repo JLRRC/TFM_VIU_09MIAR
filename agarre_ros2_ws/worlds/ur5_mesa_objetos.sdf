@@ -314,7 +314,6 @@
       </plugin>
     </model>
 
-    
     <model name="mesa_robot">
       <static>true</static>
       <pose>-1.10 0.00 0 0 0 0</pose>
@@ -412,12 +411,12 @@
       <uri>model://ur5_rg2</uri>
       <name>ur5_rg2</name>
       
-      <pose>-0.85 0.00 0.775 0 0 0</pose>
+      <pose>-0.85 0.00 0.825 0 0 0</pose>
       
     </include>
     <joint name="ur5_rg2_fixed_to_world" type="fixed">
       <parent>world</parent>
-      <pose>-0.85 0.00 0.775 0 0 0</pose>
+      <pose>-0.85 0.00 0.825 0 0 0</pose>
       <child>ur5_rg2::base_link</child>
     </joint>
 
@@ -532,7 +531,7 @@
     <model name="box_red">
       <static>false</static>
       <allow_auto_disable>true</allow_auto_disable>
-      <pose>-0.170 0.000 2.775 0 0 0</pose>
+      <pose>-0.320 0.180 0.880 0 0 0</pose>
       <link name="link">
         <gravity>true</gravity>
         <kinematic>false</kinematic>
@@ -562,7 +561,7 @@
     <model name="box_blue">
       <static>false</static>
       <allow_auto_disable>true</allow_auto_disable>
-      <pose>-0.130 0.000 2.775 0 0 0</pose>
+      <pose>-0.200 0.180 0.865 0 0 0</pose>
       <link name="link">
         <gravity>true</gravity>
         <kinematic>false</kinematic>
@@ -592,7 +591,7 @@
     <model name="box_green">
       <static>false</static>
       <allow_auto_disable>true</allow_auto_disable>
-      <pose>-0.210 0.000 2.775 0 0 0</pose>
+      <pose>-0.080 0.180 0.910 0 0 0</pose>
       <link name="link">
         <gravity>true</gravity>
         <kinematic>false</kinematic>
@@ -622,7 +621,7 @@
     <model name="cyl_gray">
       <static>false</static>
       <allow_auto_disable>true</allow_auto_disable>
-      <pose>-0.170 0.040 2.775 0 0 0</pose>
+      <pose>0.040 0.180 0.920 0 0 0</pose>
       <link name="link">
         <gravity>true</gravity>
         <kinematic>false</kinematic>
@@ -652,7 +651,7 @@
     <model name="cyl_orange">
       <static>false</static>
       <allow_auto_disable>true</allow_auto_disable>
-      <pose>-0.170 -0.040 2.775 0 0 0</pose>
+      <pose>-0.320 0.060 0.890 0 0 0</pose>
       <link name="link">
         <gravity>true</gravity>
         <kinematic>false</kinematic>
@@ -682,7 +681,7 @@
     <model name="cyl_purple">
       <static>false</static>
       <allow_auto_disable>true</allow_auto_disable>
-      <pose>-0.120 0.050 2.775 0 0 0</pose>
+      <pose>-0.200 0.060 0.860 0 0 0</pose>
       <link name="link">
         <gravity>true</gravity>
         <kinematic>false</kinematic>
@@ -712,7 +711,7 @@
     <model name="box_lightblue">
       <static>false</static>
       <allow_auto_disable>true</allow_auto_disable>
-      <pose>-0.220 0.050 2.775 0 0 0</pose>
+      <pose>-0.080 0.060 0.880 0 0 0</pose>
       <link name="link">
         <gravity>true</gravity>
         <kinematic>false</kinematic>
@@ -742,7 +741,7 @@
     <model name="cyl_green">
       <static>false</static>
       <allow_auto_disable>true</allow_auto_disable>
-      <pose>-0.120 -0.050 2.775 0 0 0</pose>
+      <pose>0.040 0.060 0.865 0 0 0</pose>
       <link name="link">
         <gravity>true</gravity>
         <kinematic>false</kinematic>
@@ -772,7 +771,7 @@
     <model name="box_yellow">
       <static>false</static>
       <allow_auto_disable>true</allow_auto_disable>
-      <pose>-0.220 -0.050 2.775 0 0 0</pose>
+      <pose>-0.320 -0.060 0.865 0 0 0</pose>
       <link name="link">
         <gravity>true</gravity>
         <kinematic>false</kinematic>
@@ -802,7 +801,7 @@
     <model name="cross_cyan">
       <static>false</static>
       <allow_auto_disable>true</allow_auto_disable>
-      <pose>-0.090 0.000 2.775 0 0 0</pose>
+      <pose>-0.200 -0.060 0.865 0 0 0</pose>
 
       <link name="link">
         <pose>0 0 0 0 0 0</pose>

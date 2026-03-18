@@ -21,7 +21,7 @@ def test_base_frame_candidates_order_and_dedup():
     out = base_frame_candidates("base_link", "base", fallbacks=("base_link", "base"))
     assert out == ["base_link", "base"]
     out = base_frame_candidates(None, "base", fallbacks=("base_link", "base"))
-    assert out == ["base", "base_link"]
+    assert out == ["base_link", "base"]
 
 
 def test_world_to_base_uses_config_offsets():

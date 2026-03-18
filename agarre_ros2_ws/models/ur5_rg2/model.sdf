@@ -297,8 +297,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>30</damping>
-                    <friction>4</friction>
+                    <damping>1.0</damping>
+                    <friction>0.1</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -317,8 +317,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>45</damping>
-                    <friction>6</friction>
+                    <damping>1.0</damping>
+                    <friction>0.1</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -337,8 +337,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>35</damping>
-                    <friction>5</friction>
+                    <damping>1.0</damping>
+                    <friction>0.1</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -357,8 +357,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>25</damping>
-                    <friction>3.5</friction>
+                    <damping>0.8</damping>
+                    <friction>0.05</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -377,8 +377,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>20</damping>
-                    <friction>2.5</friction>
+                    <damping>0.8</damping>
+                    <friction>0.05</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -397,8 +397,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>15</damping>
-                    <friction>1.75</friction>
+                    <damping>0.6</damping>
+                    <friction>0.05</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -625,42 +625,58 @@
             </hardware>
             <joint name="shoulder_pan_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="shoulder_lift_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">-1.5707963267948966</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="elbow_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="wrist_1_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">-1.5707963267948966</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="wrist_2_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="wrist_3_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="rg2_finger_joint1">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="rg2_finger_joint2">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
         </ros2_control>

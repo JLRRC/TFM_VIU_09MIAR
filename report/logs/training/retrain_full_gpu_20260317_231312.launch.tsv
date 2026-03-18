@@ -1,0 +1,7 @@
+key	value
+timestamp	20260317_231312
+python	/home/laboratorio/.venv-tfm/bin/python
+backup_dir	/home/laboratorio/TFM/BORRAR/agarre_inteligente_extra/experiments_pre_retrain_20260317_231215
+log_file	/home/laboratorio/TFM/report/logs/training/retrain_full_gpu_20260317_231312.log
+pid_file	/home/laboratorio/TFM/report/logs/training/retrain_full_gpu_20260317_231312.pid
+pid	1519910

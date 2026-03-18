@@ -42,6 +42,10 @@ def _prepare_runtime(context, *_args) -> List[object]:
     logger = get_logger("ur5_stack")
     ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
     world_file = LaunchConfiguration("world_file").perform(context)
+    strict_physics_mode = (
+        str(LaunchConfiguration("strict_physics_mode").perform(context)).strip().lower()
+        in ("1", "true", "yes", "on")
+    )
     log_dir = os.path.join(ws_dir, "log")
     os.makedirs(log_dir, exist_ok=True)
 
@@ -113,6 +117,12 @@ def _prepare_runtime(context, *_args) -> List[object]:
     control_backend = (
         LaunchConfiguration("control_backend").perform(context).strip().lower()
     )
+    moveit_mode = (
+        LaunchConfiguration("moveit_mode").perform(context).strip().lower()
+    )
+    if moveit_mode not in ("auto", "move_group", "bridge"):
+        logger.warning("moveit_mode invalido '%s'; usando auto", moveit_mode)
+        moveit_mode = "auto"
     launch_gazebo_val = LaunchConfiguration("launch_gazebo").perform(context)
     launch_ros2_control_val = LaunchConfiguration("launch_ros2_control").perform(
         context
@@ -141,6 +151,21 @@ def _prepare_runtime(context, *_args) -> List[object]:
             control_backend,
             launch_ros2_control_val,
         )
+    launch_moveit_eff = LaunchConfiguration("launch_moveit").perform(context)
+    panel_auto_bridge_eff = LaunchConfiguration("panel_auto_bridge").perform(context)
+    if moveit_mode == "move_group":
+        launch_moveit_eff = "true"
+        if str(panel_auto_bridge_eff).lower() in ("1", "true", "yes"):
+            logger.warning(
+                "moveit_mode=move_group: desactivando panel_auto_bridge para evitar doble backend."
+            )
+        panel_auto_bridge_eff = "0"
+    elif moveit_mode == "bridge":
+        if str(launch_moveit_eff).lower() in ("1", "true", "yes"):
+            logger.warning(
+                "moveit_mode=bridge: desactivando launch_moveit para evitar doble backend."
+            )
+        launch_moveit_eff = "false"
     moveit_start_ros2_control_eff = moveit_start_ros2_control_val
     if str(launch_gazebo_val).lower() in ("1", "true", "yes"):
         if str(moveit_start_ros2_control_val).lower() in ("1", "true", "yes"):
@@ -148,12 +173,18 @@ def _prepare_runtime(context, *_args) -> List[object]:
                 "Gazebo activo: desactivando moveit_start_ros2_control para evitar duplicar controller_manager."
             )
         moveit_start_ros2_control_eff = "false"
+    launch_attach_backend_eff = LaunchConfiguration("launch_attach_backend").perform(context)
+    if strict_physics_mode and str(launch_attach_backend_eff).lower() in ("1", "true", "yes"):
+        logger.warning(
+            "strict_physics_mode activo: desactivando launch_attach_backend para evitar agarre asistido por software."
+        )
+        launch_attach_backend_eff = "false"
     launch_flags = [
         LaunchConfiguration("launch_gazebo").perform(context),
         LaunchConfiguration("launch_rsp").perform(context),
         LaunchConfiguration("launch_bridge").perform(context),
         launch_ros2_control_eff,
-        LaunchConfiguration("launch_moveit").perform(context),
+        launch_moveit_eff,
     ]
     managed = any(str(flag).lower() in ("1", "true", "yes") for flag in launch_flags)
     managed_str = "1" if managed else "0"
@@ -250,7 +281,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
             "PANEL_CONTROLLER_MANAGER", LaunchConfiguration("controller_manager")
         ),
         SetEnvironmentVariable(
-            "PANEL_AUTO_BRIDGE", LaunchConfiguration("panel_auto_bridge")
+            "PANEL_AUTO_BRIDGE", panel_auto_bridge_eff
         ),
         SetEnvironmentVariable(
             "PANEL_AUTO_BRIDGE_DELAY_MS",
@@ -259,9 +290,18 @@ def _prepare_runtime(context, *_args) -> List[object]:
         SetEnvironmentVariable("PANEL_MANAGED", managed_str),
         SetEnvironmentVariable("PANEL_CAMERA_REQUIRED", camera_required_env),
         SetEnvironmentVariable(
-            "PANEL_MOVEIT_REQUIRED", LaunchConfiguration("launch_moveit")
+            "PANEL_MOVEIT_REQUIRED", launch_moveit_eff
         ),
+        SetEnvironmentVariable("PANEL_MOVEIT_MODE", moveit_mode),
         SetEnvironmentVariable("PANEL_SETTINGS_YAML", panel_settings_yaml),
+        SetEnvironmentVariable(
+            "STRICT_SELF_COLLISION",
+            "1" if strict_physics_mode else "0",
+        ),
+        SetEnvironmentVariable(
+            "PANEL_STRICT_PHYSICS_MODE",
+            "1" if strict_physics_mode else "0",
+        ),
         SetEnvironmentVariable(
             "RMW_IMPLEMENTATION", LaunchConfiguration("rmw_implementation")
         ),
@@ -281,7 +321,10 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetLaunchConfiguration("camera_required", camera_required_env),
         SetLaunchConfiguration("panel_managed", managed_str),
+        SetLaunchConfiguration("launch_moveit", launch_moveit_eff),
+        SetLaunchConfiguration("panel_auto_bridge", panel_auto_bridge_eff),
         SetLaunchConfiguration("launch_ros2_control", launch_ros2_control_eff),
+        SetLaunchConfiguration("launch_attach_backend", launch_attach_backend_eff),
         SetLaunchConfiguration(
             "moveit_start_ros2_control", moveit_start_ros2_control_eff
         ),
@@ -309,6 +352,7 @@ def _maybe_moveit(context, *_args) -> List[object]:
                 "start_ros2_control": moveit_start_ros2_control,
                 "launch_rviz": "false",
                 "use_sim_time": use_sim_time,
+                "strict_self_collision": LaunchConfiguration("strict_physics_mode"),
             }.items(),
         )
     ]
@@ -537,6 +581,23 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"use_sim_time": use_sim_time},
+            {"attach_mode": LaunchConfiguration("attach_backend_mode")},
+            {"tool_anchor_prefix": "/gripper_anchor"},
+            {
+                "max_pose_age_sec": LaunchConfiguration(
+                    "attach_backend_max_pose_age_sec"
+                )
+            },
+            {
+                "follow_rate_hz": LaunchConfiguration(
+                    "attach_backend_follow_rate_hz"
+                )
+            },
+            {
+                "follow_break_dist_m": LaunchConfiguration(
+                    "attach_backend_follow_break_dist_m"
+                )
+            },
         ],
         condition=IfCondition(launch_attach_backend),
     )
@@ -581,9 +642,30 @@ def generate_launch_description():
             DeclareLaunchArgument("launch_world_tf", default_value="true"),
             DeclareLaunchArgument("launch_release_service", default_value="true"),
             DeclareLaunchArgument("launch_attach_backend", default_value="true"),
+            DeclareLaunchArgument(
+                "attach_backend_mode",
+                default_value=os.environ.get("ATTACH_BACKEND_MODE", "follow_tcp"),
+            ),
+            DeclareLaunchArgument(
+                "strict_physics_mode",
+                default_value=os.environ.get("STRICT_PHYSICS_MODE", "false"),
+            ),
+            DeclareLaunchArgument(
+                "attach_backend_max_pose_age_sec",
+                default_value=os.environ.get("ATTACH_BACKEND_MAX_POSE_AGE_SEC", "1.5"),
+            ),
+            DeclareLaunchArgument(
+                "attach_backend_follow_rate_hz",
+                default_value=os.environ.get("ATTACH_BACKEND_FOLLOW_RATE_HZ", "20.0"),
+            ),
+            DeclareLaunchArgument(
+                "attach_backend_follow_break_dist_m",
+                default_value=os.environ.get("ATTACH_BACKEND_FOLLOW_BREAK_DIST_M", "0.18"),
+            ),
             DeclareLaunchArgument("launch_scene_sync", default_value="true"),
             DeclareLaunchArgument("launch_system_state", default_value="true"),
             DeclareLaunchArgument("launch_moveit", default_value="false"),
+            DeclareLaunchArgument("moveit_mode", default_value="auto"),
             DeclareLaunchArgument("camera_required", default_value="1"),
             DeclareLaunchArgument("moveit_start_ros2_control", default_value="false"),
             DeclareLaunchArgument("bootstrap_controllers", default_value="true"),

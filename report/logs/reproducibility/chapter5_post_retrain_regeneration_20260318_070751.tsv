@@ -1,0 +1,29 @@
+timestamp	event	detail
+2026-03-18T07:07:52	backup_dir	/home/laboratorio/TFM/BORRAR/report_extra/chapter5_pre_retrain_20260318_070751
+2026-03-18T07:07:52	script	/home/laboratorio/TFM/agarre_inteligente/scripts/regenerate_chapter5_post_retrain.py
+2026-03-18T07:07:52	seed_rows	12
+2026-03-18T07:07:52	summary_rows	4
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/metrics/raw/experiments/EXP1_SIMPLE_RGB/best_epoch_summary.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/metrics/raw/experiments/EXP2_SIMPLE_RGBD/best_epoch_summary.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/metrics/raw/experiments/EXP3_RESNET18_RGB_AUGMENT/best_epoch_summary.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/metrics/raw/experiments/EXP4_RESNET18_RGBD/best_epoch_summary.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/metrics/aggregated/chapter5_best_epoch_runs_all_seeds.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/metrics/validated/chapter5_experiment_summary_validated.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/tables/cap5/Tabla_5-1_resultados_agregados_en_validacion_best_epoch_por_ejecucion_bajo_split_object_wi.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/tables/cap5/Tabla_5-2_resumen_de_metricas_finales_por_experimento_en_validacion.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/tables/cap5/Tabla_5-4_comparativa_por_modalidad_entre_simplegraspcnn_y_resnet18grasp.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/tables/anexos/Tabla_8-1_resultados_por_semilla_y_experimento_en_la_mejor_epoca_de_validacion.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/tables/anexos/Tabla_8-3_resumen_de_experimentos_base_en_validacion_media_desviacion_estandar_cuando_proc.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/tables/anexos/Tabla_8-4_comparativa_por_modalidad_entre_simplegraspcnn_y_resnet18grasp_mejor_epoca_de_va.csv
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/figures/cap5/Ilustracion_5-5_evolucion_del_exito_de_agarre_en_validacion_por_epoca.png
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/figures/cap5/Ilustracion_5-6_evolucion_del_iou_medio_en_validacion_por_epoca.png
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/figures/cap5/Ilustracion_5-7_evolucion_del_error_angular_medio_en_validacion_por_epoca.png
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/figures/cap5/Ilustracion_5-8_comparativa_de_val_success_por_seed_y_experimento_en_best_epoch.png
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/figures/cap5/Ilustracion_5-9_comparativa_de_val_loss_por_seed_y_experimento_en_best_epoch.png
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/figures/cap5/Ilustracion_5-10_exito_final_de_agarre_en_validacion_agregado_por_experimento.png
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/figures/cap5/Ilustracion_5-11_iou_medio_final_en_validacion_agregado_por_experimento.png
+2026-03-18T07:07:52	generated	/home/laboratorio/TFM/report/figures/cap5/Ilustracion_5-12_error_angular_medio_final_en_validacion_agregado_por_experimento.png
+2026-03-18T07:07:52	summary	EXP1_SIMPLE_RGB: success_mean=0.274060, iou_mean=0.225380, angle_mean=17.190995, val_loss_mean=0.032086
+2026-03-18T07:07:52	summary	EXP2_SIMPLE_RGBD: success_mean=0.380497, iou_mean=0.316867, angle_mean=17.872977, val_loss_mean=0.032011
+2026-03-18T07:07:52	summary	EXP3_RESNET18_RGB_AUGMENT: success_mean=0.680051, iou_mean=0.401035, angle_mean=10.607081, val_loss_mean=0.029726
+2026-03-18T07:07:52	summary	EXP4_RESNET18_RGBD: success_mean=0.649246, iou_mean=0.387898, angle_mean=11.425986, val_loss_mean=0.028291

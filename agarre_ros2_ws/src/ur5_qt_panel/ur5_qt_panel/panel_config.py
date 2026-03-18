@@ -63,16 +63,16 @@ ATTACHABLE_OBJECTS = ("pick_demo",)
 PICK_DEMO_NAME_SET = set(ATTACHABLE_OBJECTS)
 # Drop objects: objetos congelados hasta "Soltar/Obj" (definidos solo por nombre).
 _DROP_AIR_OBJECTS = {
-    "box_red": (-0.320, 0.180, 2.775),
-    "box_blue": (-0.200, 0.180, 2.775),
-    "box_green": (-0.080, 0.180, 2.775),
-    "cyl_gray": (0.040, 0.180, 2.775),
-    "cyl_orange": (-0.320, 0.060, 2.775),
-    "cyl_purple": (-0.200, 0.060, 2.775),
-    "box_lightblue": (-0.080, 0.060, 2.775),
-    "cyl_green": (0.040, 0.060, 2.775),
-    "box_yellow": (-0.320, -0.060, 2.775),
-    "cross_cyan": (-0.200, -0.060, 2.775),
+    "box_red": (-0.320, 0.180, 0.880),
+    "box_blue": (-0.200, 0.180, 0.865),
+    "box_green": (-0.080, 0.180, 0.910),
+    "cyl_gray": (0.040, 0.180, 0.920),
+    "cyl_orange": (-0.320, 0.060, 0.890),
+    "cyl_purple": (-0.200, 0.060, 0.860),
+    "box_lightblue": (-0.080, 0.060, 0.880),
+    "cyl_green": (0.040, 0.060, 0.865),
+    "box_yellow": (-0.320, -0.060, 0.865),
+    "cross_cyan": (-0.200, -0.060, 0.865),
 }
 DROP_NAME_SET = {
     "box_blue",

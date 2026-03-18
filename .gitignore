@@ -2,6 +2,6 @@ BORRAR/
 agarre_inteligente/reports/
 agarre_ros2_ws/reports/
 reports/archive/BORRAR/
+report/history/chapter5/experiments/**/checkpoints/
 *.log
 .DS_Store
-

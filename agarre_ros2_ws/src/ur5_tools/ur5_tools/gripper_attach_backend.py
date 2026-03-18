@@ -70,6 +70,58 @@ class AttachedTarget:
     qz: float
     qw: float
     attach_stamp_ns: int
+    coherence_breach_count: int = 0
+
+
+def _quat_normalize(q: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
+    x, y, z, w = q
+    norm = math.sqrt((x * x) + (y * y) + (z * z) + (w * w))
+    if norm <= 1e-9:
+        return (0.0, 0.0, 0.0, 1.0)
+    inv = 1.0 / norm
+    return (x * inv, y * inv, z * inv, w * inv)
+
+
+def _quat_inverse(q: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
+    x, y, z, w = _quat_normalize(q)
+    return (-x, -y, -z, w)
+
+
+def _quat_multiply_raw(
+    a: Tuple[float, float, float, float],
+    b: Tuple[float, float, float, float],
+) -> Tuple[float, float, float, float]:
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return (
+        (aw * bx) + (ax * bw) + (ay * bz) - (az * by),
+        (aw * by) - (ax * bz) + (ay * bw) + (az * bx),
+        (aw * bz) + (ax * by) - (ay * bx) + (az * bw),
+        (aw * bw) - (ax * bx) - (ay * by) - (az * bz),
+    )
+
+
+def _quat_multiply(
+    a: Tuple[float, float, float, float],
+    b: Tuple[float, float, float, float],
+) -> Tuple[float, float, float, float]:
+    return _quat_normalize(
+        _quat_multiply_raw(a, b)
+    )
+
+
+def _rotate_vector(
+    q: Tuple[float, float, float, float],
+    v: Tuple[float, float, float],
+) -> Tuple[float, float, float]:
+    qn = _quat_normalize(q)
+    vx, vy, vz = v
+    vec_q = (vx, vy, vz, 0.0)
+    rx, ry, rz, _rw = _quat_multiply_raw(
+        _quat_multiply_raw(qn, vec_q),
+        _quat_inverse(qn),
+    )
+    return (rx, ry, rz)
 
 
 class GripperAttachBackend(Node):
@@ -81,8 +133,9 @@ class GripperAttachBackend(Node):
             self.declare_parameter("use_sim_time", True)
         self.declare_parameter("gripper_prefix", "/gripper")
         self.declare_parameter("drop_anchor_prefix", "/drop_anchor")
+        self.declare_parameter("tool_anchor_prefix", "/gripper_anchor")
         self.declare_parameter("object_names", DEFAULT_OBJECTS)
-        self.declare_parameter("attach_mode", "follow_tcp")
+        self.declare_parameter("attach_mode", "detachable_joint")
         self.declare_parameter("world_name", "ur5_mesa_objetos")
         self.declare_parameter("world_frame", "world")
         self.declare_parameter("pose_topic", "")
@@ -97,6 +150,8 @@ class GripperAttachBackend(Node):
         self.declare_parameter("attach_initial_queue_retries", 4)
         self.declare_parameter("attach_retry_sleep_sec", 0.06)
         self.declare_parameter("attach_max_dist_m", 0.15)
+        self.declare_parameter("follow_break_dist_m", 0.18)
+        self.declare_parameter("follow_break_consecutive", 3)
         self.declare_parameter("ws_dir", "")
 
         self._gripper_prefix = str(
@@ -104,6 +159,9 @@ class GripperAttachBackend(Node):
         ).strip("/")
         self._drop_anchor_prefix = str(
             self.get_parameter("drop_anchor_prefix").value or "/drop_anchor"
+        ).strip("/")
+        self._tool_anchor_prefix = str(
+            self.get_parameter("tool_anchor_prefix").value or "/gripper_anchor"
         ).strip("/")
         names_raw = self.get_parameter("object_names").value
         object_names = [str(v).strip() for v in (names_raw or []) if str(v).strip()]
@@ -149,6 +207,13 @@ class GripperAttachBackend(Node):
         self._attach_max_dist_m = max(
             0.01, float(self.get_parameter("attach_max_dist_m").value or 0.15)
         )
+        self._follow_break_dist_m = max(
+            self._attach_max_dist_m,
+            float(self.get_parameter("follow_break_dist_m").value or 0.18),
+        )
+        self._follow_break_consecutive = max(
+            1, int(self.get_parameter("follow_break_consecutive").value or 3)
+        )
         self._ws_dir = str(self.get_parameter("ws_dir").value or "").strip()
         if not self._ws_dir:
             self._ws_dir = os.environ.get(
@@ -164,6 +229,9 @@ class GripperAttachBackend(Node):
         self._gripper_state_pubs: Dict[str, object] = {}
         self._drop_detach_pubs: Dict[str, object] = {}
         self._drop_attach_pubs: Dict[str, object] = {}
+        self._tool_detach_pubs: Dict[str, object] = {}
+        self._tool_attach_pubs: Dict[str, object] = {}
+        self._drop_anchor_states: Dict[str, bool] = {}
 
         self._subs = []
         for name in self._object_names:
@@ -201,6 +269,27 @@ class GripperAttachBackend(Node):
             self._drop_detach_pubs[name] = self.create_publisher(
                 Empty, drop_detach, self._qos
             )
+            tool_attach = (
+                f"/{self._tool_anchor_prefix}/{name}/attach".replace("//", "/")
+            )
+            tool_detach = (
+                f"/{self._tool_anchor_prefix}/{name}/detach".replace("//", "/")
+            )
+            self._tool_attach_pubs[name] = self.create_publisher(
+                Empty, tool_attach, self._qos
+            )
+            self._tool_detach_pubs[name] = self.create_publisher(
+                Empty, tool_detach, self._qos
+            )
+            drop_state = f"/{self._drop_anchor_prefix}/{name}/state".replace("//", "/")
+            self._subs.append(
+                self.create_subscription(
+                    Bool,
+                    drop_state,
+                    partial(self._on_drop_anchor_state, name=name),
+                    self._qos,
+                )
+            )
 
         self._pose_cache: Dict[str, PoseSample] = {}
         self._pose_sub = self.create_subscription(
@@ -218,6 +307,7 @@ class GripperAttachBackend(Node):
         self._last_apply_log_ts = 0.0
         self._last_exception_log_ts = 0.0
         self._last_stale_warn_ts = 0.0
+        self._last_coherence_warn_ts = 0.0
         self._gz_set_pose_service: Optional[str] = None
 
         self._follow_timer = self.create_timer(
@@ -230,6 +320,7 @@ class GripperAttachBackend(Node):
             f"objects={','.join(self._object_names)} "
             f"mode={self._attach_mode} "
             f"gripper_prefix=/{self._gripper_prefix} "
+            f"tool_anchor_prefix=/{self._tool_anchor_prefix} "
             f"pose_topic={self._pose_topic} tcp_frame={self._tcp_frame}"
         )
 
@@ -240,6 +331,9 @@ class GripperAttachBackend(Node):
         msg = Bool()
         msg.data = bool(attached)
         pub.publish(msg)
+
+    def _on_drop_anchor_state(self, msg: Bool, *, name: str) -> None:
+        self._drop_anchor_states[name] = bool(getattr(msg, "data", False))
 
     def _lookup_pose(self, key: str) -> Optional[PoseSample]:
         if key in self._pose_cache:
@@ -257,6 +351,7 @@ class GripperAttachBackend(Node):
         return None
 
     def _lookup_tcp_pose(self) -> Optional[PoseSample]:
+        tf_pose: Optional[PoseSample] = None
         try:
             tf = self._tf_buffer.lookup_transform(
                 self._world_frame,
@@ -268,7 +363,7 @@ class GripperAttachBackend(Node):
             rot = tf.transform.rotation
             stamp = tf.header.stamp
             stamp_ns = int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
-            return PoseSample(
+            tf_pose = PoseSample(
                 x=float(tr.x),
                 y=float(tr.y),
                 z=float(tr.z),
@@ -279,8 +374,17 @@ class GripperAttachBackend(Node):
                 stamp_ns=stamp_ns,
             )
         except Exception:
-            pass
-        return self._lookup_pose(self._tcp_frame)
+            tf_pose = None
+        cached_pose = self._lookup_pose(self._tcp_frame)
+        if tf_pose is None:
+            return cached_pose
+        if cached_pose is None:
+            return tf_pose
+        tf_age = self._pose_age_sec(tf_pose)
+        cached_age = self._pose_age_sec(cached_pose)
+        if cached_age + 0.02 < tf_age:
+            return cached_pose
+        return tf_pose
 
     def _on_pose_info(self, msg: TFMessage) -> None:
         now_ns = int(self.get_clock().now().nanoseconds)
@@ -475,6 +579,23 @@ class GripperAttachBackend(Node):
                 time.sleep(self._attach_retry_sleep_sec)
         return False
 
+    def _drop_attached_target(
+        self,
+        name: str,
+        *,
+        detail: str,
+        dist: Optional[float] = None,
+    ) -> None:
+        self._attached.pop(name, None)
+        self._publish_state(name, False)
+        dist_txt = "n/a" if dist is None else f"{dist:.4f}m"
+        self.get_logger().warning(
+            "[ATTACH_BACKEND] follow_detached "
+            f"object={name} detail={detail} dist={dist_txt} "
+            f"max={self._follow_break_dist_m:.4f}m "
+            f"breaches_required={self._follow_break_consecutive}"
+        )
+
     def _on_set_pose_done(self, future) -> None:
         pending = self._set_pose_pending
         self._set_pose_pending = None
@@ -520,21 +641,72 @@ class GripperAttachBackend(Node):
             now = time.time()
             if (now - self._last_stale_warn_ts) >= 0.7:
                 self.get_logger().warning(
-                    f"[ATTACH_BACKEND] stale_tcp_pose_but_following age={tcp_age:.3f}s "
+                    f"[ATTACH_BACKEND] stale_tcp_pose_skip_follow age={tcp_age:.3f}s "
                     f"max={self._max_pose_age_sec:.3f}s hard={hard_age:.3f}s"
                 )
                 self._last_stale_warn_ts = now
+            return
         for name, target in list(self._attached.items()):
+            obj_pose = self._lookup_pose(name)
+            if obj_pose is not None and self._pose_age_ok(obj_pose):
+                obj_tcp_dist = math.sqrt(
+                    (obj_pose.x - tcp_pose.x) ** 2
+                    + (obj_pose.y - tcp_pose.y) ** 2
+                    + (obj_pose.z - tcp_pose.z) ** 2
+                )
+                if obj_tcp_dist > self._follow_break_dist_m:
+                    target.coherence_breach_count += 1
+                    now = time.time()
+                    if (
+                        target.coherence_breach_count >= self._follow_break_consecutive
+                    ):
+                        self._drop_attached_target(
+                            name,
+                            detail="coherence_lost",
+                            dist=obj_tcp_dist,
+                        )
+                        continue
+                    if (now - self._last_coherence_warn_ts) >= 0.5:
+                        self.get_logger().warning(
+                            "[ATTACH_BACKEND] follow_coherence_warning "
+                            f"object={name} dist={obj_tcp_dist:.4f}m "
+                            f"max={self._follow_break_dist_m:.4f}m "
+                            f"breach={target.coherence_breach_count}/"
+                            f"{self._follow_break_consecutive}"
+                        )
+                        self._last_coherence_warn_ts = now
+                else:
+                    target.coherence_breach_count = 0
+            else:
+                target.coherence_breach_count = 0
             desired = PoseSample(
-                x=float(tcp_pose.x + target.offset_x),
-                y=float(tcp_pose.y + target.offset_y),
-                z=float(tcp_pose.z + target.offset_z),
-                qx=float(target.qx),
-                qy=float(target.qy),
-                qz=float(target.qz),
-                qw=float(target.qw),
+                x=0.0,
+                y=0.0,
+                z=0.0,
+                qx=0.0,
+                qy=0.0,
+                qz=0.0,
+                qw=1.0,
                 stamp_ns=int(tcp_pose.stamp_ns),
             )
+            tcp_q = _quat_normalize(
+                (float(tcp_pose.qx), float(tcp_pose.qy), float(tcp_pose.qz), float(tcp_pose.qw))
+            )
+            rel_pos_world = _rotate_vector(
+                tcp_q,
+                (float(target.offset_x), float(target.offset_y), float(target.offset_z)),
+            )
+            rel_q_world = _quat_multiply(
+                tcp_q,
+                (float(target.qx), float(target.qy), float(target.qz), float(target.qw)),
+            )
+            desired.x = float(tcp_pose.x + rel_pos_world[0])
+            desired.y = float(tcp_pose.y + rel_pos_world[1])
+            desired.z = float(tcp_pose.z + rel_pos_world[2])
+            desired.qx = float(rel_q_world[0])
+            desired.qy = float(rel_q_world[1])
+            desired.qz = float(rel_q_world[2])
+            desired.qw = float(rel_q_world[3])
             if self._queue_set_pose(name, desired):
                 break
 
@@ -543,33 +715,48 @@ class GripperAttachBackend(Node):
             f"[ATTACH_BACKEND] attach_request_received object={name} src={src_topic} mode={self._attach_mode}"
         )
         if self._attach_mode != "follow_tcp":
-            pub = self._drop_attach_pubs.get(name)
+            drop_detach_pub = self._drop_detach_pubs.get(name)
+            drop_anchor_attached = bool(self._drop_anchor_states.get(name, False))
+            if drop_detach_pub is not None and drop_anchor_attached:
+                drop_detach_pub.publish(Empty())
+                self.get_logger().info(
+                    f"[ATTACH_BACKEND] relay detach object={name} "
+                    f"dst=/{self._drop_anchor_prefix}/{name}/detach method=drop_anchor_release"
+                )
+                time.sleep(0.05)
+            pub = self._tool_attach_pubs.get(name)
             if pub is None:
                 self.get_logger().error(
-                    f"[ATTACH_BACKEND] missing drop_attach publisher object={name}"
+                    f"[ATTACH_BACKEND] missing tool_attach publisher object={name}"
                 )
                 self._publish_state(name, False)
                 return
             pub.publish(Empty())
             self.get_logger().info(
                 f"[ATTACH_BACKEND] relay attach object={name} "
-                f"dst=/{self._drop_anchor_prefix}/{name}/attach method=drop_anchor_relay"
+                f"dst=/{self._tool_anchor_prefix}/{name}/attach method=tool_anchor_relay"
             )
             self._publish_state(name, True)
             return
 
         # Ensure the object is not still constrained to world drop anchor.
         drop_detach_pub = self._drop_detach_pubs.get(name)
-        if drop_detach_pub is not None:
+        drop_anchor_attached = bool(self._drop_anchor_states.get(name, False))
+        if drop_detach_pub is not None and drop_anchor_attached:
             drop_detach_pub.publish(Empty())
             self.get_logger().info(
                 f"[ATTACH_BACKEND] relay detach object={name} "
                 f"dst=/{self._drop_anchor_prefix}/{name}/detach method=drop_anchor_release"
             )
             time.sleep(0.05)
-        else:
+        elif drop_detach_pub is None:
             self.get_logger().warning(
                 f"[ATTACH_BACKEND] drop_anchor detach publisher missing object={name}"
+            )
+        else:
+            self.get_logger().info(
+                f"[ATTACH_BACKEND] drop_anchor already released object={name} "
+                f"state={str(drop_anchor_attached).lower()}"
             )
 
         obj_pose = self._lookup_pose(name)
@@ -622,15 +809,31 @@ class GripperAttachBackend(Node):
             )
             self._publish_state(name, False)
             return
+        tcp_q = _quat_normalize(
+            (float(tcp_pose.qx), float(tcp_pose.qy), float(tcp_pose.qz), float(tcp_pose.qw))
+        )
+        obj_q = _quat_normalize(
+            (float(obj_pose.qx), float(obj_pose.qy), float(obj_pose.qz), float(obj_pose.qw))
+        )
+        tcp_q_inv = _quat_inverse(tcp_q)
+        rel_pos = _rotate_vector(
+            tcp_q_inv,
+            (
+                float(obj_pose.x - tcp_pose.x),
+                float(obj_pose.y - tcp_pose.y),
+                float(obj_pose.z - tcp_pose.z),
+            ),
+        )
+        rel_q = _quat_multiply(tcp_q_inv, obj_q)
         attached = AttachedTarget(
             name=name,
-            offset_x=float(obj_pose.x - tcp_pose.x),
-            offset_y=float(obj_pose.y - tcp_pose.y),
-            offset_z=float(obj_pose.z - tcp_pose.z),
-            qx=float(obj_pose.qx),
-            qy=float(obj_pose.qy),
-            qz=float(obj_pose.qz),
-            qw=float(obj_pose.qw),
+            offset_x=float(rel_pos[0]),
+            offset_y=float(rel_pos[1]),
+            offset_z=float(rel_pos[2]),
+            qx=float(rel_q[0]),
+            qy=float(rel_q[1]),
+            qz=float(rel_q[2]),
+            qw=float(rel_q[3]),
             attach_stamp_ns=int(self.get_clock().now().nanoseconds),
         )
         self._attached[name] = attached
@@ -638,16 +841,25 @@ class GripperAttachBackend(Node):
         self.get_logger().info(
             f"[ATTACH_BACKEND] gazebo_attach_applied=true object={name} method=follow_tcp "
             f"dist={attach_dist:.4f}m max={self._attach_max_dist_m:.4f}m "
-            f"offset=({attached.offset_x:.3f},{attached.offset_y:.3f},{attached.offset_z:.3f})"
+            f"rel_pos=({attached.offset_x:.3f},{attached.offset_y:.3f},{attached.offset_z:.3f}) "
+            f"rel_q=({attached.qx:.3f},{attached.qy:.3f},{attached.qz:.3f},{attached.qw:.3f})"
+        )
+        rel_pos_world = _rotate_vector(
+            tcp_q,
+            (float(attached.offset_x), float(attached.offset_y), float(attached.offset_z)),
+        )
+        rel_q_world = _quat_multiply(
+            tcp_q,
+            (float(attached.qx), float(attached.qy), float(attached.qz), float(attached.qw)),
         )
         desired = PoseSample(
-            x=float(tcp_pose.x + attached.offset_x),
-            y=float(tcp_pose.y + attached.offset_y),
-            z=float(tcp_pose.z + attached.offset_z),
-            qx=float(attached.qx),
-            qy=float(attached.qy),
-            qz=float(attached.qz),
-            qw=float(attached.qw),
+            x=float(tcp_pose.x + rel_pos_world[0]),
+            y=float(tcp_pose.y + rel_pos_world[1]),
+            z=float(tcp_pose.z + rel_pos_world[2]),
+            qx=float(rel_q_world[0]),
+            qy=float(rel_q_world[1]),
+            qz=float(rel_q_world[2]),
+            qw=float(rel_q_world[3]),
             stamp_ns=int(tcp_pose.stamp_ns),
         )
         if not self._queue_set_pose_with_retry(name, desired):
@@ -663,17 +875,17 @@ class GripperAttachBackend(Node):
             f"[ATTACH_BACKEND] detach_request_received object={name} src={src_topic} mode={self._attach_mode}"
         )
         if self._attach_mode != "follow_tcp":
-            pub = self._drop_detach_pubs.get(name)
+            pub = self._tool_detach_pubs.get(name)
             if pub is None:
                 self.get_logger().error(
-                    f"[ATTACH_BACKEND] missing drop_detach publisher object={name}"
+                    f"[ATTACH_BACKEND] missing tool_detach publisher object={name}"
                 )
                 self._publish_state(name, False)
                 return
             pub.publish(Empty())
             self.get_logger().info(
                 f"[ATTACH_BACKEND] relay detach object={name} "
-                f"dst=/{self._drop_anchor_prefix}/{name}/detach method=drop_anchor_relay"
+                f"dst=/{self._tool_anchor_prefix}/{name}/detach method=tool_anchor_relay"
             )
             self._publish_state(name, False)
             return

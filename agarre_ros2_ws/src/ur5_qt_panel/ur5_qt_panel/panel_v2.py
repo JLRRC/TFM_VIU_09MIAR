@@ -677,7 +677,7 @@ class CameraController:
                     p._emit_log(
                         f"[CAMERA][DIAG] depth_required=true depth_topic={depth_topic or 'N/A'} "
                         f"depth_age={'inf' if math.isinf(depth_age) else f'{depth_age:.1f}s'}"
-                    )
+                )
                 p._last_camera_diag_log = now
             p.camera_info.setText(f"Sin imágenes ({age:.1f}s)")
             p.camera_info.setStyleSheet("color: #f43f5e; font-weight: bold;")
@@ -795,14 +795,14 @@ class CameraController:
                         f"depth_frames={p._camera_depth_frame_count} depth_hz={depth_hz:.2f} "
                         f"depth_last_age={'inf' if math.isinf(depth_last_age) else f'{depth_last_age:.2f}s'} "
                         f"ready={str(p._camera_stream_ok).lower()}"
-                    ),
+                ),
                     min_interval=1.5,
                 )
                 if p._debug_logs_enabled:
                     p._emit_log(
                         f"[BRIDGE] camera_topic={topic} frames={p._camera_frame_count} "
                         f"ready={p._camera_stream_ok} last_age={last_age:.2f}s"
-                    )
+                )
                     if p._camera_stream_ok:
                         p._emit_log(f"[CAMERA] ready=True age={last_age:.2f}s")
                 if not p._camera_stream_ok:
@@ -2093,7 +2093,7 @@ class ControlPanelV2(QMainWindow):
         object_height: Optional[float] = None,
         base_frame: Optional[str] = None,
         xy_tol_m: float = 0.02,
-        z_tol_m: float = 0.03,
+        z_tol_m: float = 0.04,
         z_ref_mode: Optional[str] = None,
         z_clearance_m: float = 0.0,
         tcp_stamp_ns: Optional[int] = None,
@@ -2564,13 +2564,8 @@ class ControlPanelV2(QMainWindow):
         if self._traj_publish_inflight:
             self._emit_log("[ROBOT] WARN: publish JointTrajectory solapado")
         self._traj_publish_inflight = True
-        stamp_msg = None
         try:
-            try:
-                stamp_msg = Time().to_msg()
-            except Exception as exc:
-                _log_exception("build JointTrajectory stamp", exc)
-            traj = build_joint_trajectory(safe_positions, sec, UR5_JOINT_NAMES, stamp_msg=stamp_msg)
+            traj = build_joint_trajectory(safe_positions, sec, UR5_JOINT_NAMES)
             self._emit_log("[MANUAL] Executing direct JointTrajectory (MoveIt bypassed)")
             pub.publish(traj)
             return True, topic
@@ -2644,7 +2639,7 @@ class ControlPanelV2(QMainWindow):
                 if not joint_ok:
                     self._emit_log(
                         f"[MOVEIT] Bloqueado: {label} JointState no válido ({joint_reason})"
-                    )
+                )
                     self._motion_in_progress = False
                     return False
         base_frame = self._business_base_frame()
@@ -3602,7 +3597,7 @@ class ControlPanelV2(QMainWindow):
                 ):
                     self._emit_log(
                         f"[STATE] Recover from transient drop -> {recovered_state.value} ({recovered_reason})"
-                    )
+                )
                     self._system_error_reason = ""
                 else:
                     return SystemState.ERROR, self._system_error_reason
@@ -4128,6 +4123,16 @@ class ControlPanelV2(QMainWindow):
 
     def _sync_moveit_from_system_state(self) -> None:
         if not self._moveit_required:
+            moveit_detected = bool(
+                self._moveit_running or self._moveit_bridge_detected() or self._moveit_status_ready()
+            )
+            if moveit_detected:
+                self._moveit_required = True
+                if self._moveit_state != MoveItState.READY:
+                    self._moveit_state = MoveItState.READY
+                    self._moveit_state_reason = "move_group detectado"
+                self._emit_log("[MOVEIT] move_group detectado; saliendo de modo manual automáticamente")
+                return
             self._moveit_state = MoveItState.OFF
             self._moveit_state_reason = "manual"
             return
@@ -4163,6 +4168,18 @@ class ControlPanelV2(QMainWindow):
         names = payload.get("name", []) or []
         if len(names) == 0:
             return False, f"{topic}:empty"
+        strict_identity = str(os.environ.get("PANEL_STRICT_JOINT_IDENTITY", "1")).strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        if strict_identity:
+            normalized = {_normalize_joint_name(str(n)) for n in names if str(n).strip()}
+            missing = [jn for jn in UR5_JOINT_NAMES if jn not in normalized]
+            if missing:
+                sample = ", ".join(sorted(list(normalized))[:8])
+                return False, f"{topic}:joint_identity_mismatch missing={','.join(missing)} sample={sample}"
         age = float("inf")
         if ts:
             age = max(0.0, time.time() - ts)
@@ -4406,7 +4423,7 @@ class ControlPanelV2(QMainWindow):
                         "GZ_MONITOR_BUG",
                         "[STATE] Gazebo monitor inconsistente: process=false pero /clock avanza; revisando PID/PGID",
                         min_interval=3.0,
-                    )
+                )
         else:
             self._gz_state_pending = ""
         return self._gz_state
@@ -4711,6 +4728,21 @@ class ControlPanelV2(QMainWindow):
                 detail.append(f"unknown: {', '.join(unknown)}")
             self._last_controller_check = now
             return False, "controllers not active (" + " | ".join(detail) + ")"
+        strict_action = str(os.environ.get("PANEL_STRICT_TRAJ_ACTION", "1")).strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        if strict_action and not self._follow_joint_traj_ready():
+            expected = str(
+                os.environ.get(
+                    "PANEL_EXPECTED_TRAJ_ACTION",
+                    "/joint_trajectory_controller/follow_joint_trajectory",
+                )
+            ).strip()
+            self._last_controller_check = now
+            return False, f"follow_joint_traj_not_ready expected={expected}"
         self._controllers_last_ok_ts = now
         self._last_controller_check = now
         return True, "controllers activos"
@@ -4994,7 +5026,7 @@ class ControlPanelV2(QMainWindow):
                         float(self._last_grasp_world.get("x", 0.0)),
                         float(self._last_grasp_world.get("y", 0.0)),
                         float(self._last_grasp_world.get("z", 0.0)),
-                    ),
+                ),
                     self._world_frame_config_first(),
                     timeout_sec=0.35,
                 )
@@ -5020,7 +5052,7 @@ class ControlPanelV2(QMainWindow):
                         h,
                         self._camera_last_fps,
                         ts,
-                    )
+                )
             self._refresh_camera_display()
         else:
             self._last_grasp_world = None
@@ -5118,7 +5150,7 @@ class ControlPanelV2(QMainWindow):
                     sample = ", ".join(sorted(list(pos_map.keys()))[:8])
                     self._log_warning(
                         f"[JOINTS] Joint names no coinciden con UR5_JOINT_NAMES. sample={sample}"
-                    )
+                )
                     self._joint_names_warned = True
 
         if pos_map and not any(slider.isSliderDown() for slider in self.joint_sliders):
@@ -5695,13 +5727,13 @@ class ControlPanelV2(QMainWindow):
                 if self.ros_worker.has_service("/release_objects"):
                     release_ok, release_msg = self.ros_worker.call_trigger_detail(
                         "/release_objects", timeout_sec=20.0
-                    )
+                )
                     release_msg = (release_msg or "").strip()
                     self._emit_log(
                         "[PHYSICS][DROP] release_objects service "
                         f"success={str(bool(release_ok)).lower()} "
                         f"message='{release_msg or 'sin mensaje'}'"
-                    )
+                )
                 else:
                     release_msg = "release_objects service no disponible"
                     self._emit_log(f"[PHYSICS][DROP] {release_msg}")
@@ -5713,7 +5745,7 @@ class ControlPanelV2(QMainWindow):
                     hint = release_msg or "revisa [PHYSICS][DROP] para delete/spawn/drop_anchor"
                     self._emit_log(
                         f"[PHYSICS][DROP] release_objects failed: {hint}"
-                    )
+                )
                     self._ui_set_status(f"❌ Soltar objetos falló: {hint}", error=True)
                     if self._auto_release_drop_objects:
                         self._schedule_release_retry(f"release_failed:{hint}")
@@ -5728,7 +5760,7 @@ class ControlPanelV2(QMainWindow):
                     self._drop_anchor_attached = False
                     self._emit_log(
                         "[PHYSICS][DETACH] detach skipped: joint not present (global reset already applied)"
-                    )
+                )
                 elif detach_supported and self._drop_anchor_attached:
                     for name in DROP_OBJECT_NAMES:
                         topic = f"{DROP_ANCHOR_PREFIX}/{name}/detach"
@@ -5757,7 +5789,7 @@ class ControlPanelV2(QMainWindow):
                 else:
                     self._emit_log(
                         "[PHYSICS][DETACH] detach skipped: joint not present"
-                    )
+                )
 
                 self._objects_release_done = True
                 self._objects_settled = False
@@ -5769,11 +5801,11 @@ class ControlPanelV2(QMainWindow):
                 ):
                     mark_object_released(
                         PICK_DEMO_OBJECT_NAME, reason="release_objects_grasped"
-                    )
+                )
                 else:
                     self._emit_log(
                         "[OBJECTS] release grasp skipped (not grasped/carried); applying global reset"
-                    )
+                )
                 released_count = force_release_all_objects(
                     reason="release_objects_global_reset"
                 )
@@ -5990,7 +6022,7 @@ class ControlPanelV2(QMainWindow):
                         float(pos.get("x") or 0.0),
                         float(pos.get("y") or 0.0),
                         float(pos.get("z") or 0.0),
-                    )
+                )
                 except Exception:
                     continue
         held = 0
@@ -6027,7 +6059,7 @@ class ControlPanelV2(QMainWindow):
                         text=True,
                         capture_output=True,
                         timeout=1.6,
-                    )
+                )
                 except Exception as exc:
                     if not self._drop_hold_gz_warned:
                         self._emit_log(f"[PHYSICS][HOLD] gz service error: {exc}")
@@ -6368,6 +6400,9 @@ class ControlPanelV2(QMainWindow):
         self._bag_running = bag_ok
         self._moveit_running = moveit_ok
         self._moveit_bridge_running = moveit_bridge_ok
+        if (not self._moveit_required) and moveit_ok:
+            self._moveit_required = True
+            self._emit_log("[MOVEIT] move_group detectado; habilitando moveit_required automáticamente")
         if br_ok and not prev_bridge:
             # Selective init without critical TF deadlines (same as panel_launchers.py)
             self._ensure_pose_subscription()
@@ -6422,6 +6457,14 @@ class ControlPanelV2(QMainWindow):
         except Exception:
             return []
 
+    def _list_action_names(self) -> List[str]:
+        if not self.ros_worker or not self.ros_worker.node_ready():
+            return []
+        try:
+            return self.ros_worker.list_action_names()
+        except Exception:
+            return []
+
     def _topic_has_any_publishers(self, topics: List[str]) -> bool:
         if not self.ros_worker or not self.ros_worker.node_ready():
             return False
@@ -6439,10 +6482,55 @@ class ControlPanelV2(QMainWindow):
     def _follow_joint_traj_ready(self) -> bool:
         if not ROS_AVAILABLE or ActionClient is None or FollowJointTrajectory is None:
             return False
+        strict_action = str(os.environ.get("PANEL_STRICT_TRAJ_ACTION", "1")).strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        expected_action = str(
+            os.environ.get(
+                "PANEL_EXPECTED_TRAJ_ACTION",
+                "/joint_trajectory_controller/follow_joint_trajectory",
+            )
+        ).strip()
+        action_names = set(self._list_action_names())
+        action_topics = set(self._list_topic_names())
+
+        def _action_graph_ready(action_name: str) -> bool:
+            if not action_name:
+                return False
+            status_topic = f"{action_name}/_action/status"
+            feedback_topic = f"{action_name}/_action/feedback"
+            goal_topic = f"{action_name}/_action/send_goal"
+            if status_topic in action_topics or feedback_topic in action_topics or goal_topic in action_topics:
+                return True
+            if not self.ros_worker or not self.ros_worker.node_ready():
+                return False
+            return bool(
+                self.ros_worker.topic_has_publishers(status_topic)
+                or self.ros_worker.topic_has_publishers(feedback_topic)
+                or self.ros_worker.topic_has_subscribers(goal_topic)
+            )
+
+        if strict_action and expected_action:
+            if expected_action not in action_names:
+                if not _action_graph_ready(expected_action):
+                    return False
+            action_name = expected_action
+        else:
+            action_name = ""
+
+        # Fallback de robustez: si el action server esperado ya existe en el grafo
+        # ROS pero el nodo local de MoveIt aun no esta inicializado, aceptar READY.
         if self._moveit_node is None:
-            return False
+            if strict_action and expected_action:
+                return expected_action in action_names or _action_graph_ready(expected_action)
+            return bool(action_names)
+
         traj_topic = self._select_traj_topic()
-        action_name = self._resolve_traj_action_name(traj_topic, allow_fallback=True)
+        if not action_name:
+            action_name = self._resolve_traj_action_name(traj_topic, allow_fallback=True)
         if not action_name:
             return False
         if self._traj_action_client is None or self._traj_action_name != action_name:
@@ -7384,7 +7472,18 @@ class ControlPanelV2(QMainWindow):
                 z_grasp_offset = _env_float("PANEL_PICK_Z_GRASP_OFFSET_M", 0.02)
                 speed_scale = max(0.01, min(1.0, _env_float("PANEL_PICK_SPEED_SCALE", 0.25)))
                 accel_scale = max(0.01, min(1.0, _env_float("PANEL_PICK_ACCEL_SCALE", 0.25)))
-                result_timeout = max(1.0, _env_float("PANEL_TFM_MOVEIT_RESULT_TIMEOUT_SEC", 10.0))
+                bridge_request_timeout = max(
+                    2.0,
+                    _env_float("PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC", 35.0),
+                )
+                result_timeout = max(
+                        10.0,
+                        _env_float(
+                            "PANEL_TFM_MOVEIT_RESULT_TIMEOUT_SEC",
+                            bridge_request_timeout,
+                        ),
+                        bridge_request_timeout,
+                )
                 z_grasp = max(table_top_base + min_margin, z_raw + z_grasp_offset)
                 z_pre = max(z_grasp + z_approach, table_top_base + min_margin + 0.02)
                 z_retreat = z_pre
@@ -7413,7 +7512,8 @@ class ControlPanelV2(QMainWindow):
                     f"[TFM] execute START source={source} base=({x:.3f},{y:.3f},{z_grasp:.3f}) "
                     f"pre_z={z_pre:.3f} yaw={yaw_deg:.1f} frame={frame} wait_result={str(has_results).lower()} "
                     f"z_approach={z_approach:.3f} z_grasp_offset={z_grasp_offset:+.3f} "
-                    f"speed_scale={speed_scale:.2f} accel_scale={accel_scale:.2f}",
+                    f"speed_scale={speed_scale:.2f} accel_scale={accel_scale:.2f} "
+                    f"result_timeout={result_timeout:.1f}",
                 )
 
                 self.signal_run_ui.emit(lambda: self._command_gripper(False, log_action="PICK", force=True))
@@ -7446,7 +7546,7 @@ class ControlPanelV2(QMainWindow):
                         timeout_sec=result_timeout,
                         expected_request_id=pre_request_id,
                         expected_request_uuid=pre_request_uuid,
-                    )
+                )
                     if not ok_pre:
                         raise RuntimeError(f"pregrasp_result_failed:{msg_pre}")
                 else:
@@ -7474,7 +7574,7 @@ class ControlPanelV2(QMainWindow):
                         timeout_sec=result_timeout,
                         expected_request_id=grasp_request_id,
                         expected_request_uuid=grasp_request_uuid,
-                    )
+                )
                     if not ok_grasp:
                         msg_low = str(msg_grasp or "").lower()
                         reason = "unknown"
@@ -7540,7 +7640,7 @@ class ControlPanelV2(QMainWindow):
                         timeout_sec=result_timeout,
                         expected_request_id=retreat_request_id,
                         expected_request_uuid=retreat_request_uuid,
-                    )
+                )
                     if not ok_ret:
                         raise RuntimeError(f"retreat_result_failed:{msg_ret}")
                 else:
@@ -7723,7 +7823,7 @@ class ControlPanelV2(QMainWindow):
                         "ur5_qt_panel",
                         "config",
                         "panel_test_tuning.yaml",
-                    )
+                )
                 cfg_path = Path(os.path.expandvars(os.path.expanduser(cfg_env)))
                 if not cfg_path.is_file():
                     return {}
@@ -7844,11 +7944,11 @@ class ControlPanelV2(QMainWindow):
                     moveit_ready = (
                         self._moveit_state == MoveItState.READY
                         or self._moveit_status_ready()
-                    )
+                )
                     bridge_ready = self._moveit_bridge_detected()
                     result_topic_ready = self.ros_worker.topic_has_publishers(
                         "/desired_grasp/result"
-                    )
+                )
 
                     if moveit_ready and bridge_ready and result_topic_ready:
                         if self.ros_worker.subscribe_moveit_result("/desired_grasp/result"):
@@ -7904,17 +8004,17 @@ class ControlPanelV2(QMainWindow):
                 def _select_test_ee_frame(local_base_frame: str) -> str:
                     preferred = str(
                         os.environ.get("PANEL_TEST_TOUCH_TIP_FRAME", "rg2_tcp") or "rg2_tcp"
-                    ).strip() or "rg2_tcp"
+                ).strip() or "rg2_tcp"
                     helper = get_tf_helper()
                     # FASE 1: timeout 0.5s (antes 0.08s) para reducir spam TF
                     if helper and _can_transform_between(
                         helper, local_base_frame, preferred, timeout_sec=0.5
-                    ):
+                ):
                         return preferred
                     fallback = self._ee_frame_effective or "tool0"
                     if helper and _can_transform_between(
                         helper, local_base_frame, fallback, timeout_sec=0.5
-                    ):
+                ):
                         if fallback != preferred:
                             self._emit_log(
                                 "[TEST][FRAME] WARN "
@@ -7979,7 +8079,7 @@ class ControlPanelV2(QMainWindow):
                     world_safe_floor = _test_cfg_float(
                         "PANEL_TEST_FRAME_WORLD_SAFE_MIN_Z_M",
                         table_top - 0.30,
-                    )
+                )
                     safe_min_z = max(0.05, min(table_top + 0.20, float(world_safe_floor)))
                 else:
                     table_base, _table_tf = transform_point_to_frame(
@@ -7987,7 +8087,7 @@ class ControlPanelV2(QMainWindow):
                         base_frame,
                         source_frame=WORLD_FRAME or "world",
                         timeout_sec=0.4,
-                    )
+                )
                     if table_base:
                         safe_min_z = max(safe_min_z, float(table_base[2]) + z_margin)
 
@@ -8158,7 +8258,7 @@ class ControlPanelV2(QMainWindow):
                         float(before_pos[0] + delta[0]),
                         float(before_pos[1] + delta[1]),
                         float(before_pos[2] + delta[2]),
-                    )
+                )
                     for scale in (1.0, 0.6, 0.35):
                         eff_delta = (
                             float(delta[0] * scale),
@@ -8217,7 +8317,7 @@ class ControlPanelV2(QMainWindow):
                         target=target,
                         tol_m=target_tol,
                         timeout_sec=tf_settle_sec,
-                    )
+                )
                     if after_pos is None:
                         return False, f"{label}:read_after_failed:{err_after}"
                     dx = float(after_pos[0] - before_pos[0])
@@ -8233,7 +8333,7 @@ class ControlPanelV2(QMainWindow):
                     cross_ok = cross_max <= cross_limit
                     measurement_reliable = not (
                         bool(err_after) and str(err_after).startswith("settle_timeout")
-                    )
+                )
                     if err_after:
                         self._emit_log(
                             "[TEST][FRAME] WARN "
@@ -8246,7 +8346,7 @@ class ControlPanelV2(QMainWindow):
                         f"actual=({dx:+.3f},{dy:+.3f},{dz:+.3f}) "
                         f"axis_ok={str(axis_ok).lower()} cross_ok={str(cross_ok).lower()} "
                         f"min_axis={min_axis:.3f} cross_max={cross_max:.3f} cross_lim={cross_limit:.3f}"
-                    )
+                )
                     if (not strict_frame_measurements) and (not measurement_reliable):
                         self._emit_log(
                             "[TEST][FRAME] WARN "
@@ -8298,7 +8398,7 @@ class ControlPanelV2(QMainWindow):
                         (float(before_pos[0]), float(before_pos[1]), float(min_probe_z)),
                         orientation=before_ori,
                         frame=_encode_request_frame(frame_ref, rid, ruid),
-                    )
+                )
                     _raw, since_wall, since_seq = self.ros_worker.moveit_result_snapshot()
                     if not self._publish_moveit_pose("TEST_FRAME_SAFE_Z", pose_data, cartesian=False):
                         return False, "safe_height:publish_failed"
@@ -8309,14 +8409,14 @@ class ControlPanelV2(QMainWindow):
                         timeout_sec=result_timeout,
                         expected_request_id=rid,
                         expected_request_uuid=ruid,
-                    )
+                )
                     if not ok_res:
                         return False, f"safe_height:result_failed:{msg_res}"
                     safe_target = (
                         float(before_pos[0]),
                         float(before_pos[1]),
                         float(min_probe_z),
-                    )
+                )
                     last_pose_hint = safe_target
                     last_ori_hint = before_ori
                     last_pose_hint_wall = time.time()
@@ -8324,14 +8424,14 @@ class ControlPanelV2(QMainWindow):
                         target=safe_target,
                         tol_m=max(target_tol_abs, 0.02),
                         timeout_sec=tf_settle_sec,
-                    )
+                )
                     if after_pos is None:
                         return False, f"safe_height:read_after_failed:{err_after}"
                     self._emit_log(
                         "[TEST][FRAME] safe_height lifted "
                         f"before_z={float(before_pos[2]):.3f} after_z={float(after_pos[2]):.3f} "
                         f"min_probe_z={min_probe_z:.3f}"
-                    )
+                )
                     if float(after_pos[2]) < safe_min_z:
                         if (not strict_frame_measurements) and bool(err_after):
                             self._emit_log(
@@ -8384,11 +8484,11 @@ class ControlPanelV2(QMainWindow):
                         anchor_target,
                         orientation=ori_now,
                         frame=_encode_request_frame(frame_ref, rid, ruid),
-                    )
+                )
                     _raw, since_wall, since_seq = self.ros_worker.moveit_result_snapshot()
                     if not self._publish_moveit_pose(
                         "TEST_FRAME_ANCHOR", pose_data, cartesian=False
-                    ):
+                ):
                         return False, "anchor:publish_failed"
                     ok_res, msg_res = self._wait_tfm_moveit_result(
                         "TEST_FRAME_ANCHOR",
@@ -8397,7 +8497,7 @@ class ControlPanelV2(QMainWindow):
                         timeout_sec=result_timeout,
                         expected_request_id=rid,
                         expected_request_uuid=ruid,
-                    )
+                )
                     if not ok_res:
                         return False, f"anchor:result_failed:{msg_res}"
                     last_pose_hint = anchor_target
@@ -8407,7 +8507,7 @@ class ControlPanelV2(QMainWindow):
                         target=anchor_target,
                         tol_m=max(target_tol_abs, 0.03),
                         timeout_sec=tf_settle_sec,
-                    )
+                )
                     if after_pos is None:
                         return False, f"anchor:read_after_failed:{err_after}"
                     self._emit_log(
@@ -8415,7 +8515,7 @@ class ControlPanelV2(QMainWindow):
                         f"target=({anchor_target[0]:+.3f},{anchor_target[1]:+.3f},{anchor_target[2]:+.3f}) "
                         f"tcp=({after_pos[0]:+.3f},{after_pos[1]:+.3f},{after_pos[2]:+.3f}) "
                         f"err={err_after or 'ok'}"
-                    )
+                )
                     return True, "ok"
 
                 self._emit_log(
@@ -8507,7 +8607,7 @@ class ControlPanelV2(QMainWindow):
                     fallback_ee = self._ee_frame_effective or "tool0"
                     if _can_transform_between(
                         helper, base_frame, fallback_ee, timeout_sec=0.5
-                    ):
+                ):
                         ee_frame = fallback_ee
                         self._emit_log(
                             "[TEST][CORNER] WARN "
@@ -8762,7 +8862,7 @@ class ControlPanelV2(QMainWindow):
                 if not pose_world or not pose_base:
                     return None, None, (
                         f"world_err={err_world or 'n/a'} base_err={err_base or 'n/a'}"
-                    )
+                )
                 pw = pose_world.get("position", (0.0, 0.0, 0.0))
                 pb = pose_base.get("position", (0.0, 0.0, 0.0))
                 if (
@@ -8867,7 +8967,7 @@ class ControlPanelV2(QMainWindow):
                     _test_cfg_value(
                         "PANEL_TEST_TOUCH_ORDER",
                         "FRONT_LEFT,FRONT_RIGHT",
-                    )
+                )
                     or "FRONT_LEFT,FRONT_RIGHT"
                 )
                 touch_order: List[str] = []
@@ -8991,7 +9091,7 @@ class ControlPanelV2(QMainWindow):
                         float(_sanity_pos[0]),
                         float(_sanity_pos[1]),
                         float(_sanity_pos[2]),
-                    )
+                )
                     if _sz < -0.15 or _sz > 0.90 or abs(_sx) > 1.2 or abs(_sy) > 1.2:
                         self._emit_log(
                             f"[TEST][TOUCH] JOINT_CORRUPT tcp=({_sx:.3f},{_sy:.3f},{_sz:.3f})"
@@ -9023,7 +9123,7 @@ class ControlPanelV2(QMainWindow):
                     + ", ".join(
                         f"{name}=({coords[0]:.3f},{coords[1]:.3f},{coords[2]:.3f})"
                         for name, coords in corners
-                    )
+                )
                     + f" frame={base_frame} tip_frame={ee_frame}"
                 )
 
@@ -9382,7 +9482,7 @@ class ControlPanelV2(QMainWindow):
                         f"{mk}={mr.get('status','?')} "
                         f"attempts={mr.get('attempts','?')} "
                         f"dxy={mr.get('dxy',0):.3f} dz={mr.get('dz',0):.3f}"
-                    )
+                )
                 summary_line = (
                     "[TEST][TOUCH] TEST_RESULT: "
                     + ", ".join(summary_parts)
@@ -9410,26 +9510,26 @@ class ControlPanelV2(QMainWindow):
                 try:
                     table_check_enabled = _test_cfg_bool(
                         "PANEL_TEST_TABLE_CHECK_ENABLED", True
-                    )
+                )
                     table_check_skip_home = _test_cfg_bool(
                         "PANEL_TEST_TABLE_CHECK_SKIP_HOME", True
-                    )
+                )
                     table_check_xy_margin = max(
                         0.0, _test_cfg_float("PANEL_TEST_TABLE_XY_MARGIN_M", 0.00)
-                    )
+                )
                     table_check_z_eps = max(
                         0.002, _test_cfg_float("PANEL_TEST_TABLE_Z_EPS_M", 0.01)
-                    )
+                )
                     table_check_mode = str(
                         _test_cfg_value("PANEL_TEST_TABLE_MODE", "list") or "list"
-                    ).strip().lower()
+                ).strip().lower()
                     table_check_frames_raw = str(
                         _test_cfg_value(
                             "PANEL_TEST_TABLE_FRAMES",
                             "rg2_tcp,tool0,ee_link,flange,gripper_link,wrist_3_link",
                         )
                         or ""
-                    )
+                )
                     table_check_frames = [
                         part.strip()
                         for part in table_check_frames_raw.split(",")
@@ -9441,11 +9541,11 @@ class ControlPanelV2(QMainWindow):
                         f"skip_home={str(table_check_skip_home).lower()} "
                         f"mode={table_check_mode} xy_margin={table_check_xy_margin:.3f} "
                         f"z_eps={table_check_z_eps:.3f} frames={table_check_frames}"
-                    )
+                )
                     frame_probe_done = False
                     test_move_sec = max(
                         0.5, _test_cfg_float("PANEL_TEST_MOVE_SEC", min(float(move_sec), 1.5))
-                    )
+                )
 
                     # Modo simple por defecto: mover cada articulacion +-5% de su
                     # semirango fisico (segun limites), volver a HOME y finalizar.
@@ -9453,7 +9553,7 @@ class ControlPanelV2(QMainWindow):
                     # PANEL_TEST_SIMPLE_JOINT_PERCENT=0
                     simple_joint_percent_mode = _test_cfg_bool(
                         "PANEL_TEST_SIMPLE_JOINT_PERCENT", True
-                    )
+                )
 
                     def _run_joint_step(label: str, target: List[float]) -> Tuple[bool, str]:
                         self._ui_set_status(f"TEST ROBOT: {label}…")
@@ -9558,7 +9658,7 @@ class ControlPanelV2(QMainWindow):
                     # HOME -> TOUCH_LEFT -> TOUCH_RIGHT -> HOME.
                     self._emit_log(
                         "[TEST][SEQ] HOME->TOUCH_LEFT->TOUCH_RIGHT->HOME"
-                    )
+                )
                     self._ui_set_status("TEST ROBOT: tocar marca izquierda/derecha…")
                     ok_touch, info_touch = _run_table_marker_touch_probe()
                     if not ok_touch:
@@ -9604,7 +9704,7 @@ class ControlPanelV2(QMainWindow):
                     self._audit_append(
                         "logs/test_robot.log",
                         "[TEST] RESULT=PASS",
-                    )
+                )
                     QTimer.singleShot(0, lambda: self._set_robot_test_done(True))
                 except Exception as exc:
                     reason = f"EXCEPTION ({type(exc).__name__}: {exc})"
@@ -9708,7 +9808,7 @@ class ControlPanelV2(QMainWindow):
                         self._selected_object,
                         logical_state=ObjectLogicalState.ON_TABLE,
                         reason="remote_clear",
-                    )
+                )
             self._selected_object = None
             self._selected_px = None
             self._selected_world = None
@@ -9752,7 +9852,20 @@ class ControlPanelV2(QMainWindow):
             else:
                 _ack(False, f"selection_rejected:{target}")
             return
-        self._on_object_clicked(target)
+        objects = get_object_positions() or {}
+        obj_pose = objects.get(target)
+        if obj_pose is not None and len(obj_pose) >= 3:
+            x, y, z = float(obj_pose[0]), float(obj_pose[1]), float(obj_pose[2])
+            px, py = -1, -1
+            w = getattr(self.camera_view, "_img_width", 0) if hasattr(self, "camera_view") else 0
+            h = getattr(self.camera_view, "_img_height", 0) if hasattr(self, "camera_view") else 0
+            if self._camera_stream_ok and self._pose_info_ok and w > 0 and h > 0:
+                pix = world_xyz_to_pixel(x, y, z, w, h) or table_xy_to_pixel(x, y, w, h)
+                if pix:
+                    px, py = int(pix[0]), int(pix[1])
+            self._select_object(target, px, py, x, y, z, source="remote_store")
+        else:
+            self._on_object_clicked(target)
         if getattr(self, "_selected_object", None) == target:
             _ack(True, "selected")
         else:
@@ -10549,7 +10662,7 @@ class ControlPanelV2(QMainWindow):
                         bash_preamble(self.ws_dir)
                         + env
                         + f"gz topic -e -n 1 -t '/world/{world_name}/pose/info' --json-output"
-                    )
+                )
                     res = subprocess.run(["bash", "-lc", cmd], text=True, capture_output=True)
                     poses = _parse_pose_json(res.stdout or "")
                     if poses:
@@ -10582,7 +10695,7 @@ class ControlPanelV2(QMainWindow):
                         (float(lock_pose[0]), float(lock_pose[1]), float(lock_pose[2])),
                         self._world_frame_last_first(),
                         timeout_sec=0.35,
-                    )
+                )
                     base_txt = "base=(n/a)"
                     if lock_base is not None:
                         base_txt = (
@@ -10593,13 +10706,13 @@ class ControlPanelV2(QMainWindow):
                         f"lock_id={lock_id} lock_name={lock_name} "
                         f"{base_txt} "
                         f"source={src}"
-                    )
+                )
                 else:
                     self._emit_log_throttled(
                         f"PICK:target_lock_pose_missing:{lock_name}",
                         "[PICK_OBJ][TARGET_LOCK] pose_sync_during_pick_missing "
                         f"lock_id={lock_id} lock_name={lock_name}",
-                    )
+                )
 
         updated = bulk_update_object_positions(
             updates,
@@ -10625,7 +10738,7 @@ class ControlPanelV2(QMainWindow):
                         (float(x), float(y), float(z)),
                         self._world_frame_last_first(),
                         timeout_sec=0.25,
-                    )
+                )
                     if base_pose is not None:
                         sample.append(
                             f"{name}=({float(base_pose[0]):.3f},{float(base_pose[1]):.3f},{float(base_pose[2]):.3f})@{source_name}"
@@ -10636,7 +10749,7 @@ class ControlPanelV2(QMainWindow):
                     self._emit_log(
                         "[OBJECTS][POSE_SRC] frame_id=base_link source=pose_info "
                         + " ".join(sample[:8])
-                    )
+                )
             self._post_calibration_pipeline()
             self.signal_update_objects.emit()
             self._log(f"[PICK] Objetos sincronizados desde Gazebo ({updated}).")
@@ -11171,7 +11284,7 @@ class ControlPanelV2(QMainWindow):
                 try:
                     converted = world_to_base(
                         float(point[0]), float(point[1]), float(point[2])
-                    )
+                )
                 except Exception:
                     converted = None
             if converted is not None:
@@ -11805,7 +11918,7 @@ class ControlPanelV2(QMainWindow):
                         base_frame,
                         source_frame=world_frame,
                         timeout_sec=PICK_TF_RETRY_SEC,
-                    )
+                )
                     if coords:
                         break
                     self._wait_for_state_change(PICK_TF_RETRY_SEC)
@@ -11817,14 +11930,8 @@ class ControlPanelV2(QMainWindow):
                 self._last_selected_base_pose = (coords[0], coords[1], coords[2], base_frame)
                 self._selected_base = (float(coords[0]), float(coords[1]), float(coords[2]))
                 self._selected_base_frame = base_frame
-                pose_data = _make_pose_data(coords, frame=base_frame)
-                if self._publish_moveit_pose("PICK_CLICK", pose_data):
-                    # PICK_CLICK is fire-and-forget: do not keep global MoveIt lock latched.
-                    self._motion_in_progress = False
-                    self._ui_set_status("PICK click -> /desired_grasp publicado", error=False)
-                else:
-                    reason = self._moveit_block_reason or self._moveit_not_ready_reason()
-                    self._ui_set_status(f"PICK click bloqueado: {reason}", error=False)
+                self._motion_in_progress = False
+                self._ui_set_status("Objeto seleccionado; listo para PICK", error=False)
             finally:
                 self._pick_tf_inflight = False
 
@@ -12007,7 +12114,7 @@ class ControlPanelV2(QMainWindow):
                     on_table_state = bool(
                         state
                         and state.logical_state in (ObjectLogicalState.ON_TABLE, ObjectLogicalState.SELECTED)
-                    )
+                )
                     pickable_map[name] = bool(use_cache.get(name, False)) and on_table_state
             else:
                 for name, (x, y, _z) in objects.items():
@@ -12015,7 +12122,7 @@ class ControlPanelV2(QMainWindow):
                     on_table_state = bool(
                         state
                         and state.logical_state in (ObjectLogicalState.ON_TABLE, ObjectLogicalState.SELECTED)
-                    )
+                )
                     pickable_map[name] = not object_out_of_reach(x, y) and on_table_state
         self.obj_panel.update_objects(objects, pickable=pickable_map)
 
@@ -12927,13 +13034,13 @@ class ControlPanelV2(QMainWindow):
                         float(base_pose.pose.position.x),
                         float(base_pose.pose.position.y),
                         float(base_pose.pose.position.z),
-                    ),
+                ),
                     (
                         float(base_pose.pose.orientation.x),
                         float(base_pose.pose.orientation.y),
                         float(base_pose.pose.orientation.z),
                         float(base_pose.pose.orientation.w),
-                    ),
+                ),
                     base_frame,
                 )
                 self._last_selected_world_pose = (float(wx), float(wy), float(wz), world_frame)
@@ -12965,13 +13072,13 @@ class ControlPanelV2(QMainWindow):
                         float(tcp_pose_base.pose.position.x),
                         float(tcp_pose_base.pose.position.y),
                         float(tcp_pose_base.pose.position.z),
-                    ),
+                ),
                     (
                         float(tcp_pose_base.pose.orientation.x),
                         float(tcp_pose_base.pose.orientation.y),
                         float(tcp_pose_base.pose.orientation.z),
                         float(tcp_pose_base.pose.orientation.w),
-                    ),
+                ),
                     base_frame,
                 )
                 self._last_trace_tcp_base = (
@@ -12989,14 +13096,14 @@ class ControlPanelV2(QMainWindow):
                     helper
                     and _can_transform_between(
                         helper, base_frame, world_frame, timeout_sec=0.05
-                    )
+                )
                 )
                 if world_tf_available:
                     tcp_world_pose, world_reason = tf_transform_pose(
                         tcp_pose_base,
                         target_frame=world_frame,
                         timeout=0.08,
-                    )
+                )
                     if tcp_world_pose is not None:
                         tcp_world_data = self._pose_dict(
                             (
@@ -13588,22 +13695,16 @@ class ControlPanelV2(QMainWindow):
                     self._ui_set_status(
                         "Movimiento manual bloqueado: PICK_OBJ MoveIt en ejecución",
                         error=True,
-                    )
+                )
                     self._emit_log(
                         "[MANUAL] BLOCKED: intento de publicar durante fase MoveIt de PICK_OBJ"
-                    )
+                )
                     return
-                stamp_msg = None
-                try:
-                    stamp_msg = Time().to_msg()
-                except Exception as exc:
-                    _log_exception("manual joint trajectory stamp", exc)
                 self._emit_log("[MANUAL] Executing direct JointTrajectory (MoveIt bypassed)")
                 traj = build_joint_trajectory(
                     positions,
                     sec,
                     UR5_JOINT_NAMES,
-                    stamp_msg=stamp_msg,
                 )
                 if self._traj_publish_inflight:
                     self._emit_log("[MANUAL] WARN: publish JointTrajectory solapado")
