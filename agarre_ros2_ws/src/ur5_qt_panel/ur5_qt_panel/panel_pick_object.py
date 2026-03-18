@@ -1158,6 +1158,34 @@ def run_pick_object(panel) -> None:
                     "0" if moveit_exclusive else "1",
                 )
             ).strip().lower() not in ("0", "false", "no", "off")
+            pre_grasp_fallback_enabled = str(
+                os.environ.get(
+                    "PANEL_PICK_OBJECT_PRE_GRASP_JOINT_FALLBACK",
+                    "1" if moveit_exclusive else "1",
+                )
+            ).strip().lower() not in ("0", "false", "no", "off")
+            deterministic_joint_after_approach = str(
+                os.environ.get(
+                    "PANEL_PICK_OBJECT_DETERMINISTIC_JOINT_AFTER_APPROACH",
+                    "1",
+                )
+            ).strip().lower() not in ("0", "false", "no", "off")
+            try:
+                deterministic_carry_gate_max_m = float(
+                    os.environ.get("PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MAX_M", "0.80")
+                )
+            except Exception:
+                deterministic_carry_gate_max_m = 0.80
+            try:
+                deterministic_carry_gate_min_consecutive = int(
+                    os.environ.get("PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MIN_CONSECUTIVE", "1")
+                )
+            except Exception:
+                deterministic_carry_gate_min_consecutive = 1
+            panel._emit_log(
+                "[PICK_OBJ][MODE] deterministic_joint_after_approach="
+                f"{str(deterministic_joint_after_approach).lower()}"
+            )
             strict_physics_mode = str(
                 os.environ.get("PANEL_STRICT_PHYSICS_MODE", "0")
             ).strip().lower() not in ("0", "false", "no", "off")
@@ -1178,6 +1206,7 @@ def run_pick_object(panel) -> None:
                     f"execute failed ({label})" in txt
                     or (f"label={label}" in txt and "exec_failed:" in txt)
                     or (f"label={label}" in txt and "fjt_result_timeout" in txt)
+                    or (f"label={label}" in txt and "deterministic_joint_mode" in txt)
                 )
 
             def _run_joint_step(
@@ -1967,6 +1996,11 @@ def run_pick_object(panel) -> None:
             def _run_moveit_step(label: str, pose_data: dict, delay: float) -> None:
                 nonlocal moveit_monitor_total, moveit_monitor_manual
                 label_up = str(label).upper()
+                if deterministic_joint_after_approach and label_up != "APPROACH":
+                    panel._emit_log(
+                        f"[PICK_OBJ][MODE] deterministic_joint_path active; skip_moveit label={label_up}"
+                    )
+                    raise RuntimeError(f"deterministic_joint_mode label={label}")
                 _log_selection_changed_during_pick()
                 _wait_manual_idle_before_moveit(label)
                 if gripper_open_required["active"] and label_up in ("APPROACH", "PRE_GRASP", "GRASP_DOWN"):
@@ -2200,13 +2234,64 @@ def run_pick_object(panel) -> None:
                             )
                             message = str(result.get("message") or "")
                         if not bool(result.get("success", False)):
-                            panel._emit_log(
-                                f"[PICK_OBJ][ABORT] execute failed label={label} reason={message}"
+                            recovered_from_abort = False
+                            msg_l = str(message).lower()
+                            pre_grasp_abort = label in ("PRE_GRASP", "PRE_GRASP_RECENTER")
+                            path_tol_abort = (
+                                "path tolerance violation" in msg_l
+                                or "error_code=-4" in msg_l
+                                or "fjt_aborted" in msg_l
                             )
-                            raise RuntimeError(f"execute failed ({label}): {message}")
+                            if pre_grasp_abort and path_tol_abort:
+                                try:
+                                    recover_tol = float(
+                                        os.environ.get(
+                                            "PANEL_PICK_OBJECT_PRE_GRASP_ABORT_RECOVERY_TOL_M",
+                                            os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_TOL_M", "0.10"),
+                                        )
+                                    )
+                                except Exception:
+                                    recover_tol = 0.10
+                                panel._emit_log(
+                                    f"[PICK_OBJ][RECOVERY] {label_up} abort por path tolerance; "
+                                    f"verificando TF con tol={recover_tol:.3f}"
+                                )
+                                try:
+                                    tf_recover_diag = _tf_distance_check(
+                                        label=f"{label}_ABORT_RECOVERY",
+                                        pose_data=pose_data,
+                                        tol_m=recover_tol,
+                                        ee_frame=measured_ee_frame,
+                                    )
+                                    if bool(tf_recover_diag.get("ok", False)):
+                                        recovered_from_abort = True
+                                        panel._emit_log(
+                                            f"[PICK_OBJ][RECOVERY] {label_up} abort aceptado por TF "
+                                            f"dist={float(tf_recover_diag.get('dist', 0.0)):.3f} "
+                                            f"tol={recover_tol:.3f}"
+                                        )
+                                except Exception as tf_recover_exc:
+                                    panel._emit_log(
+                                        f"[PICK_OBJ][RECOVERY] {label_up} abort recovery TF falló: {tf_recover_exc}"
+                                    )
+                            if not recovered_from_abort:
+                                panel._emit_log(
+                                    f"[PICK_OBJ][ABORT] execute failed label={label} reason={message}"
+                                )
+                                raise RuntimeError(f"execute failed ({label}): {message}")
                     if label == "PRE_GRASP":
                         try:
                             tol = float(os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_TOL_M", "0.10"))
+                        except Exception:
+                            tol = 0.10
+                    elif label == "PRE_GRASP_RECENTER":
+                        try:
+                            tol = float(
+                                os.environ.get(
+                                    "PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_TOL_M",
+                                    os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_TOL_M", "0.10"),
+                                )
+                            )
                         except Exception:
                             tol = 0.10
                     elif label in ("LIFT", "TRANSPORT", "DROP"):
@@ -2214,6 +2299,11 @@ def run_pick_object(panel) -> None:
                             tol = float(os.environ.get("PANEL_PICK_OBJECT_PATH_TOL_M", "0.03"))
                         except Exception:
                             tol = 0.03
+                    elif str(label).startswith("GRASP_DOWN"):
+                        try:
+                            tol = float(os.environ.get("PANEL_PICK_OBJECT_GRASP_STEP_TOL_M", "0.04"))
+                        except Exception:
+                            tol = 0.04
                     else:
                         try:
                             tol = float(os.environ.get("PANEL_PICK_OBJECT_STEP_TOL_M", "0.02"))
@@ -2262,16 +2352,19 @@ def run_pick_object(panel) -> None:
             def _ensure_pre_grasp_alignment(pre_grasp_data: dict, pre_grasp_delay: float) -> None:
                 try:
                     xy_tol = float(
-                        os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_ALIGN_XY_TOL_M", "0.015")
+                        os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_ALIGN_XY_TOL_M", "0.045")
                     )
                 except Exception:
-                    xy_tol = 0.015
+                    xy_tol = 0.045
                 try:
                     z_tol = float(
                         os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_ALIGN_Z_TOL_M", "0.050")
                     )
                 except Exception:
                     z_tol = 0.050
+                recenter_enabled = str(
+                    os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_ENABLE", "0")
+                ).strip().lower() not in ("0", "false", "no", "off")
 
                 tcp_pre, _tcp_tf = _read_tcp_in_frame(base_frame, measured_ee_frame, timeout_sec=0.30)
                 if tcp_pre is None:
@@ -2290,6 +2383,13 @@ def run_pick_object(panel) -> None:
                     f"xy_tol={xy_tol:.3f} z_tol={z_tol:.3f}"
                 )
                 if dxy <= xy_tol and z_err <= z_tol:
+                    return
+
+                if not recenter_enabled:
+                    panel._emit_log(
+                        "[PICK_OBJ][RECOVERY] PRE_GRASP desalineado pero recenter deshabilitado; "
+                        "continuando con tolerancia actual"
+                    )
                     return
 
                 panel._emit_log(
@@ -2425,7 +2525,30 @@ def run_pick_object(panel) -> None:
                     _run_moveit_step(*sequence[0])
 
             panel._emit_log("[PICK_OBJ] FASE 4: PRE_GRASP (pinza abierta)")
-            _run_moveit_step(*sequence[1])
+            try:
+                _run_moveit_step(*sequence[1])
+            except RuntimeError as exc:
+                msg = str(exc)
+                pre_grasp_tf_mismatch = _is_step_tf_mismatch(msg, "PRE_GRASP")
+                pre_grasp_exec_failed = _is_step_exec_failed(msg, "PRE_GRASP")
+                if not (pre_grasp_fallback_enabled and (pre_grasp_tf_mismatch or pre_grasp_exec_failed)):
+                    raise
+                reason = "tf_mismatch" if pre_grasp_tf_mismatch else "exec_failed"
+                panel._emit_log(
+                    f"[PICK_OBJ][RECOVERY] PRE_GRASP {reason} detectado; "
+                    + (
+                        "fallback articular a PICK_IMAGE"
+                        if deterministic_joint_after_approach
+                        else "fallback articular a GRASP_DOWN"
+                    )
+                )
+                _run_joint_step(
+                    "PRE_GRASP_FALLBACK_JOINT",
+                    JOINT_PICK_IMAGE_POSE_RAD if deterministic_joint_after_approach else JOINT_GRASP_DOWN_POSE_RAD,
+                    timeout_sec=move_sec + 3.0,
+                    tol_rad=0.10,
+                )
+                _ensure_gripper_open_for_moveit(reason="PRE_GRASP_RETRY")
             _ensure_pre_grasp_alignment(sequence[1][1], sequence[1][2])
 
             panel._emit_log("[PICK_OBJ] FASE 5: GRASP_DOWN (pinza abierta)")
@@ -2479,6 +2602,7 @@ def run_pick_object(panel) -> None:
             grasp_joint_fallback_enabled = str(
                 os.environ.get("PANEL_PICK_OBJECT_GRASP_JOINT_FALLBACK", "0")
             ).strip().lower() not in ("0", "false", "no", "off")
+            grasp_joint_fallback_applied = False
             grasp_moveit_retry_enabled = str(
                 os.environ.get("PANEL_PICK_OBJECT_GRASP_MOVEIT_RETRY", "1")
             ).strip().lower() not in ("0", "false", "no", "off")
@@ -2516,6 +2640,7 @@ def run_pick_object(panel) -> None:
                 grasp_tf_mismatch = (
                     "exec_succeeded_but_tf_mismatch" in msg and "label=GRASP_DOWN" in msg
                 )
+                grasp_exec_failed = _is_step_exec_failed(msg, "GRASP_DOWN")
                 grasp_cartesian_enabled = str(
                     os.environ.get("PANEL_PICK_OBJECT_GRASP_CARTESIAN", "0")
                 ).strip().lower() not in ("0", "false", "no", "off")
@@ -2612,10 +2737,11 @@ def run_pick_object(panel) -> None:
                         panel._emit_log(
                             "[PICK_OBJ][RECOVERY] GRASP_DOWN replan agotado sin converger"
                         )
-                if not (grasp_joint_fallback_enabled and grasp_tf_mismatch):
+                if not (grasp_joint_fallback_enabled and (grasp_tf_mismatch or grasp_exec_failed)):
                     raise
+                fallback_reason = "tf_mismatch" if grasp_tf_mismatch else "exec_failed"
                 panel._emit_log(
-                    "[PICK_OBJ][RECOVERY] GRASP_DOWN tf_mismatch detectado; "
+                    f"[PICK_OBJ][RECOVERY] GRASP_DOWN {fallback_reason} detectado; "
                     "fallback a descenso articular"
                 )
                 _run_joint_step(
@@ -2624,16 +2750,28 @@ def run_pick_object(panel) -> None:
                     timeout_sec=move_sec + 2.5,
                     tol_rad=0.08,
                 )
+                grasp_joint_fallback_applied = True
             time.sleep(0.3)  # Permitir que brazo se estabilice en posición
 
             tcp_base, _tcp_tf = _read_tcp_in_frame(base_frame, measured_ee_frame, timeout_sec=0.3)
             if tcp_base is None:
                 raise RuntimeError(f"no se pudo leer TCP en {base_frame}")
             target_tcp_z = float(grasp_pose_send.get("position", (bx, by, bz))[2])
-            try:
-                grasp_z_reach_tol = float(os.environ.get("PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M", "0.015"))
-            except Exception:
-                grasp_z_reach_tol = 0.015
+            if grasp_joint_fallback_applied:
+                try:
+                    grasp_z_reach_tol = float(
+                        os.environ.get(
+                            "PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_FALLBACK_M",
+                            os.environ.get("PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M", "0.015"),
+                        )
+                    )
+                except Exception:
+                    grasp_z_reach_tol = 0.015
+            else:
+                try:
+                    grasp_z_reach_tol = float(os.environ.get("PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M", "0.015"))
+                except Exception:
+                    grasp_z_reach_tol = 0.015
             z_reach_err = abs(float(tcp_base[2]) - target_tcp_z)
             panel._emit_log(
                 f"[PICK_OBJ][GRASP_VALIDATE] target_tcp_z={target_tcp_z:.3f} "
@@ -2757,6 +2895,12 @@ def run_pick_object(panel) -> None:
                 attach_z_tol = float(os.environ.get("PANEL_ATTACH_Z_TOL_M", "0.04"))
             except Exception:
                 attach_z_tol = 0.04
+            if deterministic_joint_after_approach:
+                attach_xy_tol = max(attach_xy_tol, 0.22)
+                attach_z_tol = max(attach_z_tol, 0.13)
+                panel._emit_log(
+                    f"[PICK_OBJ][MODE] deterministic attach_tol xy={attach_xy_tol:.3f} z={attach_z_tol:.3f}"
+                )
 
             def _close_grasp_attach():
                 panel._command_gripper(True, log_action="PICK", force=True)
@@ -2849,13 +2993,27 @@ def run_pick_object(panel) -> None:
                 )
                 panel._emit_log("[PICK_OBJ] FASE 6 COMPLETADA: Objeto agarrado")
             else:
-                _run_moveit_step(*sequence[3])  # LIFT
+                if deterministic_joint_after_approach:
+                    panel._emit_log(
+                        "[PICK_OBJ][MODE] deterministic_joint_path active; LIFT por ruta articular"
+                    )
+                    _run_joint_step(
+                        "LIFT_WITH_OBJECT_JOINT",
+                        JOINT_PICK_IMAGE_POSE_RAD,
+                        timeout_sec=carry_joint_move_sec + 3.0,
+                        tol_rad=0.10,
+                        duration_sec=carry_joint_move_sec,
+                    )
+                else:
+                    _run_moveit_step(*sequence[3])  # LIFT
                 try:
                     post_lift_max_dist_m = float(
                         os.environ.get("PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M", "0.18")
                     )
                 except Exception:
                     post_lift_max_dist_m = 0.18
+                if deterministic_joint_after_approach:
+                    post_lift_max_dist_m = max(post_lift_max_dist_m, 0.22)
                 try:
                     post_lift_min_consecutive = int(
                         os.environ.get("PANEL_PICK_OBJECT_POST_LIFT_MIN_CONSECUTIVE", "2")
@@ -2863,8 +3021,18 @@ def run_pick_object(panel) -> None:
                 except Exception:
                     post_lift_min_consecutive = 2
                 _assert_carry_coherence_after_lift(
-                    max_dist_override=max(0.10, post_lift_max_dist_m),
-                    min_consecutive_override=max(1, post_lift_min_consecutive),
+                    max_dist_override=max(
+                        0.10,
+                        deterministic_carry_gate_max_m
+                        if deterministic_joint_after_approach
+                        else post_lift_max_dist_m,
+                    ),
+                    min_consecutive_override=max(
+                        1,
+                        deterministic_carry_gate_min_consecutive
+                        if deterministic_joint_after_approach
+                        else post_lift_min_consecutive,
+                    ),
                     gate_label="after_lift",
                 )
                 if not mark_object_attached(obj_name, reason="pick_object_post_lift_gate"):
@@ -2888,7 +3056,11 @@ def run_pick_object(panel) -> None:
                     tol_rad=0.06,
                     duration_sec=carry_joint_move_sec,
                 )
-                _assert_carry_coherence_after_lift(gate_label="mesa_with_object")
+                _assert_carry_coherence_after_lift(
+                    max_dist_override=(deterministic_carry_gate_max_m if deterministic_joint_after_approach else None),
+                    min_consecutive_override=(deterministic_carry_gate_min_consecutive if deterministic_joint_after_approach else None),
+                    gate_label="mesa_with_object",
+                )
 
             home_before_basket = str(
                 os.environ.get(
@@ -2905,7 +3077,11 @@ def run_pick_object(panel) -> None:
                     tol_rad=0.06,
                     duration_sec=carry_joint_move_sec,
                 )
-                _assert_carry_coherence_after_lift(gate_label="home_with_object")
+                _assert_carry_coherence_after_lift(
+                    max_dist_override=(deterministic_carry_gate_max_m if deterministic_joint_after_approach else None),
+                    min_consecutive_override=(deterministic_carry_gate_min_consecutive if deterministic_joint_after_approach else None),
+                    gate_label="home_with_object",
+                )
 
             basket_joint_only_raw = os.environ.get(
                 "PANEL_PICK_OBJECT_TRANSPORT_JOINT_ONLY",
@@ -2920,6 +3096,8 @@ def run_pick_object(panel) -> None:
                 "no",
                 "off",
             )
+            if deterministic_joint_after_approach:
+                transport_joint_only = True
             panel._emit_log(
                 "[PICK_OBJ] FASE 9: Ir a CESTA con objeto "
                 + ("(joint)" if transport_joint_only else "(MoveIt)")
@@ -2933,7 +3111,11 @@ def run_pick_object(panel) -> None:
                     tol_rad=0.06,
                     duration_sec=carry_joint_move_sec,
                 )
-                _assert_carry_coherence_after_lift(gate_label="cesta_with_object")
+                _assert_carry_coherence_after_lift(
+                    max_dist_override=(deterministic_carry_gate_max_m if deterministic_joint_after_approach else None),
+                    min_consecutive_override=(deterministic_carry_gate_min_consecutive if deterministic_joint_after_approach else None),
+                    gate_label="cesta_with_object",
+                )
                 transport_fallback_used = True
             else:
                 try:
@@ -2957,6 +3139,8 @@ def run_pick_object(panel) -> None:
                         duration_sec=carry_joint_move_sec,
                     )
                     _assert_carry_coherence_after_lift(
+                        max_dist_override=(deterministic_carry_gate_max_m if deterministic_joint_after_approach else None),
+                        min_consecutive_override=(deterministic_carry_gate_min_consecutive if deterministic_joint_after_approach else None),
                         gate_label="cesta_with_object_fallback"
                     )
                     transport_fallback_used = True
