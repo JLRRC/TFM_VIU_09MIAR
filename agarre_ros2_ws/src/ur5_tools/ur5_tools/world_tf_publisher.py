@@ -347,15 +347,17 @@ class WorldTfPublisher(Node):
             return
         if self._wait_for_clock and not self._clock_ready:
             now_ns = self.get_clock().now().nanoseconds
-            now = now_ns * 1e-9
             wall_now = time.monotonic()
             if wall_now > self._clock_deadline:
-                self._abort("Clock no disponible; abortando world_tf_publisher.")
-                return
+                if (wall_now - self._clock_last_log) > 2.0:
+                    self.get_logger().warn(
+                        "Clock no disponible todavia; continuando espera sin abortar."
+                    )
+                    self._clock_last_log = wall_now
             if now_ns <= 0:
-                if (now - self._clock_last_log) > 2.0:
+                if (wall_now - self._clock_last_log) > 2.0:
                     self.get_logger().warn("Esperando /clock (tiempo=0); TF bloqueado.")
-                    self._clock_last_log = now
+                    self._clock_last_log = wall_now
                 return
             if self._clock_last_ns == 0:
                 self._clock_last_ns = now_ns
@@ -390,7 +392,11 @@ class WorldTfPublisher(Node):
         if self._last_pose is None:
             now = time.monotonic()
             if now > self._pose_deadline:
-                self._abort("Pose/info no disponible; abortando world_tf_publisher.")
+                if (now - self._last_warn) > 2.0:
+                    self.get_logger().warn(
+                        "Pose/info no disponible todavia; continuando espera sin abortar."
+                    )
+                    self._last_warn = now
                 return
             if (now - self._last_warn) > 2.0:
                 self.get_logger().warn("Sin pose válida del UR5; no se publica TF.")

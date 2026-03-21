@@ -716,6 +716,28 @@ def _ensure_loaded() -> None:
     _log_object_types_once()
 
 
+def has_any_carried_objects() -> bool:
+    """Check if any object is in CARRIED state."""
+    _ensure_loaded()
+    with OBJECT_POS_LOCK:
+        for state in _OBJECT_STATES.values():
+            if state.logical_state == ObjectLogicalState.CARRIED:
+                return True
+    return False
+
+
+def are_all_objects_released() -> bool:
+    """Check if all objects are in RELEASED state (all released or none spawned)."""
+    _ensure_loaded()
+    with OBJECT_POS_LOCK:
+        if not _OBJECT_STATES:
+            return True  # No objetos = considerado "released"
+        for state in _OBJECT_STATES.values():
+            if state.logical_state != ObjectLogicalState.RELEASED:
+                return False
+    return True
+
+
 def save_object_positions() -> None:
     with OBJECT_POS_LOCK:
         data = {k: [float(v[0]), float(v[1]), float(v[2])] for k, v in OBJECT_POSITIONS.items()}

@@ -77,6 +77,7 @@ class TFMonitor:
                     p._log(f"[TRACE] TF ready (base={final_base})")
                 p._tf_ready_state = True
                 p._tf_ever_ok = True
+                p._last_tf_ok_monotonic = now
                 p._tf_not_ready_logged = False
                 p._base_frame_effective = final_base
                 p._bridge_ready = True

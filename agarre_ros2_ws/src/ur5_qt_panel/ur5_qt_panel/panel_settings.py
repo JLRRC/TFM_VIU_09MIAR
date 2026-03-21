@@ -230,7 +230,14 @@ class PanelSettings:
         vision_dir = os.path.expanduser(os.environ.get("VISION_DIR", "~/TFM/agarre_inteligente"))
         vision_exp_dir = os.path.join(vision_dir, "experiments")
         vision_plots_dir = os.path.join(vision_exp_dir, "plots")
-        vision_summary = os.path.join(vision_exp_dir, "summary_base.csv")
+        tfm_root_dir = os.path.dirname(ws_dir)
+        vision_summary = os.path.join(
+            tfm_root_dir,
+            "reports",
+            "metrics",
+            "validated",
+            "chapter5_experiment_summary_validated.csv",
+        )
         vision_fig_dir = os.path.join(vision_exp_dir, "figures_memoria")
 
         settings = cls(
@@ -256,17 +263,7 @@ class PanelSettings:
             object_pos_path=os.path.join(scripts_dir, "object_positions.json"),
             save_pose_info_positions=_env_bool("PANEL_SAVE_POSE_INFO_POSITIONS", False),
             infer_script=os.path.join(vision_dir, "scripts", "predict.py"),
-            infer_ckpt=_env_str(
-                "INFER_CKPT",
-                os.path.join(
-                    vision_dir,
-                    "experiments",
-                    "EXP1_SIMPLE_RGB",
-                    "seed_0",
-                    "checkpoints",
-                    "best.pth",
-                ),
-            ),
+            infer_ckpt=_env_str("INFER_CKPT", ""),
             infer_roi_size=max(0, int(os.environ.get("INFER_ROI_SIZE", "0"))),
             infer_retry_err_px=_env_float("INFER_RETRY_ERR_PX", 60.0),
             fastrtps_profiles=os.path.join(scripts_dir, "fastdds_no_shm.xml"),

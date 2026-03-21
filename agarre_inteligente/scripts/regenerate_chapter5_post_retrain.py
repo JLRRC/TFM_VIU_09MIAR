@@ -18,7 +18,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VISION_ROOT = PROJECT_ROOT / "agarre_inteligente"
 EXPERIMENTS_ROOT = VISION_ROOT / "experiments"
-REPORT_ROOT = PROJECT_ROOT / "report"
+REPORT_ROOT = PROJECT_ROOT / "reports"
 
 EXPERIMENT_ORDER = [
     "EXP1_SIMPLE_RGB",

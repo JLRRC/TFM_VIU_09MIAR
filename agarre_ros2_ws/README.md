@@ -1,52 +1,87 @@
 # agarre_ros2_ws
 
-Workspace ROS 2 oficial del TFM para simulacion, panel e integracion del pipeline de agarre.
+Workspace ROS 2 del TFM para panel, simulacion y planificacion del UR5 con Gazebo y MoveIt 2.
 
-Que contiene esta parte del proyecto:
+## Contenido
 
-- `src/tfm_grasping/`: nodo ROS 2 que integra inferencia, mensajes y adaptacion del detector de agarre.
-- `src/ur5_qt_panel/`: panel Qt principal usado en la demostracion del TFM.
-- `src/ur5_bringup/`: bringup del entorno UR5.
-- `src/ur5_moveit_config/`: configuracion oficial de MoveIt 2.
-- `src/ur5_description/`: descripcion del robot, URDF/Xacro y controladores asociados.
-- `src/ur5_tools/`: utilidades de operacion y soporte.
+- `src/ur5_qt_panel/`: panel Qt principal.
+- `src/ur5_bringup/`: lanzamiento del stack ROS 2 y simulacion.
+- `src/ur5_moveit_config/`: configuracion de MoveIt 2.
+- `src/ur5_description/`: robot, controladores y modelos asociados.
+- `src/ur5_tools/`: bridge MoveIt, backend de attach y utilidades auxiliares.
+- `src/tfm_grasping/`: nodos ROS 2 relacionados con grasping e inferencia.
 - `src/ur5_panel_interfaces/`: interfaces ROS 2 del panel.
-- `scripts/`: lanzadores, validadores, diagnosticos y utilidades de operacion del workspace.
-- `worlds/`: escenas SDF del entorno simulado.
-- `models/`: modelos usados en Gazebo.
-- `build/` e `install/`: build actual del workspace ROS 2, conservado para no perder arranque inmediato.
+- `scripts/`: scripts operativos de arranque, parada, estado, validacion y diagnostico.
+- `worlds/`: mundos SDF.
+- `models/`: modelos de Gazebo.
+- `build/`, `install/`, `log/`: build activa del workspace.
 
-Flujo de arranque recomendado:
+## Arranque
 
-- Desde la raiz: `./lanzar_panelv2.sh`
-- Dentro del workspace: `./scripts/start_panel_v2.sh`
-- Parada limpia: `./scripts/stop_panel_v2.sh`
+Desde la raiz del proyecto:
 
-Scripts operativos a priorizar:
+```bash
+./lanzar_panelv2.sh --fg
+```
+
+Desde este workspace:
+
+```bash
+./scripts/start_panel_v2.sh --fg
+```
+
+Parada limpia:
+
+```bash
+./scripts/stop_panel_v2.sh
+```
+
+Estado del stack:
+
+```bash
+./scripts/status_panel_v2.sh
+```
+
+Recuperacion del panel:
+
+```bash
+./scripts/recover_panel_v2.sh
+```
+
+## Botones y flujo de uso
+
+En la UI actual, los dos flujos de agarre visibles son:
+
+- `Agarre Objeto (Directo)`: demo directa de agarre sobre mesa.
+- `Agarre Objeto (MoveIT)`: flujo con percepcion, ROS 2 y MoveIt 2.
+
+Secuencia practica recomendada:
+
+1. `START ALL`
+2. esperar `READY`
+3. `Conectar camara`
+4. `TEST ROBOT`
+5. `Soltar objetos`
+6. seleccionar experimento TFM
+7. `Inferir agarre`
+8. `Visualizar`
+9. `Ejecutar agarre` o `Agarre Objeto (MoveIT)`
+
+## Scripts operativos mas utiles
 
 - `scripts/start_panel_v2.sh`
 - `scripts/stop_panel_v2.sh`
 - `scripts/status_panel_v2.sh`
-- `scripts/validate_startup_repro.sh`
+- `scripts/recover_panel_v2.sh`
 - `scripts/validate_panel_flow.sh`
+- `scripts/validate_startup_repro.sh`
+- `scripts/validate_pick_3_cycles.sh`
 - `scripts/evidence_startup_ready.sh`
-- `scripts/bench_infer_log.py`
+- `scripts/diag_tf_tcp.sh`
+- `scripts/diag_startup_health.sh`
 
-Dependencias criticas:
+## Evidencias y trazas
 
-- ROS 2 Jazzy
-- MoveIt 2
-- Gazebo / ros_gz
-- Qt5 con plugins del sistema
-
-Fuente oficial de evidencias para el TFM:
-
-- `../report/evidence/ros2/`
-- `../report/logs/evaluation/`
-- `../report/logs/reproducibility/ros2_repro_startup/`
-
-Notas de mantenimiento:
-
-- Los logs operativos antiguos y reportes temporales ya se han movido a `../BORRAR/agarre_ros2_ws_extra/`.
-- El arbol `build/` e `install/` actual se mantiene porque sigue siendo util para lanzar el stack sin recompilar desde cero.
-- La fuente oficial para capturas, evidencias funcionales y trazabilidad documental no esta en este workspace, sino en `../report/`.
+- Evidencias operativas del panel: `../auditoria/panel_audit/`
+- Evidencias curadas para memoria: `../reports/evidence/ros2/`
+- Logs reproducibles: `../reports/logs/reproducibility/`

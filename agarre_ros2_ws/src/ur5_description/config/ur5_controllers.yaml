@@ -37,31 +37,27 @@ joint_trajectory_controller:
     allow_partial_joints_goal: false
     interpolate_from_desired_state: false
     set_last_command_interface_value_as_state_on_activation: true
-    speed_scaling:
-      initial_scaling_factor: 1.0
-      state_interface: ""
-      command_interface: ""
     constraints:
       stopped_velocity_tolerance: 0.01
-      goal_time: 12.0
+      goal_time: 35.0
       shoulder_pan_joint:
-        trajectory: 3.2
-        goal: 1.8
+        trajectory: 3.4
+        goal: 0.08
       shoulder_lift_joint:
-        trajectory: 3.2
-        goal: 1.8
+        trajectory: 3.4
+        goal: 0.08
       elbow_joint:
-        trajectory: 3.2
-        goal: 1.8
+        trajectory: 3.4
+        goal: 0.08
       wrist_1_joint:
-        trajectory: 3.2
-        goal: 1.8
+        trajectory: 3.4
+        goal: 0.08
       wrist_2_joint:
-        trajectory: 3.2
-        goal: 1.8
+        trajectory: 3.4
+        goal: 0.08
       wrist_3_joint:
-        trajectory: 3.2
-        goal: 1.8
+        trajectory: 3.4
+        goal: 0.08
 
 arm_position_controller:
   ros__parameters:

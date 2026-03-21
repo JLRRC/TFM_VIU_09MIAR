@@ -13,7 +13,6 @@ from PyQt5.QtWidgets import QApplication
 from .calibration_service import CalibrationMode
 from .panel_config import AUTO_CALIB_FROM_CAMERA, CALIBRATION_CAMERA_TOPIC
 from .panel_objects import save_object_positions
-from .panel_readiness import tf_ready_status
 from .panel_utils import load_table_calib
 
 
@@ -34,12 +33,10 @@ def start_calibration(panel) -> None:
         panel._set_status("Calibración bloqueada: PICK Objeto en curso", error=False)
         return
 
-    if not panel._require_ready_basic("Calibración"):
-        return
-    tf_ok, tf_reason = tf_ready_status(panel)
-    if not tf_ok:
-        panel._set_status(f"TF no listo; esperando calibración ({tf_reason})", error=True)
-        panel._emit_log(f"[CALIB] Bloqueada: {panel._tf_not_ready_reason()}")
+    calib_ok, calib_reason = panel._calibration_action_status()
+    if not calib_ok:
+        panel._set_status(f"Calibración en espera: {calib_reason}", error=True)
+        panel._emit_log(f"[CALIB] Bloqueada: {calib_reason}")
         return
 
     if not panel._calibration_topic_allowed():

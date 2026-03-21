@@ -49,7 +49,7 @@ from ament_index_python.packages import (
 )
 from geometry_msgs.msg import PoseStamped
 from moveit_configs_utils import MoveItConfigsBuilder
-from moveit_msgs.msg import Constraints, JointConstraint
+from moveit_msgs.msg import Constraints, JointConstraint, RobotState as MoveItRobotStateMsg
 from moveit_msgs.srv import GetCartesianPath
 import rclpy
 from action_msgs.msg import GoalStatus
@@ -75,7 +75,7 @@ from controller_manager_msgs.srv import ListControllers
 
 from .param_utils import read_float_param, read_str_list_param, read_str_param
 
-_BRIDGE_CODE_REV = "2026-03-17-pick-timeout-v3"
+_BRIDGE_CODE_REV = "2026-03-21-approach-diag-v1"
 
 
 class UR5MoveItBridge(Node):
@@ -127,6 +127,10 @@ class UR5MoveItBridge(Node):
         self.declare_parameter("max_velocity_scaling_factor", 0.30)
         self.declare_parameter("max_acceleration_scaling_factor", 0.30)
         self.declare_parameter("path_constraint_joint_tolerance_rad", 0.0)
+        self.declare_parameter("controller_path_tolerance_rad", -1.0)
+        self.declare_parameter("controller_goal_tolerance_rad", -1.0)
+        self.declare_parameter("controller_goal_time_tolerance_sec", -1.0)
+        self.declare_parameter("controller_expected_goal_time_sec", 12.0)
         if not self.has_parameter("use_sim_time"):
             self.declare_parameter("use_sim_time", True)
 
@@ -251,6 +255,21 @@ class UR5MoveItBridge(Node):
             0.0,
             min_value=0.0,
         )
+        self._controller_path_tolerance_rad = float(
+            self.get_parameter("controller_path_tolerance_rad").value
+        )
+        self._controller_goal_tolerance_rad = float(
+            self.get_parameter("controller_goal_tolerance_rad").value
+        )
+        self._controller_goal_time_tolerance_sec = float(
+            self.get_parameter("controller_goal_time_tolerance_sec").value
+        )
+        self._controller_expected_goal_time_sec = read_float_param(
+            self,
+            "controller_expected_goal_time_sec",
+            12.0,
+            min_value=0.0,
+        )
         self._use_sim_time = bool(self.get_parameter("use_sim_time").value)
         requested_moveit_py_sim = bool(
             self.get_parameter("moveit_py_use_sim_time").value
@@ -270,10 +289,40 @@ class UR5MoveItBridge(Node):
             )
             self._moveit_py_use_sim_time = False
         if self._use_sim_time and not self._moveit_py_use_sim_time:
-            self.get_logger().warning(
-                "use_sim_time=true pero moveit_py_use_sim_time=false; "
-                "puede aparecer validacion temporal inconsistente en execute."
+            if not self._force_fjt_direct_for_walltime_sim:
+                self._force_fjt_direct_for_walltime_sim = True
+                self.get_logger().warning(
+                    "use_sim_time=true pero moveit_py_use_sim_time=false; "
+                    "auto-activando force_fjt_direct_for_walltime_sim para evitar "
+                    "abort/timeout falsos en execute y delegar la ejecucion al "
+                    "action server FollowJointTrajectory."
+                )
+            else:
+                self.get_logger().warning(
+                    "use_sim_time=true pero moveit_py_use_sim_time=false; "
+                    "usando force_fjt_direct_for_walltime_sim para evitar "
+                    "validacion temporal inconsistente en execute."
+                )
+            controller_goal_time_sec = max(
+                0.0,
+                float(self._controller_expected_goal_time_sec),
+                float(self._controller_goal_time_tolerance_sec),
             )
+            retry_cushion_sec = max(
+                30.0,
+                (2.0 * controller_goal_time_sec) + 10.0,
+            )
+            min_request_timeout = max(
+                90.0,
+                float(self._execute_timeout_sec) + retry_cushion_sec,
+            )
+            if float(self._request_timeout_sec) < min_request_timeout:
+                self._request_timeout_sec = float(min_request_timeout)
+                self.get_logger().warning(
+                    "ajustando request_timeout_sec para cubrir planificacion + "
+                    "FollowJointTrajectory en dominio temporal mixto: "
+                    f"request_timeout_sec={self._request_timeout_sec:.1f}"
+                )
         self.get_logger().info(
             "Bridge config: "
             f"rev={_BRIDGE_CODE_REV} "
@@ -295,7 +344,11 @@ class UR5MoveItBridge(Node):
             f"joint_state_timeout={self._joint_state_valid_timeout_sec:.2f}s "
             f"joint_state_max_age={self._joint_state_valid_max_age_sec:.2f}s "
             f"unwrap_continuous_joints={str(self._unwrap_continuous_joints).lower()} "
-            f"path_constraint_joint_tol={self._path_constraint_joint_tol:.3f}rad"
+            f"path_constraint_joint_tol={self._path_constraint_joint_tol:.3f}rad "
+            f"controller_path_tol={self._controller_path_tolerance_rad:.3f}rad "
+            f"controller_goal_tol={self._controller_goal_tolerance_rad:.3f}rad "
+            f"controller_goal_time_tol={self._controller_goal_time_tolerance_sec:.3f}s "
+            f"controller_expected_goal_time={self._controller_expected_goal_time_sec:.3f}s"
         )
 
         self._backend = None
@@ -404,6 +457,8 @@ class UR5MoveItBridge(Node):
         self._result_pub = self.create_publisher(String, self._result_topic, self._qos_cmd)
         self._heartbeat_pub = self.create_publisher(Bool, self._heartbeat_topic, self._qos_cmd)
         self._heartbeat_seq = 0
+        self._sim_wall_rate_samples: deque[float] = deque(maxlen=24)
+        self._sim_wall_last_sample: tuple[float, float] | None = None
         self.get_logger().info(
             f"[BRIDGE][PUB_RESULT] configured topic={self._result_topic} qos={self._qos_summary(self._qos_cmd)}"
         )
@@ -440,10 +495,107 @@ class UR5MoveItBridge(Node):
             msg.data = True
             self._heartbeat_pub.publish(msg)
             self._heartbeat_seq += 1
+            self._update_sim_wall_rate_estimate()
         except Exception as exc:
             self.get_logger().warning(
                 f"[BRIDGE][EXCEPTION] callback=heartbeat_publish type={type(exc).__name__} err={exc}"
             )
+
+    def _update_sim_wall_rate_estimate(self) -> None:
+        if not self._use_sim_time:
+            return
+        try:
+            sim_now = float(self.get_clock().now().nanoseconds or 0) / 1_000_000_000.0
+        except Exception:
+            return
+        if sim_now <= 0.0:
+            return
+        wall_now = time.monotonic()
+        prev = self._sim_wall_last_sample
+        self._sim_wall_last_sample = (wall_now, sim_now)
+        if prev is None:
+            return
+        prev_wall, prev_sim = prev
+        delta_wall = max(0.0, wall_now - prev_wall)
+        delta_sim = sim_now - prev_sim
+        if delta_wall < 0.2 or delta_sim < 0.0:
+            return
+        rate = delta_sim / delta_wall if delta_wall > 0.0 else 0.0
+        if 0.02 <= rate <= 5.0:
+            self._sim_wall_rate_samples.append(float(rate))
+
+    def _estimated_sim_seconds_per_wall_second(self) -> float:
+        samples = list(self._sim_wall_rate_samples)
+        if not samples:
+            return 1.0
+        samples.sort()
+        mid = len(samples) // 2
+        if len(samples) % 2:
+            return max(0.05, float(samples[mid]))
+        return max(0.05, float(samples[mid - 1] + samples[mid]) / 2.0)
+
+    def _fjt_timeout_for_trajectory(
+        self,
+        traj_sec: float,
+        *,
+        extra_margin_sec: float,
+        minimum_sec: float = 8.0,
+    ) -> float:
+        controller_goal_time_sec = max(
+            0.0,
+            float(self._controller_expected_goal_time_sec),
+            float(self._controller_goal_time_tolerance_sec),
+        )
+        traj_and_goal_sec = float(traj_sec) + controller_goal_time_sec
+        timeout_sec = max(
+            float(minimum_sec),
+            float(self._execute_timeout_sec) + controller_goal_time_sec + float(extra_margin_sec),
+            traj_and_goal_sec + float(extra_margin_sec),
+        )
+        if (
+            self._use_sim_time
+            and not self._moveit_py_use_sim_time
+            and self._force_fjt_direct_for_walltime_sim
+            and float(traj_sec) > 0.0
+        ):
+            sim_rate = self._estimated_sim_seconds_per_wall_second()
+            scaled_timeout = (traj_and_goal_sec / max(0.25, float(sim_rate))) + float(extra_margin_sec)
+            timeout_sec = max(timeout_sec, scaled_timeout)
+            self.get_logger().info(
+                "[BRIDGE_EXEC] timeout adjusted for sim/wall skew "
+                f"traj_sec={float(traj_sec):.3f} controller_goal_time_sec={controller_goal_time_sec:.3f} "
+                f"sim_per_wall={float(sim_rate):.3f} "
+                f"timeout_sec={float(timeout_sec):.3f}"
+            )
+        return float(timeout_sec)
+
+    def _effective_request_timeout_sec(self) -> float:
+        timeout_sec = max(2.0, float(self._request_timeout_sec))
+        if (
+            self._use_sim_time
+            and not self._moveit_py_use_sim_time
+            and self._force_fjt_direct_for_walltime_sim
+        ):
+            sim_rate = self._estimated_sim_seconds_per_wall_second()
+            controller_goal_time_sec = max(
+                0.0,
+                float(self._controller_expected_goal_time_sec),
+                float(self._controller_goal_time_tolerance_sec),
+            )
+            retry_cushion_sec = max(
+                30.0,
+                (2.0 * controller_goal_time_sec) + 10.0,
+            )
+            scaled_timeout = (timeout_sec / max(0.25, float(sim_rate))) + retry_cushion_sec
+            timeout_sec = max(timeout_sec, scaled_timeout)
+            self.get_logger().info(
+                "[BRIDGE_EXEC] request timeout adjusted for sim/wall skew "
+                f"base_timeout_sec={float(self._request_timeout_sec):.3f} "
+                f"sim_per_wall={float(sim_rate):.3f} "
+                f"retry_cushion_sec={float(retry_cushion_sec):.3f} "
+                f"timeout_sec={float(timeout_sec):.3f}"
+            )
+        return float(timeout_sec)
 
     def _joint_state_cb(self, msg: JointState) -> None:
         stamp = getattr(msg, "header", None)
@@ -488,9 +640,9 @@ class UR5MoveItBridge(Node):
             return value
         return math.atan2(math.sin(value), math.cos(value))
 
-    def _is_test_touch_request(self, request_uuid: str) -> bool:
+    def _is_skip_constraints_request(self, request_uuid: str) -> bool:
         req = str(request_uuid or "").strip().lower()
-        return req.startswith("test_touch:")
+        return req.startswith("test_touch:") or req.startswith("skip_constraints:")
 
     def _build_joint_path_constraints(self, request_uuid: str = "") -> Constraints | None:
         """Build joint path constraints to prevent IK configuration flipping.
@@ -499,9 +651,9 @@ class UR5MoveItBridge(Node):
         within +/- tolerance_rad of their current positions so the planner
         stays in the same arm configuration.
         """
-        if self._is_test_touch_request(request_uuid):
+        if self._is_skip_constraints_request(request_uuid):
             self.get_logger().info(
-                "[BRIDGE_CONSTRAINT] skip constraints for TEST_TOUCH request_uuid="
+                "[BRIDGE_CONSTRAINT] skip constraints for tagged request_uuid="
                 f"{request_uuid or 'n/a'}"
             )
             return None
@@ -611,6 +763,41 @@ class UR5MoveItBridge(Node):
         except Exception as exc:
             return False, f"set_start_state_failed:{type(exc).__name__}:{exc}"
         return True, reason
+
+    def _build_start_robot_state_msg(self) -> tuple[MoveItRobotStateMsg | None, str]:
+        names = list(self._joint_state_last_names or [])
+        positions = list(self._joint_state_last_positions or [])
+        if not names or not positions:
+            return None, "joint_state_cache_empty"
+        if len(positions) < len(names):
+            return None, f"joint_state_cache_short:{len(positions)}/{len(names)}"
+
+        joint_state = JointState()
+        for name, pos in zip(names, positions):
+            jname = str(name or "").strip()
+            if not jname:
+                continue
+            try:
+                value = float(pos)
+            except (TypeError, ValueError):
+                return None, f"joint_state_invalid_value:{jname}"
+            if not math.isfinite(value):
+                return None, f"joint_state_non_finite:{jname}"
+            joint_state.name.append(jname)
+            joint_state.position.append(self._normalize_joint_position(jname, value))
+
+        if not joint_state.name or not joint_state.position:
+            return None, "joint_state_cache_empty_after_filter"
+
+        state = MoveItRobotStateMsg()
+        state.joint_state = joint_state
+        state.is_diff = False
+        arm_positions = ",".join(
+            f"{name}={joint_state.position[joint_state.name.index(name)]:.3f}"
+            for name in self._START_STATE_JOINTS
+            if name in joint_state.name
+        )
+        return state, f"joint_state_cache_ok:{arm_positions or 'subset'}"
 
     def _configure_move_group_scaling(self, group: Any) -> None:
         if group is None:
@@ -1142,26 +1329,29 @@ class UR5MoveItBridge(Node):
         goal = FollowJointTrajectory.Goal()
         goal.trajectory = jt
         try:
-            path_tol = float(self.get_parameter("path_constraint_joint_tolerance_rad").value)
-        except Exception:
-            path_tol = 0.0
-        # For controller tracking, allow a practical tolerance independent of
-        # planning path-constraint tolerance (which may be 0 by design).
-        path_tol = max(0.20, path_tol)
-        goal_tol = max(0.10, path_tol * 0.75)
-        try:
             joint_names = list(getattr(jt, "joint_names", []) or [])
-            if joint_names:
+            path_tol = float(self._controller_path_tolerance_rad)
+            goal_tol = float(self._controller_goal_tolerance_rad)
+            goal_time_tol = float(self._controller_goal_time_tolerance_sec)
+            if joint_names and path_tol >= 0.0:
                 goal.path_tolerance = [
-                    JointTolerance(name=str(jn), position=float(path_tol))
+                    JointTolerance(name=str(jn), position=float(max(0.05, path_tol)))
                     for jn in joint_names
                 ]
+            if joint_names and goal_tol >= 0.0:
                 goal.goal_tolerance = [
-                    JointTolerance(name=str(jn), position=float(goal_tol))
+                    JointTolerance(name=str(jn), position=float(max(0.05, goal_tol)))
                     for jn in joint_names
                 ]
-                goal.goal_time_tolerance.sec = 12
-                goal.goal_time_tolerance.nanosec = 0
+            if goal_time_tol >= 0.0:
+                total = max(0.0, float(goal_time_tol))
+                sec = int(total)
+                nsec = int(round((total - sec) * 1_000_000_000.0))
+                if nsec >= 1_000_000_000:
+                    sec += 1
+                    nsec -= 1_000_000_000
+                goal.goal_time_tolerance.sec = sec
+                goal.goal_time_tolerance.nanosec = nsec
         except Exception as tol_exc:
             self.get_logger().warning(
                 "[BRIDGE_EXEC] no se pudieron fijar tolerancias FJT explicitas: "
@@ -1257,6 +1447,14 @@ class UR5MoveItBridge(Node):
             and int(error_code or 0) == -4
             and "path tolerance" in (error_string or "").lower()
         ):
+            initial_segment_max_delta = self._joint_trajectory_initial_segment_max_delta(jt)
+            if 0.0 <= initial_segment_max_delta <= 0.05:
+                self.get_logger().warning(
+                    "[BRIDGE_EXEC] skipping path-tolerance retry because trajectory starts smoothly "
+                    f"initial_segment_max_delta={initial_segment_max_delta:.4f}rad"
+                )
+                self.get_logger().warning(f"[BRIDGE_EXEC] FollowJointTrajectory FAIL ({detail})")
+                return False, f"fjt_aborted:{detail}", meta
             slow_factor = 2.0
             slowed = self._scale_joint_trajectory_timing(jt, scale=slow_factor)
             retry_timeout = max(
@@ -1274,6 +1472,20 @@ class UR5MoveItBridge(Node):
             )
         self.get_logger().warning(f"[BRIDGE_EXEC] FollowJointTrajectory FAIL ({detail})")
         return False, f"fjt_aborted:{detail}", meta
+
+    @staticmethod
+    def _joint_trajectory_initial_segment_max_delta(jt: JointTrajectory) -> float:
+        points = list(getattr(jt, "points", []) or [])
+        if len(points) < 2:
+            return -1.0
+        try:
+            p0 = list(getattr(points[0], "positions", []) or [])
+            p1 = list(getattr(points[1], "positions", []) or [])
+            if len(p0) != len(p1) or not p0:
+                return -1.0
+            return max(abs(float(b) - float(a)) for a, b in zip(p0, p1))
+        except Exception:
+            return -1.0
 
     def _prepare_joint_trajectory_for_controller(
         self, jt: JointTrajectory
@@ -1312,38 +1524,38 @@ class UR5MoveItBridge(Node):
                 for name, pos in zip(raw_names, raw_positions)
                 if str(name or "").strip()
             }
-            if self._unwrap_continuous_joints:
-                adjusted_counts: dict[str, int] = {}
-                references: dict[str, float] = {}
-                for jname in joint_names:
-                    if jname in current_map:
-                        references[jname] = current_map[jname]
-                for point in points:
-                    positions = list(getattr(point, "positions", []) or [])
-                    if len(positions) != len(joint_names):
+            adjusted_counts: dict[str, int] = {}
+            references: dict[str, float] = {}
+            for jname in joint_names:
+                if jname in current_map:
+                    references[jname] = current_map[jname]
+            for point in points:
+                positions = list(getattr(point, "positions", []) or [])
+                if len(positions) != len(joint_names):
+                    continue
+                adjusted_positions = list(positions)
+                for idx, jname in enumerate(joint_names):
+                    if jname not in self._WRAPAROUND_JOINTS:
                         continue
-                    adjusted_positions = list(positions)
-                    for idx, jname in enumerate(joint_names):
-                        if jname not in self._WRAPAROUND_JOINTS:
-                            continue
-                        ref = references.get(jname)
-                        if ref is None:
-                            continue
-                        target = float(adjusted_positions[idx])
-                        adjusted = target + (math.tau * round((ref - target) / math.tau))
-                        if abs(adjusted - target) > 1e-6:
-                            adjusted_counts[jname] = adjusted_counts.get(jname, 0) + 1
-                        adjusted_positions[idx] = adjusted
-                        references[jname] = adjusted
-                    point.positions = tuple(adjusted_positions)
-                if adjusted_counts:
-                    details = ",".join(
-                        f"{name}:{count}" for name, count in sorted(adjusted_counts.items())
-                    )
-                    self.get_logger().info(
-                        "[BRIDGE_EXEC] unwrapped continuous joints for controller "
-                        f"joints={details}"
-                    )
+                    ref = references.get(jname)
+                    if ref is None:
+                        continue
+                    target = float(adjusted_positions[idx])
+                    adjusted = target + (math.tau * round((ref - target) / math.tau))
+                    if abs(adjusted - target) > 1e-6:
+                        adjusted_counts[jname] = adjusted_counts.get(jname, 0) + 1
+                    adjusted_positions[idx] = adjusted
+                    references[jname] = adjusted
+                point.positions = tuple(adjusted_positions)
+            if adjusted_counts:
+                details = ",".join(
+                    f"{name}:{count}" for name, count in sorted(adjusted_counts.items())
+                )
+                mode = "explicit" if self._unwrap_continuous_joints else "auto"
+                self.get_logger().info(
+                    "[BRIDGE_EXEC] normalized continuous joints for controller "
+                    f"mode={mode} joints={details}"
+                )
 
             # Align start of trajectory with current state to avoid immediate
             # path-tolerance violations at controller startup.
@@ -1354,6 +1566,7 @@ class UR5MoveItBridge(Node):
                     for idx, jname in enumerate(joint_names)
                 ]
                 max_start_err = 0.0
+                start_err_details: list[tuple[str, float, float, float]] = []
                 for idx, jname in enumerate(joint_names):
                     cur = current_vec[idx]
                     tgt = float(first_positions[idx])
@@ -1364,8 +1577,24 @@ class UR5MoveItBridge(Node):
                     else:
                         err = abs(cur - tgt)
                     max_start_err = max(max_start_err, err)
+                    start_err_details.append((jname, cur, tgt, err))
 
-                lead_sec = max(0.20, min(2.00, max_start_err / 1.2))
+                lead_sec = max(0.20, min(2.50, max_start_err / 0.8))
+                if max_start_err > 0.05:
+                    lead_sec = max(0.50, lead_sec)
+                    top_errs = sorted(
+                        start_err_details,
+                        key=lambda item: item[3],
+                        reverse=True,
+                    )[:6]
+                    details = ",".join(
+                        f"{jname}:cur={cur:.3f}->tgt={tgt:.3f}:err={err:.3f}"
+                        for jname, cur, tgt, err in top_errs
+                    )
+                    self.get_logger().info(
+                        "[BRIDGE_EXEC] start-state error detail "
+                        f"max_start_err={max_start_err:.4f}rad joints={details}"
+                    )
                 try:
                     t0 = points[0].time_from_start
                     first_time_sec = float(t0.sec) + float(t0.nanosec) / 1_000_000_000.0
@@ -1401,6 +1630,40 @@ class UR5MoveItBridge(Node):
                     self.get_logger().info(
                         "[BRIDGE_EXEC] inserted start-state waypoint for controller "
                         f"max_start_err={max_start_err:.4f}rad lead_sec={lead_sec:.2f}"
+                    )
+                try:
+                    preview_points = list(points[:2])
+                    preview_lines: list[str] = []
+                    for idx, point in enumerate(preview_points):
+                        tfs = getattr(point, "time_from_start", None)
+                        t_sec = (
+                            float(getattr(tfs, "sec", 0) or 0)
+                            + float(getattr(tfs, "nanosec", 0) or 0) / 1_000_000_000.0
+                        ) if tfs is not None else 0.0
+                        pos_vals = list(getattr(point, "positions", []) or [])
+                        vel_vals = list(getattr(point, "velocities", []) or [])
+                        pos_txt = ",".join(
+                            f"{jname}={float(pos_vals[jdx]):.3f}"
+                            for jdx, jname in enumerate(joint_names[: min(len(joint_names), len(pos_vals))])
+                        )
+                        vel_txt = "none"
+                        if vel_vals:
+                            vel_txt = ",".join(
+                                f"{jname}={float(vel_vals[jdx]):.3f}"
+                                for jdx, jname in enumerate(joint_names[: min(len(joint_names), len(vel_vals))])
+                            )
+                        preview_lines.append(
+                            f"p{idx}:t={t_sec:.3f}:pos[{pos_txt}]:vel[{vel_txt}]"
+                        )
+                    if preview_lines:
+                        self.get_logger().info(
+                            "[BRIDGE_EXEC] controller trajectory preview "
+                            + " | ".join(preview_lines)
+                        )
+                except Exception as preview_exc:
+                    self.get_logger().warning(
+                        "[BRIDGE_EXEC] no se pudo generar preview de trayectoria: "
+                        f"{type(preview_exc).__name__}: {preview_exc}"
                     )
         return prepared
 
@@ -1723,7 +1986,7 @@ class UR5MoveItBridge(Node):
 
         thread = threading.Thread(target=_runner, daemon=True, name=f"plan_request_{request_id}")
         thread.start()
-        timeout_sec = max(2.0, float(self._request_timeout_sec))
+        timeout_sec = self._effective_request_timeout_sec()
         if not done.wait(timeout_sec):
             detail = f"request_id={request_id} timeout_sec={timeout_sec:.1f} cartesian={cartesian}"
             self._log_bridge_status(
@@ -2098,7 +2361,11 @@ class UR5MoveItBridge(Node):
             jt_direct = self._extract_joint_trajectory_msg(trajectory)
             if jt_direct is not None:
                 traj_sec = self._joint_trajectory_duration_sec(jt_direct)
-                fjt_timeout = max(8.0, float(self._execute_timeout_sec) + 4.0, traj_sec + 8.0)
+                fjt_timeout = self._fjt_timeout_for_trajectory(
+                    traj_sec,
+                    extra_margin_sec=8.0,
+                    minimum_sec=8.0,
+                )
                 fjt_ok, fjt_msg, fjt_meta = self._execute_joint_trajectory_action(
                     jt_direct, timeout_sec=fjt_timeout
                 )
@@ -2160,7 +2427,11 @@ class UR5MoveItBridge(Node):
         jt = self._extract_joint_trajectory_msg(trajectory)
         if jt is not None:
             traj_sec = self._joint_trajectory_duration_sec(jt)
-            fjt_timeout = max(8.0, float(self._execute_timeout_sec) + 4.0, traj_sec + 8.0)
+            fjt_timeout = self._fjt_timeout_for_trajectory(
+                traj_sec,
+                extra_margin_sec=8.0,
+                minimum_sec=8.0,
+            )
             fjt_ok, fjt_msg, fjt_meta = self._execute_joint_trajectory_action(
                 jt,
                 timeout_sec=fjt_timeout,
@@ -2461,6 +2732,17 @@ class UR5MoveItBridge(Node):
         req.max_step = 0.01
         req.jump_threshold = 0.0
         req.avoid_collisions = True
+        start_state_msg, start_state_reason = self._build_start_robot_state_msg()
+        if start_state_msg is not None:
+            req.start_state = start_state_msg
+            self.get_logger().info(
+                f"[BRIDGE_START_STATE] cartesian detail={start_state_reason}"
+            )
+        else:
+            self.get_logger().warning(
+                "[BRIDGE_START_STATE] cartesian unavailable "
+                f"detail={start_state_reason}; fallback=current_state_monitor"
+            )
         if hasattr(req, "max_velocity_scaling_factor"):
             req.max_velocity_scaling_factor = float(self._max_velocity_scaling)
         if hasattr(req, "max_acceleration_scaling_factor"):
@@ -2522,7 +2804,11 @@ class UR5MoveItBridge(Node):
                 "(dry_run_plan_only=true)."
             )
             return True, "dry_run_plan_only", True, False
-        fjt_timeout = max(8.0, float(self._execute_timeout_sec) + 4.0, final_sec + 4.0)
+        fjt_timeout = self._fjt_timeout_for_trajectory(
+            final_sec,
+            extra_margin_sec=4.0,
+            minimum_sec=8.0,
+        )
         fjt_ok, fjt_msg, fjt_meta = self._execute_joint_trajectory_action(
             traj.joint_trajectory, timeout_sec=fjt_timeout
         )

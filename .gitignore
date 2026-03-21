@@ -1,7 +1,9 @@
 BORRAR/
+HISTORICO/
+TRACE_PANEL_V2.log
 agarre_inteligente/reports/
 agarre_ros2_ws/reports/
 reports/archive/BORRAR/
-report/history/chapter5/experiments/**/checkpoints/
+reports/history/chapter5/experiments/**/checkpoints/
 *.log
 .DS_Store

@@ -1,36 +1,60 @@
-# TFM Workspace
+# TFM
 
-Raiz oficial del TFM. La estructura visible valida es:
+Raiz principal del proyecto del TFM de agarre inteligente.
 
-- `agarre_inteligente/`: codigo, datos, configuraciones y experimentos oficiales de vision.
-- `agarre_ros2_ws/`: workspace ROS 2 oficial para panel, simulacion e integracion.
-- `report/`: fuente oficial del TFM para figuras, tablas, metricas, logs y evidencias.
-- `README.md`: este documento.
-- `lanzar_panelv2.sh`: lanzador oficial del panel.
-- `recrear_artefactos_tfm.sh`: recreador oficial de artefactos curados del capitulo 5.
-- `recrear_experimentos_cap5_gpu.sh`: relanzador oficial de los experimentos EXP1..EXP4 sobre la GPU CUDA del entorno `.venv-tfm`.
-- `09MIAR_10_Z_2025-26.TFM.V11.6.pdf`: copia actual del TFM en PDF para contraste editorial.
+## Estructura
 
-Reglas de limpieza aplicadas:
+- `agarre_inteligente/`: entrenamiento, evaluacion, configuraciones y resultados de vision.
+- `agarre_ros2_ws/`: workspace ROS 2 con panel, Gazebo, MoveIt 2 y utilidades de integracion.
+- `reports/`: artefactos curados del documento, figuras, tablas, metricas y evidencias.
+- `auditoria/`: evidencias operativas y logs de validacion generados durante pruebas del panel.
 
-- `report/` pasa a ser la fuente de verdad editorial. El arbol antiguo `reports/` se ha movido a `BORRAR/root_extra/reports/`.
-- Se han apartado a `BORRAR/` auditorias antiguas, `build/install/log`, herramientas de prueba, `venv`, manifests `.md` redundantes y scripts no esenciales.
-- La revision temporal del PDF se ha archivado en `BORRAR/root_extra/final_closure_20260318/`.
-- Se ha mantenido solo un `.md` activo por carpeta principal relevante: raiz, `agarre_inteligente/`, `agarre_ros2_ws/` y `report/`.
-- La metrica oficial no sale del PDF: sale de `agarre_inteligente/experiments/` y de sus copias validadas en `report/metrics/`.
+## Documentos utiles
 
-Fuente oficial de resultados:
+- `docs/panel_v2/README_VALIDACION_PANEL_V2.md`: secuencia recomendada para validar el panel.
+- `docs/panel_v2/ROADMAP_PANEL_V2_OPERATIVO.md`: estado tecnico por fases y pendientes actuales.
+- `docs/panel_v2/AUDITORIA_PANEL_V2_TFM.md`: auditoria tecnica consolidada del panel.
+- `docs/panel_v2/CHECKLIST_TFM_PANEL_V2.md`: checklist de verificacion para la defensa.
 
-- Figuras: `report/figures/`
-- Tablas: `report/tables/`
-- Historicos oficiales de trabajo: `report/history/`
-- Metricas crudas por experimento y seed: `report/metrics/raw/experiments/`
-- Metricas validadas para capitulo 5: `report/metrics/validated/chapter5_experiment_summary_validated.csv`
-- Comparativa historica pre/post reentrenamiento: `report/metrics/aggregated/chapter5_pre_vs_post_retrain_comparison.csv`
-- Evidencia ROS 2 y cualitativa: `report/evidence/`
-- Logs de reproducibilidad y manifiestos de limpieza: `report/logs/reproducibility/`
-- Indice de snapshots historicos preservados: `report/logs/reproducibility/historical_snapshots_index.tsv`
+## Arranque rapido
 
-Nota tecnica:
+Para lanzar el panel desde la raiz:
 
-- Se conservan `.git/` y `.gitignore` como metadatos ocultos del repositorio.
+```bash
+./lanzar_panelv2.sh --fg
+```
+
+Para parar el stack:
+
+```bash
+./agarre_ros2_ws/scripts/stop_panel_v2.sh
+```
+
+## Flujos principales
+
+### Panel ROS 2
+
+- Lanzador principal: `./lanzar_panelv2.sh`
+- Lanzador directo del workspace: `./agarre_ros2_ws/scripts/start_panel_v2.sh`
+- Estado del stack: `./agarre_ros2_ws/scripts/status_panel_v2.sh`
+- Recuperacion del panel: `./agarre_ros2_ws/scripts/recover_panel_v2.sh`
+
+### Vision
+
+- Entrenamiento y evaluacion: `agarre_inteligente/scripts/`
+- Resultados oficiales por experimento: `agarre_inteligente/experiments/`
+
+### Documento
+
+- Figuras finales: `reports/figures/`
+- Tablas finales: `reports/tables/`
+- Metricas validadas: `reports/metrics/validated/`
+- Evidencias funcionales: `reports/evidence/`
+
+## Punto de entrada recomendado
+
+Si quieres trabajar con el sistema completo, empieza por:
+
+1. `./lanzar_panelv2.sh --fg`
+2. `docs/panel_v2/README_VALIDACION_PANEL_V2.md`
+3. `docs/panel_v2/ROADMAP_PANEL_V2_OPERATIVO.md`

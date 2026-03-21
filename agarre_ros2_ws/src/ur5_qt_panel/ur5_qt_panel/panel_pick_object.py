@@ -44,11 +44,13 @@ from .panel_robot_presets import (
 from .panel_utils import get_object_positions, transform_point_to_frame, get_tf_helper
 from .panel_objects import (
     ObjectLogicalState,
+    ObjectOwner,
     get_object_state,
     get_object_states,
     mark_object_attached,
     mark_object_grasped,
     mark_object_released,
+    update_object_state,
 )
 from .panel_readiness import pick_ui_status
 from .panel_state import MoveItState
@@ -499,6 +501,23 @@ def run_pick_object(panel) -> None:
     lift_pose = (bx, by, z_lift)
     transport_pose = (basket_x, basket_y, z_transport)
     drop_pose = (basket_x, basket_y, z_drop)
+    try:
+        transport_split_stages = int(
+            os.environ.get("PANEL_PICK_OBJECT_TRANSPORT_SPLIT_STAGES", "3")
+        )
+    except Exception:
+        transport_split_stages = 3
+    transport_split_stages = max(2, min(transport_split_stages, 6))
+    transport_stage_poses: List[tuple] = []
+    for stage_idx in range(1, transport_split_stages + 1):
+        frac = float(stage_idx) / float(transport_split_stages)
+        transport_stage_poses.append(
+            (
+                float(lift_pose[0]) + (float(transport_pose[0]) - float(lift_pose[0])) * frac,
+                float(lift_pose[1]) + (float(transport_pose[1]) - float(lift_pose[1])) * frac,
+                float(lift_pose[2]) + (float(transport_pose[2]) - float(lift_pose[2])) * frac,
+            )
+        )
     pick_orientation = _pick_orientation()
 
     _dbg(
@@ -506,6 +525,7 @@ def run_pick_object(panel) -> None:
         f"PRE_GRASP=({pre_grasp_pose[0]:.3f}, {pre_grasp_pose[1]:.3f}, {pre_grasp_pose[2]:.3f}), "
         f"GRASP_DOWN=({grasp_down_pose[0]:.3f}, {grasp_down_pose[1]:.3f}, {grasp_down_pose[2]:.3f}) "
         f"LIFT=({lift_pose[0]:.3f}, {lift_pose[1]:.3f}, {lift_pose[2]:.3f}) "
+        f"TRANSPORT_SPLIT_STAGES={transport_split_stages} "
         f"TRANSPORT=({transport_pose[0]:.3f}, {transport_pose[1]:.3f}, {transport_pose[2]:.3f}) "
         f"DROP=({drop_pose[0]:.3f}, {drop_pose[1]:.3f}, {drop_pose[2]:.3f}) "
         f"(obj_height={obj_height:.3f} table_top_base={table_top_base:.3f})"
@@ -546,6 +566,10 @@ def run_pick_object(panel) -> None:
         ("LIFT", _make_pose_data(lift_pose, orientation=pick_orientation, frame=pose_frame), 0.5),
         ("TRANSPORT", _make_pose_data(transport_pose, orientation=pick_orientation, frame=pose_frame), 0.6),
         ("DROP", _make_pose_data(drop_pose, orientation=pick_orientation, frame=pose_frame), 0.8),
+    ]
+    transport_stage_data = [
+        _make_pose_data(stage_pose, orientation=pick_orientation, frame=pose_frame)
+        for stage_pose in transport_stage_poses
     ]
 
     _dbg("[PICK_OBJ_DEBUG] Sequence construida correctamente")
@@ -885,6 +909,29 @@ def run_pick_object(panel) -> None:
                 msg = f"MoveIt bridge sin publisher en {moveit_result_topic}"
                 panel._emit_log(f"[PICK_OBJ][ABORT] {msg}")
                 raise RuntimeError(msg)
+            if bridge_recovered:
+                hb_deadline = time.time() + 2.5
+                while time.time() < hb_deadline:
+                    hb_age = panel.ros_worker.moveit_bridge_heartbeat_age()
+                    hb_recent = panel.ros_worker.has_recent_moveit_bridge_heartbeat(1.2)
+                    if hb_recent:
+                        hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
+                        panel._emit_log(
+                            "[PICK_OBJ][MOVEIT][PLAN] bridge_recover_warmup "
+                            f"heartbeat_ready=true hb_age={hb_age_txt}"
+                        )
+                        # After a stop/start cycle the first volatile result can be lost if
+                        # we publish immediately. Give DDS matching a short settle window.
+                        time.sleep(0.35)
+                        break
+                    time.sleep(0.10)
+                else:
+                    hb_age = panel.ros_worker.moveit_bridge_heartbeat_age()
+                    hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
+                    panel._emit_log(
+                        "[PICK_OBJ][MOVEIT][PLAN] bridge_recover_warmup "
+                        f"heartbeat_timeout hb_age={hb_age_txt}"
+                    )
             return bridge_recovered
 
         def _wait_moveit_result(label: str, since_wall: float, *, timeout_total: float = 12.0) -> dict:
@@ -1143,14 +1190,24 @@ def run_pick_object(panel) -> None:
             moveit_exclusive = str(
                 os.environ.get("PANEL_PICK_OBJECT_MOVEIT_EXCLUSIVE", "1")
             ).strip().lower() not in ("0", "false", "no", "off")
+            allow_joint_preflight_in_moveit = str(
+                os.environ.get("PANEL_PICK_OBJECT_ALLOW_JOINT_PREFLIGHT_IN_MOVEIT", "0")
+            ).strip().lower() not in ("0", "false", "no", "off")
             panel._emit_log(
                 f"[PICK_OBJ][MODE] moveit_exclusive={str(moveit_exclusive).lower()}"
             )
+            if allow_joint_preflight_in_moveit:
+                panel._emit_log(
+                    "[PICK_OBJ][MODE] allow_joint_preflight_in_moveit=true"
+                )
             transport_fallback_enabled = str(
                 os.environ.get(
                     "PANEL_PICK_OBJECT_TRANSPORT_JOINT_FALLBACK",
                     "0" if moveit_exclusive else "1",
                 )
+            ).strip().lower() not in ("0", "false", "no", "off")
+            transport_split_moveit = str(
+                os.environ.get("PANEL_PICK_OBJECT_TRANSPORT_SPLIT_MOVEIT", "1")
             ).strip().lower() not in ("0", "false", "no", "off")
             approach_fallback_enabled = str(
                 os.environ.get(
@@ -1167,7 +1224,7 @@ def run_pick_object(panel) -> None:
             deterministic_joint_after_approach = str(
                 os.environ.get(
                     "PANEL_PICK_OBJECT_DETERMINISTIC_JOINT_AFTER_APPROACH",
-                    "1",
+                    "0",
                 )
             ).strip().lower() not in ("0", "false", "no", "off")
             try:
@@ -1227,11 +1284,45 @@ def run_pick_object(panel) -> None:
                 if not ok:
                     raise RuntimeError(f"{label} fallo: {info}")
                 wait_timeout = motion_sec + 2.0 if timeout_sec is None else timeout_sec
-                if not panel._wait_for_joint_target(
+                reached = panel._wait_for_joint_target(
                     joints,
                     wait_timeout,
                     tol_rad=tol_rad,
-                ):
+                )
+                if not reached and len(joints) == 6:
+                    current_joints = _read_current_arm_joint_positions()
+                    if current_joints is not None:
+                        settle_err = _max_joint_error(current_joints, joints)
+                        if settle_err <= tol_rad:
+                            panel._emit_log(
+                                f"[PICK_OBJ][JOINT] {label} accept_after_final_read "
+                                f"max_err={settle_err:.4f}rad tol={tol_rad:.4f}rad"
+                            )
+                            reached = True
+                    if not reached:
+                        try:
+                            settle_extra_sec = float(
+                                os.environ.get(
+                                    "PANEL_PICK_OBJECT_JOINT_SETTLE_EXTRA_SEC",
+                                    "2.5",
+                                )
+                            )
+                        except Exception:
+                            settle_extra_sec = 2.5
+                        settle_extra_sec = max(0.0, settle_extra_sec)
+                        if settle_extra_sec > 0.0:
+                            time.sleep(settle_extra_sec)
+                            current_joints = _read_current_arm_joint_positions()
+                            if current_joints is not None:
+                                settle_err = _max_joint_error(current_joints, joints)
+                                if settle_err <= tol_rad:
+                                    panel._emit_log(
+                                        f"[PICK_OBJ][JOINT] {label} accept_after_settle "
+                                        f"extra={settle_extra_sec:.2f}s "
+                                        f"max_err={settle_err:.4f}rad tol={tol_rad:.4f}rad"
+                                    )
+                                    reached = True
+                if not reached:
                     msg = f"{label} no alcanzado exactamente"
                     if require_reached:
                         raise RuntimeError(msg)
@@ -1395,8 +1486,12 @@ def run_pick_object(panel) -> None:
                         measured_ee_frame,
                         timeout_sec=min(0.2, sample_dt * 1.5),
                     )
+                    obj_state = get_object_state(obj_name)
                     obj_world = None
                     obj_source = "none"
+                    # During carry validation the logical object state can keep the
+                    # last table pose for a short time after attach. Prefer live
+                    # pose feeds and leave state_tracking as a last-resort fallback.
                     if getattr(panel, "_ros_worker_started", False) and getattr(panel, "ros_worker", None) is not None:
                         try:
                             pose_map, _pose_ts = panel.ros_worker.pose_snapshot()
@@ -1415,10 +1510,9 @@ def run_pick_object(panel) -> None:
                         if obj_world is not None:
                             obj_source = "store"
                     if obj_world is None:
-                        obj_state = get_object_state(obj_name)
                         if obj_state and getattr(obj_state, "position", None):
                             obj_world = tuple(obj_state.position)
-                            obj_source = "state"
+                            obj_source = "state_tracking"
                     if tcp_base is None or obj_world is None:
                         consecutive_ok = 0
                         time.sleep(sample_dt)
@@ -1443,7 +1537,6 @@ def run_pick_object(panel) -> None:
                     last_dist = dist
 
                     state_ok = True
-                    obj_state = get_object_state(obj_name)
                     if obj_state is not None:
                         last_state = str(getattr(obj_state, "logical_state", "none"))
                         if require_state:
@@ -1914,7 +2007,10 @@ def run_pick_object(panel) -> None:
                 raise RuntimeError("strict_probe_unreachable")
 
             def _run_strict_staged_lift(grasp_pose_live: dict) -> None:
-                if not strict_physics_mode:
+                staged_lift_force = str(
+                    os.environ.get("PANEL_PICK_OBJECT_STAGED_LIFT_ALWAYS", "0")
+                ).strip().lower() not in ("0", "false", "no", "off")
+                if not (strict_physics_mode or staged_lift_force):
                     _run_moveit_step(*sequence[3])
                     _assert_carry_coherence_after_lift()
                     return
@@ -1949,7 +2045,9 @@ def run_pick_object(panel) -> None:
                 except Exception:
                     stage_settle_sec = 0.20
 
-                stage_step_m = max(0.02, stage_step_m)
+                # Allow very fine lift staging during pickup; 1 cm still caused
+                # late-stage TF drift once the object was already detached.
+                stage_step_m = max(0.005, stage_step_m)
                 stage_timeout_sec = max(0.3, stage_timeout_sec)
                 stage_max_dist_m = max(0.10, stage_max_dist_m)
                 stage_min_consecutive = max(1, stage_min_consecutive)
@@ -1969,7 +2067,12 @@ def run_pick_object(panel) -> None:
                     panel._emit_log(
                         f"[PICK_OBJ][STRICT_LIFT] stage={stage_idx + 1} current_z={cur_z:.3f} next_z={next_z:.3f} final={str(is_final).lower()}"
                     )
-                    stage_pose = _make_pose_data((cur_x, cur_y, next_z), frame=pose_frame)
+                    stage_orientation = grasp_pose_live.get("orientation", pick_orientation)
+                    stage_pose = _make_pose_data(
+                        (cur_x, cur_y, next_z),
+                        orientation=stage_orientation,
+                        frame=pose_frame,
+                    )
                     _run_moveit_step(label, stage_pose, min(0.35, float(sequence[3][2])))
                     if stage_settle_sec > 0.0:
                         time.sleep(stage_settle_sec)
@@ -1980,6 +2083,27 @@ def run_pick_object(panel) -> None:
                         min_consecutive_override=stage_min_consecutive,
                         gate_label=gate_label,
                     )
+                    measured_tcp, _measured_tcp_tf = _read_tcp_in_frame(
+                        base_frame,
+                        measured_ee_frame,
+                        timeout_sec=0.25,
+                    )
+                    if measured_tcp is not None:
+                        next_x = float(measured_tcp[0])
+                        next_y = float(measured_tcp[1])
+                        if abs(next_x - cur_x) > 1e-4 or abs(next_y - cur_y) > 1e-4:
+                            panel._emit_log(
+                                f"[PICK_OBJ][STRICT_LIFT] live_xy_update stage={stage_idx + 1} "
+                                f"prev=({cur_x:.3f},{cur_y:.3f}) "
+                                f"tcp=({next_x:.3f},{next_y:.3f})"
+                            )
+                        cur_x = next_x
+                        cur_y = next_y
+                    else:
+                        panel._emit_log(
+                            f"[PICK_OBJ][STRICT_LIFT] live_xy_update_unavailable stage={stage_idx + 1}; "
+                            "keeping_previous_xy"
+                        )
                     grasp_pose_live["position"] = (cur_x, cur_y, next_z)
                     cur_z = next_z
                     stage_idx += 1
@@ -2056,6 +2180,31 @@ def run_pick_object(panel) -> None:
                         moveit_wait_recovered_sec,
                         bridge_request_timeout,
                     )
+                    if label_up.startswith("TRANSPORT"):
+                        try:
+                            transport_wait_sec = float(
+                                os.environ.get(
+                                    "PANEL_PICK_OBJECT_TRANSPORT_MOVEIT_WAIT_SEC",
+                                    "460.0",
+                                )
+                            )
+                        except Exception:
+                            transport_wait_sec = 460.0
+                        transport_wait_sec = max(
+                            moveit_wait_sec,
+                            moveit_wait_recovered_sec,
+                            bridge_request_timeout,
+                            transport_wait_sec,
+                        )
+                        moveit_wait_sec = transport_wait_sec
+                        moveit_wait_recovered_sec = max(
+                            moveit_wait_recovered_sec,
+                            transport_wait_sec,
+                        )
+                        panel._emit_log(
+                            "[PICK_OBJ][MOVEIT][PLAN] "
+                            f"{label} transport_wait_override={transport_wait_sec:.1f}s"
+                        )
                     if bridge_recovered:
                         panel._emit_log(
                             f"[PICK_OBJ][MOVEIT][PLAN] {label} bridge_recovered=true reset_request_id_gate"
@@ -2066,8 +2215,19 @@ def run_pick_object(panel) -> None:
                         setattr(panel, "_pick_obj_moveit_request_id", seq)
                         return seq
 
-                    def _next_panel_request_uuid() -> str:
-                        return uuid.uuid4().hex
+                    def _next_panel_request_uuid(label_key: str = "") -> str:
+                        base_uuid = uuid.uuid4().hex
+                        label_norm = str(label_key or "").strip().upper()
+                        if label_norm.startswith("TRANSPORT"):
+                            skip_constraints_raw = str(
+                                os.environ.get(
+                                    "PANEL_PICK_OBJECT_TRANSPORT_SKIP_CONSTRAINTS",
+                                    "1",
+                                )
+                            ).strip().lower()
+                            if skip_constraints_raw not in ("0", "false", "no", "off"):
+                                return f"skip_constraints:{base_uuid}"
+                        return base_uuid
 
                     def _encode_request_frame(frame: str, request_id: int, request_uuid: str) -> str:
                         base = str(frame or BASE_FRAME or "base_link").strip() or "base_link"
@@ -2078,16 +2238,24 @@ def run_pick_object(panel) -> None:
                         return f"{base}|rid={rid}"
 
                     use_cartesian = False
-                    if label_up in ("GRASP_DOWN", "APPROACH"):
-                        cart_env_name = (
-                            "PANEL_PICK_OBJECT_GRASP_CARTESIAN"
-                            if label_up == "GRASP_DOWN"
-                            else "PANEL_PICK_OBJECT_APPROACH_CARTESIAN"
-                        )
+                    cart_env_name = ""
+                    if label_up == "APPROACH":
+                        cart_env_name = "PANEL_PICK_OBJECT_APPROACH_CARTESIAN"
+                    elif label_up == "GRASP_DOWN" or label_up.startswith("GRASP_DOWN_MICRO_"):
+                        cart_env_name = "PANEL_PICK_OBJECT_GRASP_CARTESIAN"
+                    elif label_up == "LIFT" or label_up.startswith("STRICT_LIFT_STAGE_"):
+                        cart_env_name = "PANEL_PICK_OBJECT_LIFT_CARTESIAN"
+                    elif label_up.startswith("TRANSPORT"):
+                        cart_env_name = "PANEL_PICK_OBJECT_TRANSPORT_CARTESIAN"
+                    if cart_env_name:
                         grasp_cartesian_raw = str(
                             os.environ.get(
                                 cart_env_name,
-                                "0" if label_up == "GRASP_DOWN" else "1",
+                                (
+                                    "0"
+                                    if cart_env_name == "PANEL_PICK_OBJECT_GRASP_CARTESIAN"
+                                    else "1"
+                                ),
                             )
                         ).strip().lower()
                         use_cartesian = grasp_cartesian_raw not in ("0", "false", "no", "off")
@@ -2113,13 +2281,13 @@ def run_pick_object(panel) -> None:
                         if clear_gate:
                             baseline_seq = 0
                         panel_request_id = _next_panel_request_id()
-                        panel_request_uuid = _next_panel_request_uuid()
+                        panel_request_uuid = _next_panel_request_uuid(label_up)
                         request_stamp_ns = _ros_clock_now_ns()
                         if label_up == "APPROACH":
                             tol_step = 0.04
                         elif label_up == "PRE_GRASP":
                             tol_step = 0.03
-                        elif label_up in ("LIFT", "TRANSPORT", "DROP"):
+                        elif label_up in ("LIFT", "DROP") or label_up.startswith("TRANSPORT"):
                             tol_step = 0.03
                         else:
                             tol_step = 0.02
@@ -2223,6 +2391,12 @@ def run_pick_object(panel) -> None:
                     if not bool(result.get("success", False)):
                         message = str(result.get("message") or "execute failed")
                         if use_cartesian and "cartesian_" in message:
+                            if label_up == "APPROACH":
+                                panel._emit_log(
+                                    "[PICK_OBJ][MOVEIT][RECOVERY] APPROACH cartesian fallo; "
+                                    "delegando fallback articular inmediato"
+                                )
+                                raise RuntimeError(f"execute failed ({label}): {message}")
                             panel._emit_log(
                                 f"[PICK_OBJ][MOVEIT][RECOVERY] {label_up} cartesian fallo; "
                                 "reintentando con pose planner"
@@ -2294,7 +2468,7 @@ def run_pick_object(panel) -> None:
                             )
                         except Exception:
                             tol = 0.10
-                    elif label in ("LIFT", "TRANSPORT", "DROP"):
+                    elif label_up in ("LIFT", "DROP") or label_up.startswith("TRANSPORT"):
                         try:
                             tol = float(os.environ.get("PANEL_PICK_OBJECT_PATH_TOL_M", "0.03"))
                         except Exception:
@@ -2425,11 +2599,14 @@ def run_pick_object(panel) -> None:
             preflight_mode = str(
                 os.environ.get("PANEL_PICK_OBJECT_PREFLIGHT_MODE", "home")
             ).strip().lower()
-            if moveit_exclusive and preflight_mode in (
+            pick_image_preflight_modes = (
                 "home_pick_image",
                 "pick_image_home",
                 "pick_image_only",
                 "home_then_pick_image",
+            )
+            if moveit_exclusive and preflight_mode in (
+                *pick_image_preflight_modes,
                 "fixed",
                 "legacy",
                 "table",
@@ -2441,17 +2618,33 @@ def run_pick_object(panel) -> None:
                 "true",
                 "on",
             ):
-                panel._emit_log(
-                    "[PICK_OBJ][MODE] moveit_exclusive=true; ignorando preflight articular "
-                    f"({preflight_mode}) y forzando preflight=home"
-                )
-                preflight_mode = "home"
-            if preflight_mode in (
-                "home_pick_image",
-                "pick_image_home",
-                "pick_image_only",
-                "home_then_pick_image",
-            ):
+                if allow_joint_preflight_in_moveit and preflight_mode in pick_image_preflight_modes:
+                    panel._emit_log(
+                        "[PICK_OBJ][MODE] moveit_exclusive=true; permitiendo preflight articular controlado "
+                        f"({preflight_mode})"
+                    )
+                else:
+                    panel._emit_log(
+                        "[PICK_OBJ][MODE] moveit_exclusive=true; ignorando preflight articular "
+                        f"({preflight_mode}) y forzando preflight=home"
+                    )
+                    preflight_mode = "home"
+            if preflight_mode in pick_image_preflight_modes:
+                try:
+                    pick_image_pregrasp_tol_rad = float(
+                        os.environ.get(
+                            "PANEL_PICK_OBJECT_PICK_IMAGE_PREFLIGHT_TOL_RAD",
+                            "0.05",
+                        )
+                    )
+                except Exception:
+                    pick_image_pregrasp_tol_rad = 0.05
+                pick_image_pregrasp_require_reached = str(
+                    os.environ.get(
+                        "PANEL_PICK_OBJECT_PICK_IMAGE_PREFLIGHT_REQUIRE_REACHED",
+                        "1",
+                    )
+                ).strip().lower() not in ("0", "false", "no", "off")
                 panel._emit_log(
                     "[PICK_OBJ] FASE 1B: Ir a PICK_IMAGE desde HOME "
                     f"(preflight={preflight_mode})"
@@ -2460,7 +2653,8 @@ def run_pick_object(panel) -> None:
                     "PICK_IMAGE_PREGRASP",
                     JOINT_PICK_IMAGE_POSE_RAD,
                     timeout_sec=move_sec + 3.0,
-                    tol_rad=0.08,
+                    tol_rad=pick_image_pregrasp_tol_rad,
+                    require_reached=pick_image_pregrasp_require_reached,
                 )
             elif preflight_mode in ("fixed", "legacy", "table", "pick_image", "1", "true", "on"):
                 panel._emit_log("[PICK_OBJ] FASE 1B: Acercamiento legacy vía mesa (preflight=fixed)")
@@ -2796,9 +2990,10 @@ def run_pick_object(panel) -> None:
             obj_center_z = float(bz)
             obj_top_z = obj_center_z + (float(height or 0.0) * 0.5 if float(height or 0.0) > 0.0 else 0.0)
             obj_ref_z = (obj_center_z if attach_z_ref_mode == "center" else obj_top_z) + float(attach_z_clearance)
+            tcp_contact_z = float(tcp_base[2]) - float(GRIPPER_TCP_Z_OFFSET)
             dx_obj = bx - tcp_base[0]
             dy_obj = by - tcp_base[1]
-            dz_obj = tcp_base[2] - obj_ref_z
+            dz_obj = tcp_contact_z - obj_ref_z
             try:
                 max_tcp_above_obj_z = float(os.environ.get("PANEL_PICK_OBJECT_MAX_TCP_ABOVE_OBJ_Z", "0.045"))
             except Exception:
@@ -2817,6 +3012,7 @@ def run_pick_object(panel) -> None:
             )
             panel._emit_log(
                 f"[PICK_OBJ][TF][CHECK] object_z_gap frame={base_frame} tcp_z={tcp_base[2]:.3f} "
+                f"tcp_contact_z={tcp_contact_z:.3f} tcp_z_offset={float(GRIPPER_TCP_Z_OFFSET):.3f} "
                 f"obj_center_z={obj_center_z:.3f} obj_top_z={obj_top_z:.3f} "
                 f"obj_ref_z={obj_ref_z:.3f} z_ref_mode={attach_z_ref_mode} "
                 f"z_clearance={attach_z_clearance:.3f} dz={dz_obj:.3f} max={max_tcp_above_obj_z:.3f} "
@@ -2826,7 +3022,8 @@ def run_pick_object(panel) -> None:
                 f"[PICK_OBJ][GRASP_VALIDATE] tcp_obj_dist={tcp_obj_dist:.3f} "
                 f"tcp_obj_dist_max={tcp_obj_dist_max:.3f} "
                 f"expected_obj_base=({bx:.3f},{by:.3f},{bz:.3f}) "
-                f"tcp_base=({float(tcp_base[0]):.3f},{float(tcp_base[1]):.3f},{float(tcp_base[2]):.3f})"
+                f"tcp_base=({float(tcp_base[0]):.3f},{float(tcp_base[1]):.3f},{float(tcp_base[2]):.3f}) "
+                f"tcp_contact_z={tcp_contact_z:.3f}"
             )
             if abs(dx_obj) > object_xy_gate_tol or abs(dy_obj) > object_xy_gate_tol:
                 panel._emit_log(
@@ -2940,10 +3137,16 @@ def run_pick_object(panel) -> None:
                 )
                 attach_result["ok"] = bool(attach_ok)
                 if attach_ok:
-                    mark_object_grasped(obj_name, reason="pick_object")
+                    update_object_state(
+                        obj_name,
+                        logical_state=ObjectLogicalState.GRASPED,
+                        owner=ObjectOwner.ROBOT,
+                        attached=True,
+                        reason="pick_object_attach_tracking",
+                    )
                     panel._emit_log(
                         "[PICK_OBJ][STATE] attach lógico publicado; "
-                        "difiriendo CARRIED hasta validar transporte post-lift"
+                        "tracking interno marcado attached=true y CARRIED diferido hasta validar transporte post-lift"
                     )
                 else:
                     panel._emit_log("[PICK_OBJ] ✗ Attach fallido (sin objeto en rango)")
@@ -2993,6 +3196,9 @@ def run_pick_object(panel) -> None:
                 )
                 panel._emit_log("[PICK_OBJ] FASE 6 COMPLETADA: Objeto agarrado")
             else:
+                staged_lift_force = str(
+                    os.environ.get("PANEL_PICK_OBJECT_STAGED_LIFT_ALWAYS", "0")
+                ).strip().lower() not in ("0", "false", "no", "off")
                 if deterministic_joint_after_approach:
                     panel._emit_log(
                         "[PICK_OBJ][MODE] deterministic_joint_path active; LIFT por ruta articular"
@@ -3004,6 +3210,11 @@ def run_pick_object(panel) -> None:
                         tol_rad=0.10,
                         duration_sec=carry_joint_move_sec,
                     )
+                elif staged_lift_force:
+                    panel._emit_log(
+                        "[PICK_OBJ][MODE] staged_lift_always=true; LIFT por etapas"
+                    )
+                    _run_strict_staged_lift(grasp_pose_send)
                 else:
                     _run_moveit_step(*sequence[3])  # LIFT
                 try:
@@ -3119,11 +3330,47 @@ def run_pick_object(panel) -> None:
                 transport_fallback_used = True
             else:
                 try:
-                    _run_moveit_step(*sequence[4])  # TRANSPORT
+                    if transport_split_moveit:
+                        transport_stage_labels = [
+                            f"TRANSPORT_STAGE_{stage_idx}"
+                            for stage_idx in range(1, len(transport_stage_data) + 1)
+                        ]
+                        via_summary = ", ".join(
+                            f"{stage_label}=({stage_pose[0]:.3f}, {stage_pose[1]:.3f}, {stage_pose[2]:.3f})"
+                            for stage_label, stage_pose in zip(transport_stage_labels, transport_stage_poses)
+                        )
+                        panel._emit_log(
+                            "[PICK_OBJ][MOVEIT][PLAN] TRANSPORT split_moveit=true "
+                            f"stages={len(transport_stage_data)} "
+                            f"{via_summary} "
+                            f"final=({transport_pose[0]:.3f}, {transport_pose[1]:.3f}, {transport_pose[2]:.3f})"
+                        )
+                        for stage_idx, stage_data in enumerate(transport_stage_data, start=1):
+                            _run_moveit_step(
+                                f"TRANSPORT_STAGE_{stage_idx}",
+                                stage_data,
+                                float(sequence[4][2]),
+                            )
+                    else:
+                        _run_moveit_step(*sequence[4])  # TRANSPORT
                 except RuntimeError as exc:
                     msg = str(exc)
-                    transport_tf_mismatch = _is_step_tf_mismatch(msg, "TRANSPORT")
-                    transport_exec_failed = _is_step_exec_failed(msg, "TRANSPORT")
+                    if transport_split_moveit:
+                        transport_labels = tuple(
+                            ["TRANSPORT"]
+                            + [
+                                f"TRANSPORT_STAGE_{stage_idx}"
+                                for stage_idx in range(1, len(transport_stage_data) + 1)
+                            ]
+                        )
+                    else:
+                        transport_labels = ("TRANSPORT",)
+                    transport_tf_mismatch = any(
+                        _is_step_tf_mismatch(msg, stage_label) for stage_label in transport_labels
+                    )
+                    transport_exec_failed = any(
+                        _is_step_exec_failed(msg, stage_label) for stage_label in transport_labels
+                    )
                     if not (transport_fallback_enabled and (transport_tf_mismatch or transport_exec_failed)):
                         raise
                     reason = "tf_mismatch" if transport_tf_mismatch else "exec_failed"

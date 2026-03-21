@@ -6,7 +6,7 @@ ROOT="/home/laboratorio/TFM"
 PROJECT_ROOT="$ROOT/agarre_inteligente"
 PYTHON_BIN="${PYTHON_BIN:-/home/laboratorio/.venv-tfm/bin/python}"
 STAMP="${STAMP:-$(date +%Y%m%d_%H%M%S)}"
-LOG_DIR="$ROOT/report/logs/training"
+LOG_DIR="$ROOT/reports/logs/training"
 LOG_PATH="$LOG_DIR/retrain_cap5_gpu_${STAMP}.log"
 
 CONFIGS=(

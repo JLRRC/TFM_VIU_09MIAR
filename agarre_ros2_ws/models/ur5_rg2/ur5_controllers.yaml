@@ -43,24 +43,24 @@ joint_trajectory_controller:
       command_interface: ""
     constraints:
       stopped_velocity_tolerance: 0.01
-      goal_time: 0.5
+      goal_time: 35.0
       shoulder_pan_joint:
-        trajectory: 0.5
+        trajectory: 3.4
         goal: 0.1
       shoulder_lift_joint:
-        trajectory: 0.5
+        trajectory: 3.4
         goal: 0.1
       elbow_joint:
-        trajectory: 0.5
+        trajectory: 3.4
         goal: 0.1
       wrist_1_joint:
-        trajectory: 0.5
+        trajectory: 3.4
         goal: 0.1
       wrist_2_joint:
-        trajectory: 0.5
+        trajectory: 3.4
         goal: 0.1
       wrist_3_joint:
-        trajectory: 0.5
+        trajectory: 3.4
         goal: 0.1
 
 arm_position_controller:

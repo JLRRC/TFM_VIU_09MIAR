@@ -3,8 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CYCLES="${1:-${PICK_VALIDATE_CYCLES:-3}}"
-SUMMARY_FILE="$ROOT_DIR/reports/pick_${CYCLES}_cycles_summary_$(date +%Y%m%d_%H%M%S).log"
-mkdir -p "$ROOT_DIR/reports"
+SUMMARY_FILE="$ROOT_DIR/auditoria/pick_${CYCLES}_cycles_summary_$(date +%Y%m%d_%H%M%S).log"
+mkdir -p "$ROOT_DIR/auditoria"
 
 set +u
 source /opt/ros/jazzy/setup.bash

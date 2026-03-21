@@ -93,20 +93,24 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     panel.camera_topic_combo.setEnabled(camera_enabled)
     panel.btn_camera_refresh.setEnabled(camera_enabled)
     panel.btn_camera_connect.setEnabled(camera_enabled)
+    calib_ok, calib_reason = panel._calibration_action_status()
     if getattr(panel, "btn_calibrate", None) is not None:
-        panel.btn_calibrate.setEnabled(
-            camera_enabled
-            and not system_error
-            and panel._camera_stream_ok
-            and panel._calibration_topic_allowed()
+        panel._set_btn_state(
+            panel.btn_calibrate,
+            camera_enabled and not system_error and calib_ok,
+            "" if (camera_enabled and not system_error and calib_ok) else (calib_reason or "Calibración no lista"),
         )
     if getattr(panel, "btn_release_objects", None) is not None:
-        panel.btn_release_objects.setEnabled(
-            camera_enabled
-            and panel._camera_stream_ok
-            and not panel._objects_release_done
-            and not panel._detach_inflight
-        )
+        if panel._detach_inflight:
+            release_ok = False
+            release_tip = "Soltando objetos…"
+        elif panel._objects_release_done:
+            release_ok = False
+            release_tip = "Soltar objetos ya ejecutado en este arranque"
+        else:
+            release_ok = not system_error
+            release_tip = "" if release_ok else "Sistema en error"
+        panel._set_btn_state(panel.btn_release_objects, release_ok, release_tip)
 
     camera_ready = panel._camera_stream_ok
     camera_degraded_ok = bool(panel._managed_mode and panel._pose_info_ok and panel._controllers_ok)
@@ -265,29 +269,31 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         )
     else:
         panel._set_btn_state(panel.btn_pick_object, False, block_tip)
+    infer_ok, infer_reason = panel._tfm_infer_ready_status()
     tfm_ready = (
-        camera_ready
-        and bool(panel.tfm_module)
+        infer_ok
         and not test_pending
         and panel._joint_limits_ok
-        and panel._objects_release_done
     )
-    if not camera_ready:
-        tfm_block_tip = "Cámara no lista"
+    if panel._tfm_infer_inflight:
+        tfm_block_tip = "Inferencia en curso"
+    elif panel._tfm_execute_inflight:
+        tfm_block_tip = "Ejecución en curso"
     elif test_pending:
         tfm_block_tip = "Ejecuta TEST ROBOT para habilitar"
     elif not panel._joint_limits_ok:
         tfm_block_tip = panel._joint_limits_err or "Limites articulares no cargados"
-    elif not panel.tfm_module:
-        tfm_block_tip = "Modelo no disponible"
+    elif not infer_ok:
+        tfm_block_tip = infer_reason or "TFM no listo"
     else:
         tfm_block_tip = ""
     # Selector y aplicar experimento no deben depender de cámara/test;
     # solo los botones de ejecución (infer/visualize/publish) mantienen gating estricto.
     tfm_selector_ready = bool(panel.tfm_module)
     tfm_selector_tip = "" if tfm_selector_ready else "Modelo no disponible"
-    tfm_has_grasp = bool(panel._last_grasp_px)
-    tfm_grasp_tip = "" if tfm_has_grasp else "Primero infiere o recibe un grasp"
+    grasp_ok, grasp_reason = panel._current_grasp_status()
+    tfm_has_grasp = grasp_ok
+    tfm_grasp_tip = "" if tfm_has_grasp else (grasp_reason or "Primero infiere o recibe un grasp")
     # Botones de ejecución requieren _objects_release_done
     tfm_controls_ready = bool(panel.tfm_module) and panel._objects_release_done
     tfm_controls_tip = "" if tfm_controls_ready else ("Modelo no disponible" if not panel.tfm_module else tfm_block_tip)

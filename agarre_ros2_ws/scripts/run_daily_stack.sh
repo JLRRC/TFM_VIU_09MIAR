@@ -33,7 +33,7 @@ source_env() {
   set -u
 
   export VISION_DIR="${VISION_DIR:-/home/laboratorio/TFM/agarre_inteligente}"
-  export INFER_CKPT="${INFER_CKPT:-$VISION_DIR/experiments/EXP1_SIMPLE_RGB/seed_0/checkpoints/best.pth}"
+  export INFER_CKPT="${INFER_CKPT:-}"
   export GZ_SIM_RESOURCE_PATH="${WS_DIR}/models:${WS_DIR}/worlds:${WS_DIR}/install:/opt/ros/jazzy/share:${GZ_SIM_RESOURCE_PATH:-}"
 }
 

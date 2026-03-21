@@ -61,18 +61,18 @@ _PICK_DEMO_OBJECTS = {
 }
 ATTACHABLE_OBJECTS = ("pick_demo",)
 PICK_DEMO_NAME_SET = set(ATTACHABLE_OBJECTS)
-# Drop objects: objetos congelados hasta "Soltar/Obj" (definidos solo por nombre).
+# Drop objects: racimo compacto suspendido a ~2 m hasta pulsar "Soltar objetos".
 _DROP_AIR_OBJECTS = {
-    "box_red": (-0.320, 0.180, 0.880),
-    "box_blue": (-0.200, 0.180, 0.865),
-    "box_green": (-0.080, 0.180, 0.910),
-    "cyl_gray": (0.040, 0.180, 0.920),
-    "cyl_orange": (-0.320, 0.060, 0.890),
-    "cyl_purple": (-0.200, 0.060, 0.860),
-    "box_lightblue": (-0.080, 0.060, 0.880),
-    "cyl_green": (0.040, 0.060, 0.865),
-    "box_yellow": (-0.320, -0.060, 0.865),
-    "cross_cyan": (-0.200, -0.060, 0.865),
+    "box_red": (-0.260, 0.100, 2.000),
+    "box_blue": (-0.180, 0.100, 2.000),
+    "box_green": (-0.100, 0.100, 2.000),
+    "cyl_gray": (-0.020, 0.100, 2.000),
+    "cyl_orange": (-0.260, 0.020, 2.000),
+    "cyl_purple": (-0.180, 0.020, 2.000),
+    "box_lightblue": (-0.100, 0.020, 2.000),
+    "cyl_green": (-0.020, 0.020, 2.000),
+    "box_yellow": (-0.220, -0.060, 2.000),
+    "cross_cyan": (-0.080, -0.060, 2.000),
 }
 DROP_NAME_SET = {
     "box_blue",
@@ -124,18 +124,44 @@ def refresh_object_groups() -> None:
 
 
 refresh_object_groups()
+OBJECT_SHAPES = {
+    "pick_demo": "circle",
+    "box_red": "square",
+    "box_blue": "rect_h",
+    "box_green": "rect_v",
+    "cyl_gray": "circle",
+    "cyl_orange": "circle",
+    "cyl_purple": "circle",
+    "box_lightblue": "square",
+    "cyl_green": "circle",
+    "box_yellow": "rect_h",
+    "cross_cyan": "cross",
+}
+OBJECT_LABELS = {
+    "pick_demo": "DEM",
+    "box_red": "ROJ",
+    "box_blue": "AZL",
+    "box_green": "VER",
+    "cyl_gray": "GRI",
+    "cyl_orange": "NAR",
+    "cyl_purple": "MOR",
+    "box_lightblue": "CEL",
+    "cyl_green": "CVE",
+    "box_yellow": "AMA",
+    "cross_cyan": "CRZ",
+}
 OBJECT_COLORS = {
     "pick_demo": "#f59e0b",
-    "box_red": "#f97316",
-    "box_blue": "#a855f7",
-    "box_green": "#14b8a6",
-    "cyl_gray": "#22c55e",
-    "cyl_orange": "#06b6d4",
-    "cyl_purple": "#84cc16",
+    "box_red": "#d94141",
+    "box_blue": "#3b82f6",
+    "box_green": "#22c55e",
+    "cyl_gray": "#6b7280",
+    "cyl_orange": "#f59e0b",
+    "cyl_purple": "#a855f7",
     "box_lightblue": "#93c5fd",
-    "cyl_green": "#22c55e",
-    "box_yellow": "#10b981",
-    "cross_cyan": "#06b6d4",
+    "cyl_green": "#34d399",
+    "box_yellow": "#facc15",
+    "cross_cyan": "#22d3ee",
 }
 
 BASKET_DROP = (-1.30, 0.00, 0.82)

@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REPORT_DIR = ROOT / "reports" / "moveit2_audit"
+REPORT_DIR = ROOT / "auditoria" / "moveit2_audit"
 TOOLS_DIR = ROOT / "tools"
 LOG_FILE = ROOT / "log" / "ros2_launch.log"
 

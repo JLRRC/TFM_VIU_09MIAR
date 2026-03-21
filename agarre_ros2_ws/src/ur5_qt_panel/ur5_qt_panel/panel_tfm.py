@@ -118,15 +118,13 @@ def tfm_infer(panel) -> None:
     if panel._tfm_infer_inflight:
         panel._set_status("TFM: inferencia en curso", error=False)
         return
-    if not panel._safety.require_ready_basic("TFM"):
-        return
-    if not panel._last_camera_frame:
-        panel._set_status("TFM: sin frame de cámara", error=True)
+    infer_ready, infer_reason = panel._tfm_infer_ready_status()
+    if not infer_ready:
+        panel._set_status(f"TFM en espera: {infer_reason}", error=True)
+        panel._emit_log(f"[SAFETY] TFM infer bloqueado: {infer_reason}")
+        panel._audit_append("logs/infer.log", f"[TFM] infer_blocked reason={infer_reason}")
         return
     qimg, w, h, frame_ts = panel._last_camera_frame
-    if w <= 0 or h <= 0:
-        panel._set_status("TFM: frame inválido", error=True)
-        return
     roi = None
     if INFER_ROI_SIZE and panel._selected_px:
         roi_cx, roi_cy = panel._selected_px

@@ -5,7 +5,9 @@
 """Pick demo sequence helper for the panel."""
 from __future__ import annotations
 
+import os
 import time
+import uuid
 
 from .panel_robot_presets import (
     JOINT_TABLE_POSE_RAD,
@@ -204,6 +206,71 @@ def run_pick_demo(panel) -> None:
                 timeout_sec=move_sec + 6.0,
                 tol_rad=0.08,
             )
+            extra_down_m = max(
+                0.0,
+                float(os.environ.get("PANEL_PICK_DEMO_EXTRA_GRASP_DOWN_M", "0.05") or 0.05),
+            )
+            if extra_down_m > 1e-4:
+                try:
+                    tcp_pose = panel.get_tcp_base()
+                except Exception:
+                    tcp_pose = None
+                if tcp_pose is not None:
+                    base_frame = str(getattr(tcp_pose.header, "frame_id", "") or panel._business_base_frame())
+                    tcp_pos = tcp_pose.pose.position
+                    tcp_ori = tcp_pose.pose.orientation
+                    target_z = float(tcp_pos.z) - float(extra_down_m)
+                    request_id = int(getattr(panel, "_panel_moveit_request_id", 0) or 0) + 1
+                    setattr(panel, "_panel_moveit_request_id", request_id)
+                    request_uuid = uuid.uuid4().hex
+                    pose_data = {
+                        "position": (float(tcp_pos.x), float(tcp_pos.y), float(target_z)),
+                        "orientation": (
+                            float(tcp_ori.x),
+                            float(tcp_ori.y),
+                            float(tcp_ori.z),
+                            float(tcp_ori.w),
+                        ),
+                        "frame": f"{base_frame}|rid={request_id}|uid={request_uuid}",
+                    }
+                    has_results = False
+                    if panel._ros_worker_started and panel.ros_worker and panel.ros_worker.node_ready():
+                        try:
+                            has_results = bool(
+                                panel.ros_worker.subscribe_moveit_result("/desired_grasp/result")
+                            )
+                        except Exception:
+                            has_results = False
+                    panel._emit_log(
+                        f"[DEMO] GRASP_DOWN extra cartesian {extra_down_m:.3f} m "
+                        f"target_z={target_z:.3f} frame={base_frame}"
+                    )
+                    since_wall = 0.0
+                    since_seq = -1
+                    if has_results and panel.ros_worker:
+                        _raw, since_wall, since_seq = panel.ros_worker.moveit_result_snapshot()
+                    if not panel._publish_moveit_pose("GRASP_DOWN_EXTRA", pose_data, cartesian=True):
+                        raise RuntimeError("GRASP_DOWN_EXTRA publish_failed")
+                    if has_results:
+                        ok_extra, msg_extra = panel._wait_tfm_moveit_result(
+                            "GRASP_DOWN_EXTRA",
+                            since_wall=since_wall,
+                            since_seq=since_seq,
+                            timeout_sec=move_sec + 8.0,
+                            expected_request_id=request_id,
+                            expected_request_uuid=request_uuid,
+                        )
+                        if not ok_extra:
+                            raise RuntimeError(f"GRASP_DOWN_EXTRA result_failed:{msg_extra}")
+                    else:
+                        time.sleep(0.8)
+                        panel._motion_in_progress = False
+                    if not panel._wait_for_tcp_base_z(target_z, timeout_sec=4.0, tol_m=0.015):
+                        panel._emit_log(
+                            f"[DEMO] WARN: GRASP_DOWN_EXTRA tcp_z no confirmado target_z={target_z:.3f}"
+                        )
+                else:
+                    panel._emit_log("[DEMO] WARN: tcp_base no disponible; omitiendo extra_down")
             time.sleep(3.0)
             panel._emit_log("[DEMO] Cerrando pinza")
             def _close_and_attach():

@@ -94,7 +94,10 @@ class RosWorker(QObject):
     grasp_rect = pyqtSignal(object)
     system_state = pyqtSignal(str, str)
     robot_test_request = pyqtSignal(str)
+    camera_disconnect_request = pyqtSignal(str)
+    recover_request = pyqtSignal(str)
     tfm_infer_request = pyqtSignal(str)
+    tfm_execute_request = pyqtSignal(str)
     pick_object_request = pyqtSignal(str)
     object_select_request = pyqtSignal(str, str)
 
@@ -139,12 +142,28 @@ class RosWorker(QObject):
         self._test_robot_service = str(
             os.environ.get("PANEL_TEST_TRIGGER_SERVICE", "/panel/test_robot") or "/panel/test_robot"
         ).strip() or "/panel/test_robot"
+        self._camera_disconnect_service = str(
+            os.environ.get("PANEL_CAMERA_DISCONNECT_TRIGGER_SERVICE", "/panel/camera_disconnect")
+            or "/panel/camera_disconnect"
+        ).strip() or "/panel/camera_disconnect"
+        self._recover_topic = str(
+            os.environ.get("PANEL_RECOVER_TRIGGER_TOPIC", "/panel/recover") or "/panel/recover"
+        ).strip() or "/panel/recover"
+        self._recover_service = str(
+            os.environ.get("PANEL_RECOVER_TRIGGER_SERVICE", "/panel/recover") or "/panel/recover"
+        ).strip() or "/panel/recover"
         self._tfm_infer_topic = str(
             os.environ.get("PANEL_TFM_INFER_TRIGGER_TOPIC", "/panel/tfm_infer") or "/panel/tfm_infer"
         ).strip() or "/panel/tfm_infer"
         self._tfm_infer_service = str(
             os.environ.get("PANEL_TFM_INFER_TRIGGER_SERVICE", "/panel/tfm_infer") or "/panel/tfm_infer"
         ).strip() or "/panel/tfm_infer"
+        self._tfm_execute_topic = str(
+            os.environ.get("PANEL_TFM_EXECUTE_TRIGGER_TOPIC", "/panel/tfm_execute") or "/panel/tfm_execute"
+        ).strip() or "/panel/tfm_execute"
+        self._tfm_execute_service = str(
+            os.environ.get("PANEL_TFM_EXECUTE_TRIGGER_SERVICE", "/panel/tfm_execute") or "/panel/tfm_execute"
+        ).strip() or "/panel/tfm_execute"
         self._pick_object_topic = str(
             os.environ.get("PANEL_PICK_OBJECT_TRIGGER_TOPIC", "/panel/pick_object") or "/panel/pick_object"
         ).strip() or "/panel/pick_object"
@@ -159,8 +178,13 @@ class RosWorker(QObject):
         ).strip() or "/panel/select_object"
         self._test_robot_sub = None
         self._test_robot_srv = None
+        self._camera_disconnect_srv = None
+        self._recover_sub = None
+        self._recover_srv = None
         self._tfm_infer_sub = None
         self._tfm_infer_srv = None
+        self._tfm_execute_sub = None
+        self._tfm_execute_srv = None
         self._pick_object_sub = None
         self._pick_object_srv = None
         self._select_object_sub = None
@@ -806,9 +830,27 @@ class RosWorker(QObject):
         except RuntimeError:
             pass
 
+    def _emit_camera_disconnect_request(self, source: str) -> None:
+        try:
+            self.camera_disconnect_request.emit(source)
+        except RuntimeError:
+            pass
+
+    def _emit_recover_request(self, source: str) -> None:
+        try:
+            self.recover_request.emit(source)
+        except RuntimeError:
+            pass
+
     def _emit_tfm_infer_request(self, source: str) -> None:
         try:
             self.tfm_infer_request.emit(source)
+        except RuntimeError:
+            pass
+
+    def _emit_tfm_execute_request(self, source: str) -> None:
+        try:
+            self.tfm_execute_request.emit(source)
         except RuntimeError:
             pass
 
@@ -836,6 +878,27 @@ class RosWorker(QObject):
             pass
         return response
 
+    def _on_camera_disconnect_service(self, _request: object, response: object) -> object:
+        self._emit_camera_disconnect_request(f"service:{self._camera_disconnect_service}")
+        try:
+            response.success = True
+            response.message = "camera_disconnect_triggered"
+        except Exception:
+            pass
+        return response
+
+    def _on_recover_topic(self, _msg: "Empty") -> None:
+        self._emit_recover_request(f"topic:{self._recover_topic}")
+
+    def _on_recover_service(self, _request: object, response: object) -> object:
+        self._emit_recover_request(f"service:{self._recover_service}")
+        try:
+            response.success = True
+            response.message = "recover_triggered"
+        except Exception:
+            pass
+        return response
+
     def _on_tfm_infer_topic(self, _msg: "Empty") -> None:
         self._emit_tfm_infer_request(f"topic:{self._tfm_infer_topic}")
 
@@ -844,6 +907,18 @@ class RosWorker(QObject):
         try:
             response.success = True
             response.message = "tfm_infer_triggered"
+        except Exception:
+            pass
+        return response
+
+    def _on_tfm_execute_topic(self, _msg: "Empty") -> None:
+        self._emit_tfm_execute_request(f"topic:{self._tfm_execute_topic}")
+
+    def _on_tfm_execute_service(self, _request: object, response: object) -> object:
+        self._emit_tfm_execute_request(f"service:{self._tfm_execute_service}")
+        try:
+            response.success = True
+            response.message = "tfm_execute_triggered"
         except Exception:
             pass
         return response
@@ -1251,6 +1326,18 @@ class RosWorker(QObject):
                 except Exception as exc:
                     self._log_exception("create tfm_infer topic", exc)
                 try:
+                    self._tfm_execute_sub = self._node.create_subscription(
+                        Empty,
+                        self._tfm_execute_topic,
+                        self._on_tfm_execute_topic,
+                        10,
+                    )
+                    self.log.emit(
+                        f"[ROS] Trigger topic listo: {self._tfm_execute_topic} (std_msgs/Empty)"
+                    )
+                except Exception as exc:
+                    self._log_exception("create tfm_execute topic", exc)
+                try:
                     self._pick_object_sub = self._node.create_subscription(
                         Empty,
                         self._pick_object_topic,
@@ -1262,6 +1349,18 @@ class RosWorker(QObject):
                     )
                 except Exception as exc:
                     self._log_exception("create pick_object topic", exc)
+                try:
+                    self._recover_sub = self._node.create_subscription(
+                        Empty,
+                        self._recover_topic,
+                        self._on_recover_topic,
+                        10,
+                    )
+                    self.log.emit(
+                        f"[ROS] Trigger topic listo: {self._recover_topic} (std_msgs/Empty)"
+                    )
+                except Exception as exc:
+                    self._log_exception("create recover topic", exc)
             if String is not None:
                 try:
                     self._select_object_sub = self._node.create_subscription(
@@ -1288,6 +1387,17 @@ class RosWorker(QObject):
                 except Exception as exc:
                     self._log_exception("create test_robot service", exc)
                 try:
+                    self._camera_disconnect_srv = self._node.create_service(
+                        Trigger,
+                        self._camera_disconnect_service,
+                        self._on_camera_disconnect_service,
+                    )
+                    self.log.emit(
+                        f"[ROS] Trigger service listo: {self._camera_disconnect_service} (std_srvs/Trigger)"
+                    )
+                except Exception as exc:
+                    self._log_exception("create camera_disconnect service", exc)
+                try:
                     self._tfm_infer_srv = self._node.create_service(
                         Trigger,
                         self._tfm_infer_service,
@@ -1298,6 +1408,28 @@ class RosWorker(QObject):
                     )
                 except Exception as exc:
                     self._log_exception("create tfm_infer service", exc)
+                try:
+                    self._tfm_execute_srv = self._node.create_service(
+                        Trigger,
+                        self._tfm_execute_service,
+                        self._on_tfm_execute_service,
+                    )
+                    self.log.emit(
+                        f"[ROS] Trigger service listo: {self._tfm_execute_service} (std_srvs/Trigger)"
+                    )
+                except Exception as exc:
+                    self._log_exception("create tfm_execute service", exc)
+                try:
+                    self._recover_srv = self._node.create_service(
+                        Trigger,
+                        self._recover_service,
+                        self._on_recover_service,
+                    )
+                    self.log.emit(
+                        f"[ROS] Trigger service listo: {self._recover_service} (std_srvs/Trigger)"
+                    )
+                except Exception as exc:
+                    self._log_exception("create recover service", exc)
                 try:
                     self._pick_object_srv = self._node.create_service(
                         Trigger,
@@ -1439,6 +1571,18 @@ class RosWorker(QObject):
                 except Exception as exc:
                     self._log_exception("destroy tfm_infer service", exc)
                 self._tfm_infer_srv = None
+            if self._node and self._tfm_execute_sub is not None:
+                try:
+                    self._node.destroy_subscription(self._tfm_execute_sub)
+                except Exception as exc:
+                    self._log_exception("destroy tfm_execute subscription", exc)
+                self._tfm_execute_sub = None
+            if self._node and self._tfm_execute_srv is not None:
+                try:
+                    self._node.destroy_service(self._tfm_execute_srv)
+                except Exception as exc:
+                    self._log_exception("destroy tfm_execute service", exc)
+                self._tfm_execute_srv = None
             if self._node and self._select_object_sub is not None:
                 try:
                     self._node.destroy_subscription(self._select_object_sub)

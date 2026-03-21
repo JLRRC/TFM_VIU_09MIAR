@@ -707,6 +707,9 @@ def start_moveit_bridge(panel):
         joint_state_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC")
         joint_state_max_age = _env_float_opt("PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC")
         force_fjt_direct = _env_flag("PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT", False)
+        unwrap_continuous = _env_flag(
+            "PANEL_MOVEIT_BRIDGE_UNWRAP_CONTINUOUS_JOINTS", False
+        )
         require_rid = _env_flag("PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID", True)
         drop_pending = _env_flag("PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED", True)
         dry_run_plan_only = _env_flag("PANEL_MOVEIT_BRIDGE_DRY_RUN", False)
@@ -758,10 +761,63 @@ def start_moveit_bridge(panel):
                 + ("true" if force_fjt_direct else "false"),
             ]
         )
+        ros_args.extend(
+            [
+                "-p",
+                "unwrap_continuous_joints:="
+                + ("true" if unwrap_continuous else "false"),
+            ]
+        )
         path_constraint_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD")
         if path_constraint_tol is None:
             path_constraint_tol = 1.5
         ros_args.extend(["-p", f"path_constraint_joint_tolerance_rad:={max(0.0, path_constraint_tol):.3f}"])
+        controller_goal_time_tol = _env_float_opt(
+            "PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TIME_TOL_SEC"
+        )
+        if controller_goal_time_tol is None:
+            controller_goal_time_tol = 30.0
+        ros_args.extend(
+            [
+                "-p",
+                "controller_goal_time_tolerance_sec:="
+                + f"{max(0.0, controller_goal_time_tol):.3f}",
+            ]
+        )
+        controller_expected_goal_time = _env_float_opt(
+            "PANEL_MOVEIT_BRIDGE_CONTROLLER_EXPECTED_GOAL_TIME_SEC"
+        )
+        if controller_expected_goal_time is None:
+            controller_expected_goal_time = max(30.0, float(controller_goal_time_tol))
+        ros_args.extend(
+            [
+                "-p",
+                "controller_expected_goal_time_sec:="
+                + f"{max(0.0, controller_expected_goal_time):.3f}",
+            ]
+        )
+        controller_path_tol = _env_float_opt(
+            "PANEL_MOVEIT_BRIDGE_CONTROLLER_PATH_TOL_RAD"
+        )
+        if controller_path_tol is not None:
+            ros_args.extend(
+                [
+                    "-p",
+                    "controller_path_tolerance_rad:="
+                    + f"{max(0.0, controller_path_tol):.3f}",
+                ]
+            )
+        controller_goal_tol = _env_float_opt(
+            "PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TOL_RAD"
+        )
+        if controller_goal_tol is not None:
+            ros_args.extend(
+                [
+                    "-p",
+                    "controller_goal_tolerance_rad:="
+                    + f"{max(0.0, controller_goal_tol):.3f}",
+                ]
+            )
         # Conservative default scaling improves simulated tracking stability.
         vel_scale = _env_float_opt("PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE")
         if vel_scale is None:
@@ -789,6 +845,11 @@ def start_moveit_bridge(panel):
             f"drop_pending_on_tagged_request={'true' if drop_pending else 'false'} "
             f"dry_run_plan_only={'true' if dry_run_plan_only else 'false'} "
             f"force_fjt_direct_for_walltime_sim={'true' if force_fjt_direct else 'false'} "
+            f"unwrap_continuous_joints={'true' if unwrap_continuous else 'false'} "
+            f"controller_path_tolerance_rad={controller_path_tol if controller_path_tol is not None else 'default'} "
+            f"controller_goal_tolerance_rad={controller_goal_tol if controller_goal_tol is not None else 'default'} "
+            f"controller_goal_time_tolerance_sec={controller_goal_time_tol:.3f} "
+            f"controller_expected_goal_time_sec={controller_expected_goal_time:.3f} "
             f"velocity_scaling={vel_scale:.2f} accel_scaling={accel_scale:.2f}"
         )
         cmd_core = with_line_buffer(
