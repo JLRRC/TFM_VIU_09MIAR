@@ -606,7 +606,7 @@
         <!-- Tool-side detachable joints for physically carrying grasped objects. -->
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>tool0</parent_link>
+            <parent_link>rg2_hand</parent_link>
             <child_model>box_red</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/box_red/attach</attach_topic>
@@ -615,7 +615,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>tool0</parent_link>
+            <parent_link>rg2_hand</parent_link>
             <child_model>box_blue</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/box_blue/attach</attach_topic>
@@ -624,7 +624,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>tool0</parent_link>
+            <parent_link>rg2_hand</parent_link>
             <child_model>box_green</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/box_green/attach</attach_topic>
@@ -633,7 +633,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>tool0</parent_link>
+            <parent_link>rg2_hand</parent_link>
             <child_model>box_lightblue</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/box_lightblue/attach</attach_topic>
@@ -642,7 +642,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>tool0</parent_link>
+            <parent_link>rg2_hand</parent_link>
             <child_model>box_yellow</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/box_yellow/attach</attach_topic>
@@ -651,7 +651,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>tool0</parent_link>
+            <parent_link>rg2_hand</parent_link>
             <child_model>cross_cyan</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/cross_cyan/attach</attach_topic>
@@ -660,7 +660,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>tool0</parent_link>
+            <parent_link>rg2_hand</parent_link>
             <child_model>cyl_gray</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/cyl_gray/attach</attach_topic>
@@ -669,7 +669,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>tool0</parent_link>
+            <parent_link>rg2_hand</parent_link>
             <child_model>cyl_green</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/cyl_green/attach</attach_topic>
@@ -678,7 +678,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>tool0</parent_link>
+            <parent_link>rg2_hand</parent_link>
             <child_model>cyl_orange</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/cyl_orange/attach</attach_topic>
@@ -687,7 +687,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>tool0</parent_link>
+            <parent_link>rg2_hand</parent_link>
             <child_model>cyl_purple</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/cyl_purple/attach</attach_topic>
@@ -696,7 +696,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>tool0</parent_link>
+            <parent_link>rg2_hand</parent_link>
             <child_model>pick_demo</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/pick_demo/attach</attach_topic>

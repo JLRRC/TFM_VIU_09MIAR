@@ -26,6 +26,7 @@ except Exception:  # pragma: no cover - ROS not available in unit contexts
 from .panel_config import (
     BASKET_DROP,
     BASE_FRAME,
+    DROP_NAME_SET,
     GRIPPER_ATTACH_PREFIX,
     GRIPPER_JOINT_NAMES,
     GRIPPER_TCP_Z_OFFSET,
@@ -235,6 +236,17 @@ def run_pick_object(panel) -> None:
         )
         return
     snapshot_name = user_selected
+    if snapshot_name not in DROP_NAME_SET:
+        _block(
+            "selection_not_drop_object",
+            status_text="PICK Objeto: seleccion actual no corresponde a un objeto DROP",
+            error=True,
+        )
+        panel._emit_log(
+            "[PICK_OBJ][ABORT] selection_not_drop_object "
+            f"name={snapshot_name or 'none'}"
+        )
+        return
     selected_state = get_object_state(snapshot_name)
     if not selected_state:
         msg = f"Selección inválida en store: {snapshot_name} (state=none)"
@@ -937,19 +949,41 @@ def run_pick_object(panel) -> None:
         def _wait_moveit_result(label: str, since_wall: float, *, timeout_total: float = 12.0) -> dict:
             timeout_total = max(0.5, float(timeout_total))
             started = time.time()
+            deadline = started + timeout_total
             raw = ""
             ok = False
             last_diag = 0.0
             cursor_wall = since_wall
             cursor_seq = int(getattr(_wait_moveit_result, "_since_seq", -1) or -1)
             lost_pub_since = None
+            wait_extended = False
+            try:
+                active_request_grace_sec = float(
+                    os.environ.get(
+                        "PANEL_PICK_OBJECT_MOVEIT_ACTIVE_REQUEST_GRACE_SEC",
+                        "90.0",
+                    )
+                )
+            except Exception:
+                active_request_grace_sec = 90.0
+            active_request_grace_sec = max(10.0, active_request_grace_sec)
+            try:
+                hb_recent_window_sec = float(
+                    os.environ.get(
+                        "PANEL_PICK_OBJECT_MOVEIT_ACTIVE_REQUEST_HB_SEC",
+                        "2.5",
+                    )
+                )
+            except Exception:
+                hb_recent_window_sec = 2.5
+            hb_recent_window_sec = max(1.2, hb_recent_window_sec)
             # Contract matching: accept ONLY the expected request_id for this publish.
             expected_request_id = int(getattr(_wait_moveit_result, "_expected_request_id", -1) or -1)
             expected_stamp_ns = int(getattr(_wait_moveit_result, "_expected_stamp_ns", 0) or 0)
             expected_request_uuid = str(getattr(_wait_moveit_result, "_expected_request_uuid", "") or "")
             panel_request_id = int(getattr(_wait_moveit_result, "_panel_request_id", -1) or -1)
-            while (time.time() - started) < timeout_total:
-                wait_chunk = min(1.0, max(0.2, timeout_total - (time.time() - started)))
+            while time.time() < deadline:
+                wait_chunk = min(1.0, max(0.2, deadline - time.time()))
                 ok, raw, _wall, _seq = panel.ros_worker.wait_for_moveit_result(
                     since_wall=cursor_wall,
                     since_seq=cursor_seq,
@@ -990,17 +1024,17 @@ def run_pick_object(panel) -> None:
                     raw = json.dumps(data, ensure_ascii=True)
                     break
                 now = time.time()
+                elapsed = now - started
+                result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
+                result_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
+                bridge_alive = bool(panel._proc_alive(getattr(panel, "moveit_bridge_proc", None)))
+                hb_age = panel.ros_worker.moveit_bridge_heartbeat_age()
+                hb_recent = panel.ros_worker.has_recent_moveit_bridge_heartbeat(hb_recent_window_sec)
+                hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
                 if (now - last_diag) >= 2.0:
-                    elapsed = now - started
-                    result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
-                    result_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
-                    bridge_alive = bool(panel._proc_alive(getattr(panel, "moveit_bridge_proc", None)))
-                    hb_age = panel.ros_worker.moveit_bridge_heartbeat_age()
-                    hb_recent = panel.ros_worker.has_recent_moveit_bridge_heartbeat(1.2)
-                    hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
                     panel._emit_log(
                         f"[PICK_OBJ][MOVEIT][EXEC] {label} still_waiting elapsed={elapsed:.1f}s "
-                        f"timeout={timeout_total:.1f}s result_pubs={result_pubs} result_subs={result_subs} "
+                        f"timeout={max(0.0, deadline - started):.1f}s result_pubs={result_pubs} result_subs={result_subs} "
                         f"bridge_alive={str(bridge_alive).lower()} "
                         f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
                     )
@@ -1019,22 +1053,59 @@ def run_pick_object(panel) -> None:
                             )
                     else:
                         lost_pub_since = None
+                if (
+                    not ok
+                    and not wait_extended
+                    and now >= deadline
+                    and result_pubs > 0
+                    and result_subs > 0
+                    and bridge_alive
+                    and (
+                        bool(hb_recent)
+                        or (not math.isinf(hb_age) and hb_age <= max(5.0, hb_recent_window_sec * 2.0))
+                    )
+                ):
+                    old_timeout_total = max(0.0, deadline - started)
+                    deadline = now + active_request_grace_sec
+                    wait_extended = True
+                    panel._emit_log(
+                        f"[PICK_OBJ][MOVEIT][EXEC] {label} extend_wait old_timeout={old_timeout_total:.1f}s "
+                        f"new_timeout={max(0.0, deadline - started):.1f}s "
+                        f"grace={active_request_grace_sec:.1f}s bridge_alive={str(bridge_alive).lower()} "
+                        f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt} "
+                        f"request_id={panel_request_id} expected_request_id={expected_request_id}"
+                    )
+                    continue
             if not ok:
                 elapsed = time.time() - started
                 result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
                 result_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
+                bridge_alive = bool(panel._proc_alive(getattr(panel, "moveit_bridge_proc", None)))
+                hb_age = panel.ros_worker.moveit_bridge_heartbeat_age()
+                hb_recent = panel.ros_worker.has_recent_moveit_bridge_heartbeat(hb_recent_window_sec)
+                hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
                 lost_age_txt = (
                     "n/a"
                     if lost_pub_since is None
                     else f"{max(0.0, time.time() - float(lost_pub_since)):.1f}s"
                 )
-                raise RuntimeError(
-                    f"MoveIt bridge sin resultado en {moveit_result_topic} para {label} "
-                        f"(elapsed={elapsed:.1f}s pubs={result_pubs} subs={result_subs} "
-                        f"lost_pub_age={lost_age_txt} since_seq={cursor_seq} "
-                        f"panel_request_id={panel_request_id} expected_request_id={expected_request_id} "
-                        f"expected_stamp_ns={expected_stamp_ns} expected_uuid={expected_request_uuid or 'n/a'})"
+                if result_pubs > 0 and result_subs > 0 and bridge_alive:
+                    raise RuntimeError(
+                        f"result_timeout_active_request:{moveit_result_topic}:{label}:"
+                        f"elapsed={elapsed:.1f}s pubs={result_pubs} subs={result_subs} "
+                        f"bridge_alive={str(bridge_alive).lower()} hb_recent={str(bool(hb_recent)).lower()} "
+                        f"hb_age={hb_age_txt} wait_extended={str(bool(wait_extended)).lower()} "
+                        f"since_seq={cursor_seq} panel_request_id={panel_request_id} "
+                        f"expected_request_id={expected_request_id} expected_stamp_ns={expected_stamp_ns} "
+                        f"expected_uuid={expected_request_uuid or 'n/a'}"
                     )
+                raise RuntimeError(
+                    f"lost_result_publisher:{moveit_result_topic}:{label}:"
+                    f"elapsed={elapsed:.1f}s pubs={result_pubs} subs={result_subs} "
+                    f"lost_pub_age={lost_age_txt} since_seq={cursor_seq} "
+                    f"panel_request_id={panel_request_id} expected_request_id={expected_request_id} "
+                    f"expected_stamp_ns={expected_stamp_ns} expected_uuid={expected_request_uuid or 'n/a'}"
+                )
             try:
                 data = json.loads(raw)
             except Exception as exc:
@@ -1221,6 +1292,17 @@ def run_pick_object(panel) -> None:
                     "1" if moveit_exclusive else "1",
                 )
             ).strip().lower() not in ("0", "false", "no", "off")
+            if moveit_exclusive:
+                if approach_fallback_enabled:
+                    panel._emit_log(
+                        "[PICK_OBJ][MODE] moveit_exclusive=true; desactivando APPROACH_JOINT_FALLBACK"
+                    )
+                if pre_grasp_fallback_enabled:
+                    panel._emit_log(
+                        "[PICK_OBJ][MODE] moveit_exclusive=true; desactivando PRE_GRASP_JOINT_FALLBACK"
+                    )
+                approach_fallback_enabled = False
+                pre_grasp_fallback_enabled = False
             deterministic_joint_after_approach = str(
                 os.environ.get(
                     "PANEL_PICK_OBJECT_DETERMINISTIC_JOINT_AFTER_APPROACH",
@@ -1670,6 +1752,17 @@ def run_pick_object(panel) -> None:
                         )
 
                 if saw_joint_state and not opening_ok:
+                    allow_degraded_guard = str(
+                        os.environ.get("PANEL_PICK_OBJECT_ALLOW_DEGRADED_OPEN_GUARD", "1")
+                    ).strip().lower() not in ("0", "false", "no", "off")
+                    if allow_degraded_guard and not bool(getattr(panel, "_gripper_closed", False)):
+                        panel._emit_log(
+                            "[PICK_OBJ][GRIPPER] apertura no confirmada por joint_state; "
+                            f"continuando en modo degradado before={reason} "
+                            f"opening_m={0.0 if last_opening_m is None else float(last_opening_m):.4f} "
+                            f"min_opening_m={float(min_opening_m):.4f}"
+                        )
+                        return
                     raise RuntimeError(
                         f"gripper_opening_below_threshold_before_{str(reason).lower()} "
                         f"opening_m={0.0 if last_opening_m is None else float(last_opening_m):.4f} "
@@ -2352,7 +2445,6 @@ def run_pick_object(panel) -> None:
                     except RuntimeError as first_wait_exc:
                         first_err = str(first_wait_exc)
                         retry_reasons = (
-                            "sin resultado",
                             "lost_result_publisher",
                             "sin publisher",
                             "no_pose_subscribers_before_publish",

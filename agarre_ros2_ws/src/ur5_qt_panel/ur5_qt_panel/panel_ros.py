@@ -94,10 +94,12 @@ class RosWorker(QObject):
     grasp_rect = pyqtSignal(object)
     system_state = pyqtSignal(str, str)
     robot_test_request = pyqtSignal(str)
+    camera_connect_request = pyqtSignal(str)
     camera_disconnect_request = pyqtSignal(str)
     recover_request = pyqtSignal(str)
     tfm_infer_request = pyqtSignal(str)
     tfm_execute_request = pyqtSignal(str)
+    pick_demo_request = pyqtSignal(str)
     pick_object_request = pyqtSignal(str)
     object_select_request = pyqtSignal(str, str)
 
@@ -142,6 +144,10 @@ class RosWorker(QObject):
         self._test_robot_service = str(
             os.environ.get("PANEL_TEST_TRIGGER_SERVICE", "/panel/test_robot") or "/panel/test_robot"
         ).strip() or "/panel/test_robot"
+        self._camera_connect_service = str(
+            os.environ.get("PANEL_CAMERA_CONNECT_TRIGGER_SERVICE", "/panel/camera_connect")
+            or "/panel/camera_connect"
+        ).strip() or "/panel/camera_connect"
         self._camera_disconnect_service = str(
             os.environ.get("PANEL_CAMERA_DISCONNECT_TRIGGER_SERVICE", "/panel/camera_disconnect")
             or "/panel/camera_disconnect"
@@ -164,6 +170,9 @@ class RosWorker(QObject):
         self._tfm_execute_service = str(
             os.environ.get("PANEL_TFM_EXECUTE_TRIGGER_SERVICE", "/panel/tfm_execute") or "/panel/tfm_execute"
         ).strip() or "/panel/tfm_execute"
+        self._pick_demo_service = str(
+            os.environ.get("PANEL_PICK_DEMO_TRIGGER_SERVICE", "/panel/pick_demo") or "/panel/pick_demo"
+        ).strip() or "/panel/pick_demo"
         self._pick_object_topic = str(
             os.environ.get("PANEL_PICK_OBJECT_TRIGGER_TOPIC", "/panel/pick_object") or "/panel/pick_object"
         ).strip() or "/panel/pick_object"
@@ -178,6 +187,7 @@ class RosWorker(QObject):
         ).strip() or "/panel/select_object"
         self._test_robot_sub = None
         self._test_robot_srv = None
+        self._camera_connect_srv = None
         self._camera_disconnect_srv = None
         self._recover_sub = None
         self._recover_srv = None
@@ -185,6 +195,7 @@ class RosWorker(QObject):
         self._tfm_infer_srv = None
         self._tfm_execute_sub = None
         self._tfm_execute_srv = None
+        self._pick_demo_srv = None
         self._pick_object_sub = None
         self._pick_object_srv = None
         self._select_object_sub = None
@@ -193,6 +204,14 @@ class RosWorker(QObject):
             os.environ.get("PANEL_SELECT_OBJECT_SERVICE_TIMEOUT_SEC", "5.0") or "5.0"
         )
         self._object_select_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
+        self._tfm_infer_timeout_sec = float(
+            os.environ.get("PANEL_TFM_INFER_SERVICE_TIMEOUT_SEC", "5.0") or "5.0"
+        )
+        self._tfm_execute_timeout_sec = float(
+            os.environ.get("PANEL_TFM_EXECUTE_SERVICE_TIMEOUT_SEC", "5.0") or "5.0"
+        )
+        self._tfm_infer_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
+        self._tfm_execute_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
         self._cleanup_done = False
         self._system_diag_reason: str = ""
         self._system_state_last: str = ""
@@ -836,6 +855,12 @@ class RosWorker(QObject):
         except RuntimeError:
             pass
 
+    def _emit_camera_connect_request(self, source: str) -> None:
+        try:
+            self.camera_connect_request.emit(source)
+        except RuntimeError:
+            pass
+
     def _emit_recover_request(self, source: str) -> None:
         try:
             self.recover_request.emit(source)
@@ -857,6 +882,12 @@ class RosWorker(QObject):
     def _emit_pick_object_request(self, source: str) -> None:
         try:
             self.pick_object_request.emit(source)
+        except RuntimeError:
+            pass
+
+    def _emit_pick_demo_request(self, source: str) -> None:
+        try:
+            self.pick_demo_request.emit(source)
         except RuntimeError:
             pass
 
@@ -887,6 +918,15 @@ class RosWorker(QObject):
             pass
         return response
 
+    def _on_camera_connect_service(self, _request: object, response: object) -> object:
+        self._emit_camera_connect_request(f"service:{self._camera_connect_service}")
+        try:
+            response.success = True
+            response.message = "camera_connect_triggered"
+        except Exception:
+            pass
+        return response
+
     def _on_recover_topic(self, _msg: "Empty") -> None:
         self._emit_recover_request(f"topic:{self._recover_topic}")
 
@@ -903,10 +943,33 @@ class RosWorker(QObject):
         self._emit_tfm_infer_request(f"topic:{self._tfm_infer_topic}")
 
     def _on_tfm_infer_service(self, _request: object, response: object) -> object:
-        self._emit_tfm_infer_request(f"service:{self._tfm_infer_service}")
+        request_id = f"tfminfer-{time.monotonic_ns()}"
+        done = threading.Event()
+        result: Dict[str, object] = {
+            "success": False,
+            "message": "timeout esperando confirmación del panel",
+        }
+        with self._lock:
+            self._tfm_infer_pending[request_id] = (done, result)
+        self._safe_log(
+            f"[ROS][TFM_INFER][SERVICE] request_id={request_id} waiting_ack=true"
+        )
+        self._emit_tfm_infer_request(f"service:{self._tfm_infer_service}#{request_id}")
+        ack_ok = done.wait(timeout=max(0.1, self._tfm_infer_timeout_sec))
+        with self._lock:
+            _pending = self._tfm_infer_pending.pop(request_id, None)
+        if _pending is not None:
+            _done, payload = _pending
+            result = payload
+        self._safe_log(
+            "[ROS][TFM_INFER][SERVICE] "
+            f"request_id={request_id} ack={str(bool(ack_ok)).lower()} "
+            f"success={str(bool(result.get('success', False))).lower()} "
+            f"message={str(result.get('message', '') or 'n/a')}"
+        )
         try:
-            response.success = True
-            response.message = "tfm_infer_triggered"
+            response.success = bool(result.get("success", False))
+            response.message = str(result.get("message", "") or "")
         except Exception:
             pass
         return response
@@ -915,10 +978,33 @@ class RosWorker(QObject):
         self._emit_tfm_execute_request(f"topic:{self._tfm_execute_topic}")
 
     def _on_tfm_execute_service(self, _request: object, response: object) -> object:
-        self._emit_tfm_execute_request(f"service:{self._tfm_execute_service}")
+        request_id = f"tfmexec-{time.monotonic_ns()}"
+        done = threading.Event()
+        result: Dict[str, object] = {
+            "success": False,
+            "message": "timeout esperando confirmación del panel",
+        }
+        with self._lock:
+            self._tfm_execute_pending[request_id] = (done, result)
+        self._safe_log(
+            f"[ROS][TFM_EXECUTE][SERVICE] request_id={request_id} waiting_ack=true"
+        )
+        self._emit_tfm_execute_request(f"service:{self._tfm_execute_service}#{request_id}")
+        ack_ok = done.wait(timeout=max(0.1, self._tfm_execute_timeout_sec))
+        with self._lock:
+            _pending = self._tfm_execute_pending.pop(request_id, None)
+        if _pending is not None:
+            _done, payload = _pending
+            result = payload
+        self._safe_log(
+            "[ROS][TFM_EXECUTE][SERVICE] "
+            f"request_id={request_id} ack={str(bool(ack_ok)).lower()} "
+            f"success={str(bool(result.get('success', False))).lower()} "
+            f"message={str(result.get('message', '') or 'n/a')}"
+        )
         try:
-            response.success = True
-            response.message = "tfm_execute_triggered"
+            response.success = bool(result.get("success", False))
+            response.message = str(result.get("message", "") or "")
         except Exception:
             pass
         return response
@@ -931,6 +1017,15 @@ class RosWorker(QObject):
         try:
             response.success = True
             response.message = "pick_object_triggered"
+        except Exception:
+            pass
+        return response
+
+    def _on_pick_demo_service(self, _request: object, response: object) -> object:
+        self._emit_pick_demo_request(f"service:{self._pick_demo_service}")
+        try:
+            response.success = True
+            response.message = "pick_demo_triggered"
         except Exception:
             pass
         return response
@@ -994,6 +1089,44 @@ class RosWorker(QObject):
         payload["message"] = str(message or "")
         self._safe_log(
             f"[ROS][SELECT_OBJECT][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
+        )
+        done.set()
+
+    def complete_tfm_infer_request(self, request_id: str, success: bool, message: str) -> None:
+        req_id = str(request_id or "").strip()
+        if not req_id:
+            return
+        with self._lock:
+            pending = self._tfm_infer_pending.get(req_id)
+        if pending is None:
+            self._safe_log(
+                f"[ROS][TFM_INFER][ACK] request_id={req_id} pending=false success={str(bool(success)).lower()} message={message or 'n/a'}"
+            )
+            return
+        done, payload = pending
+        payload["success"] = bool(success)
+        payload["message"] = str(message or "")
+        self._safe_log(
+            f"[ROS][TFM_INFER][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
+        )
+        done.set()
+
+    def complete_tfm_execute_request(self, request_id: str, success: bool, message: str) -> None:
+        req_id = str(request_id or "").strip()
+        if not req_id:
+            return
+        with self._lock:
+            pending = self._tfm_execute_pending.get(req_id)
+        if pending is None:
+            self._safe_log(
+                f"[ROS][TFM_EXECUTE][ACK] request_id={req_id} pending=false success={str(bool(success)).lower()} message={message or 'n/a'}"
+            )
+            return
+        done, payload = pending
+        payload["success"] = bool(success)
+        payload["message"] = str(message or "")
+        self._safe_log(
+            f"[ROS][TFM_EXECUTE][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
         )
         done.set()
 
@@ -1387,6 +1520,17 @@ class RosWorker(QObject):
                 except Exception as exc:
                     self._log_exception("create test_robot service", exc)
                 try:
+                    self._camera_connect_srv = self._node.create_service(
+                        Trigger,
+                        self._camera_connect_service,
+                        self._on_camera_connect_service,
+                    )
+                    self.log.emit(
+                        f"[ROS] Trigger service listo: {self._camera_connect_service} (std_srvs/Trigger)"
+                    )
+                except Exception as exc:
+                    self._log_exception("create camera_connect service", exc)
+                try:
                     self._camera_disconnect_srv = self._node.create_service(
                         Trigger,
                         self._camera_disconnect_service,
@@ -1430,6 +1574,17 @@ class RosWorker(QObject):
                     )
                 except Exception as exc:
                     self._log_exception("create recover service", exc)
+                try:
+                    self._pick_demo_srv = self._node.create_service(
+                        Trigger,
+                        self._pick_demo_service,
+                        self._on_pick_demo_service,
+                    )
+                    self.log.emit(
+                        f"[ROS] Trigger service listo: {self._pick_demo_service} (std_srvs/Trigger)"
+                    )
+                except Exception as exc:
+                    self._log_exception("create pick_demo service", exc)
                 try:
                     self._pick_object_srv = self._node.create_service(
                         Trigger,
@@ -1559,6 +1714,18 @@ class RosWorker(QObject):
                 except Exception as exc:
                     self._log_exception("destroy test_robot service", exc)
                 self._test_robot_srv = None
+            if self._node and self._camera_connect_srv is not None:
+                try:
+                    self._node.destroy_service(self._camera_connect_srv)
+                except Exception as exc:
+                    self._log_exception("destroy camera_connect service", exc)
+                self._camera_connect_srv = None
+            if self._node and self._camera_disconnect_srv is not None:
+                try:
+                    self._node.destroy_service(self._camera_disconnect_srv)
+                except Exception as exc:
+                    self._log_exception("destroy camera_disconnect service", exc)
+                self._camera_disconnect_srv = None
             if self._node and self._tfm_infer_sub is not None:
                 try:
                     self._node.destroy_subscription(self._tfm_infer_sub)
@@ -1583,6 +1750,12 @@ class RosWorker(QObject):
                 except Exception as exc:
                     self._log_exception("destroy tfm_execute service", exc)
                 self._tfm_execute_srv = None
+            if self._node and self._pick_demo_srv is not None:
+                try:
+                    self._node.destroy_service(self._pick_demo_srv)
+                except Exception as exc:
+                    self._log_exception("destroy pick_demo service", exc)
+                self._pick_demo_srv = None
             if self._node and self._select_object_sub is not None:
                 try:
                     self._node.destroy_subscription(self._select_object_sub)
@@ -1597,7 +1770,11 @@ class RosWorker(QObject):
                 self._select_object_srv = None
             with self._lock:
                 pending = list(self._object_select_pending.values())
+                pending.extend(self._tfm_infer_pending.values())
+                pending.extend(self._tfm_execute_pending.values())
                 self._object_select_pending.clear()
+                self._tfm_infer_pending.clear()
+                self._tfm_execute_pending.clear()
             for done, payload in pending:
                 payload["success"] = False
                 payload["message"] = str(payload.get("message") or "shutdown")

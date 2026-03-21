@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-03-21T18:11:06",
-  "session": "20260321_180954",
+  "timestamp": "2026-03-21T23:50:00",
+  "session": "20260321_234844",
   "status": "OK",
   "source": "infer_model",
   "visual_grasp": {
@@ -14,39 +14,39 @@
     "result_topic": "/desired_grasp/result"
   },
   "grasp": {
-    "cx": 159.56713676452637,
-    "cy": 110.54712295532227,
-    "w": 24.129583835601807,
-    "h": 13.34919959306717,
-    "angle_deg": -3.092379793524742
+    "cx": 114.84161853790283,
+    "cy": 170.36186981201172,
+    "w": 6.592331886291504,
+    "h": 5.234985709190369,
+    "angle_deg": 0.839349702000618
   },
   "grasp_base": {
-    "x": 0.6199215806811956,
-    "y": 0.0,
+    "x": 0.5199999999999999,
+    "y": 0.1125,
     "z": 0.025000000000000022,
-    "yaw_deg": -83.21518569723757
+    "yaw_deg": -97.29419630854082
   },
   "grasp_rect_publish_ok": true,
   "grasp_rect_topic": "/grasp_rect",
   "frame": "/camera_overhead/image",
   "cornell": {
-    "iou": 0.0,
-    "dtheta": 3.092379793524742,
+    "iou": 0.07669058492199848,
+    "dtheta": 0.839349702000618,
     "success": false
   },
-  "cornell_reason": "Ref cyl_orange: pred 24.1x13.3px vs ref 19.5x22.3px",
+  "cornell_reason": "Ref box_red: pred 6.6x5.2px vs ref 18.8x24.0px",
   "perf": {
-    "infer_ms": 40.62008857727051,
-    "total_ms": 1601.23610496521
+    "infer_ms": 70.79434394836426,
+    "total_ms": 1068.5949325561523
   },
   "frame_info": {
     "w": 320,
     "h": 240,
-    "ts": 1774113064.498982
+    "ts": 1774133398.7287302
   },
   "artifacts": {
-    "image_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/frame_20260321_181106.png",
-    "grasp_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/grasp_20260321_181106.json",
-    "overlay_path": "/home/laboratorio/TFM/auditoria/panel_audit/figures/overlay_infer_1774113064498.png"
+    "image_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/frame_20260321_234959.png",
+    "grasp_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/grasp_20260321_234959.json",
+    "overlay_path": "/home/laboratorio/TFM/auditoria/panel_audit/figures/overlay_infer_1774133398728.png"
   }
 }

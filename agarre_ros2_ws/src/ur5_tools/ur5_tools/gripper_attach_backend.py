@@ -159,6 +159,7 @@ class GripperAttachBackend(Node):
         self.declare_parameter("startup_detach_max_attempts", 12)
         self.declare_parameter("startup_detach_period_sec", 0.5)
         self.declare_parameter("detachable_shadow_follow", True)
+        self.declare_parameter("prefer_tool_anchor_objects", ["pick_demo"])
 
         self._gripper_prefix = str(
             self.get_parameter("gripper_prefix").value or "/gripper"
@@ -243,6 +244,12 @@ class GripperAttachBackend(Node):
         self._detachable_shadow_follow = bool(
             self.get_parameter("detachable_shadow_follow").value
         )
+        prefer_tool_anchor_raw = self.get_parameter("prefer_tool_anchor_objects").value
+        self._prefer_tool_anchor_objects = {
+            str(v).strip()
+            for v in (prefer_tool_anchor_raw or [])
+            if str(v).strip()
+        }
 
         self._qos = QoSProfile(
             depth=10,
@@ -359,6 +366,7 @@ class GripperAttachBackend(Node):
             f"mode={self._attach_mode} "
             f"gripper_prefix=/{self._gripper_prefix} "
             f"tool_anchor_prefix=/{self._tool_anchor_prefix} "
+            f"prefer_tool_anchor={','.join(sorted(self._prefer_tool_anchor_objects)) or 'none'} "
             f"pose_topic={self._pose_topic} base_frame={self._base_frame} tcp_frame={self._tcp_frame}"
         )
 
@@ -1049,6 +1057,23 @@ class GripperAttachBackend(Node):
         self.get_logger().info(
             f"[ATTACH_BACKEND] attach_request_received object={name} src={src_topic} mode={self._attach_mode}"
         )
+        if name in self._prefer_tool_anchor_objects and self._attach_mode != "follow_tcp":
+            self._force_drop_anchor_detach(name)
+            self._attached.pop(name, None)
+            pub = self._tool_attach_pubs.get(name)
+            if pub is None:
+                self.get_logger().error(
+                    f"[ATTACH_BACKEND] missing tool_attach publisher object={name}"
+                )
+                self._publish_state(name, False)
+                return
+            pub.publish(Empty())
+            self.get_logger().info(
+                f"[ATTACH_BACKEND] relay attach object={name} "
+                f"dst=/{self._tool_anchor_prefix}/{name}/attach method=tool_anchor_preferred"
+            )
+            self._publish_state(name, True)
+            return
         if self._attach_mode != "follow_tcp":
             self._force_drop_anchor_detach(name)
             pub = self._tool_attach_pubs.get(name)
@@ -1082,6 +1107,22 @@ class GripperAttachBackend(Node):
         self.get_logger().info(
             f"[ATTACH_BACKEND] detach_request_received object={name} src={src_topic} mode={self._attach_mode}"
         )
+        if name in self._prefer_tool_anchor_objects and self._attach_mode != "follow_tcp":
+            self._attached.pop(name, None)
+            pub = self._tool_detach_pubs.get(name)
+            if pub is None:
+                self.get_logger().error(
+                    f"[ATTACH_BACKEND] missing tool_detach publisher object={name}"
+                )
+                self._publish_state(name, False)
+                return
+            pub.publish(Empty())
+            self.get_logger().info(
+                f"[ATTACH_BACKEND] relay detach object={name} "
+                f"dst=/{self._tool_anchor_prefix}/{name}/detach method=tool_anchor_preferred"
+            )
+            self._publish_state(name, False)
+            return
         if self._attach_mode != "follow_tcp":
             self._attached.pop(name, None)
             pub = self._tool_detach_pubs.get(name)

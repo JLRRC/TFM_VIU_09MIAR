@@ -1102,10 +1102,11 @@ class CameraController:
             p._camera_pending_frame = None
         if not frame:
             return
+        topic, qimg, w, h, fps, ts = frame
+        # Keep a fresh frame cache for TFM/runtime capture even in offscreen runs.
+        p._last_camera_frame = (qimg, w, h, ts)
         if CAMERA_UI_SKIP_HIDDEN and (not p.isVisible() or not p.camera_view.isVisible()):
             return
-        topic, qimg, w, h, fps, ts = frame
-        p._last_camera_frame = (qimg, w, h, ts)
         display = qimg
         if w > 0 and h > 0:
             if OVERLAY_CALIB and (p._calibrating or (time.time() <= p._calib_grid_until)):
@@ -1709,10 +1710,12 @@ class ControlPanelV2(QMainWindow):
         self.ros_worker.log.connect(self._log_ros_message)
         self.ros_worker.system_state.connect(self._on_system_state_update)
         self.ros_worker.robot_test_request.connect(self._on_remote_robot_test_request)
+        self.ros_worker.camera_connect_request.connect(self._on_remote_camera_connect_request)
         self.ros_worker.camera_disconnect_request.connect(self._on_remote_camera_disconnect_request)
         self.ros_worker.recover_request.connect(self._on_remote_recover_request)
         self.ros_worker.tfm_infer_request.connect(self._on_remote_tfm_infer_request)
         self.ros_worker.tfm_execute_request.connect(self._on_remote_tfm_execute_request)
+        self.ros_worker.pick_demo_request.connect(self._on_remote_pick_demo_request)
         self.ros_worker.pick_object_request.connect(self._on_remote_pick_object_request)
         self.ros_worker.object_select_request.connect(self._on_remote_object_select_request)
         self._ros_worker_started = False
@@ -2190,7 +2193,7 @@ class ControlPanelV2(QMainWindow):
             attach_name = self._find_attach_candidate(preferred_name=selected)
             resolved_entity = attach_name
         self._emit_log(
-            f"[ATTACH] selected={selected or 'none'} attach_name={attach_name or 'none'} "
+            f"[PICK][ATTACH] selected={selected or 'none'} attach_name={attach_name or 'none'} "
             f"resolved_entity={resolved_entity or 'none'} reason={reason}"
         )
         if not attach_name:
@@ -2225,7 +2228,7 @@ class ControlPanelV2(QMainWindow):
             tcp_stamp_txt = "n/a" if not tcp_stamp_ns else str(int(tcp_stamp_ns))
             obj_stamp_txt = "n/a" if not obj_stamp_ns else str(int(obj_stamp_ns))
             self._emit_log(
-                "[ATTACH][GEOM] "
+                "[PICK][ATTACH][GEOM] "
                 f"frame={frame_name} tcp=({float(tcp_base_pos[0]):.3f},{float(tcp_base_pos[1]):.3f},{float(tcp_base_pos[2]):.3f}) "
                 f"tcp_contact_z={tcp_contact_z:.3f} tcp_z_offset={float(GRIPPER_TCP_Z_OFFSET):.3f} "
                 f"obj_center=({float(obj_base_pos[0]):.3f},{float(obj_base_pos[1]):.3f},{obj_center_z:.3f}) "
@@ -2234,21 +2237,21 @@ class ControlPanelV2(QMainWindow):
                 f"tcp_stamp_ns={tcp_stamp_txt} obj_stamp_ns={obj_stamp_txt}"
             )
             self._emit_log(
-                "[ATTACH] "
+                "[PICK][ATTACH] "
                 f"dx={dx:.3f} dy={dy:.3f} dz={dz:.3f} dist={dist:.3f} "
                 f"thresh=(xy={xy_tol_m:.3f},z={z_tol_m:.3f}) frame={frame_name} "
                 f"z_ref_mode={mode}"
             )
             if abs(dx) > float(xy_tol_m) or abs(dy) > float(xy_tol_m) or abs(dz) > float(z_tol_m):
-                self._log_warning(
-                    "[PICK] Attach rechazado por rango: "
+                self._emit_log(
+                    "[PICK][ATTACH] range_reject "
                     f"dx={dx:.3f} dy={dy:.3f} dz={dz:.3f} "
                     f"(xy_tol={xy_tol_m:.3f}, z_tol={z_tol_m:.3f})"
                 )
                 return False
         else:
-            self._log_warning(
-                "[ATTACH] rango no evaluable: "
+            self._emit_log(
+                "[PICK][ATTACH] geometry_unavailable "
                 f"tcp_base={'ok' if tcp_base_pos is not None else 'none'} "
                 f"obj_base={'ok' if obj_base_pos is not None else 'none'}"
             )
@@ -2263,7 +2266,7 @@ class ControlPanelV2(QMainWindow):
                     pub_count = int(self.ros_worker.topic_publisher_count(attach_topic))
                     sub_count = int(self.ros_worker.topic_subscriber_count(attach_topic))
                 self._emit_log(
-                    f"[ATTACH] pub_count={pub_count} sub_count={sub_count} topic={attach_topic}"
+                    f"[PICK][ATTACH] pub_count={pub_count} sub_count={sub_count} topic={attach_topic}"
                 )
                 if sub_count <= 0:
                     wait_deadline = time.time() + 1.2
@@ -2275,13 +2278,13 @@ class ControlPanelV2(QMainWindow):
                                 break
                     if sub_count == 0:
                         self._log_error(
-                            f"[ATTACH] attach_backend_missing topic={attach_topic} "
+                            f"[PICK][ATTACH] attach_backend_missing topic={attach_topic} "
                             "reason=no_subscribers"
                         )
                         return False
                 pub.publish(Empty())
                 self._emit_log(
-                    f"[ATTACH] publish attach_name={attach_name} topic={attach_topic}"
+                    f"[PICK][ATTACH] publish attach_name={attach_name} topic={attach_topic}"
                 )
                 return True
         except Exception as exc:
@@ -3887,10 +3890,10 @@ class ControlPanelV2(QMainWindow):
     def _tfm_infer_ready_status(self) -> Tuple[bool, str]:
         if self._tfm_infer_inflight:
             return False, "inferencia en curso"
-        if not self._state_ready_vision():
-            return False, self._camera_not_ready_reason()
         if not self.tfm_module:
             return False, "modelo no disponible"
+        if not bool(getattr(self, "_camera_subscribed", False)):
+            return False, "cámara no conectada"
         if not self._last_camera_frame:
             return False, "sin frame de cámara"
         _qimg, w, h, frame_ts = self._last_camera_frame
@@ -3904,8 +3907,13 @@ class ControlPanelV2(QMainWindow):
             frame_age = max(0.0, now - float(frame_ts))
             if frame_age >= max(0.2, float(CAMERA_READY_MAX_AGE_SEC)):
                 return False, f"frame stale age={frame_age:.2f}s"
+        self._sync_external_release_state()
         if not self._objects_release_done:
             return False, "release de objetos pendiente"
+        if not self._objects_settled:
+            return False, "objetos no estabilizados tras release"
+        if not self._pose_info_ok:
+            return False, "pose/info no disponible"
         return True, ""
 
     def _current_grasp_status(self) -> Tuple[bool, str]:
@@ -4477,6 +4485,57 @@ class ControlPanelV2(QMainWindow):
                 and (not in_grace)
             )
         return camera_ready, camera_fault, source_down, age, in_grace
+
+    def _sync_external_release_state(self) -> bool:
+        if self._objects_release_done and self._objects_settled:
+            return True
+        if not self._pose_info_ok:
+            return False
+        positions = get_object_positions() or {}
+        live_positions = {}
+        if getattr(self, "_ros_worker_started", False) and getattr(self, "ros_worker", None) is not None:
+            try:
+                pose_map, _pose_ts = self.ros_worker.pose_snapshot()
+            except Exception:
+                pose_map = {}
+            for name in DROP_OBJECT_NAMES:
+                pos = pose_map.get(name)
+                if pos is None or len(pos) < 3:
+                    continue
+                try:
+                    live_positions[name] = (float(pos[0]), float(pos[1]), float(pos[2]))
+                except Exception:
+                    continue
+            if live_positions:
+                bulk_update_object_positions(
+                    live_positions,
+                    source="external_release_reconciled_live",
+                    objects_stable=True,
+                )
+                recalc_object_states(reason="external_release_reconciled_live")
+                positions = get_object_positions() or {}
+        if not DROP_OBJECT_NAMES:
+            return False
+        for name in DROP_OBJECT_NAMES:
+            pos = positions.get(name)
+            if pos is None or len(pos) < 3:
+                return False
+            try:
+                xyz = (float(pos[0]), float(pos[1]), float(pos[2]))
+            except Exception:
+                return False
+            if not is_on_table(xyz):
+                return False
+        if not self._objects_release_done or not self._objects_settled:
+            self._objects_release_done = True
+            self._objects_settled = True
+            self._emit_log(
+                "[PHYSICS][DROP] external release reconciled scene=on_table_all "
+                f"count={len(DROP_OBJECT_NAMES)}"
+            )
+            recalc_object_states(reason="external_release_reconciled")
+            self.signal_refresh_controls.emit()
+        return True
 
     def _pose_info_topic(self) -> str:
         world_name = self._gz_world_name or self._detect_world_name() or GZ_WORLD
@@ -7326,7 +7385,7 @@ class ControlPanelV2(QMainWindow):
         self._run_async(worker)
 
     def _tfm_infer_grasp(self):
-        tfm_infer(self)
+        return tfm_infer(self)
 
     def _restore_infer_selection_snapshot(self, snapshot: object) -> None:
         if self._selected_object:
@@ -7567,10 +7626,33 @@ class ControlPanelV2(QMainWindow):
         if not self._ros_worker_started or not self.ros_worker.node_ready():
             self._motion_in_progress = False
             return False, "ros_worker_not_ready"
-        deadline = time.time() + max(0.2, float(timeout_sec))
+        started = time.time()
+        deadline = started + max(0.2, float(timeout_sec))
         cursor_wall = float(since_wall)
         cursor_seq = int(since_seq)
         expected_uuid = str(expected_request_uuid or "").strip()
+        result_topic = "/desired_grasp/result"
+        grace_applied = False
+        try:
+            active_request_grace_sec = float(
+                os.environ.get(
+                    "PANEL_TFM_MOVEIT_ACTIVE_REQUEST_GRACE_SEC",
+                    "90.0",
+                )
+            )
+        except Exception:
+            active_request_grace_sec = 90.0
+        active_request_grace_sec = max(10.0, active_request_grace_sec)
+        try:
+            hb_recent_window_sec = float(
+                os.environ.get(
+                    "PANEL_TFM_MOVEIT_ACTIVE_REQUEST_HB_SEC",
+                    "2.5",
+                )
+            )
+        except Exception:
+            hb_recent_window_sec = 2.5
+        hb_recent_window_sec = max(1.2, hb_recent_window_sec)
         while time.time() < deadline:
             chunk = min(0.8, max(0.1, deadline - time.time()))
             ok, raw, wall, seq = self.ros_worker.wait_for_moveit_result(
@@ -7579,6 +7661,34 @@ class ControlPanelV2(QMainWindow):
                 timeout_sec=chunk,
             )
             if not ok:
+                now = time.time()
+                if now >= deadline:
+                    result_pubs = int(self.ros_worker.topic_publisher_count(result_topic))
+                    result_subs = int(self.ros_worker.topic_subscriber_count(result_topic))
+                    bridge_alive = bool(self._proc_alive(getattr(self, "moveit_bridge_proc", None)))
+                    hb_age = self.ros_worker.moveit_bridge_heartbeat_age()
+                    hb_recent = self.ros_worker.has_recent_moveit_bridge_heartbeat(hb_recent_window_sec)
+                    hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
+                    if (
+                        not grace_applied
+                        and result_pubs > 0
+                        and result_subs > 0
+                        and bridge_alive
+                        and (
+                            bool(hb_recent)
+                            or (not math.isinf(hb_age) and hb_age <= max(5.0, hb_recent_window_sec * 2.0))
+                        )
+                    ):
+                        old_timeout = max(0.0, deadline - started)
+                        deadline = now + active_request_grace_sec
+                        grace_applied = True
+                        self._emit_log(
+                            f"[TFM][MOVEIT][WAIT] {label} extend_wait old_timeout={old_timeout:.1f}s "
+                            f"new_timeout={max(0.0, deadline - started):.1f}s grace={active_request_grace_sec:.1f}s "
+                            f"bridge_alive={str(bridge_alive).lower()} "
+                            f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
+                        )
+                        continue
                 continue
             cursor_wall = max(cursor_wall, float(wall))
             cursor_seq = max(cursor_seq, int(seq))
@@ -7614,7 +7724,7 @@ class ControlPanelV2(QMainWindow):
             return success, msg
         # FASE 3: Liberar motion_in_progress al salir por timeout.
         self._motion_in_progress = False
-        return False, f"timeout>{timeout_sec:.1f}s"
+        return False, f"timeout_active_request>{max(0.0, deadline - started):.1f}s"
 
     def _execute_tfm_world_grasp(self) -> bool:
         if not self._last_grasp_px:
@@ -7951,8 +8061,24 @@ class ControlPanelV2(QMainWindow):
         return True
 
     def _tfm_publish_grasp(self):
-        if not self._require_ready_basic("TFM"):
-            return
+        basic_ok, basic_reason = self._basic_ready_status()
+        if not basic_ok:
+            self._set_status(f"TFM bloqueado: {basic_reason}", error=True)
+            self._audit_append("logs/execute.log", f"[TFM] execute FAIL reason={basic_reason}")
+            return False, basic_reason
+        self._sync_external_release_state()
+        if not self._objects_release_done:
+            self._set_status("TFM: release de objetos pendiente", error=True)
+            self._audit_append("logs/execute.log", "[TFM] execute FAIL reason=release de objetos pendiente")
+            return False, "release de objetos pendiente"
+        if not self._objects_settled:
+            self._set_status("TFM: objetos no estabilizados", error=True)
+            self._audit_append("logs/execute.log", "[TFM] execute FAIL reason=objetos no estabilizados")
+            return False, "objetos no estabilizados"
+        if not self._pose_info_ok:
+            self._set_status("TFM: pose/info no disponible", error=True)
+            self._audit_append("logs/execute.log", "[TFM] execute FAIL reason=pose/info no disponible")
+            return False, "pose/info no disponible"
         self._ensure_grasp_rect_subscription()
         grasp_ok, grasp_reason = self._current_grasp_status()
         if not grasp_ok:
@@ -7965,7 +8091,7 @@ class ControlPanelV2(QMainWindow):
             else:
                 self._set_status(f"TFM: grasp no vigente ({grasp_reason})", error=True)
             self._audit_append("logs/execute.log", f"[TFM] execute FAIL reason={grasp_reason}")
-            return
+            return False, grasp_reason
         self._audit_append(
             "logs/execute.log",
             "[TFM] execute REQUEST "
@@ -7978,12 +8104,13 @@ class ControlPanelV2(QMainWindow):
         )
         handled = self._execute_tfm_world_grasp()
         if handled:
-            return
+            return True, "ejecucion iniciada"
         self._audit_append(
             "logs/execute.log",
             "[TFM] execute FAIL reason=world_grasp_unavailable",
         )
         self._set_status("TFM: grasp no disponible para ejecutar", error=True)
+        return False, "grasp no disponible para ejecutar"
 
     def _save_episode(self) -> None:
         out_dir = Path(WS_DIR).parent / "auditoria" / "panel_logs"
@@ -10070,6 +10197,12 @@ class ControlPanelV2(QMainWindow):
         self._run_robot_test()
 
     @pyqtSlot(str)
+    def _on_remote_camera_connect_request(self, source: str) -> None:
+        src = (source or "unknown").strip()
+        self._emit_log(f"[CAMERA][REMOTE] connect_trigger={src}")
+        self.signal_connect_camera.emit()
+
+    @pyqtSlot(str)
     def _on_remote_camera_disconnect_request(self, source: str) -> None:
         src = (source or "unknown").strip()
         self._emit_log(f"[CAMERA][REMOTE] disconnect_trigger={src}")
@@ -10087,13 +10220,53 @@ class ControlPanelV2(QMainWindow):
     def _on_remote_tfm_infer_request(self, source: str) -> None:
         src = (source or "unknown").strip()
         self._emit_log(f"[TFM][REMOTE] trigger={src}")
-        self._tfm_infer_grasp()
+        request_id = ""
+        if src.startswith("service:") and "#" in src:
+            request_id = src.rsplit("#", 1)[-1].strip()
+
+        def _ack(success: bool, message: str) -> None:
+            if not request_id:
+                return
+            self._emit_log(
+                f"[TFM][REMOTE][INFER_ACK] request_id={request_id} success={str(bool(success)).lower()} message={message or 'n/a'}"
+            )
+            if getattr(self, "_ros_worker_started", False) and getattr(self, "ros_worker", None) is not None:
+                try:
+                    self.ros_worker.complete_tfm_infer_request(request_id, success, message)
+                except Exception:
+                    pass
+
+        ok, message = self._tfm_infer_grasp()
+        _ack(bool(ok), str(message or "n/a"))
 
     @pyqtSlot(str)
     def _on_remote_tfm_execute_request(self, source: str) -> None:
         src = (source or "unknown").strip()
         self._emit_log(f"[TFM][REMOTE] execute_trigger={src}")
-        self._tfm_publish_grasp()
+        request_id = ""
+        if src.startswith("service:") and "#" in src:
+            request_id = src.rsplit("#", 1)[-1].strip()
+
+        def _ack(success: bool, message: str) -> None:
+            if not request_id:
+                return
+            self._emit_log(
+                f"[TFM][REMOTE][EXEC_ACK] request_id={request_id} success={str(bool(success)).lower()} message={message or 'n/a'}"
+            )
+            if getattr(self, "_ros_worker_started", False) and getattr(self, "ros_worker", None) is not None:
+                try:
+                    self.ros_worker.complete_tfm_execute_request(request_id, success, message)
+                except Exception:
+                    pass
+
+        ok, message = self._tfm_publish_grasp()
+        _ack(bool(ok), str(message or "n/a"))
+
+    @pyqtSlot(str)
+    def _on_remote_pick_demo_request(self, source: str) -> None:
+        src = (source or "unknown").strip()
+        self._emit_log(f"[PICK][REMOTE][DIRECT] trigger={src}")
+        self._run_pick_demo()
 
     @pyqtSlot(str)
     def _on_remote_pick_object_request(self, source: str) -> None:
@@ -11404,12 +11577,11 @@ class ControlPanelV2(QMainWindow):
         return img_copy
 
     def _draw_grasp_overlay(self, qimg: QImage, w: int, h: int) -> QImage:
-        """Dibujar el grasp inferido sobre la imagen (estilo Cornell).
+        """Dibujar overlay de grasp siguiendo la convención visual del TFM.
 
         Convención:
-        - Lados largos (w, apertura de pinza) → verde
-        - Lados cortos (h, mandíbulas/jaws)  → rojo
-        - Centro → punto blanco
+        - Predicción / grasp inferido → rojo continuo
+        - GT / referencia             → verde discontinuo
         """
         from PyQt5.QtGui import QPainter, QPen, QColor
         from PyQt5.QtCore import Qt, QPointF
@@ -11471,7 +11643,7 @@ class ControlPanelV2(QMainWindow):
 
         _draw_rect_grasp(
             self._last_grasp_px,
-            long_color=QColor(34, 197, 94),
+            long_color=QColor(239, 68, 68),
             short_color=QColor(239, 68, 68),
             center_color=QColor(255, 255, 255),
             tag="P",
@@ -11482,9 +11654,9 @@ class ControlPanelV2(QMainWindow):
             if ref:
                 _draw_rect_grasp(
                     ref,
-                    long_color=QColor(14, 165, 233),
-                    short_color=QColor(250, 204, 21),
-                    center_color=QColor(14, 165, 233),
+                    long_color=QColor(34, 197, 94),
+                    short_color=QColor(34, 197, 94),
+                    center_color=QColor(34, 197, 94),
                     tag="R",
                     pen_style=Qt.DashLine,
                 )
@@ -11785,7 +11957,7 @@ class ControlPanelV2(QMainWindow):
         return img_copy
 
     def _run_pick_demo(self):
-        """Publica una secuencia MoveIt-only para el DEMO de mesa → cesta."""
+        """Ejecuta la ruta directa del demo sobre el objeto seleccionado."""
         run_pick_demo(self)
 
     def _run_pick_object(self):

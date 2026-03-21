@@ -1937,9 +1937,15 @@ def transform_point_to_frame(
         return None, None
     if PoseStamped is None:
         return None, None
+    target_frame_norm = str(target_frame or BASE_FRAME or "base_link").strip() or "base_link"
+    source_frame_norm = str(source_frame or WORLD_FRAME or "world").strip() or "world"
     if tf2_geometry_msgs is None:
         try:
-            transform = helper.lookup_transform(target_frame, source_frame, timeout_sec=timeout_sec)
+            transform = helper.lookup_transform(
+                target_frame_norm,
+                source_frame_norm,
+                timeout_sec=timeout_sec,
+            )
             if not transform:
                 return None, None
             coords = _apply_transform_to_tuple(world_pos, transform)
@@ -1949,16 +1955,20 @@ def transform_point_to_frame(
             return None, None
     try:
         pose = PoseStamped()
-        pose.header.frame_id = source_frame or ""
+        pose.header.frame_id = source_frame_norm
         if BuiltinTime is not None:
             pose.header.stamp = BuiltinTime(sec=0, nanosec=0)
         else:
             pose.header.stamp = rclpy.time.Time().to_msg()
         pose.pose.position.x, pose.pose.position.y, pose.pose.position.z = world_pos
         pose.pose.orientation.w = 1.0
-        transformed = helper.transform_pose(pose, target_frame, timeout_sec)
+        transformed = helper.transform_pose(pose, target_frame_norm, timeout_sec)
         if not transformed:
-            transform = helper.lookup_transform(target_frame, source_frame, timeout_sec=timeout_sec)
+            transform = helper.lookup_transform(
+                target_frame_norm,
+                source_frame_norm,
+                timeout_sec=timeout_sec,
+            )
             if not transform:
                 return None, None
             coords = _apply_transform_to_tuple(world_pos, transform)
@@ -1968,7 +1978,11 @@ def transform_point_to_frame(
             transformed.pose.position.y,
             transformed.pose.position.z,
         )
-        transform = helper.lookup_transform(target_frame, source_frame, timeout_sec=timeout_sec)
+        transform = helper.lookup_transform(
+            target_frame_norm,
+            source_frame_norm,
+            timeout_sec=timeout_sec,
+        )
         return coords, transform
     except Exception as exc:
         _log_tf_transform_warning("transform_point_to_frame", exc)

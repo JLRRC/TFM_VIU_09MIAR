@@ -114,16 +114,16 @@ def _selection_snapshot(panel) -> dict:
     }
 
 
-def tfm_infer(panel) -> None:
+def tfm_infer(panel) -> tuple[bool, str]:
     if panel._tfm_infer_inflight:
         panel._set_status("TFM: inferencia en curso", error=False)
-        return
+        return False, "inferencia en curso"
     infer_ready, infer_reason = panel._tfm_infer_ready_status()
     if not infer_ready:
         panel._set_status(f"TFM en espera: {infer_reason}", error=True)
         panel._emit_log(f"[SAFETY] TFM infer bloqueado: {infer_reason}")
         panel._audit_append("logs/infer.log", f"[TFM] infer_blocked reason={infer_reason}")
-        return
+        return False, infer_reason
     qimg, w, h, frame_ts = panel._last_camera_frame
     roi = None
     if INFER_ROI_SIZE and panel._selected_px:
@@ -192,7 +192,7 @@ def tfm_infer(panel) -> None:
                 panel.signal_run_ui.emit(lambda: panel._handle_infer_result(result))
 
             panel._run_async(worker, name="infer_grasp")
-            return
+            return True, "inferencia iniciada"
         else:
             panel._log_warning("[TFM] Modelo no cargado; usando inferencia por script.")
 
@@ -203,10 +203,10 @@ def tfm_infer(panel) -> None:
             infer_script = candidate
     if not infer_script or not os.path.isfile(infer_script):
         panel._set_status("TFM: script de inferencia no disponible", error=True)
-        return
+        return False, "script de inferencia no disponible"
     if not ckpt_path or not os.path.isfile(ckpt_path):
         panel._set_status("TFM: checkpoint no disponible", error=True)
-        return
+        return False, "checkpoint no disponible"
     out_dir = os.path.join(LOG_DIR, "panel_infer")
     ensure_dir(out_dir)
     stamp = time.strftime("%Y%m%d_%H%M%S")
@@ -214,7 +214,7 @@ def tfm_infer(panel) -> None:
     out_path = os.path.join(out_dir, f"grasp_{stamp}.json")
     if not qimg.save(image_path):
         panel._set_status("TFM: no se pudo guardar imagen", error=True)
-        return
+        return False, "no se pudo guardar imagen"
     roi_args = ""
     if roi:
         roi_cx, roi_cy, roi_size = roi
@@ -227,7 +227,7 @@ def tfm_infer(panel) -> None:
             cfg_path = str(getattr(panel, "_exp_info", {}).get("config_path", "") or "")
         if not cfg_path or not os.path.isfile(cfg_path):
             panel._set_status("TFM: config del experimento no disponible", error=True)
-            return
+            return False, "config del experimento no disponible"
         cmd = (
             f"python3 {shlex.quote(infer_script)}"
             f" --config {shlex.quote(cfg_path)}"
@@ -306,3 +306,4 @@ def tfm_infer(panel) -> None:
         panel.signal_run_ui.emit(lambda: panel._handle_infer_result(result))
 
     panel._run_async(worker, name="infer_grasp")
+    return True, "inferencia iniciada"
