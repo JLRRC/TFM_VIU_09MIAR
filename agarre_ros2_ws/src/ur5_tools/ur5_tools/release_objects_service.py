@@ -68,9 +68,9 @@ class ReleaseObjectsService(Node):
         self.declare_parameter("drop_anchor_name", DROP_ANCHOR_NAME)
         self.declare_parameter("detach_publish_retries", 4)
         self.declare_parameter("detach_publish_retry_sec", 0.25)
-        self.declare_parameter("settle_timeout_sec", 8.0)
+        self.declare_parameter("settle_timeout_sec", 12.0)
         self.declare_parameter("settle_poll_sec", 0.25)
-        self.declare_parameter("settle_confirmations", 12)
+        self.declare_parameter("settle_confirmations", 6)
         self._service = self.create_service(
             Trigger, "release_objects", self._handle_release
         )

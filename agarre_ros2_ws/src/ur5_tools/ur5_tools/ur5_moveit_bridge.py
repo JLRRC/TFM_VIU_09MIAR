@@ -9,6 +9,7 @@ from collections import deque
 from copy import deepcopy
 import json
 import math
+import os
 from pathlib import Path
 import sys
 import threading
@@ -925,6 +926,16 @@ class UR5MoveItBridge(Node):
             time.sleep(0.05)
         return False, f"{last_reason} timeout={max(0.1, float(timeout_sec)):.2f}s"
 
+    @staticmethod
+    def _env_float(name: str, default: float) -> float:
+        raw = os.environ.get(name, "")
+        if not raw:
+            return float(default)
+        try:
+            return float(raw)
+        except Exception:
+            return float(default)
+
     def _available_action_names(self) -> list[str]:
         try:
             names = self.get_action_names_and_types()
@@ -1731,7 +1742,26 @@ class UR5MoveItBridge(Node):
                     max_start_err = max(max_start_err, err)
                     start_err_details.append((jname, cur, tgt, err))
 
-                lead_sec = max(0.20, min(2.50, max_start_err / 0.8))
+                lead_gain = max(
+                    0.20,
+                    self._env_float("PANEL_MOVEIT_BRIDGE_START_LEAD_GAIN", 0.8),
+                )
+                lead_max_sec = max(
+                    0.50,
+                    self._env_float("PANEL_MOVEIT_BRIDGE_START_LEAD_MAX_SEC", 2.5),
+                )
+                blend_err_rad = max(
+                    0.30,
+                    self._env_float("PANEL_MOVEIT_BRIDGE_START_BLEND_ERR_RAD", 1.0),
+                )
+                blend_ratio = min(
+                    0.80,
+                    max(
+                        0.20,
+                        self._env_float("PANEL_MOVEIT_BRIDGE_START_BLEND_RATIO", 0.55),
+                    ),
+                )
+                lead_sec = max(0.20, min(lead_max_sec, max_start_err / lead_gain))
                 if max_start_err > 0.05:
                     lead_sec = max(0.50, lead_sec)
                     top_errs = sorted(
@@ -1770,6 +1800,50 @@ class UR5MoveItBridge(Node):
                         tfs.nanosec = nsec
 
                 if max_start_err > 0.02:
+                    first_point_time = 0.0
+                    try:
+                        first_tfs = points[0].time_from_start
+                        first_point_time = (
+                            float(getattr(first_tfs, "sec", 0) or 0)
+                            + float(getattr(first_tfs, "nanosec", 0) or 0)
+                            / 1_000_000_000.0
+                        )
+                    except Exception:
+                        first_point_time = max(0.0, float(lead_sec))
+                    inserted_midpoint = False
+                    if max_start_err >= blend_err_rad and first_point_time >= 0.60:
+                        mid_time = min(
+                            max(0.25, first_point_time * blend_ratio),
+                            max(0.25, first_point_time - 0.10),
+                        )
+                        if mid_time >= 0.20:
+                            midpoint = deepcopy(points[0])
+                            midpoint_positions: list[float] = []
+                            for idx, jname in enumerate(joint_names):
+                                cur = float(current_vec[idx])
+                                tgt = float(first_positions[idx])
+                                if jname in self._WRAPAROUND_JOINTS:
+                                    delta = math.atan2(
+                                        math.sin(tgt - cur),
+                                        math.cos(tgt - cur),
+                                    )
+                                    interp = cur + (delta * blend_ratio)
+                                else:
+                                    interp = cur + ((tgt - cur) * blend_ratio)
+                                midpoint_positions.append(float(interp))
+                            midpoint.positions = tuple(midpoint_positions)
+                            midpoint.velocities = tuple(0.0 for _ in joint_names)
+                            if getattr(midpoint, "accelerations", None):
+                                midpoint.accelerations = tuple(0.0 for _ in joint_names)
+                            mid_sec = int(mid_time)
+                            mid_nsec = int(round((mid_time - mid_sec) * 1_000_000_000.0))
+                            if mid_nsec >= 1_000_000_000:
+                                mid_sec += 1
+                                mid_nsec -= 1_000_000_000
+                            midpoint.time_from_start.sec = mid_sec
+                            midpoint.time_from_start.nanosec = mid_nsec
+                            points.insert(0, midpoint)
+                            inserted_midpoint = True
                     start_point = deepcopy(points[0])
                     start_point.positions = tuple(current_vec)
                     start_point.velocities = tuple(0.0 for _ in joint_names)
@@ -1781,7 +1855,8 @@ class UR5MoveItBridge(Node):
                     prepared.points = points
                     self.get_logger().info(
                         "[BRIDGE_EXEC] inserted start-state waypoint for controller "
-                        f"max_start_err={max_start_err:.4f}rad lead_sec={lead_sec:.2f}"
+                        f"max_start_err={max_start_err:.4f}rad lead_sec={lead_sec:.2f} "
+                        f"midpoint={str(bool(inserted_midpoint)).lower()}"
                     )
                 try:
                     preview_points = list(points[:2])
@@ -2291,18 +2366,37 @@ class UR5MoveItBridge(Node):
                             level="warn",
                         )
                         continue
+                    settle_timeout_sec = max(
+                        0.4,
+                        self._env_float(
+                            "PANEL_MOVEIT_BRIDGE_JOINT_SETTLE_TIMEOUT_SEC",
+                            min(1.5, max(0.4, float(self._joint_state_valid_timeout_sec))),
+                        ),
+                    )
+                    settle_stable_sec = max(
+                        0.05,
+                        self._env_float("PANEL_MOVEIT_BRIDGE_JOINT_SETTLE_STABLE_SEC", 0.25),
+                    )
+                    settle_tol_rad = max(
+                        0.005,
+                        self._env_float("PANEL_MOVEIT_BRIDGE_JOINT_SETTLE_TOL_RAD", 0.02),
+                    )
                     settled_ok, settled_reason = self._wait_for_joint_state_settled(
-                        timeout_sec=min(1.5, max(0.4, float(self._joint_state_valid_timeout_sec))),
-                        stable_sec=0.25,
-                        tol_rad=0.02,
+                        timeout_sec=settle_timeout_sec,
+                        stable_sec=settle_stable_sec,
+                        tol_rad=settle_tol_rad,
                     )
                     if settled_ok:
                         self.get_logger().info(
-                            f"[BRIDGE_EXEC] joint_state_settled request_id={request_id} detail={settled_reason}"
+                            "[BRIDGE_EXEC] joint_state_settled "
+                            f"request_id={request_id} detail={settled_reason} "
+                            f"cfg(timeout={settle_timeout_sec:.2f}s stable={settle_stable_sec:.2f}s tol={settle_tol_rad:.4f})"
                         )
                     else:
                         self.get_logger().warning(
-                            f"[BRIDGE_EXEC] joint_state_settle_timeout request_id={request_id} detail={settled_reason}"
+                            "[BRIDGE_EXEC] joint_state_settle_timeout "
+                            f"request_id={request_id} detail={settled_reason} "
+                            f"cfg(timeout={settle_timeout_sec:.2f}s stable={settle_stable_sec:.2f}s tol={settle_tol_rad:.4f})"
                         )
                     elapsed = time.monotonic() - self._last_plan_time
                     if self._min_plan_interval > 0.0 and elapsed < self._min_plan_interval:

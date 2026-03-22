@@ -571,6 +571,8 @@ def generate_launch_description():
             {"world_name": LaunchConfiguration("world_name")},
             {"delete_service": LaunchConfiguration("gz_delete_service")},
             {"spawn_service": LaunchConfiguration("gz_spawn_service")},
+            {"settle_timeout_sec": 12.0},
+            {"settle_confirmations": 6},
         ],
         condition=IfCondition(launch_release_service),
     )

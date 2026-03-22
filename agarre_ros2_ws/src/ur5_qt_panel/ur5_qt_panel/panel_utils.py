@@ -602,6 +602,13 @@ def table_xy_to_pixel_float(x: float, y: float, w: int, h: int) -> Optional[Tupl
         out = _apply_homography(inv, float(x), float(y))
         if out:
             nx, ny = out
+            # Keep the inverse homography path consistent with _norm_to_pixel.
+            # Without these flips, the calibration grid can appear vertically
+            # or horizontally mirrored even if pixel->world is correct.
+            if TABLE_IMAGE_FLIP_Y:
+                ny = -ny
+            if TABLE_IMAGE_FLIP_X:
+                nx = -nx
             if TABLE_IMAGE_SWAP_XY:
                 nx, ny = ny, nx
             px = (nx + 0.5) * w

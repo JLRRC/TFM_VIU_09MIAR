@@ -1126,7 +1126,13 @@ class CameraController:
         now = time.time()
         if (now - p._camera_info_last_ts) >= max(0.05, float(CAMERA_INFO_INTERVAL_SEC)):
             p.camera_info.setText(f"Conectado · {w}x{h} · fps {fps:.1f}")
-            _moving = bool(p._manual_inflight or p._script_motion_active)
+            # TFM/MoveIt grasp execution uses _motion_in_progress rather than
+            # the manual/script flags, so include it in the panel state label.
+            _moving = bool(
+                p._manual_inflight
+                or p._script_motion_active
+                or getattr(p, "_motion_in_progress", False)
+            )
             p.motion_lbl.setText("moving" if _moving else "idle")
             p.motion_lbl.setStyleSheet(
                 "color:#f59e0b; font-weight:bold; font-size:13px;" if _moving
@@ -6074,6 +6080,23 @@ class ControlPanelV2(QMainWindow):
                         self._emit_log(f"[PHYSICS][DROP] {release_msg}")
 
                 if not release_ok:
+                    if used_release_service:
+                        time.sleep(0.6)
+                        try:
+                            self._refresh_objects_from_gz()
+                        except Exception as exc:
+                            self._emit_log(f"[PHYSICS][DROP] refresh_after_failed_release err={exc}")
+                        if self._sync_external_release_state():
+                            release_ok = True
+                            release_msg = (
+                                f"{release_msg}; recovered_via_pose_sync"
+                                if release_msg
+                                else "recovered_via_pose_sync"
+                            )
+                            self._emit_log(
+                                "[PHYSICS][DROP] release_objects recovered via pose/info reconciliation"
+                            )
+                if not release_ok:
                     self._objects_release_done = False
                     self._objects_settled = False
                     self.signal_refresh_controls.emit()
@@ -6089,6 +6112,10 @@ class ControlPanelV2(QMainWindow):
                 if release_ok and used_release_service:
                     # Give Gazebo a short window to respawn dynamic models before detach.
                     time.sleep(0.4)
+                    try:
+                        self._refresh_objects_from_gz()
+                    except Exception as exc:
+                        self._emit_log(f"[PHYSICS][DROP] refresh_after_release err={exc}")
 
                 if release_ok and used_release_service:
                     self._drop_anchor_attached = False
@@ -6120,7 +6147,12 @@ class ControlPanelV2(QMainWindow):
                 )
                 self.signal_refresh_controls.emit()
                 self._ui_set_status("✅ Objetos soltados")
-                self._invalidate_settle("objetos liberados", restart=True)
+                if used_release_service and self._sync_external_release_state():
+                    self._emit_log(
+                        "[PHYSICS][DROP] panel settle skipped: service release already reconciled"
+                    )
+                else:
+                    self._invalidate_settle("objetos liberados", restart=True)
                 self._maybe_nudge_drop_objects("release_success")
             except Exception as e:
                 self._log_error(f"Soltar objetos error: {e}")
@@ -7888,6 +7920,10 @@ class ControlPanelV2(QMainWindow):
                 yaw_rad = math.radians(yaw_deg)
                 orientation = (0.0, 0.0, math.sin(yaw_rad / 2.0), math.cos(yaw_rad / 2.0))
                 frame = self._business_base_frame()
+                tfm_grasp_cartesian = str(
+                    os.environ.get("PANEL_TFM_GRASP_CARTESIAN", "0")
+                ).strip().lower() not in ("0", "false", "no", "off")
+                grasp_mode = "cartesian" if tfm_grasp_cartesian else "pose"
                 pre_pose = _make_pose_data((x, y, z_pre), orientation=orientation, frame=frame)
                 grasp_pose = _make_pose_data((x, y, z_grasp), orientation=orientation, frame=frame)
                 retreat_pose = _make_pose_data((x, y, z_retreat), orientation=orientation, frame=frame)
@@ -7911,14 +7947,15 @@ class ControlPanelV2(QMainWindow):
                     f"pre_z={z_pre:.3f} yaw={yaw_deg:.1f} frame={frame} wait_result={str(has_results).lower()} "
                     f"z_approach={z_approach:.3f} z_grasp_offset={z_grasp_offset:+.3f} "
                     f"speed_scale={speed_scale:.2f} accel_scale={accel_scale:.2f} "
-                    f"result_timeout={result_timeout:.1f}",
+                    f"result_timeout={result_timeout:.1f} grasp_mode={grasp_mode}",
                 )
 
                 self.signal_run_ui.emit(lambda: self._command_gripper(False, log_action="PICK", force=True))
                 self._emit_log(
                     "[PICK][MOVEIT] sequence=HOME->PREGRASP->DESCENT->GRASP->RETREAT "
                     f"frame={frame} z_approach={z_approach:.3f} z_grasp_offset={z_grasp_offset:+.3f} "
-                    f"speed_scale={speed_scale:.2f} accel_scale={accel_scale:.2f}"
+                    f"speed_scale={speed_scale:.2f} accel_scale={accel_scale:.2f} "
+                    f"grasp_mode={grasp_mode}"
                 )
                 time.sleep(0.35)
 
@@ -7962,7 +7999,7 @@ class ControlPanelV2(QMainWindow):
                 pose_subs_now = int(self.ros_worker.topic_subscriber_count(MOVEIT_POSE_TOPIC)) if has_results else 1
                 if pose_subs_now <= 0:
                     raise RuntimeError(f"no_pose_subscribers_before_grasp topic={MOVEIT_POSE_TOPIC}")
-                if not self._publish_moveit_pose("TFM_GRASP", grasp_pose_send, cartesian=True):
+                if not self._publish_moveit_pose("TFM_GRASP", grasp_pose_send, cartesian=tfm_grasp_cartesian):
                     raise RuntimeError("publish_grasp_failed")
                 if has_results:
                     ok_grasp, msg_grasp = self._wait_tfm_moveit_result(
@@ -7972,8 +8009,10 @@ class ControlPanelV2(QMainWindow):
                         timeout_sec=result_timeout,
                         expected_request_id=grasp_request_id,
                         expected_request_uuid=grasp_request_uuid,
-                )
+                    )
                     if not ok_grasp:
+                        if not tfm_grasp_cartesian:
+                            raise RuntimeError(f"grasp_result_failed:{msg_grasp}")
                         msg_low = str(msg_grasp or "").lower()
                         reason = "unknown"
                         if "collision" in msg_low:
@@ -11479,33 +11518,6 @@ class ControlPanelV2(QMainWindow):
                 painter.setPen(QPen(QColor(0, 255, 0), 1))
                 painter.drawText(QPointF(px + 12, py - 8), f"P{i+1}")
 
-            # Ejes XYZ para orientar la calibración
-            def _world_to_pixel(wx: float, wy: float):
-                calib = self.calib_service.get_calibration() if hasattr(self, "calib_service") else None
-                if not calib or calib.matrix is None:
-                    return None
-                try:
-                    if calib.mode == CalibrationMode.LINEAR_2PT:
-                        sx = float(calib.matrix[0, 0])
-                        sy = float(calib.matrix[1, 1])
-                        tx = float(calib.matrix[0, 2])
-                        ty = float(calib.matrix[1, 2])
-                        if abs(sx) < 1e-9 or abs(sy) < 1e-9:
-                            return None
-                        px = (wx - tx) / sx
-                        py = (wy - ty) / sy
-                        return (px, py)
-                    if calib.mode == CalibrationMode.HOMOGRAPHY:
-                        inv = np.linalg.inv(calib.matrix)
-                        vec = inv @ np.array([wx, wy, 1.0])
-                        if abs(vec[2]) < 1e-9:
-                            return None
-                        return (float(vec[0] / vec[2]), float(vec[1] / vec[2]))
-                except Exception as exc:
-                    _log_exception("calib world_to_pixel", exc)
-                    return None
-                return None
-
             def _draw_arrow(p0, p1, color: QColor, label: str):
                 if not p0 or not p1:
                     return
@@ -11526,17 +11538,39 @@ class ControlPanelV2(QMainWindow):
                 painter.setPen(QPen(color, 1))
                 painter.drawText(QPointF(p1[0] + 4.0, p1[1] - 4.0), label)
 
-            # Representación compacta de ejes en la esquina superior izquierda
-            axis_len_px = max(26.0, min(w, h) * 0.07)
-            margin = 16.0
-            base = (margin, margin + axis_len_px * 1.2)
-            x_tip = (base[0] + axis_len_px, base[1])
-            y_tip = (base[0], base[1] - axis_len_px)
-            z_tip = (base[0] - axis_len_px * 0.5, base[1] - axis_len_px * 0.7)
+            # Dibujar ejes usando la proyeccion real de la calibracion.
+            # El icono fijo en esquina solo queda como fallback cuando no hay
+            # una proyeccion geometrica util.
+            table_top = self._resolve_table_top_z()
+            axis_span = min(TABLE_SIZE_X, TABLE_SIZE_Y) * 0.18
+            base = self._world_to_pixel(TABLE_CENTER_X, TABLE_CENTER_Y, table_top, w, h)
+            x_tip = self._world_to_pixel(TABLE_CENTER_X + axis_span, TABLE_CENTER_Y, table_top, w, h)
+            y_tip = self._world_to_pixel(TABLE_CENTER_X, TABLE_CENTER_Y + axis_span, table_top, w, h)
+            z_tip = world_xyz_to_pixel(TABLE_CENTER_X, TABLE_CENTER_Y, table_top + axis_span, w, h)
 
-            _draw_arrow(base, x_tip, QColor(239, 68, 68), "X+")
-            _draw_arrow(base, y_tip, QColor(34, 197, 94), "Y+")
-            _draw_arrow(base, z_tip, QColor(59, 130, 246), "Z+")
+            projected_axes_ok = bool(
+                base
+                and x_tip
+                and y_tip
+                and math.hypot(float(x_tip[0]) - float(base[0]), float(x_tip[1]) - float(base[1])) > 8.0
+                and math.hypot(float(y_tip[0]) - float(base[0]), float(y_tip[1]) - float(base[1])) > 8.0
+            )
+
+            if projected_axes_ok:
+                _draw_arrow(base, x_tip, QColor(239, 68, 68), "X+")
+                _draw_arrow(base, y_tip, QColor(34, 197, 94), "Y+")
+                if z_tip and math.hypot(float(z_tip[0]) - float(base[0]), float(z_tip[1]) - float(base[1])) > 8.0:
+                    _draw_arrow(base, z_tip, QColor(59, 130, 246), "Z+")
+            else:
+                axis_len_px = max(26.0, min(w, h) * 0.07)
+                margin = 16.0
+                base = (margin, margin + axis_len_px * 1.2)
+                x_tip = (base[0] + axis_len_px, base[1])
+                y_tip = (base[0], base[1] - axis_len_px)
+                z_tip = (base[0] - axis_len_px * 0.5, base[1] - axis_len_px * 0.7)
+                _draw_arrow(base, x_tip, QColor(239, 68, 68), "X+")
+                _draw_arrow(base, y_tip, QColor(34, 197, 94), "Y+")
+                _draw_arrow(base, z_tip, QColor(59, 130, 246), "Z+")
         finally:
             painter.end()
         return img_copy
