@@ -73,6 +73,21 @@ class AttachedTarget:
     coherence_breach_count: int = 0
 
 
+@dataclass
+class DemoTransportState:
+    name: str
+    last_pose: Optional[PoseSample] = None
+    last_spawn_ts: float = 0.0
+    world_offset_x: float = 0.0
+    world_offset_y: float = 0.0
+    world_offset_z: float = -0.1
+    world_qx: float = 0.0
+    world_qy: float = 0.0
+    world_qz: float = 0.0
+    world_qw: float = 1.0
+    use_world_locked_pose: bool = True
+
+
 def _quat_normalize(q: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
     x, y, z, w = q
     norm = math.sqrt((x * x) + (y * y) + (z * z) + (w * w))
@@ -160,6 +175,12 @@ class GripperAttachBackend(Node):
         self.declare_parameter("startup_detach_period_sec", 0.5)
         self.declare_parameter("detachable_shadow_follow", True)
         self.declare_parameter("prefer_tool_anchor_objects", ["pick_demo"])
+        self.declare_parameter("demo_transport_objects", ["pick_demo"])
+        self.declare_parameter("demo_transport_rate_hz", 25.0)
+        self.declare_parameter("demo_transport_min_step_m", 0.001)
+        self.declare_parameter("demo_transport_respawn_sleep_sec", 0.08)
+        self.declare_parameter("demo_transport_world_z_compensation_m", 0.065)
+        self.declare_parameter("world_sdf", "")
 
         self._gripper_prefix = str(
             self.get_parameter("gripper_prefix").value or "/gripper"
@@ -250,6 +271,29 @@ class GripperAttachBackend(Node):
             for v in (prefer_tool_anchor_raw or [])
             if str(v).strip()
         }
+        demo_transport_raw = self.get_parameter("demo_transport_objects").value
+        self._demo_transport_objects = {
+            str(v).strip()
+            for v in (demo_transport_raw or [])
+            if str(v).strip()
+        }
+        self._demo_transport_period_sec = 1.0 / max(
+            1.0, float(self.get_parameter("demo_transport_rate_hz").value or 25.0)
+        )
+        self._demo_transport_min_step_m = max(
+            0.0005, float(self.get_parameter("demo_transport_min_step_m").value or 0.001)
+        )
+        self._demo_transport_respawn_sleep_sec = max(
+            0.0,
+            float(self.get_parameter("demo_transport_respawn_sleep_sec").value or 0.02),
+        )
+        self._demo_transport_world_z_compensation_m = float(
+            self.get_parameter("demo_transport_world_z_compensation_m").value or 0.065
+        )
+        self._world_sdf = str(self.get_parameter("world_sdf").value or "").strip()
+        if not self._world_sdf:
+            candidate = os.path.join(self._ws_dir, "worlds", f"{self._world_name}.sdf")
+            self._world_sdf = candidate if os.path.exists(candidate) else ""
 
         self._qos = QoSProfile(
             depth=10,
@@ -343,11 +387,17 @@ class GripperAttachBackend(Node):
         self._last_stale_warn_ts = 0.0
         self._last_coherence_warn_ts = 0.0
         self._last_set_pose_timeout_log_ts = 0.0
+        self._last_demo_transport_log_ts = 0.0
         self._gz_set_pose_service: Optional[str] = None
+        self._gz_spawn_service: Optional[str] = None
+        self._gz_delete_service: Optional[str] = None
         self._last_tcp_pose_source = "none"
         self._last_tcp_pose_diag: Dict[str, float | str | bool] = {}
         self._startup_detach_attempts_left = int(self._startup_detach_max_attempts)
         self._startup_detach_sent = 0
+        self._demo_transport_active: Dict[str, DemoTransportState] = {}
+        self._demo_transport_dynamic_sdf: Dict[str, str] = {}
+        self._demo_transport_carry_sdf: Dict[str, str] = {}
 
         self._follow_timer = self.create_timer(
             1.0 / self._follow_rate_hz,
@@ -367,8 +417,411 @@ class GripperAttachBackend(Node):
             f"gripper_prefix=/{self._gripper_prefix} "
             f"tool_anchor_prefix=/{self._tool_anchor_prefix} "
             f"prefer_tool_anchor={','.join(sorted(self._prefer_tool_anchor_objects)) or 'none'} "
+            f"demo_transport={','.join(sorted(self._demo_transport_objects)) or 'none'} "
             f"pose_topic={self._pose_topic} base_frame={self._base_frame} tcp_frame={self._tcp_frame}"
         )
+
+    def _demo_dynamic_sdf(self, name: str) -> Optional[str]:
+        if name != "pick_demo":
+            return None
+        return f"""
+<sdf version="1.10">
+  <model name="{name}">
+    <static>false</static>
+    <allow_auto_disable>true</allow_auto_disable>
+    <link name="link">
+      <inertial>
+        <mass>0.08</mass>
+        <inertia>
+          <ixx>0.0002</ixx><iyy>0.0002</iyy><izz>0.0002</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry><cylinder><radius>0.025</radius><length>0.05</length></cylinder></geometry>
+        <surface>
+          <friction>
+            <ode><mu>2.0</mu><mu2>2.0</mu2></ode>
+          </friction>
+          <bounce>
+            <restitution_coefficient>0.0</restitution_coefficient>
+            <threshold>100000</threshold>
+          </bounce>
+          <contact>
+            <ode><kp>200000</kp><kd>50.0</kd><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode>
+          </contact>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <geometry><cylinder><radius>0.025</radius><length>0.05</length></cylinder></geometry>
+        <material><diffuse>0.95 0.70 0.10 1</diffuse></material>
+      </visual>
+    </link>
+  </model>
+</sdf>
+""".strip()
+
+    def _demo_carry_sdf(self, name: str) -> Optional[str]:
+        if name != "pick_demo":
+            return None
+        return f"""
+<sdf version="1.10">
+  <model name="{name}">
+    <static>false</static>
+    <allow_auto_disable>false</allow_auto_disable>
+    <link name="link">
+      <inertial>
+        <mass>0.08</mass>
+        <inertia>
+          <ixx>0.0002</ixx><iyy>0.0002</iyy><izz>0.0002</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <gravity>false</gravity>
+      <kinematic>true</kinematic>
+      <visual name="visual">
+        <geometry><cylinder><radius>0.025</radius><length>0.05</length></cylinder></geometry>
+        <material><diffuse>0.95 0.70 0.10 1</diffuse></material>
+      </visual>
+    </link>
+  </model>
+</sdf>
+""".strip()
+
+    def _ensure_demo_transport_sdfs(self, name: str) -> bool:
+        if name in self._demo_transport_dynamic_sdf and name in self._demo_transport_carry_sdf:
+            return True
+        dyn = self._demo_dynamic_sdf(name)
+        carry = self._demo_carry_sdf(name)
+        if not dyn or not carry:
+            return False
+        self._demo_transport_dynamic_sdf[name] = dyn
+        self._demo_transport_carry_sdf[name] = carry
+        return True
+
+    def _gz_service_exists(self, env_prefix: str, service: str) -> bool:
+        cmd = f"{env_prefix}gz service -s {service} -i"
+        try:
+            result = subprocess.run(
+                ["bash", "-lc", cmd],
+                text=True,
+                capture_output=True,
+                timeout=max(0.5, self._gz_cmd_timeout_sec),
+            )
+        except Exception:
+            return False
+        return result.returncode == 0
+
+    def _resolve_gz_service(self, candidates: List[str], env_prefix: str) -> Optional[str]:
+        for svc in candidates:
+            if svc and self._gz_service_exists(env_prefix, svc):
+                return svc
+        return None
+
+    def _ensure_demo_transport_services(self) -> Tuple[Optional[str], Optional[str], str]:
+        env_prefix = self._gz_env_prefix()
+        if not self._gz_delete_service:
+            # For this demo path, the blocking world services are the stable path
+            # in runtime. Avoid pre-introspection here: `gz service -i` has been
+            # unreliable even when the direct call works.
+            self._gz_delete_service = f"/world/{self._world_name}/remove/blocking"
+            if not self._gz_delete_service:
+                self.get_logger().warning(
+                    f"[ATTACH_BACKEND] demo_transport_missing_delete_service world={self._world_name}"
+                )
+        if not self._gz_spawn_service:
+            self._gz_spawn_service = f"/world/{self._world_name}/create/blocking"
+            if not self._gz_spawn_service:
+                self.get_logger().warning(
+                    f"[ATTACH_BACKEND] demo_transport_missing_spawn_service world={self._world_name}"
+                )
+        return self._gz_delete_service, self._gz_spawn_service, env_prefix
+
+    def _gz_delete_entity_cli(
+        self,
+        service: str,
+        env_prefix: str,
+        name: str,
+        *,
+        allow_missing: bool = False,
+    ) -> bool:
+        req = f'name: "{name}" type: MODEL'
+        cmd = (
+            f"{env_prefix}gz service -s {service} "
+            "--reqtype gz.msgs.Entity --reptype gz.msgs.Boolean "
+            f"--timeout {int(self._gz_service_timeout_ms)} --req '{req}'"
+        )
+        try:
+            result = subprocess.run(
+                ["bash", "-lc", cmd],
+                text=True,
+                capture_output=True,
+                timeout=max(0.5, self._gz_cmd_timeout_sec),
+            )
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[ATTACH_BACKEND] demo_transport_delete_exception object={name} err={exc}"
+            )
+            return False
+        if result.returncode != 0:
+            self.get_logger().warning(
+                "[ATTACH_BACKEND] demo_transport_delete_failed "
+                f"object={name} rc={result.returncode} stdout={result.stdout.strip()} stderr={result.stderr.strip()}"
+            )
+            return False if not allow_missing else True
+        ok = "data: true" in (result.stdout or "")
+        return ok or allow_missing
+
+    def _gz_spawn_entity_cli(
+        self,
+        service: str,
+        env_prefix: str,
+        name: str,
+        sdf: str,
+        pose: PoseSample,
+    ) -> bool:
+        sdf_escaped = sdf.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "")
+        req = (
+            f'name: "{name}" '
+            "allow_renaming: false "
+            f'sdf: "{sdf_escaped}" '
+            "pose {"
+            f"position {{x: {float(pose.x)} y: {float(pose.y)} z: {float(pose.z)}}} "
+            f"orientation {{x: {float(pose.qx)} y: {float(pose.qy)} z: {float(pose.qz)} w: {float(pose.qw)}}}"
+            "}"
+        )
+        cmd = (
+            f"{env_prefix}gz service -s {service} "
+            "--reqtype gz.msgs.EntityFactory --reptype gz.msgs.Boolean "
+            f"--timeout {int(max(600, self._gz_service_timeout_ms))} --req '{req}'"
+        )
+        try:
+            result = subprocess.run(
+                ["bash", "-lc", cmd],
+                text=True,
+                capture_output=True,
+                timeout=max(1.5, self._gz_cmd_timeout_sec * 2.0),
+            )
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[ATTACH_BACKEND] demo_transport_spawn_exception object={name} err={exc}"
+            )
+            return False
+        ok = result.returncode == 0 and "data: true" in (result.stdout or "")
+        if not ok:
+            self.get_logger().warning(
+                "[ATTACH_BACKEND] demo_transport_spawn_failed "
+                f"object={name} rc={result.returncode} stdout={result.stdout.strip()} stderr={result.stderr.strip()}"
+            )
+        return ok
+
+    def _demo_transport_pose_delta(self, a: Optional[PoseSample], b: PoseSample) -> float:
+        if a is None:
+            return float("inf")
+        return math.sqrt(
+            ((float(a.x) - float(b.x)) ** 2)
+            + ((float(a.y) - float(b.y)) ** 2)
+            + ((float(a.z) - float(b.z)) ** 2)
+        )
+
+    def _demo_transport_enable(self, name: str, pose: PoseSample) -> bool:
+        if not self._ensure_demo_transport_sdfs(name):
+            self.get_logger().warning(
+                f"[ATTACH_BACKEND] demo_transport_missing_sdf object={name}"
+            )
+            return False
+        delete_service, spawn_service, env_prefix = self._ensure_demo_transport_services()
+        if not delete_service or not spawn_service:
+            self.get_logger().warning(
+                "[ATTACH_BACKEND] demo_transport_services_unavailable "
+                f"object={name} delete={delete_service} spawn={spawn_service}"
+            )
+            return False
+        ok = False
+        for attempt in range(1, 4):
+            self._gz_delete_entity_cli(delete_service, env_prefix, name, allow_missing=True)
+            if self._demo_transport_respawn_sleep_sec > 0.0:
+                time.sleep(self._demo_transport_respawn_sleep_sec)
+            ok = self._gz_spawn_entity_cli(
+                spawn_service,
+                env_prefix,
+                name,
+                self._demo_transport_carry_sdf[name],
+                pose,
+            )
+            if ok:
+                break
+            self.get_logger().warning(
+                "[ATTACH_BACKEND] demo_transport_enable_retry "
+                f"object={name} attempt={attempt}/3"
+            )
+            time.sleep(max(0.02, self._demo_transport_respawn_sleep_sec))
+        if not ok:
+            self.get_logger().warning(
+                f"[ATTACH_BACKEND] demo_transport_enable_failed object={name}"
+            )
+            return False
+        self._demo_transport_active[name] = DemoTransportState(
+            name=name,
+            last_pose=pose,
+            last_spawn_ts=time.time(),
+        )
+        self.get_logger().info(
+            "[ATTACH_BACKEND] demo_transport_enabled "
+            f"object={name} mode=respawn_kinematic_no_collision "
+            f"pose=({pose.x:.3f},{pose.y:.3f},{pose.z:.3f})"
+        )
+        return True
+
+    def _demo_transport_update(self, name: str, pose: PoseSample) -> bool:
+        state = self._demo_transport_active.get(name)
+        if state is None:
+            return False
+        now = time.time()
+        if (
+            (now - float(state.last_spawn_ts)) < self._demo_transport_period_sec
+            and self._demo_transport_pose_delta(state.last_pose, pose) < self._demo_transport_min_step_m
+        ):
+            return True
+        ok = self._queue_set_pose_with_retry(name, pose)
+        if ok:
+            state.last_pose = pose
+            state.last_spawn_ts = now
+        elif (now - self._last_demo_transport_log_ts) >= 0.5:
+            self.get_logger().warning(
+                "[ATTACH_BACKEND] demo_transport_update_failed "
+                f"object={name} pose=({pose.x:.3f},{pose.y:.3f},{pose.z:.3f}) "
+                "detail=set_pose_queue_failed"
+            )
+            self._last_demo_transport_log_ts = now
+        return ok
+
+    def _demo_transport_restore_dynamic(
+        self,
+        name: str,
+        *,
+        detail: str,
+        pose: Optional[PoseSample] = None,
+    ) -> bool:
+        state = self._demo_transport_active.pop(name, None)
+        if not self._ensure_demo_transport_sdfs(name):
+            self._publish_state(name, False)
+            return False
+        delete_service, spawn_service, env_prefix = self._ensure_demo_transport_services()
+        if not delete_service or not spawn_service:
+            self._publish_state(name, False)
+            return False
+        restore_pose = pose or (state.last_pose if state is not None else None) or self._lookup_pose(name)
+        if restore_pose is None:
+            self._publish_state(name, False)
+            return False
+        self._gz_delete_entity_cli(delete_service, env_prefix, name, allow_missing=True)
+        if self._demo_transport_respawn_sleep_sec > 0.0:
+            time.sleep(self._demo_transport_respawn_sleep_sec)
+        ok = self._gz_spawn_entity_cli(
+            spawn_service,
+            env_prefix,
+            name,
+            self._demo_transport_dynamic_sdf[name],
+            restore_pose,
+        )
+        self._publish_state(name, False)
+        self.get_logger().info(
+            "[ATTACH_BACKEND] demo_transport_restore "
+            f"object={name} detail={detail} success={str(ok).lower()} "
+            f"pose=({restore_pose.x:.3f},{restore_pose.y:.3f},{restore_pose.z:.3f})"
+        )
+        return ok
+
+    def _activate_demo_transport_attachment(self, name: str, *, method: str) -> bool:
+        obj_pose = self._lookup_pose(name)
+        tcp_pose = self._lookup_tcp_pose()
+        if obj_pose is None or tcp_pose is None:
+            self.get_logger().warning(
+                "[ATTACH_BACKEND] demo_transport_attach_blocked "
+                f"object={name} detail=missing_pose obj_pose={str(obj_pose is not None).lower()} "
+                f"tcp_pose={str(tcp_pose is not None).lower()}"
+            )
+            self._publish_state(name, False)
+            return False
+        attach_dist = math.sqrt(
+            (obj_pose.x - tcp_pose.x) ** 2
+            + (obj_pose.y - tcp_pose.y) ** 2
+            + (obj_pose.z - tcp_pose.z) ** 2
+        )
+        if attach_dist > self._attach_max_dist_m:
+            self.get_logger().warning(
+                "[ATTACH_BACKEND] demo_transport_attach_blocked "
+                f"object={name} detail=distance_too_large dist={attach_dist:.4f} "
+                f"max={self._attach_max_dist_m:.4f}"
+            )
+            self._publish_state(name, False)
+            return False
+        tcp_q = _quat_normalize(
+            (float(tcp_pose.qx), float(tcp_pose.qy), float(tcp_pose.qz), float(tcp_pose.qw))
+        )
+        obj_q = _quat_normalize(
+            (float(obj_pose.qx), float(obj_pose.qy), float(obj_pose.qz), float(obj_pose.qw))
+        )
+        tcp_q_inv = _quat_inverse(tcp_q)
+        rel_pos = _rotate_vector(
+            tcp_q_inv,
+            (
+                float(obj_pose.x - tcp_pose.x),
+                float(obj_pose.y - tcp_pose.y),
+                float(obj_pose.z - tcp_pose.z),
+            ),
+        )
+        rel_q = _quat_multiply(tcp_q_inv, obj_q)
+        attached = AttachedTarget(
+            name=name,
+            offset_x=float(rel_pos[0]),
+            offset_y=float(rel_pos[1]),
+            offset_z=float(rel_pos[2]),
+            qx=float(rel_q[0]),
+            qy=float(rel_q[1]),
+            qz=float(rel_q[2]),
+            qw=float(rel_q[3]),
+            attach_stamp_ns=int(self.get_clock().now().nanoseconds),
+        )
+        self._attached[name] = attached
+        if not self._demo_transport_enable(name, obj_pose):
+            self._attached.pop(name, None)
+            self._publish_state(name, False)
+            return False
+        demo_state = self._demo_transport_active.get(name)
+        if demo_state is not None:
+            # For the demo carry we prioritize a visually rigid lift over preserving
+            # the object's local orientation relative to the tilted TCP frame.
+            # Keeping the initial world offset avoids the object hanging farther
+            # away as the tool rotates during the lift.
+            demo_state.world_offset_x = float(obj_pose.x - tcp_pose.x)
+            demo_state.world_offset_y = float(obj_pose.y - tcp_pose.y)
+            raw_world_offset_z = float(obj_pose.z - tcp_pose.z)
+            demo_state.world_offset_z = min(
+                -0.015,
+                raw_world_offset_z + float(self._demo_transport_world_z_compensation_m),
+            )
+            demo_state.world_qx = float(obj_pose.qx)
+            demo_state.world_qy = float(obj_pose.qy)
+            demo_state.world_qz = float(obj_pose.qz)
+            demo_state.world_qw = float(obj_pose.qw)
+            demo_state.use_world_locked_pose = True
+        self._publish_state(name, True)
+        demo_offset_txt = "n/a"
+        if demo_state is not None:
+            demo_offset_txt = (
+                f"({demo_state.world_offset_x:.3f},{demo_state.world_offset_y:.3f},"
+                f"{demo_state.world_offset_z:.3f})"
+            )
+        self.get_logger().info(
+            f"[ATTACH_BACKEND] gazebo_attach_applied=true object={name} method={method} "
+            f"dist={attach_dist:.4f}m max={self._attach_max_dist_m:.4f}m "
+            f"rel_pos=({attached.offset_x:.3f},{attached.offset_y:.3f},{attached.offset_z:.3f}) "
+            f"rel_q=({attached.qx:.3f},{attached.qy:.3f},{attached.qz:.3f},{attached.qw:.3f}) "
+            f"demo_world_offset={demo_offset_txt}"
+        )
+        return True
 
     def _publish_state(self, name: str, attached: bool) -> None:
         pub = self._gripper_state_pubs.get(name)
@@ -400,6 +853,43 @@ class GripperAttachBackend(Node):
             "method=drop_anchor_force_release "
             f"state_hint={str(state_hint).lower()}"
         )
+
+    def _relay_tool_anchor_attach(self, name: str, *, detail: str) -> bool:
+        self._force_drop_anchor_detach(name)
+        self._attached.pop(name, None)
+        pub = self._tool_attach_pubs.get(name)
+        if pub is None:
+            self.get_logger().error(
+                f"[ATTACH_BACKEND] missing tool_attach publisher object={name}"
+            )
+            self._publish_state(name, False)
+            return False
+        pub.publish(Empty())
+        self.get_logger().info(
+            f"[ATTACH_BACKEND] relay attach object={name} "
+            f"dst=/{self._tool_anchor_prefix}/{name}/attach "
+            f"method=tool_anchor_preferred detail={detail}"
+        )
+        self._publish_state(name, True)
+        return True
+
+    def _relay_tool_anchor_detach(self, name: str, *, detail: str) -> bool:
+        self._attached.pop(name, None)
+        pub = self._tool_detach_pubs.get(name)
+        if pub is None:
+            self.get_logger().error(
+                f"[ATTACH_BACKEND] missing tool_detach publisher object={name}"
+            )
+            self._publish_state(name, False)
+            return False
+        pub.publish(Empty())
+        self.get_logger().info(
+            f"[ATTACH_BACKEND] relay detach object={name} "
+            f"dst=/{self._tool_anchor_prefix}/{name}/detach "
+            f"method=tool_anchor_preferred detail={detail}"
+        )
+        self._publish_state(name, False)
+        return True
 
     def _startup_detach_tool_anchors_once_ready(self) -> None:
         timer = self._startup_detach_timer
@@ -800,8 +1290,22 @@ class GripperAttachBackend(Node):
         detail: str,
         dist: Optional[float] = None,
     ) -> None:
+        if name in self._demo_transport_objects:
+            self._attached.pop(name, None)
+            self._demo_transport_restore_dynamic(
+                name,
+                detail=f"drop_attached_target:{detail}",
+            )
+            dist_txt = "n/a" if dist is None else f"{dist:.4f}m"
+            self.get_logger().warning(
+                "[ATTACH_BACKEND] follow_detached "
+                f"object={name} detail={detail} dist={dist_txt} "
+                f"max={self._follow_break_dist_m:.4f}m "
+                f"breaches_required={self._follow_break_consecutive}"
+            )
+            return
         self._attached.pop(name, None)
-        if self._attach_mode == "detachable_joint":
+        if self._attach_mode == "detachable_joint" or name in self._prefer_tool_anchor_objects:
             pub = self._tool_detach_pubs.get(name)
             if pub is not None:
                 pub.publish(Empty())
@@ -878,8 +1382,11 @@ class GripperAttachBackend(Node):
                 )
                 self._last_stale_warn_ts = now
         for name, target in list(self._attached.items()):
+            demo_transport_active = name in self._demo_transport_active
             obj_pose = self._lookup_pose(name)
-            if (not soft_stale) and obj_pose is not None and self._pose_age_ok(obj_pose):
+            if demo_transport_active:
+                target.coherence_breach_count = 0
+            elif (not soft_stale) and obj_pose is not None and self._pose_age_ok(obj_pose):
                 obj_tcp_dist = math.sqrt(
                     (obj_pose.x - tcp_pose.x) ** 2
                     + (obj_pose.y - tcp_pose.y) ** 2
@@ -920,6 +1427,18 @@ class GripperAttachBackend(Node):
                 qw=1.0,
                 stamp_ns=int(tcp_pose.stamp_ns),
             )
+            if demo_transport_active:
+                demo_state = self._demo_transport_active.get(name)
+                if demo_state is not None and demo_state.use_world_locked_pose:
+                    desired.x = float(tcp_pose.x + demo_state.world_offset_x)
+                    desired.y = float(tcp_pose.y + demo_state.world_offset_y)
+                    desired.z = float(tcp_pose.z + demo_state.world_offset_z)
+                    desired.qx = float(demo_state.world_qx)
+                    desired.qy = float(demo_state.world_qy)
+                    desired.qz = float(demo_state.world_qz)
+                    desired.qw = float(demo_state.world_qw)
+                    self._demo_transport_update(name, desired)
+                    continue
             tcp_q = _quat_normalize(
                 (float(tcp_pose.qx), float(tcp_pose.qy), float(tcp_pose.qz), float(tcp_pose.qw))
             )
@@ -938,6 +1457,9 @@ class GripperAttachBackend(Node):
             desired.qy = float(rel_q_world[1])
             desired.qz = float(rel_q_world[2])
             desired.qw = float(rel_q_world[3])
+            if demo_transport_active:
+                self._demo_transport_update(name, desired)
+                continue
             if self._queue_set_pose(name, desired):
                 break
 
@@ -1057,22 +1579,35 @@ class GripperAttachBackend(Node):
         self.get_logger().info(
             f"[ATTACH_BACKEND] attach_request_received object={name} src={src_topic} mode={self._attach_mode}"
         )
-        if name in self._prefer_tool_anchor_objects and self._attach_mode != "follow_tcp":
+        if name in self._demo_transport_objects:
             self._force_drop_anchor_detach(name)
-            self._attached.pop(name, None)
-            pub = self._tool_attach_pubs.get(name)
-            if pub is None:
-                self.get_logger().error(
-                    f"[ATTACH_BACKEND] missing tool_attach publisher object={name}"
-                )
-                self._publish_state(name, False)
-                return
-            pub.publish(Empty())
-            self.get_logger().info(
-                f"[ATTACH_BACKEND] relay attach object={name} "
-                f"dst=/{self._tool_anchor_prefix}/{name}/attach method=tool_anchor_preferred"
+            self._relay_tool_anchor_detach(
+                name,
+                detail="demo_transport_preclean",
             )
-            self._publish_state(name, True)
+            if not self._activate_demo_transport_attachment(
+                name,
+                method="demo_controlled_carry",
+            ):
+                self.get_logger().error(
+                    f"[ATTACH_BACKEND] demo_transport_attach_failed object={name}"
+                )
+            return
+        if name in self._prefer_tool_anchor_objects:
+            relayed = self._relay_tool_anchor_attach(
+                name,
+                detail="prefer_tool_anchor_object",
+            )
+            if (not relayed) or (not self._detachable_shadow_follow):
+                return
+            self.get_logger().info(
+                f"[ATTACH_BACKEND] tool_anchor relay object={name} detail=starting_shadow_follow"
+            )
+            if not self._activate_follow_attachment(name, method="tool_anchor_shadow_follow"):
+                self._relay_tool_anchor_detach(
+                    name,
+                    detail="shadow_follow_activation_failed",
+                )
             return
         if self._attach_mode != "follow_tcp":
             self._force_drop_anchor_detach(name)
@@ -1107,21 +1642,19 @@ class GripperAttachBackend(Node):
         self.get_logger().info(
             f"[ATTACH_BACKEND] detach_request_received object={name} src={src_topic} mode={self._attach_mode}"
         )
-        if name in self._prefer_tool_anchor_objects and self._attach_mode != "follow_tcp":
+        if name in self._demo_transport_objects:
             self._attached.pop(name, None)
-            pub = self._tool_detach_pubs.get(name)
-            if pub is None:
-                self.get_logger().error(
-                    f"[ATTACH_BACKEND] missing tool_detach publisher object={name}"
-                )
+            if not self._demo_transport_restore_dynamic(
+                name,
+                detail="gripper_detach",
+            ):
                 self._publish_state(name, False)
-                return
-            pub.publish(Empty())
-            self.get_logger().info(
-                f"[ATTACH_BACKEND] relay detach object={name} "
-                f"dst=/{self._tool_anchor_prefix}/{name}/detach method=tool_anchor_preferred"
+            return
+        if name in self._prefer_tool_anchor_objects:
+            self._relay_tool_anchor_detach(
+                name,
+                detail="prefer_tool_anchor_object",
             )
-            self._publish_state(name, False)
             return
         if self._attach_mode != "follow_tcp":
             self._attached.pop(name, None)

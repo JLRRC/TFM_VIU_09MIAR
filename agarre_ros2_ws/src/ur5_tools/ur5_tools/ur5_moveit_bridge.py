@@ -1385,6 +1385,72 @@ class UR5MoveItBridge(Node):
             time.sleep(0.05)
         return False, last_detail
 
+    def _ee_target_reached(
+        self,
+        target_pose: PoseStamped,
+        *,
+        tol_m: float = 0.10,
+    ) -> tuple[bool, str]:
+        if target_pose is None:
+            return False, "ee_goal_missing_target_pose"
+        try:
+            target_base = target_pose
+            if str(target_pose.header.frame_id or "").strip() != str(self._base_frame or "").strip():
+                target_base = self._ensure_base_frame(target_pose)
+            if target_base is None:
+                return False, "ee_goal_target_tf_unavailable"
+            now = Time()
+            if not self.tf_buffer.can_transform(
+                self._base_frame,
+                self._ee_frame,
+                now,
+                timeout=Duration(seconds=0.1),
+            ):
+                return False, "ee_goal_current_tf_unavailable"
+            transform = self.tf_buffer.lookup_transform(
+                self._base_frame,
+                self._ee_frame,
+                now,
+            )
+            tcp = transform.transform.translation
+            tgt = target_base.pose.position
+            dx = float(tcp.x) - float(tgt.x)
+            dy = float(tcp.y) - float(tgt.y)
+            dz = float(tcp.z) - float(tgt.z)
+            dist = math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
+            if dist <= float(tol_m):
+                return (
+                    True,
+                    "ee_target_reached:"
+                    f"dist={dist:.4f}:tol={float(tol_m):.4f}:"
+                    f"dx={dx:.4f}:dy={dy:.4f}:dz={dz:.4f}",
+                )
+            return (
+                False,
+                "ee_target_not_reached:"
+                f"dist={dist:.4f}:tol={float(tol_m):.4f}:"
+                f"dx={dx:.4f}:dy={dy:.4f}:dz={dz:.4f}",
+            )
+        except Exception as exc:
+            return False, f"ee_goal_check_exc:{type(exc).__name__}:{exc}"
+
+    def _wait_ee_target_reached(
+        self,
+        target_pose: PoseStamped,
+        *,
+        settle_timeout_sec: float = 1.0,
+        tol_m: float = 0.10,
+    ) -> tuple[bool, str]:
+        deadline = time.monotonic() + max(0.1, float(settle_timeout_sec))
+        last_detail = "ee_goal_check_timeout"
+        while time.monotonic() <= deadline:
+            ok, detail = self._ee_target_reached(target_pose, tol_m=tol_m)
+            if ok:
+                return True, detail
+            last_detail = detail
+            time.sleep(0.05)
+        return False, last_detail
+
     def _execute_joint_trajectory_action(
         self,
         jt: JointTrajectory,
@@ -1393,6 +1459,8 @@ class UR5MoveItBridge(Node):
         retry_on_tolerance_violation: bool = True,
         path_tol_override_rad: float | None = None,
         goal_time_override_sec: float | None = None,
+        target_pose: PoseStamped | None = None,
+        ee_target_tol_m: float | None = None,
     ) -> tuple[bool, str, dict[str, Any]]:
         if retry_on_tolerance_violation and self._force_fjt_direct_for_walltime_sim:
             pre_scale = 2.0
@@ -1495,11 +1563,118 @@ class UR5MoveItBridge(Node):
             self._active_exec_timeout_deadline_mono = float(exec_deadline_mono)
         try:
             result_future = goal_handle.get_result_async()
-            if not self._wait_future_done(result_future, timeout_sec=max(1.0, timeout_sec)):
+            goal_check_tol_rad = max(
+                0.05,
+                self._env_float("PANEL_MOVEIT_BRIDGE_GOAL_CHECK_TOL_RAD", 0.08),
+            )
+            goal_check_settle_sec = max(
+                0.25,
+                self._env_float("PANEL_MOVEIT_BRIDGE_GOAL_CHECK_SETTLE_SEC", 0.45),
+            )
+            goal_check_poll_sec = max(
+                0.15,
+                self._env_float("PANEL_MOVEIT_BRIDGE_GOAL_CHECK_POLL_SEC", 0.40),
+            )
+            ee_goal_check_tol_m = max(
+                0.02,
+                float(ee_target_tol_m)
+                if ee_target_tol_m is not None
+                else self._env_float("PANEL_MOVEIT_BRIDGE_EE_TARGET_TOL_M", 0.10),
+            )
+            ee_goal_check_settle_sec = max(
+                0.25,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_EE_TARGET_SETTLE_SEC",
+                    goal_check_settle_sec,
+                ),
+            )
+            goal_check_start_sec = max(
+                4.0,
+                min(
+                    25.0,
+                    max(
+                        4.0,
+                        float(prepared_traj_sec) * 0.60,
+                    ),
+                ),
+            )
+            result_wait_deadline = time.monotonic() + max(1.0, float(timeout_sec))
+            result_wait_started = time.monotonic()
+            last_goal_check_mono = 0.0
+            last_ee_check_mono = 0.0
+            while not result_future.done():
+                now_mono = time.monotonic()
+                if now_mono >= result_wait_deadline:
+                    break
+                if (
+                    (now_mono - result_wait_started) >= goal_check_start_sec
+                    and (now_mono - last_goal_check_mono) >= goal_check_poll_sec
+                ):
+                    last_goal_check_mono = now_mono
+                    reached_early, reached_early_detail = self._wait_joint_goal_reached(
+                        jt,
+                        settle_timeout_sec=goal_check_settle_sec,
+                        tol_rad=goal_check_tol_rad,
+                    )
+                    if reached_early:
+                        meta = {
+                            "action": action_name,
+                            "status_text": "GOAL_REACHED_BEFORE_RESULT",
+                            "goal_check": reached_early_detail,
+                            "goal_check_tol_rad": round(float(goal_check_tol_rad), 4),
+                        }
+                        self.get_logger().info(
+                            "[BRIDGE_EXEC] FollowJointTrajectory goal reached before terminal result "
+                            f"action={action_name} detail={reached_early_detail}"
+                        )
+                        return True, f"fjt_goal_reached_before_result:{reached_early_detail}", meta
+                if (
+                    target_pose is not None
+                    and (now_mono - result_wait_started) >= goal_check_start_sec
+                    and (now_mono - last_ee_check_mono) >= goal_check_poll_sec
+                ):
+                    last_ee_check_mono = now_mono
+                    ee_reached, ee_reached_detail = self._wait_ee_target_reached(
+                        target_pose,
+                        settle_timeout_sec=ee_goal_check_settle_sec,
+                        tol_m=ee_goal_check_tol_m,
+                    )
+                    if ee_reached:
+                        meta = {
+                            "action": action_name,
+                            "status_text": "EE_TARGET_REACHED_BEFORE_RESULT",
+                            "ee_goal_check": ee_reached_detail,
+                            "ee_goal_check_tol_m": round(float(ee_goal_check_tol_m), 4),
+                        }
+                        self.get_logger().info(
+                            "[BRIDGE_EXEC] FollowJointTrajectory ee target reached before terminal result "
+                            f"action={action_name} detail={ee_reached_detail}"
+                        )
+                        return True, f"fjt_ee_target_reached_before_result:{ee_reached_detail}", meta
+                time.sleep(0.05)
+            if not result_future.done():
                 try:
                     goal_handle.cancel_goal_async()
                 except Exception:
                     pass
+                if target_pose is not None:
+                    ee_reached_after_timeout, ee_reached_after_timeout_detail = self._wait_ee_target_reached(
+                        target_pose,
+                        settle_timeout_sec=1.5,
+                        tol_m=ee_goal_check_tol_m,
+                    )
+                    if ee_reached_after_timeout:
+                        meta = {
+                            "action": action_name,
+                            "status_text": "TIMEOUT_EE_TARGET_REACHED",
+                            "timeout_sec": round(float(timeout_sec), 3),
+                            "ee_goal_check": ee_reached_after_timeout_detail,
+                        }
+                        self.get_logger().warning(
+                            "[BRIDGE_EXEC] FollowJointTrajectory TIMEOUT pero ee target alcanzado "
+                            f"action={action_name} detail={ee_reached_after_timeout_detail}"
+                        )
+                        return True, f"fjt_timeout_ee_target_reached:{ee_reached_after_timeout_detail}", meta
                 reached, reached_detail = self._wait_joint_goal_reached(
                     jt,
                     settle_timeout_sec=1.5,
@@ -1575,6 +1750,35 @@ class UR5MoveItBridge(Node):
                 and int(error_code or 0) == -4
                 and "path tolerance" in (error_string or "").lower()
             ):
+                reached_after_abort, reached_after_abort_detail = self._wait_joint_goal_reached(
+                    jt,
+                    settle_timeout_sec=1.0,
+                    tol_rad=goal_check_tol_rad,
+                )
+                if reached_after_abort:
+                    meta["status_text"] = "ABORTED_GOAL_REACHED"
+                    meta["goal_check"] = reached_after_abort_detail
+                    self.get_logger().warning(
+                        "[BRIDGE_EXEC] FollowJointTrajectory path tolerance violation "
+                        "pero el goal articular ya esta alcanzado; aceptando success "
+                        f"action={action_name} detail={reached_after_abort_detail}"
+                    )
+                    return True, f"fjt_aborted_but_goal_reached:{reached_after_abort_detail}", meta
+                if target_pose is not None:
+                    ee_reached_after_abort, ee_reached_after_abort_detail = self._wait_ee_target_reached(
+                        target_pose,
+                        settle_timeout_sec=1.0,
+                        tol_m=ee_goal_check_tol_m,
+                    )
+                    if ee_reached_after_abort:
+                        meta["status_text"] = "ABORTED_EE_TARGET_REACHED"
+                        meta["ee_goal_check"] = ee_reached_after_abort_detail
+                        self.get_logger().warning(
+                            "[BRIDGE_EXEC] FollowJointTrajectory path tolerance violation "
+                            "pero el ee target ya esta alcanzado; aceptando success "
+                            f"action={action_name} detail={ee_reached_after_abort_detail}"
+                        )
+                        return True, f"fjt_aborted_but_ee_target_reached:{ee_reached_after_abort_detail}", meta
                 slow_factor = 2.0
                 slowed = self._scale_joint_trajectory_timing(jt, scale=slow_factor)
                 retry_timeout = max(
@@ -1606,12 +1810,43 @@ class UR5MoveItBridge(Node):
                     retry_on_tolerance_violation=False,
                     path_tol_override_rad=retry_path_tol,
                     goal_time_override_sec=retry_goal_time,
+                    target_pose=target_pose,
+                    ee_target_tol_m=ee_target_tol_m,
                 )
             if (
                 retry_on_tolerance_violation
                 and int(error_code or 0) == -5
                 and "goal_time_tolerance" in (error_string or "").lower()
             ):
+                reached_after_goal_time, reached_after_goal_time_detail = self._wait_joint_goal_reached(
+                    jt,
+                    settle_timeout_sec=1.0,
+                    tol_rad=goal_check_tol_rad,
+                )
+                if reached_after_goal_time:
+                    meta["status_text"] = "GOAL_TIME_TOLERANCE_GOAL_REACHED"
+                    meta["goal_check"] = reached_after_goal_time_detail
+                    self.get_logger().warning(
+                        "[BRIDGE_EXEC] FollowJointTrajectory goal_time_tolerance "
+                        "pero el goal articular ya esta alcanzado; aceptando success "
+                        f"action={action_name} detail={reached_after_goal_time_detail}"
+                    )
+                    return True, f"fjt_goal_time_but_goal_reached:{reached_after_goal_time_detail}", meta
+                if target_pose is not None:
+                    ee_reached_after_goal_time, ee_reached_after_goal_time_detail = self._wait_ee_target_reached(
+                        target_pose,
+                        settle_timeout_sec=1.0,
+                        tol_m=ee_goal_check_tol_m,
+                    )
+                    if ee_reached_after_goal_time:
+                        meta["status_text"] = "GOAL_TIME_TOLERANCE_EE_TARGET_REACHED"
+                        meta["ee_goal_check"] = ee_reached_after_goal_time_detail
+                        self.get_logger().warning(
+                            "[BRIDGE_EXEC] FollowJointTrajectory goal_time_tolerance "
+                            "pero el ee target ya esta alcanzado; aceptando success "
+                            f"action={action_name} detail={ee_reached_after_goal_time_detail}"
+                        )
+                        return True, f"fjt_goal_time_but_ee_target_reached:{ee_reached_after_goal_time_detail}", meta
                 slow_factor = 2.0
                 slowed = self._scale_joint_trajectory_timing(jt, scale=slow_factor)
                 retry_timeout = max(
@@ -1626,6 +1861,8 @@ class UR5MoveItBridge(Node):
                     slowed,
                     timeout_sec=retry_timeout,
                     retry_on_tolerance_violation=False,
+                    target_pose=target_pose,
+                    ee_target_tol_m=ee_target_tol_m,
                 )
             self.get_logger().warning(f"[BRIDGE_EXEC] FollowJointTrajectory FAIL ({detail})")
             return False, f"fjt_aborted:{detail}", meta
@@ -2693,7 +2930,9 @@ class UR5MoveItBridge(Node):
                     minimum_sec=8.0,
                 )
                 fjt_ok, fjt_msg, fjt_meta = self._execute_joint_trajectory_action(
-                    jt_direct, timeout_sec=fjt_timeout
+                    jt_direct,
+                    timeout_sec=fjt_timeout,
+                    target_pose=target,
                 )
                 fjt_detail = self._result_meta_to_message(fjt_meta)
                 if fjt_ok:
@@ -2790,6 +3029,7 @@ class UR5MoveItBridge(Node):
             fjt_ok, fjt_msg, fjt_meta = self._execute_joint_trajectory_action(
                 jt,
                 timeout_sec=fjt_timeout,
+                target_pose=target,
             )
             fjt_detail = self._result_meta_to_message(fjt_meta)
             if fjt_ok:
@@ -3165,7 +3405,9 @@ class UR5MoveItBridge(Node):
             minimum_sec=8.0,
         )
         fjt_ok, fjt_msg, fjt_meta = self._execute_joint_trajectory_action(
-            traj.joint_trajectory, timeout_sec=fjt_timeout
+            traj.joint_trajectory,
+            timeout_sec=fjt_timeout,
+            target_pose=target,
         )
         if fjt_ok:
             self._log_bridge_status(

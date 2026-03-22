@@ -602,6 +602,19 @@
             <parent>wrist_3_link</parent>
             <child>tool0</child>
         </joint>
+        <link name="pick_demo_anchor">
+            <gravity>false</gravity>
+            <pose relative_to="pick_demo_anchor_joint">0 0 0 0 0 0</pose>
+        </link>
+        <joint name="pick_demo_anchor_joint" type="fixed">
+            <!-- Align the detachable-joint origin with the demo grasp center.
+                 tool0 -> rg2_tcp is +0.23 m and the direct demo grasps pick_demo
+                 with a 0.10 m tcp_z_offset, so the object center sits at +0.13 m
+                 in tool0 coordinates when the attach gate is correct. -->
+            <pose relative_to="tool0">0 0 0.13 0 0 0</pose>
+            <parent>tool0</parent>
+            <child>pick_demo_anchor</child>
+        </joint>
 
         <!-- Tool-side detachable joints for physically carrying grasped objects. -->
         <plugin filename="gz-sim-detachable-joint-system"
@@ -696,7 +709,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>rg2_hand</parent_link>
+            <parent_link>pick_demo_anchor</parent_link>
             <child_model>pick_demo</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/pick_demo/attach</attach_topic>

@@ -199,6 +199,7 @@ from .panel_utils import (
     CmdRunner,
     GZ_LOG_FILTERS,
     RosWorker,
+    clock_status as graph_clock_status,
     detect_base_frame,
     ensure_dir,
     bulk_update_object_positions,
@@ -508,9 +509,16 @@ class CameraView(QLabel):
         self.setStyleSheet("background:#0b0f14; color:#94a3b8; border:1px solid #1f2937;")
 
     def set_frame(self, qimg, width=0, height=0):
+        if qimg is None or qimg.isNull():
+            return
+        src_w = int(width or qimg.width() or 0)
+        src_h = int(height or qimg.height() or 0)
+        # Ignore clearly invalid placeholder frames and keep the last good image.
+        if src_w <= 2 or src_h <= 2 or qimg.width() <= 2 or qimg.height() <= 2:
+            return
         self._qimg = qimg
-        self._img_width = width
-        self._img_height = height
+        self._img_width = src_w
+        self._img_height = src_h
         self._update_pixmap()
 
     def mousePressEvent(self, event):
@@ -548,11 +556,20 @@ class CameraView(QLabel):
         self._update_pixmap()
 
     def _update_pixmap(self):
-        if self._qimg is None:
+        if self._qimg is None or self._qimg.isNull():
+            return
+        target_w = int(self.width())
+        target_h = int(self.height())
+        # Preserve the last valid pixmap while layouts are still settling.
+        if target_w <= 8 or target_h <= 8:
             return
         pix = QPixmap.fromImage(self._qimg)
+        if pix.isNull() or pix.width() <= 1 or pix.height() <= 1:
+            return
         transform = Qt.FastTransformation if CAMERA_FAST_SCALE else Qt.SmoothTransformation
-        pix = pix.scaled(self.width(), self.height(), Qt.KeepAspectRatio, transform)
+        pix = pix.scaled(target_w, target_h, Qt.KeepAspectRatio, transform)
+        if pix.isNull() or pix.width() <= 1 or pix.height() <= 1:
+            return
         self.setPixmap(pix)
 
 
@@ -1103,6 +1120,13 @@ class CameraController:
         if not frame:
             return
         topic, qimg, w, h, fps, ts = frame
+        if int(w) <= 2 or int(h) <= 2:
+            p._emit_log_throttled(
+                "camera:tiny_source_frame",
+                f"[CAMERA][WARN] tiny_source_frame dropped topic={topic} size={int(w)}x{int(h)}",
+                min_interval=1.0,
+            )
+            return
         # Keep a fresh frame cache for TFM/runtime capture even in offscreen runs.
         p._last_camera_frame = (qimg, w, h, ts)
         if CAMERA_UI_SKIP_HIDDEN and (not p.isVisible() or not p.camera_view.isVisible()):
@@ -1628,6 +1652,11 @@ class ControlPanelV2(QMainWindow):
         self._exp_info: Dict[str, object] = {}
         self._tfm_infer_inflight = False
         self._tfm_execute_inflight = False
+        self._tfm_infer_pending_request_id: str = ""
+        self._tfm_execute_pending_request_id: str = ""
+        self._tfm_canonical_ctx: Optional[Dict[str, object]] = None
+        self._pick_object_grasp_override: Optional[Dict[str, object]] = None
+        self._pick_object_worker_started = False
         self._marker_pub = None
         self._controller_check_inflight = False
         self._controllers_ok = False
@@ -2451,6 +2480,9 @@ class ControlPanelV2(QMainWindow):
             pos_map = dict(self._last_joint_positions)
             vel_map: Dict[str, float] = {}
             state_age_sec = float("inf")
+            local_state_age_sec = float("inf")
+            if pos_map and self._last_joint_time > 0.0:
+                local_state_age_sec = max(0.0, now - float(self._last_joint_time))
             if self._ros_worker_started and self.ros_worker is not None:
                 try:
                     payload, ts = self.ros_worker.get_last_joint_state()
@@ -2481,6 +2513,8 @@ class ControlPanelV2(QMainWindow):
                                 continue
                     if ts:
                         state_age_sec = max(0.0, now - float(ts))
+            if state_age_sec > max_state_age_sec and local_state_age_sec <= max_state_age_sec:
+                state_age_sec = local_state_age_sec
             ok = state_age_sec <= max_state_age_sec
             max_vel = 0.0
             for idx, name in enumerate(UR5_JOINT_NAMES):
@@ -4908,13 +4942,34 @@ class ControlPanelV2(QMainWindow):
     def _controllers_ready(self) -> Tuple[bool, str]:
         now = time.time()
         gz_state = self._gazebo_state()
-        if gz_state != "GAZEBO_READY":
+        proc_ok, proc_reason = self._gazebo_process_signal()
+        clock_ok, clock_reason = self._clock_status()
+        clock_graph_fallback = ""
+        if not clock_ok:
+            graph_clock_ok, graph_clock_reason = graph_clock_status()
+            if graph_clock_ok and str(clock_reason).startswith("age="):
+                clock_ok = True
+                clock_graph_fallback = str(graph_clock_reason or "graph")
+                self._emit_log_throttled(
+                    "ctrl_gate_clock_graph_fallback",
+                    "[CTRL_GATE] worker /clock stale; accepting graph fallback "
+                    f"state={gz_state} worker={clock_reason} graph={clock_graph_fallback}",
+                    min_interval=2.0,
+                )
+        if not proc_ok:
+            return False, f"gazebo_not_ready state={gz_state} process={proc_reason}"
+        if not clock_ok:
+            return False, f"gazebo_not_ready state={gz_state} clock={clock_reason}"
+        gazebo_motion_degraded = gz_state == "GAZEBO_DEGRADED"
+        if gz_state in ("GAZEBO_OFF", "GAZEBO_STARTING", "GAZEBO_MONITOR_BUG"):
             return False, f"gazebo_not_ready state={gz_state}"
         if (
             CONTROLLER_READY_CACHE_SEC > 0.0
             and self._controllers_ok
             and (now - self._last_controller_check) < CONTROLLER_READY_CACHE_SEC
         ):
+            if gazebo_motion_degraded:
+                return True, "cached gazebo_degraded_motion_ok"
             return True, "cached"
         if not self._ros_worker_started or not self.ros_worker.node_ready():
             return False, "nodo ROS no listo"
@@ -5023,7 +5078,24 @@ class ControlPanelV2(QMainWindow):
             return False, f"follow_joint_traj_not_ready expected={expected}"
         self._controllers_last_ok_ts = now
         self._last_controller_check = now
-        return True, f"controllers activos source={controller_source}"
+        if gazebo_motion_degraded:
+            self._emit_log_throttled(
+                "ctrl_gate_gazebo_degraded_motion_ok",
+                "[CTRL_GATE] accepting motion readiness with Gazebo=GAZEBO_DEGRADED "
+                f"(process={proc_reason} clock={clock_reason}"
+                f"{' graph=' + clock_graph_fallback if clock_graph_fallback else ''})",
+                min_interval=2.0,
+            )
+            return True, (
+                f"controllers activos source={controller_source} "
+                f"gazebo_degraded_motion_ok process={proc_reason} clock={clock_reason}"
+                f"{' graph=' + clock_graph_fallback if clock_graph_fallback else ''}"
+            )
+        return (
+            True,
+            f"controllers activos source={controller_source}"
+            f"{' clock_graph_fallback=' + clock_graph_fallback if clock_graph_fallback else ''}",
+        )
 
     def _is_transient_controller_reason(self, reason: Optional[str]) -> bool:
         text = str(reason or "").lower()
@@ -5069,15 +5141,9 @@ class ControlPanelV2(QMainWindow):
             return None, self._ros_node_not_ready_reason()
         if not service_name:
             return None, "service vacío"
-        client_node = None
-        if self._ros_worker_started and self.ros_worker is not None and self.ros_worker.node_ready():
-            try:
-                with self.ros_worker._lock:
-                    client_node = getattr(self.ros_worker, "_node", None)
-            except Exception:
-                client_node = None
-        if client_node is None:
-            client_node = self._moveit_node
+        # El gate canónico no debe depender del nodo del servicio remoto mientras
+        # /panel/tfm_execute está bloqueado esperando el resultado del pick.
+        client_node = self._moveit_node
         client_node_id = id(client_node)
         if (
             self._controller_client is None
@@ -7419,6 +7485,147 @@ class ControlPanelV2(QMainWindow):
     def _tfm_infer_grasp(self):
         return tfm_infer(self)
 
+    def _tfm_canonical_use_pick_object(self) -> bool:
+        return str(
+            os.environ.get("PANEL_TFM_CANONICAL_USE_PICK_OBJECT", "1") or "1"
+        ).strip().lower() not in ("0", "false", "no", "off")
+
+    def _complete_pending_tfm_infer_request(self, success: bool, message: str) -> None:
+        request_id = str(getattr(self, "_tfm_infer_pending_request_id", "") or "").strip()
+        if not request_id:
+            return
+        self._tfm_infer_pending_request_id = ""
+        if getattr(self, "_ros_worker_started", False) and getattr(self, "ros_worker", None) is not None:
+            try:
+                self.ros_worker.complete_tfm_infer_request(request_id, success, message)
+            except Exception:
+                pass
+
+    def _complete_pending_tfm_execute_request(self, success: bool, message: str) -> None:
+        request_id = str(getattr(self, "_tfm_execute_pending_request_id", "") or "").strip()
+        if not request_id:
+            return
+        self._tfm_execute_pending_request_id = ""
+        if getattr(self, "_ros_worker_started", False) and getattr(self, "ros_worker", None) is not None:
+            try:
+                self.ros_worker.complete_tfm_execute_request(request_id, success, message)
+            except Exception:
+                pass
+
+    def _build_tfm_pick_object_override(
+        self,
+        *,
+        grasp_base: Dict[str, float],
+        selected_object: str,
+        source: str,
+    ) -> Dict[str, object]:
+        return {
+            "enabled": True,
+            "mode": "tfm_moveit",
+            "selected_object": str(selected_object or "").strip(),
+            "frame": self._business_base_frame(),
+            "x": float(grasp_base.get("x", 0.0) or 0.0),
+            "y": float(grasp_base.get("y", 0.0) or 0.0),
+            "z": float(grasp_base.get("z", 0.0) or 0.0),
+            "yaw_deg": float(grasp_base.get("yaw_deg", 0.0) or 0.0),
+            "source": str(source or "unknown"),
+            "created_ts": time.time(),
+        }
+
+    def _tfm_canonical_state_reset(
+        self,
+        *,
+        selected_object: str,
+        grasp_base: Dict[str, float],
+        source: str,
+    ) -> None:
+        session = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        self._tfm_canonical_ctx = {
+            "route": "TFM->MoveIt",
+            "session": session,
+            "selected_object": str(selected_object or "").strip(),
+            "source": str(source or "unknown"),
+            "grasp_base": dict(grasp_base),
+            "state": "READY",
+            "events": [],
+            "start_ts": time.time(),
+            "success": None,
+            "message": "",
+        }
+        self._audit_append(
+            "logs/tfm_moveit_canonical.log",
+            "[TFM][CANON] start "
+            f"session={session} selected={selected_object or 'none'} "
+            f"grasp=({float(grasp_base.get('x', 0.0) or 0.0):.3f},"
+            f"{float(grasp_base.get('y', 0.0) or 0.0):.3f},"
+            f"{float(grasp_base.get('z', 0.0) or 0.0):.3f}) "
+            f"yaw={float(grasp_base.get('yaw_deg', 0.0) or 0.0):.1f} "
+            f"source={source or 'unknown'}",
+        )
+        self._audit_write_json(
+            "artifacts/tfm_moveit_canonical_last.json",
+            dict(self._tfm_canonical_ctx),
+        )
+
+    def _tfm_canonical_phase_update(self, state: str, *, detail: str = "") -> None:
+        ctx = getattr(self, "_tfm_canonical_ctx", None)
+        if not isinstance(ctx, dict):
+            return
+        phase = str(state or "").strip() or "UNKNOWN"
+        event = {
+            "ts": time.time(),
+            "state": phase,
+            "detail": str(detail or ""),
+        }
+        events = ctx.setdefault("events", [])
+        if isinstance(events, list):
+            events.append(event)
+        ctx["state"] = phase
+        self._audit_append(
+            "logs/tfm_moveit_canonical.log",
+            f"[TFM][CANON] state={phase} detail={detail or 'n/a'}",
+        )
+        self._audit_write_json(
+            "artifacts/tfm_moveit_canonical_last.json",
+            dict(ctx),
+        )
+
+    def _tfm_canonical_finish(self, success: bool, message: str, *, final_state: str) -> None:
+        ctx = getattr(self, "_tfm_canonical_ctx", None)
+        end_ts = time.time()
+        if isinstance(ctx, dict):
+            ctx["success"] = bool(success)
+            ctx["message"] = str(message or "")
+            ctx["final_state"] = str(final_state or ("HOME_DONE" if success else "FAIL_TERMINAL"))
+            ctx["state"] = ctx["final_state"]
+            ctx["end_ts"] = end_ts
+            ctx["duration_sec"] = max(0.0, end_ts - float(ctx.get("start_ts", end_ts) or end_ts))
+            events = ctx.setdefault("events", [])
+            if isinstance(events, list):
+                events.append(
+                    {
+                        "ts": end_ts,
+                        "state": ctx["final_state"],
+                        "detail": str(message or ""),
+                    }
+                )
+            self._audit_append(
+                "logs/tfm_moveit_canonical.log",
+                "[TFM][CANON] finish "
+                f"success={str(bool(success)).lower()} "
+                f"final_state={ctx['final_state']} "
+                f"duration={float(ctx.get('duration_sec', 0.0) or 0.0):.2f}s "
+                f"message={message or 'n/a'}",
+            )
+            self._audit_write_json(
+                "artifacts/tfm_moveit_canonical_last.json",
+                dict(ctx),
+            )
+        self._pick_object_grasp_override = None
+        self._tfm_canonical_ctx = None
+        self._tfm_execute_inflight = False
+        self._complete_pending_tfm_execute_request(bool(success), str(message or ""))
+
     def _restore_infer_selection_snapshot(self, snapshot: object) -> None:
         if self._selected_object:
             return
@@ -7459,11 +7666,13 @@ class ControlPanelV2(QMainWindow):
                 f"[TFM] infer_end session={self._infer_session_id} status=FAIL "
                 f"infer_ms={infer_ms:.2f} total_ms={total_ms:.2f} err={err}",
             )
+            self._complete_pending_tfm_infer_request(False, f"inferencia fallida ({err})")
             return
         pred = result.get("pred") if isinstance(result.get("pred"), dict) else None
         if not pred:
             self._set_status("TFM: salida inválida", error=True)
             self._audit_append("logs/infer.log", "[TFM] infer_end status=FAIL err=salida_invalida")
+            self._complete_pending_tfm_infer_request(False, "salida inválida")
             return
         self._last_grasp_px = {
             "cx": float(pred.get("cx", 0.0)),
@@ -7528,8 +7737,10 @@ class ControlPanelV2(QMainWindow):
         self._refresh_science_ui()
         if grasp_rect_publish_ok:
             self._set_status("TFM: grasp inferido y publicado", error=False)
+            infer_message = "grasp inferido y publicado"
         else:
             self._set_status("TFM: grasp inferido", error=False)
+            infer_message = "grasp inferido"
         audit_payload = {
             "timestamp": datetime.now().isoformat(timespec="seconds"),
             "session": self._infer_session_id,
@@ -7580,6 +7791,7 @@ class ControlPanelV2(QMainWindow):
             f"grasp={self._last_grasp_px} cornell={self._last_cornell} "
             f"cornell_reason={self._last_cornell_reason!r}",
         )
+        self._complete_pending_tfm_infer_request(True, infer_message)
 
     def _sync_tfm_module_grasp_state(self) -> None:
         if not self.tfm_module or not self._last_grasp_px:
@@ -7788,18 +8000,77 @@ class ControlPanelV2(QMainWindow):
                 "logs/execute.log",
                 f"[TFM] execute FAIL reason=base_grasp_missing source={self._last_grasp_source or 'unknown'}",
             )
-            return True
+            return False
         if self._tfm_execute_inflight:
             self._set_status("TFM: ejecución en curso", error=False)
-            return True
+            return False
         if not self._moveit_required:
             self._set_status("TFM: MoveIt no habilitado", error=True)
             self._audit_append("logs/execute.log", "[TFM] execute FAIL reason=moveit_disabled")
+            return False
+
+        grasp_base = dict(self._last_grasp_base)
+        source = self._last_grasp_source or "unknown"
+        if self._tfm_canonical_use_pick_object():
+            selected_name = str(
+                getattr(self, "_selected_object", "") or getattr(self, "_last_grasp_selection_name", "") or ""
+            ).strip()
+            grasp_selection = str(getattr(self, "_last_grasp_selection_name", "") or "").strip()
+            if not selected_name:
+                self._set_status("TFM: selección de objeto no disponible", error=True)
+                self._audit_append(
+                    "logs/execute.log",
+                    "[TFM] execute FAIL reason=selected_object_missing_for_canonical_route",
+                )
+                return False
+            if grasp_selection and selected_name != grasp_selection:
+                self._set_status(
+                    f"TFM: grasp no corresponde a la selección actual ({grasp_selection} -> {selected_name})",
+                    error=True,
+                )
+                self._audit_append(
+                    "logs/execute.log",
+                    "[TFM] execute FAIL reason=selection_grasp_mismatch "
+                    f"selected={selected_name} grasp_selection={grasp_selection}",
+                )
+                return False
+            self._tfm_execute_inflight = True
+            self._pick_object_grasp_override = self._build_tfm_pick_object_override(
+                grasp_base=grasp_base,
+                selected_object=selected_name,
+                source=source,
+            )
+            self._tfm_canonical_state_reset(
+                selected_object=selected_name,
+                grasp_base=grasp_base,
+                source=source,
+            )
+            self._tfm_canonical_phase_update("READY", detail="preconditions_ok")
+            self._tfm_canonical_phase_update("OBJECT_SELECTED", detail=f"name={selected_name}")
+            self._tfm_canonical_phase_update(
+                "GRASP_FRESH",
+                detail=f"source={source} age_sec={max(0.0, time.time() - float(self._last_grasp_update_ts or 0.0)):.2f}",
+            )
+            self._tfm_canonical_phase_update(
+                "VISUAL_GRASP_OK",
+                detail=f"topic={self._grasp_rect_topic or '/grasp_rect'}",
+            )
+            self._tfm_canonical_phase_update(
+                "EXECUTABLE_GRASP_OK",
+                detail=f"pose_topic={MOVEIT_POSE_TOPIC} cartesian_topic={MOVEIT_CARTESIAN_POSE_TOPIC}",
+            )
+            setattr(self, "_pick_object_worker_started", False)
+            run_pick_object(self)
+            if not bool(getattr(self, "_pick_object_worker_started", False)):
+                self._tfm_canonical_finish(
+                    False,
+                    "tfm_canonical_pick_object_not_started",
+                    final_state="FAIL_TERMINAL",
+                )
+                return False
             return True
 
         self._tfm_execute_inflight = True
-        grasp_base = dict(self._last_grasp_base)
-        source = self._last_grasp_source or "unknown"
 
         def _env_float(name: str, default: float) -> float:
             try:
@@ -8090,9 +8361,14 @@ class ControlPanelV2(QMainWindow):
                     f"retreat=({x:.3f},{y:.3f},{z_retreat:.3f}) yaw={yaw_deg:.1f}",
                 )
                 self._ui_set_status("TFM: PREGRASP + DESCENT + GRASP + RETREAT ejecutados", error=False)
+                self._complete_pending_tfm_execute_request(
+                    True,
+                    "PREGRASP + DESCENT + GRASP + RETREAT ejecutados",
+                )
             except Exception as exc:
                 self._audit_append("logs/execute.log", f"[TFM] execute FAIL mode=moveit_sequence err={exc}")
                 self._ui_set_status(f"TFM: ejecución fallida ({exc})", error=True)
+                self._complete_pending_tfm_execute_request(False, f"ejecución fallida ({exc})")
             finally:
                 self._tfm_execute_inflight = False
 
@@ -8142,8 +8418,10 @@ class ControlPanelV2(QMainWindow):
             "result_topic=/desired_grasp/result",
         )
         handled = self._execute_tfm_world_grasp()
-        if handled:
+        if handled and self._tfm_execute_inflight:
             return True, "ejecucion iniciada"
+        if handled:
+            return False, "ejecución no iniciada"
         self._audit_append(
             "logs/execute.log",
             "[TFM] execute FAIL reason=world_grasp_unavailable",
@@ -10276,6 +10554,12 @@ class ControlPanelV2(QMainWindow):
                     pass
 
         ok, message = self._tfm_infer_grasp()
+        if bool(ok) and request_id and bool(getattr(self, "_tfm_infer_inflight", False)):
+            self._tfm_infer_pending_request_id = request_id
+            self._emit_log(
+                f"[TFM][REMOTE][INFER_ACK] request_id={request_id} deferred=true pending_result=true"
+            )
+            return
         _ack(bool(ok), str(message or "n/a"))
 
     @pyqtSlot(str)
@@ -10299,6 +10583,12 @@ class ControlPanelV2(QMainWindow):
                     pass
 
         ok, message = self._tfm_publish_grasp()
+        if bool(ok) and request_id and bool(getattr(self, "_tfm_execute_inflight", False)):
+            self._tfm_execute_pending_request_id = request_id
+            self._emit_log(
+                f"[TFM][REMOTE][EXEC_ACK] request_id={request_id} deferred=true pending_result=true"
+            )
+            return
         _ack(bool(ok), str(message or "n/a"))
 
     @pyqtSlot(str)

@@ -59,11 +59,26 @@ from .panel_state import MoveItState
 
 def run_pick_object(panel) -> None:
     """Ejecuta pick & place del objeto seleccionado hacia la cesta."""
+    setattr(panel, "_pick_object_worker_started", False)
+
     def _dbg(msg: str) -> None:
         if panel._debug_logs_enabled:
             panel._emit_log(msg)
 
-    def _pick_orientation() -> tuple[float, float, float, float]:
+    def _quat_multiply(
+        q1: tuple[float, float, float, float],
+        q2: tuple[float, float, float, float],
+    ) -> tuple[float, float, float, float]:
+        x1, y1, z1, w1 = q1
+        x2, y2, z2, w2 = q2
+        return (
+            (w1 * x2) + (x1 * w2) + (y1 * z2) - (z1 * y2),
+            (w1 * y2) - (x1 * z2) + (y1 * w2) + (z1 * x2),
+            (w1 * z2) + (x1 * y2) - (y1 * x2) + (z1 * w2),
+            (w1 * w2) - (x1 * x2) - (y1 * y2) - (z1 * z2),
+        )
+
+    def _pick_orientation(yaw_deg: Optional[float] = None) -> tuple[float, float, float, float]:
         raw = str(
             os.environ.get(
                 "PANEL_PICK_OBJECT_ORIENTATION_XYZW",
@@ -79,8 +94,21 @@ def run_pick_object(panel) -> None:
             parts = [0.70710678, 0.0, 0.70710678, 0.0]
         norm = math.sqrt(sum(v * v for v in parts))
         if norm <= 1e-6:
-            return (0.70710678, 0.0, 0.70710678, 0.0)
-        return tuple(v / norm for v in parts)
+            base_q = (0.70710678, 0.0, 0.70710678, 0.0)
+        else:
+            base_q = tuple(v / norm for v in parts)
+        use_yaw = str(
+            os.environ.get("PANEL_TFM_CANONICAL_USE_GRASP_YAW", "1") or "1"
+        ).strip().lower() not in ("0", "false", "no", "off")
+        if yaw_deg is None or not use_yaw or not math.isfinite(float(yaw_deg)):
+            return base_q
+        yaw_rad = math.radians(float(yaw_deg))
+        yaw_q = (0.0, 0.0, math.sin(yaw_rad / 2.0), math.cos(yaw_rad / 2.0))
+        out_q = _quat_multiply(yaw_q, base_q)
+        out_norm = math.sqrt(sum(v * v for v in out_q))
+        if out_norm <= 1e-6:
+            return base_q
+        return tuple(v / out_norm for v in out_q)
 
     def _block(reason: str, *, status_text: Optional[str] = None, error: bool = False) -> None:
         state = getattr(getattr(panel, "_system_state", None), "value", "n/a")
@@ -120,6 +148,25 @@ def run_pick_object(panel) -> None:
             f"reason={reason} prev_ui={prev_ui or 'none'} prev_user={prev_user or 'none'} "
             f"prev_user_ts={prev_ts:.3f}"
         )
+
+    canonical_override = getattr(panel, "_pick_object_grasp_override", None)
+    canonical_active = isinstance(canonical_override, dict) and bool(canonical_override.get("enabled", False))
+
+    def _canonical_phase(state: str, detail: str = "") -> None:
+        if not canonical_active:
+            return
+        try:
+            panel._tfm_canonical_phase_update(state, detail=detail)
+        except Exception:
+            pass
+
+    def _canonical_finish(success: bool, message: str, final_state: str) -> None:
+        if not canonical_active:
+            return
+        try:
+            panel._tfm_canonical_finish(success, message, final_state=final_state)
+        except Exception:
+            pass
 
     panel._log_button("PICK Objeto")
     if not panel._require_ready_basic("PICK Objeto"):
@@ -392,6 +439,83 @@ def run_pick_object(panel) -> None:
         obj_base_stamp_ns = int(_obj_tf_stamp.sec) * 1_000_000_000 + int(_obj_tf_stamp.nanosec)
     except Exception:
         obj_base_stamp_ns = 0
+    grasp_yaw_deg: Optional[float] = None
+    if canonical_active:
+        override_selected = str(canonical_override.get("selected_object", "") or "").strip()
+        override_frame = str(canonical_override.get("frame", "") or base_frame).strip() or base_frame
+        if override_selected and override_selected != obj_name:
+            _block(
+                "canonical_selection_mismatch",
+                status_text="TFM->MoveIt: selección/grasp inconsistentes",
+                error=True,
+            )
+            panel._emit_log(
+                "[PICK_OBJ][TFM_CANON] selection_mismatch "
+                f"selected={obj_name} override_selected={override_selected}"
+            )
+            _canonical_finish(False, "canonical_selection_mismatch", "FAIL_TERMINAL")
+            return
+        if override_frame != base_frame:
+            _block(
+                "canonical_frame_mismatch",
+                status_text="TFM->MoveIt: frame de grasp inconsistente",
+                error=True,
+            )
+            panel._emit_log(
+                "[PICK_OBJ][TFM_CANON] frame_mismatch "
+                f"override_frame={override_frame} base_frame={base_frame}"
+            )
+            _canonical_finish(False, "canonical_frame_mismatch", "FAIL_TERMINAL")
+            return
+        try:
+            max_override_delta = float(
+                os.environ.get("PANEL_TFM_CANONICAL_GRASP_XY_MAX_DELTA_M", "0.080")
+            )
+        except Exception:
+            max_override_delta = 0.080
+        snap_selected_xy = str(
+            os.environ.get("PANEL_TFM_CANONICAL_SNAP_SELECTED_XY", "1")
+        ).strip().lower() not in ("0", "false", "no", "off")
+        override_x_raw = float(canonical_override.get("x", bx) or bx)
+        override_y_raw = float(canonical_override.get("y", by) or by)
+        override_x = float(override_x_raw)
+        override_y = float(override_y_raw)
+        override_dxy = math.hypot(override_x - float(bx), override_y - float(by))
+        if override_dxy > max_override_delta:
+            if not snap_selected_xy:
+                _block(
+                    "canonical_grasp_xy_out_of_gate",
+                    status_text="TFM->MoveIt: grasp fuera del objeto seleccionado",
+                    error=True,
+                )
+                panel._emit_log(
+                    "[PICK_OBJ][TFM_CANON] grasp_xy_out_of_gate "
+                    f"selected_xy=({float(bx):.3f},{float(by):.3f}) "
+                    f"grasp_xy=({override_x:.3f},{override_y:.3f}) "
+                    f"dxy={override_dxy:.3f} max={max_override_delta:.3f}"
+                )
+                _canonical_finish(False, "canonical_grasp_xy_out_of_gate", "FAIL_TERMINAL")
+                return
+            panel._emit_log(
+                "[PICK_OBJ][TFM_CANON] grasp_xy_out_of_gate_snap "
+                f"selected_xy=({float(bx):.3f},{float(by):.3f}) "
+                f"grasp_xy_raw=({override_x_raw:.3f},{override_y_raw:.3f}) "
+                f"dxy={override_dxy:.3f} max={max_override_delta:.3f} "
+                "action=use_selected_object_xy"
+            )
+            override_x = float(bx)
+            override_y = float(by)
+        grasp_yaw_deg = float(canonical_override.get("yaw_deg", 0.0) or 0.0)
+        panel._emit_log(
+            "[PICK_OBJ][TFM_CANON] override_xy "
+            f"selected_xy=({float(bx):.3f},{float(by):.3f}) "
+            f"grasp_xy_raw=({override_x_raw:.3f},{override_y_raw:.3f}) "
+            f"grasp_xy_exec=({override_x:.3f},{override_y:.3f}) "
+            f"dxy={override_dxy:.3f} yaw={grasp_yaw_deg:.1f}"
+        )
+        bx = override_x
+        by = override_y
+        pose_source = "tfm_grasp_override"
     basket_coords, _ = transform_point_to_frame(
         BASKET_DROP,
         base_frame,
@@ -530,7 +654,7 @@ def run_pick_object(panel) -> None:
                 float(lift_pose[2]) + (float(transport_pose[2]) - float(lift_pose[2])) * frac,
             )
         )
-    pick_orientation = _pick_orientation()
+    pick_orientation = _pick_orientation(grasp_yaw_deg if canonical_active else None)
 
     _dbg(
         f"[PICK_OBJ_DEBUG] BASE: APPROACH=({approach_pose[0]:.3f}, {approach_pose[1]:.3f}, {approach_pose[2]:.3f}), "
@@ -845,28 +969,58 @@ def run_pick_object(panel) -> None:
                 panel.signal_run_ui.emit(_wrapped)
                 return done.wait(timeout=max(0.2, timeout_sec))
 
-            def _restart_moveit_bridge_and_wait() -> None:
-                panel._emit_log(
-                    "[PICK_OBJ][MOVEIT][PLAN] bridge_recover restarting "
-                    "node=ur5_moveit_bridge pose_topic=/desired_grasp result_topic=/desired_grasp/result"
-                )
-                _run_ui_sync(lambda: panel._stop_moveit_bridge(), timeout_sec=2.5)
-                time.sleep(0.2)
-                _run_ui_sync(lambda: panel._start_moveit_bridge(), timeout_sec=3.0)
-                deadline = time.time() + 6.0
+            def _read_bridge_topics() -> tuple[int, int, int, float, bool]:
+                pose_subs = panel.ros_worker.topic_subscriber_count(topic)
+                res_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
+                res_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
+                hb_age_local = panel.ros_worker.moveit_bridge_heartbeat_age()
+                hb_recent_local = panel.ros_worker.has_recent_moveit_bridge_heartbeat(1.2)
+                return pose_subs, res_pubs, res_subs, hb_age_local, hb_recent_local
+
+            def _wait_bridge_match(
+                *,
+                timeout_sec: float,
+                log_tag: str,
+            ) -> tuple[bool, int, int, int, float, bool]:
+                deadline = time.time() + max(0.5, float(timeout_sec))
                 while time.time() < deadline:
                     if not panel._ros_worker_started:
                         panel._ensure_ros_worker_started()
                     if panel._ros_worker_started and panel.ros_worker.node_ready():
-                        pose_subs = panel.ros_worker.topic_subscriber_count(topic)
-                        result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
+                        pose_subs, result_pubs, result_subs_local, hb_age_local, hb_recent_local = _read_bridge_topics()
+                        hb_age_local_txt = "inf" if math.isinf(hb_age_local) else f"{hb_age_local:.2f}s"
                         panel._emit_log(
-                            "[PICK_OBJ][MOVEIT][PLAN] bridge_recover_check "
-                            f"pose_subs={pose_subs} result_pubs={result_pubs}"
+                            f"[PICK_OBJ][MOVEIT][PLAN] {log_tag} "
+                            f"pose_subs={pose_subs} result_pubs={result_pubs} result_subs={result_subs_local} "
+                            f"hb_recent={str(bool(hb_recent_local)).lower()} hb_age={hb_age_local_txt}"
                         )
                         if pose_subs > 0 and result_pubs > 0:
-                            return
+                            return True, pose_subs, result_pubs, result_subs_local, hb_age_local, hb_recent_local
                     time.sleep(0.4)
+                pose_subs = panel.ros_worker.topic_subscriber_count(topic)
+                result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
+                result_subs_local = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
+                hb_age_local = panel.ros_worker.moveit_bridge_heartbeat_age()
+                hb_recent_local = panel.ros_worker.has_recent_moveit_bridge_heartbeat(1.2)
+                return False, pose_subs, result_pubs, result_subs_local, hb_age_local, hb_recent_local
+
+            def _restart_moveit_bridge_and_wait(*, cold_start: bool) -> None:
+                if cold_start:
+                    panel._emit_log(
+                        "[PICK_OBJ][MOVEIT][PLAN] bridge_cold_start "
+                        "node=ur5_moveit_bridge pose_topic=/desired_grasp result_topic=/desired_grasp/result"
+                    )
+                else:
+                    panel._emit_log(
+                        "[PICK_OBJ][MOVEIT][PLAN] bridge_recover restarting "
+                        "node=ur5_moveit_bridge pose_topic=/desired_grasp result_topic=/desired_grasp/result"
+                    )
+                    _run_ui_sync(lambda: panel._stop_moveit_bridge(), timeout_sec=2.5)
+                    time.sleep(0.2)
+                _run_ui_sync(lambda: panel._start_moveit_bridge(), timeout_sec=3.0)
+                matched, *_diag = _wait_bridge_match(timeout_sec=6.0, log_tag="bridge_recover_check")
+                if matched:
+                    return
                 raise RuntimeError("MoveItBridge no recuperado tras reinicio (pose_subs/result_pubs)")
 
             if not panel._ros_worker_started:
@@ -874,11 +1028,7 @@ def run_pick_object(panel) -> None:
             if not panel.ros_worker.node_ready():
                 raise RuntimeError("ROS node no listo para MoveIt bridge")
             panel.ros_worker.subscribe_moveit_bridge_heartbeat(moveit_hb_topic)
-            subs = panel.ros_worker.topic_subscriber_count(topic)
-            result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
-            result_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
-            hb_age = panel.ros_worker.moveit_bridge_heartbeat_age()
-            hb_recent = panel.ros_worker.has_recent_moveit_bridge_heartbeat(1.2)
+            subs, result_pubs, result_subs, hb_age, hb_recent = _read_bridge_topics()
             hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
             panel._emit_log(
                 f"[PICK_OBJ][MOVEIT][PLAN] topics pose_subs={subs} result_pubs={result_pubs} result_subs={result_subs} "
@@ -886,27 +1036,49 @@ def run_pick_object(panel) -> None:
                 f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
             )
             if subs <= 0 or result_pubs <= 0:
-                panel._emit_log(
-                    "[PICK_OBJ][MOVEIT][PLAN] bridge_path_missing "
-                    f"pose_subs={subs} result_pubs={result_pubs}; attempting_recover=true"
-                )
-                _restart_moveit_bridge_and_wait()
-                bridge_recovered = True
-                subs = panel.ros_worker.topic_subscriber_count(topic)
-                result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
-                result_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
-                hb_age = panel.ros_worker.moveit_bridge_heartbeat_age()
-                hb_recent = panel.ros_worker.has_recent_moveit_bridge_heartbeat(1.2)
-                hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
-                panel._emit_log(
-                    f"[PICK_OBJ][MOVEIT][PLAN] topics_after_recover pose_subs={subs} result_pubs={result_pubs} "
-                    f"result_subs={result_subs} pose_topic={topic} result_topic={moveit_result_topic} "
-                    f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
-                )
-                if subs <= 0:
-                    msg = f"MoveItBridge NO conectado: {topic} sin subscriptores"
-                    panel._emit_log(f"[PICK_OBJ][ABORT] {msg}")
-                    raise RuntimeError(msg)
+                bridge_alive = bool(panel._proc_alive(getattr(panel, "moveit_bridge_proc", None)))
+                bridge_detected = False
+                try:
+                    bridge_detected = bool(panel._moveit_bridge_detected())
+                except Exception:
+                    bridge_detected = False
+                if bridge_alive or bridge_detected or hb_recent:
+                    panel._emit_log(
+                        "[PICK_OBJ][MOVEIT][PLAN] bridge_match_warmup "
+                        f"pose_subs={subs} result_pubs={result_pubs} bridge_alive={str(bridge_alive).lower()} "
+                        f"bridge_detected={str(bool(bridge_detected)).lower()}"
+                    )
+                    matched, subs, result_pubs, result_subs, hb_age, hb_recent = _wait_bridge_match(
+                        timeout_sec=1.8,
+                        log_tag="bridge_match_warmup_check",
+                    )
+                    if matched:
+                        hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
+                        panel._emit_log(
+                            f"[PICK_OBJ][MOVEIT][PLAN] bridge_match_warmup_ok pose_subs={subs} result_pubs={result_pubs} "
+                            f"result_subs={result_subs} hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
+                        )
+                if subs <= 0 or result_pubs <= 0:
+                    if not bridge_alive and not bridge_detected and not hb_recent:
+                        _restart_moveit_bridge_and_wait(cold_start=True)
+                    else:
+                        panel._emit_log(
+                            "[PICK_OBJ][MOVEIT][PLAN] bridge_path_missing "
+                            f"pose_subs={subs} result_pubs={result_pubs}; attempting_recover=true"
+                        )
+                        _restart_moveit_bridge_and_wait(cold_start=False)
+                    bridge_recovered = True
+                    subs, result_pubs, result_subs, hb_age, hb_recent = _read_bridge_topics()
+                    hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
+                    panel._emit_log(
+                        f"[PICK_OBJ][MOVEIT][PLAN] topics_after_recover pose_subs={subs} result_pubs={result_pubs} "
+                        f"result_subs={result_subs} pose_topic={topic} result_topic={moveit_result_topic} "
+                        f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
+                    )
+                    if subs <= 0:
+                        msg = f"MoveItBridge NO conectado: {topic} sin subscriptores"
+                        panel._emit_log(f"[PICK_OBJ][ABORT] {msg}")
+                        raise RuntimeError(msg)
             if not panel.ros_worker.subscribe_moveit_result(moveit_result_topic):
                 msg = f"No se pudo suscribir a {moveit_result_topic}"
                 panel._emit_log(f"[PICK_OBJ][ABORT] {msg}")
@@ -1411,26 +1583,35 @@ def run_pick_object(panel) -> None:
                     panel._emit_log(f"[PICK_OBJ] WARN: {msg}")
 
             def _read_current_arm_joint_positions() -> Optional[List[float]]:
-                if panel.ros_worker is None:
-                    return None
-                payload, payload_wall = panel.ros_worker.get_last_joint_state()
-                if not payload:
-                    return None
-                if payload_wall <= 0.0 or (time.time() - float(payload_wall)) > 1.0:
-                    return None
-                try:
-                    names = list(payload.get("name", []))
-                    positions = list(payload.get("position", []))
-                except Exception:
-                    return None
-                if not names or not positions:
-                    return None
                 joint_map = {}
-                for name, pos in zip(names, positions):
+                if panel.ros_worker is not None:
                     try:
-                        joint_map[str(name).strip()] = float(pos)
+                        payload, payload_wall = panel.ros_worker.get_last_joint_state()
                     except Exception:
-                        continue
+                        payload, payload_wall = None, 0.0
+                    if payload and payload_wall > 0.0 and (time.time() - float(payload_wall)) <= 1.0:
+                        try:
+                            names = list(payload.get("name", []))
+                            positions = list(payload.get("position", []))
+                        except Exception:
+                            names, positions = [], []
+                        for name, pos in zip(names, positions):
+                            try:
+                                joint_map[str(name).strip()] = float(pos)
+                            except Exception:
+                                continue
+                if not joint_map:
+                    last_ts = float(getattr(panel, "_last_joint_time", 0.0) or 0.0)
+                    if last_ts > 0.0 and (time.time() - last_ts) <= 1.0:
+                        try:
+                            joint_map = {
+                                str(name).strip(): float(pos)
+                                for name, pos in dict(getattr(panel, "_last_joint_positions", {})).items()
+                            }
+                        except Exception:
+                            joint_map = {}
+                if not joint_map:
+                    return None
                 arm_joint_names = (
                     "shoulder_pan_joint",
                     "shoulder_lift_joint",
@@ -1487,6 +1668,26 @@ def run_pick_object(panel) -> None:
                     panel._emit_log(
                         "[PICK_OBJ] FASE 1: Ir a HOME antes del pick "
                         "(joint_state actual no disponible)"
+                    )
+                try:
+                    home_ready_wait_sec = float(
+                        os.environ.get(
+                            "PANEL_PICK_OBJECT_HOME_START_READY_WAIT_SEC",
+                            "45.0",
+                        )
+                    )
+                except Exception:
+                    home_ready_wait_sec = 45.0
+                home_ready_wait_sec = max(5.0, home_ready_wait_sec)
+                panel._emit_log(
+                    "[PICK_OBJ] FASE 1A: esperar controladores antes de HOME "
+                    f"(timeout={home_ready_wait_sec:.1f}s)"
+                )
+                ready, reason = panel._wait_for_controllers_ready(home_ready_wait_sec)
+                if not ready:
+                    raise RuntimeError(
+                        "HOME_START controladores no listos tras espera: "
+                        f"{reason}"
                     )
                 _run_joint_step(
                     "HOME_START",
@@ -2809,6 +3010,10 @@ def run_pick_object(panel) -> None:
                         "reintentando APPROACH"
                     )
                     _run_moveit_step(*sequence[0])
+            _canonical_phase(
+                "APPROACH_REACHED",
+                detail=f"target=({approach_pose[0]:.3f},{approach_pose[1]:.3f},{approach_pose[2]:.3f})",
+            )
 
             panel._emit_log("[PICK_OBJ] FASE 4: PRE_GRASP (pinza abierta)")
             try:
@@ -2836,6 +3041,10 @@ def run_pick_object(panel) -> None:
                 )
                 _ensure_gripper_open_for_moveit(reason="PRE_GRASP_RETRY")
             _ensure_pre_grasp_alignment(sequence[1][1], sequence[1][2])
+            _canonical_phase(
+                "PREGRASP_REACHED",
+                detail=f"target=({pre_grasp_pose[0]:.3f},{pre_grasp_pose[1]:.3f},{pre_grasp_pose[2]:.3f})",
+            )
 
             panel._emit_log("[PICK_OBJ] FASE 5: GRASP_DOWN (pinza abierta)")
             grasp_label, grasp_pose_data, grasp_delay = sequence[2]
@@ -3272,6 +3481,10 @@ def run_pick_object(panel) -> None:
                 panel._emit_log(
                     "[PICK_OBJ][STRICT] FASE 6: cierre completado; attach lógico pendiente de prueba física"
                 )
+            _canonical_phase(
+                "GRASP_ACQUIRED",
+                detail=f"attach_ok={str(bool(attach_result.get('ok'))).lower()} object={obj_name}",
+            )
 
             panel._emit_log("[PICK_OBJ] FASE 7: Levantar objeto 20cm (MoveIt)")
             if attach_result.get("strict_physical_pending"):
@@ -3343,6 +3556,10 @@ def run_pick_object(panel) -> None:
                 panel._emit_log(
                     "[PICK_OBJ][STATE] transporte validado; estado lógico promovido a CARRIED"
                 )
+            _canonical_phase(
+                "LIFT_SUCCEEDED",
+                detail=f"target_z={lift_pose[2]:.3f} object={obj_name}",
+            )
 
             return_to_table_after_grasp = str(
                 os.environ.get(
@@ -3483,6 +3700,10 @@ def run_pick_object(panel) -> None:
                         gate_label="cesta_with_object_fallback"
                     )
                     transport_fallback_used = True
+            _canonical_phase(
+                "TRANSPORT_SUCCEEDED",
+                detail=f"fallback={str(bool(transport_fallback_used)).lower()} target=({transport_pose[0]:.3f},{transport_pose[1]:.3f},{transport_pose[2]:.3f})",
+            )
 
             if transport_fallback_used:
                 panel._emit_log(
@@ -3561,6 +3782,10 @@ def run_pick_object(panel) -> None:
 
             panel.signal_run_ui.emit(_open_and_release)
             time.sleep(1.0)
+            _canonical_phase(
+                "RELEASE_SUCCEEDED",
+                detail=f"object={obj_name} detach_topic={GRIPPER_ATTACH_PREFIX}/{obj_name}/detach",
+            )
             panel._emit_log("[PICK_OBJ] Cerrando gripper (limpieza)")
             panel.signal_run_ui.emit(
                 lambda: panel._command_gripper(True, log_action="DROP", force=True)
@@ -3572,6 +3797,8 @@ def run_pick_object(panel) -> None:
 
             panel._ui_set_status("Pick objeto: COMPLETADO ✓")
             panel._emit_log("[PICK_OBJ] === SECUENCIA COMPLETADA EXITOSAMENTE ===")
+            _canonical_phase("HOME_DONE", detail="pick_object_sequence_completed")
+            _canonical_finish(True, "tfm_moveit_sequence_completed", "HOME_DONE")
         except Exception as exc:
             import traceback
 
@@ -3600,6 +3827,7 @@ def run_pick_object(panel) -> None:
             panel._ui_set_status(f"Error en pick objeto: {exc}", error=True)
             panel._emit_log(f"[PICK_OBJ] ✗ ERROR: {exc}")
             panel._emit_log(f"[PICK_OBJ] Traceback: {traceback.format_exc()}")
+            _canonical_finish(False, f"{fail_kind}:{err_txt}", "FAIL_TERMINAL")
         finally:
             try:
                 _clear_moveit_exec_monitor()
@@ -3640,6 +3868,8 @@ def run_pick_object(panel) -> None:
             setattr(panel, "_pick_target_lock_world", None)
             setattr(panel, "_pick_target_lock_base", None)
             setattr(panel, "_pick_moveit_phase_active", False)
+            setattr(panel, "_pick_object_worker_started", False)
             panel._set_motion_lock(False)
 
+    setattr(panel, "_pick_object_worker_started", True)
     panel._run_async(worker)

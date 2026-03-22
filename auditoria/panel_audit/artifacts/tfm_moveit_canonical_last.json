@@ -1,0 +1,43 @@
+{
+  "route": "TFM->MoveIt",
+  "session": "20260322_174448_814715",
+  "selected_object": "box_red",
+  "source": "topic:/grasp_rect",
+  "grasp_base": {
+    "x": 1.0608,
+    "y": 0.4,
+    "z": 0.025000000000000022,
+    "yaw_deg": -75.64066345575546
+  },
+  "state": "EXECUTABLE_GRASP_OK",
+  "events": [
+    {
+      "ts": 1774197888.8149838,
+      "state": "READY",
+      "detail": "preconditions_ok"
+    },
+    {
+      "ts": 1774197888.8159764,
+      "state": "OBJECT_SELECTED",
+      "detail": "name=box_red"
+    },
+    {
+      "ts": 1774197888.816192,
+      "state": "GRASP_FRESH",
+      "detail": "source=topic:/grasp_rect age_sec=6.34"
+    },
+    {
+      "ts": 1774197888.8164473,
+      "state": "VISUAL_GRASP_OK",
+      "detail": "topic=/grasp_rect"
+    },
+    {
+      "ts": 1774197888.8166666,
+      "state": "EXECUTABLE_GRASP_OK",
+      "detail": "pose_topic=/desired_grasp cartesian_topic=/desired_grasp_cartesian"
+    }
+  ],
+  "start_ts": 1774197888.814727,
+  "success": null,
+  "message": ""
+}

@@ -30,7 +30,8 @@ CLOCK_MAX_AGE_SEC = 8.0
 
 try:
     import rclpy
-    from rclpy.executors import SingleThreadedExecutor
+    from rclpy.callback_groups import ReentrantCallbackGroup
+    from rclpy.executors import SingleThreadedExecutor, MultiThreadedExecutor
     from rclpy.parameter import Parameter
     from rclpy.qos import (
         qos_profile_sensor_data,
@@ -49,7 +50,9 @@ try:
     from cv_bridge import CvBridge
 except Exception:  # pragma: no cover
     rclpy = None  # type: ignore
+    ReentrantCallbackGroup = None  # type: ignore
     SingleThreadedExecutor = None  # type: ignore
+    MultiThreadedExecutor = None  # type: ignore
     Parameter = None  # type: ignore
     qos_profile_sensor_data = None  # type: ignore
     QoSProfile = None  # type: ignore
@@ -112,6 +115,8 @@ class RosWorker(QObject):
         self._exec = None
         self._bridge = None
         self._thread: Optional[QThread] = None
+        self._service_callback_group = None
+        self._io_callback_group = None
         self._subs: Dict[str, object] = {}
         self._pose_sub = None
         self._pose_topic = ""
@@ -201,14 +206,14 @@ class RosWorker(QObject):
         self._select_object_sub = None
         self._select_object_srv = None
         self._object_select_timeout_sec = float(
-            os.environ.get("PANEL_SELECT_OBJECT_SERVICE_TIMEOUT_SEC", "5.0") or "5.0"
+            os.environ.get("PANEL_SELECT_OBJECT_SERVICE_TIMEOUT_SEC", "10.0") or "10.0"
         )
         self._object_select_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
         self._tfm_infer_timeout_sec = float(
-            os.environ.get("PANEL_TFM_INFER_SERVICE_TIMEOUT_SEC", "5.0") or "5.0"
+            os.environ.get("PANEL_TFM_INFER_SERVICE_TIMEOUT_SEC", "30.0") or "30.0"
         )
         self._tfm_execute_timeout_sec = float(
-            os.environ.get("PANEL_TFM_EXECUTE_SERVICE_TIMEOUT_SEC", "5.0") or "5.0"
+            os.environ.get("PANEL_TFM_EXECUTE_SERVICE_TIMEOUT_SEC", "480.0") or "480.0"
         )
         self._tfm_infer_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
         self._tfm_execute_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
@@ -1333,6 +1338,7 @@ class RosWorker(QObject):
                     topic,
                     lambda msg, t=topic: self._on_joint_state(msg, t),
                     qos_profile_sensor_data,
+                    callback_group=self._io_callback_group,
                 )
                 self._safe_log(f"[ROS] Suscrito a {topic} (joint_states)")
             except Exception as exc:
@@ -1420,16 +1426,48 @@ class RosWorker(QObject):
                 node_kwargs["parameter_overrides"] = overrides
             self._node = rclpy.create_node("panel_superpro", **node_kwargs)
             self._bridge = CvBridge()
-            self._exec = SingleThreadedExecutor()
+            if ReentrantCallbackGroup is not None:
+                self._service_callback_group = ReentrantCallbackGroup()
+                self._io_callback_group = ReentrantCallbackGroup()
+            executor_threads = 2
+            try:
+                executor_threads = int(
+                    os.environ.get("PANEL_ROS_EXECUTOR_THREADS", "3") or "3"
+                )
+            except Exception:
+                executor_threads = 3
+            executor_threads = max(1, executor_threads)
+            if MultiThreadedExecutor is not None and executor_threads > 1:
+                self._exec = MultiThreadedExecutor(num_threads=executor_threads)
+                self.log.emit(
+                    f"[ROS] Executor multi-hilo activo (threads={executor_threads})"
+                )
+            else:
+                self._exec = SingleThreadedExecutor()
+                self.log.emit("[ROS] Executor monohilo activo")
             self._exec.add_node(self._node)
-            self._node.create_subscription(Clock, "/clock", self._update_clock, qos_profile_sensor_data)
+            self._node.create_subscription(
+                Clock,
+                "/clock",
+                self._update_clock,
+                qos_profile_sensor_data,
+                callback_group=self._io_callback_group,
+            )
             if String is not None:
                 try:
                     self._subs["/system_state"] = self._node.create_subscription(
-                        String, "/system_state", self._on_system_state, 10
+                        String,
+                        "/system_state",
+                        self._on_system_state,
+                        10,
+                        callback_group=self._io_callback_group,
                     )
                     self._subs["/system_diag"] = self._node.create_subscription(
-                        String, "/system_diag", self._on_system_diag, 10
+                        String,
+                        "/system_diag",
+                        self._on_system_diag,
+                        10,
+                        callback_group=self._io_callback_group,
                     )
                 except Exception:
                     pass
@@ -1513,6 +1551,7 @@ class RosWorker(QObject):
                         Trigger,
                         self._test_robot_service,
                         self._on_test_robot_service,
+                        callback_group=self._service_callback_group,
                     )
                     self.log.emit(
                         f"[ROS] Trigger service listo: {self._test_robot_service} (std_srvs/Trigger)"
@@ -1524,6 +1563,7 @@ class RosWorker(QObject):
                         Trigger,
                         self._camera_connect_service,
                         self._on_camera_connect_service,
+                        callback_group=self._service_callback_group,
                     )
                     self.log.emit(
                         f"[ROS] Trigger service listo: {self._camera_connect_service} (std_srvs/Trigger)"
@@ -1535,6 +1575,7 @@ class RosWorker(QObject):
                         Trigger,
                         self._camera_disconnect_service,
                         self._on_camera_disconnect_service,
+                        callback_group=self._service_callback_group,
                     )
                     self.log.emit(
                         f"[ROS] Trigger service listo: {self._camera_disconnect_service} (std_srvs/Trigger)"
@@ -1546,6 +1587,7 @@ class RosWorker(QObject):
                         Trigger,
                         self._tfm_infer_service,
                         self._on_tfm_infer_service,
+                        callback_group=self._service_callback_group,
                     )
                     self.log.emit(
                         f"[ROS] Trigger service listo: {self._tfm_infer_service} (std_srvs/Trigger)"
@@ -1557,6 +1599,7 @@ class RosWorker(QObject):
                         Trigger,
                         self._tfm_execute_service,
                         self._on_tfm_execute_service,
+                        callback_group=self._service_callback_group,
                     )
                     self.log.emit(
                         f"[ROS] Trigger service listo: {self._tfm_execute_service} (std_srvs/Trigger)"
@@ -1568,6 +1611,7 @@ class RosWorker(QObject):
                         Trigger,
                         self._recover_service,
                         self._on_recover_service,
+                        callback_group=self._service_callback_group,
                     )
                     self.log.emit(
                         f"[ROS] Trigger service listo: {self._recover_service} (std_srvs/Trigger)"
@@ -1579,6 +1623,7 @@ class RosWorker(QObject):
                         Trigger,
                         self._pick_demo_service,
                         self._on_pick_demo_service,
+                        callback_group=self._service_callback_group,
                     )
                     self.log.emit(
                         f"[ROS] Trigger service listo: {self._pick_demo_service} (std_srvs/Trigger)"
@@ -1590,6 +1635,7 @@ class RosWorker(QObject):
                         Trigger,
                         self._pick_object_service,
                         self._on_pick_object_service,
+                        callback_group=self._service_callback_group,
                     )
                     self.log.emit(
                         f"[ROS] Trigger service listo: {self._pick_object_service} (std_srvs/Trigger)"
@@ -1602,6 +1648,7 @@ class RosWorker(QObject):
                         SelectObject,
                         self._select_object_service,
                         self._on_select_object_service,
+                        callback_group=self._service_callback_group,
                     )
                     self.log.emit(
                         f"[ROS] Trigger service listo: {self._select_object_service} (ur5_panel_interfaces/SelectObject)"
