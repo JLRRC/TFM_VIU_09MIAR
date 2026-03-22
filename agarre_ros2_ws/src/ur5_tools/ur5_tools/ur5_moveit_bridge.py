@@ -429,6 +429,7 @@ class UR5MoveItBridge(Node):
         self._active_exec_timeout_sec = 0.0
         self._active_exec_timeout_deadline_mono = 0.0
         self._last_plan_time = 0.0
+        self._first_controller_goal_pending = True
         self._plan_event = threading.Event()
         self._shutdown = False
         self._last_pose_log = 0.0
@@ -540,17 +541,55 @@ class UR5MoveItBridge(Node):
             return max(0.05, float(samples[mid]))
         return max(0.05, float(samples[mid - 1] + samples[mid]) / 2.0)
 
+    def _timeout_sim_seconds_per_wall_second(
+        self,
+        *,
+        first_goal: bool = False,
+    ) -> tuple[float, str]:
+        raw = float(self._estimated_sim_seconds_per_wall_second())
+        samples = len(self._sim_wall_rate_samples)
+        if not (
+            self._use_sim_time
+            and not self._moveit_py_use_sim_time
+            and self._force_fjt_direct_for_walltime_sim
+        ):
+            return raw, f"raw={raw:.3f};samples={samples};mixed_time=false"
+        min_samples = max(
+            1,
+            int(round(self._env_float("PANEL_MOVEIT_BRIDGE_SIM_RATE_MIN_SAMPLES", 3.0))),
+        )
+        fallback = max(
+            0.05,
+            self._env_float("PANEL_MOVEIT_BRIDGE_SIM_PER_WALL_FALLBACK", 0.45),
+        )
+        if first_goal and samples < min_samples:
+            effective = min(raw, fallback) if raw > 0.0 else fallback
+            return (
+                float(effective),
+                (
+                    f"warmup_first_goal raw={raw:.3f};samples={samples};"
+                    f"min_samples={min_samples};fallback={fallback:.3f}"
+                ),
+            )
+        return raw, f"raw={raw:.3f};samples={samples}"
+
     def _fjt_timeout_for_trajectory(
         self,
         traj_sec: float,
         *,
         extra_margin_sec: float,
         minimum_sec: float = 8.0,
+        first_goal: bool = False,
+        controller_goal_time_sec_override: float | None = None,
     ) -> float:
         controller_goal_time_sec = max(
             0.0,
             float(self._controller_expected_goal_time_sec),
-            float(self._controller_goal_time_tolerance_sec),
+            (
+                float(controller_goal_time_sec_override)
+                if controller_goal_time_sec_override is not None
+                else float(self._controller_goal_time_tolerance_sec)
+            ),
         )
         traj_and_goal_sec = float(traj_sec) + controller_goal_time_sec
         timeout_sec = max(
@@ -564,13 +603,15 @@ class UR5MoveItBridge(Node):
             and self._force_fjt_direct_for_walltime_sim
             and float(traj_sec) > 0.0
         ):
-            sim_rate = self._estimated_sim_seconds_per_wall_second()
+            sim_rate, sim_rate_detail = self._timeout_sim_seconds_per_wall_second(
+                first_goal=first_goal,
+            )
             scaled_timeout = (traj_and_goal_sec / max(0.25, float(sim_rate))) + float(extra_margin_sec)
             timeout_sec = max(timeout_sec, scaled_timeout)
             self.get_logger().info(
                 "[BRIDGE_EXEC] timeout adjusted for sim/wall skew "
                 f"traj_sec={float(traj_sec):.3f} controller_goal_time_sec={controller_goal_time_sec:.3f} "
-                f"sim_per_wall={float(sim_rate):.3f} "
+                f"sim_per_wall={float(sim_rate):.3f} detail={sim_rate_detail} "
                 f"timeout_sec={float(timeout_sec):.3f}"
             )
         return float(timeout_sec)
@@ -582,7 +623,7 @@ class UR5MoveItBridge(Node):
             and not self._moveit_py_use_sim_time
             and self._force_fjt_direct_for_walltime_sim
         ):
-            sim_rate = self._estimated_sim_seconds_per_wall_second()
+            sim_rate, sim_rate_detail = self._timeout_sim_seconds_per_wall_second()
             controller_goal_time_sec = max(
                 0.0,
                 float(self._controller_expected_goal_time_sec),
@@ -597,7 +638,7 @@ class UR5MoveItBridge(Node):
             self.get_logger().info(
                 "[BRIDGE_EXEC] request timeout adjusted for sim/wall skew "
                 f"base_timeout_sec={float(self._request_timeout_sec):.3f} "
-                f"sim_per_wall={float(sim_rate):.3f} "
+                f"sim_per_wall={float(sim_rate):.3f} detail={sim_rate_detail} "
                 f"retry_cushion_sec={float(retry_cushion_sec):.3f} "
                 f"timeout_sec={float(timeout_sec):.3f}"
             )
@@ -1385,6 +1426,31 @@ class UR5MoveItBridge(Node):
             time.sleep(0.05)
         return False, last_detail
 
+    def _joint_motion_since_vector(
+        self,
+        reference_vec: list[float] | tuple[float, ...] | None,
+    ) -> tuple[float | None, str]:
+        if reference_vec is None:
+            return None, "joint_motion_reference_missing"
+        current_vec, reason = self._current_arm_joint_vector()
+        if current_vec is None:
+            return None, reason
+        if len(current_vec) != len(reference_vec):
+            return None, "joint_motion_size_mismatch"
+        max_delta = 0.0
+        worst_joint = ""
+        for idx, jname in enumerate(self._START_STATE_JOINTS):
+            cur = float(current_vec[idx])
+            ref = float(reference_vec[idx])
+            if jname in self._WRAPAROUND_JOINTS:
+                delta = abs(math.atan2(math.sin(cur - ref), math.cos(cur - ref)))
+            else:
+                delta = abs(cur - ref)
+            if delta > max_delta:
+                max_delta = float(delta)
+                worst_joint = str(jname)
+        return max_delta, f"joint_motion max_delta={max_delta:.4f} joint={worst_joint or 'n/a'}"
+
     def _ee_target_reached(
         self,
         target_pose: PoseStamped,
@@ -1451,6 +1517,65 @@ class UR5MoveItBridge(Node):
             time.sleep(0.05)
         return False, last_detail
 
+    def _feedback_goal_reached(
+        self,
+        feedback_msg: Any,
+        *,
+        target_joint_names: list[str],
+        target_joint_positions: list[float],
+        tol_rad: float,
+    ) -> tuple[bool, str]:
+        try:
+            feedback = getattr(feedback_msg, "feedback", feedback_msg)
+        except Exception:
+            feedback = feedback_msg
+        if feedback is None:
+            return False, "feedback_missing"
+        try:
+            names = list(getattr(feedback, "joint_names", []) or [])
+            actual = list(getattr(getattr(feedback, "actual", None), "positions", []) or [])
+        except Exception as exc:
+            return False, f"feedback_parse_exc:{type(exc).__name__}:{exc}"
+        if not names or not actual or not target_joint_names or not target_joint_positions:
+            return False, "feedback_joint_data_missing"
+        target_map = {}
+        for idx, jname in enumerate(target_joint_names):
+            if idx >= len(target_joint_positions):
+                break
+            target_map[str(jname or "").strip()] = float(target_joint_positions[idx])
+        max_err = 0.0
+        worst_joint = ""
+        usable = 0
+        for idx in range(min(len(names), len(actual))):
+            jname = str(names[idx] or "").strip()
+            if not jname or jname not in target_map:
+                continue
+            try:
+                act = float(actual[idx])
+                des = float(target_map[jname])
+            except Exception:
+                return False, f"feedback_non_numeric:{jname or idx}"
+            usable += 1
+            if jname in self._WRAPAROUND_JOINTS:
+                des = self._normalize_joint_position(jname, des)
+                act = self._normalize_joint_position(jname, act)
+                err = abs(math.atan2(math.sin(act - des), math.cos(act - des)))
+            else:
+                err = abs(act - des)
+            if err > max_err:
+                max_err = err
+                worst_joint = jname
+            if err > float(tol_rad):
+                return False, (
+                    f"feedback_goal_not_reached:{jname}:err={err:.4f}:tol={float(tol_rad):.4f}"
+                )
+        if usable <= 0:
+            return False, "feedback_joint_match_empty"
+        return True, (
+            f"feedback_goal_reached:max_err={max_err:.4f}:joint={worst_joint or 'n/a'}:"
+            f"tol={float(tol_rad):.4f}"
+        )
+
     def _execute_joint_trajectory_action(
         self,
         jt: JointTrajectory,
@@ -1461,7 +1586,28 @@ class UR5MoveItBridge(Node):
         goal_time_override_sec: float | None = None,
         target_pose: PoseStamped | None = None,
         ee_target_tol_m: float | None = None,
+        phase_label: str | None = None,
     ) -> tuple[bool, str, dict[str, Any]]:
+        cold_start_first_goal = False
+        try:
+            with self._pose_lock:
+                cold_start_first_goal = bool(self._first_controller_goal_pending)
+        except Exception:
+            cold_start_first_goal = False
+        phase_label_upper = str(phase_label or "").upper()
+        effective_goal_time_tol_sec = (
+            float(goal_time_override_sec)
+            if goal_time_override_sec is not None
+            else float(self._controller_goal_time_tolerance_sec)
+        )
+        if phase_label_upper == "APPROACH":
+            effective_goal_time_tol_sec = max(
+                effective_goal_time_tol_sec,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_APPROACH_GOAL_TIME_TOL_SEC",
+                    75.0,
+                ),
+            )
         if retry_on_tolerance_violation and self._force_fjt_direct_for_walltime_sim:
             pre_scale = 2.0
             jt = self._scale_joint_trajectory_timing(jt, scale=pre_scale)
@@ -1469,12 +1615,17 @@ class UR5MoveItBridge(Node):
                 "[BRIDGE_EXEC] pre-scaling controller trajectory "
                 f"scale={pre_scale:.1f} reason=sim_tracking_margin"
             )
-        jt = self._prepare_joint_trajectory_for_controller(jt)
+        jt = self._prepare_joint_trajectory_for_controller(
+            jt,
+            force_cold_start_hold=cold_start_first_goal,
+        )
         prepared_traj_sec = self._joint_trajectory_duration_sec(jt)
         prepared_timeout = self._fjt_timeout_for_trajectory(
             prepared_traj_sec,
             extra_margin_sec=8.0,
             minimum_sec=max(8.0, float(timeout_sec)),
+            first_goal=cold_start_first_goal,
+            controller_goal_time_sec_override=effective_goal_time_tol_sec,
         )
         if prepared_timeout > float(timeout_sec) + 1e-6:
             self.get_logger().info(
@@ -1511,6 +1662,7 @@ class UR5MoveItBridge(Node):
         goal.trajectory = jt
         try:
             joint_names = list(getattr(jt, "joint_names", []) or [])
+            target_joint_positions = list(getattr((list(getattr(jt, "points", []) or [])[-1]), "positions", []) or [])
             path_tol = (
                 float(path_tol_override_rad)
                 if path_tol_override_rad is not None
@@ -1518,13 +1670,17 @@ class UR5MoveItBridge(Node):
             )
             goal_tol = float(self._controller_goal_tolerance_rad)
             goal_time_tol = (
-                float(goal_time_override_sec)
-                if goal_time_override_sec is not None
-                else float(self._controller_goal_time_tolerance_sec)
+                float(effective_goal_time_tol_sec)
             )
+            path_tol_floor = 0.05
+            if self._force_fjt_direct_for_walltime_sim:
+                path_tol_floor = max(
+                    path_tol_floor,
+                    self._env_float("PANEL_MOVEIT_BRIDGE_WRAP_PATH_TOL_RAD", 6.50),
+                )
             if joint_names and path_tol >= 0.0:
                 goal.path_tolerance = [
-                    JointTolerance(name=str(jn), position=float(max(0.05, path_tol)))
+                    JointTolerance(name=str(jn), position=float(max(path_tol_floor, path_tol)))
                     for jn in joint_names
                 ]
             if joint_names and goal_tol >= 0.0:
@@ -1546,7 +1702,79 @@ class UR5MoveItBridge(Node):
                 "[BRIDGE_EXEC] no se pudieron fijar tolerancias FJT explicitas: "
                 f"{type(tol_exc).__name__}: {tol_exc}"
             )
-        send_future = client.send_goal_async(goal)
+        feedback_lock = threading.Lock()
+        feedback_state: dict[str, Any] = {
+            "last_mono": 0.0,
+            "count": 0,
+            "best_detail": "feedback_never_received",
+            "best_max_err": float("inf"),
+            "stable_since": 0.0,
+        }
+
+        def _feedback_cb(feedback_msg: Any) -> None:
+            ok = False
+            detail = "feedback_goal_timeout"
+            max_err = float("inf")
+            try:
+                ok, detail = self._feedback_goal_reached(
+                    feedback_msg,
+                    target_joint_names=joint_names,
+                    target_joint_positions=target_joint_positions,
+                    tol_rad=max(
+                        0.08,
+                        self._env_float("PANEL_MOVEIT_BRIDGE_FEEDBACK_GOAL_TOL_RAD", 0.14),
+                    ),
+                )
+                try:
+                    feedback = getattr(feedback_msg, "feedback", feedback_msg)
+                except Exception:
+                    feedback = feedback_msg
+                names = list(getattr(feedback, "joint_names", []) or [])
+                actual = list(getattr(getattr(feedback, "actual", None), "positions", []) or [])
+                target_map = {
+                    str(jname or "").strip(): float(pos)
+                    for jname, pos in zip(joint_names, target_joint_positions)
+                    if str(jname or "").strip()
+                }
+                usable = min(len(names), len(actual))
+                if usable > 0:
+                    errs = []
+                    for idx in range(usable):
+                        jname = str(names[idx] or "").strip()
+                        if not jname or jname not in target_map:
+                            continue
+                        des = float(target_map[jname])
+                        act = float(actual[idx])
+                        if jname in self._WRAPAROUND_JOINTS:
+                            des = self._normalize_joint_position(jname, des)
+                            act = self._normalize_joint_position(jname, act)
+                            err = abs(math.atan2(math.sin(act - des), math.cos(act - des)))
+                        else:
+                            err = abs(act - des)
+                        errs.append(err)
+                    if errs:
+                        max_err = max(errs)
+            except Exception as exc:
+                detail = f"feedback_eval_exc:{type(exc).__name__}:{exc}"
+            now_mono = time.monotonic()
+            with feedback_lock:
+                feedback_state["last_mono"] = now_mono
+                feedback_state["count"] = int(feedback_state.get("count", 0)) + 1
+                feedback_state["last_detail"] = detail
+                feedback_state["last_ok"] = bool(ok)
+                feedback_state["last_max_err"] = float(max_err)
+                best = float(feedback_state.get("best_max_err", float("inf")))
+                if max_err < best:
+                    feedback_state["best_max_err"] = float(max_err)
+                    feedback_state["best_detail"] = detail
+                if ok:
+                    stable_since = float(feedback_state.get("stable_since", 0.0) or 0.0)
+                    if stable_since <= 0.0:
+                        feedback_state["stable_since"] = now_mono
+                else:
+                    feedback_state["stable_since"] = 0.0
+
+        send_future = client.send_goal_async(goal, feedback_callback=_feedback_cb)
         if not self._wait_future_done(send_future, timeout_sec=min(2.0, timeout_sec)):
             return False, "fjt_goal_send_timeout", {"action": action_name}
         goal_handle = send_future.result()
@@ -1555,6 +1783,18 @@ class UR5MoveItBridge(Node):
                 False,
                 "fjt_goal_rejected",
                 {"action": action_name, "accepted": bool(getattr(goal_handle, "accepted", False))},
+            )
+        if cold_start_first_goal:
+            try:
+                with self._pose_lock:
+                    self._first_controller_goal_pending = False
+            except Exception:
+                pass
+        start_joint_vec, start_joint_reason = self._current_arm_joint_vector()
+        if start_joint_vec is None:
+            self.get_logger().warning(
+                "[BRIDGE_EXEC] start joint snapshot unavailable "
+                f"action={action_name} reason={start_joint_reason}"
             )
 
         exec_deadline_mono = time.monotonic() + max(1.0, float(timeout_sec))
@@ -1565,7 +1805,7 @@ class UR5MoveItBridge(Node):
             result_future = goal_handle.get_result_async()
             goal_check_tol_rad = max(
                 0.05,
-                self._env_float("PANEL_MOVEIT_BRIDGE_GOAL_CHECK_TOL_RAD", 0.08),
+                self._env_float("PANEL_MOVEIT_BRIDGE_GOAL_CHECK_TOL_RAD", 0.12),
             )
             goal_check_settle_sec = max(
                 0.25,
@@ -1575,17 +1815,122 @@ class UR5MoveItBridge(Node):
                 0.15,
                 self._env_float("PANEL_MOVEIT_BRIDGE_GOAL_CHECK_POLL_SEC", 0.40),
             )
+            feedback_goal_check_tol_rad = max(
+                goal_check_tol_rad,
+                self._env_float("PANEL_MOVEIT_BRIDGE_FEEDBACK_GOAL_TOL_RAD", 0.14),
+            )
+            feedback_goal_check_settle_sec = max(
+                0.20,
+                self._env_float("PANEL_MOVEIT_BRIDGE_FEEDBACK_GOAL_SETTLE_SEC", 0.35),
+            )
             ee_goal_check_tol_m = max(
                 0.02,
                 float(ee_target_tol_m)
                 if ee_target_tol_m is not None
                 else self._env_float("PANEL_MOVEIT_BRIDGE_EE_TARGET_TOL_M", 0.10),
             )
+            if phase_label_upper == "APPROACH":
+                ee_goal_check_tol_m = max(
+                    ee_goal_check_tol_m,
+                    self._env_float(
+                        "PANEL_MOVEIT_BRIDGE_APPROACH_EE_TARGET_TOL_M",
+                        0.10,
+                    ),
+                )
             ee_goal_check_settle_sec = max(
-                0.25,
+                0.15,
                 self._env_float(
                     "PANEL_MOVEIT_BRIDGE_EE_TARGET_SETTLE_SEC",
                     goal_check_settle_sec,
+                ),
+            )
+            if phase_label_upper == "APPROACH":
+                ee_goal_check_settle_sec = min(
+                    float(ee_goal_check_settle_sec),
+                    max(
+                        0.15,
+                        self._env_float(
+                            "PANEL_MOVEIT_BRIDGE_APPROACH_EE_TARGET_SETTLE_SEC",
+                            0.25,
+                        ),
+                    ),
+                )
+                self.get_logger().info(
+                    "[BRIDGE_EXEC] approach early-close profile "
+                    f"ee_goal_check_tol_m={float(ee_goal_check_tol_m):.3f} "
+                    f"ee_goal_check_settle_sec={float(ee_goal_check_settle_sec):.3f}"
+                )
+            micro_goal_profile = phase_label_upper == "GRASP_DOWN_MICRO_4"
+            micro_retry_start_sec = max(
+                10.0,
+                min(
+                    30.0,
+                    self._env_float(
+                        "PANEL_MOVEIT_BRIDGE_MICRO_RETRY_START_SEC",
+                        max(18.0, float(prepared_traj_sec) * 0.80),
+                    ),
+                ),
+            )
+            micro_retry_scale = max(
+                1.2,
+                self._env_float("PANEL_MOVEIT_BRIDGE_MICRO_RETRY_SCALE", 1.6),
+            )
+            approach_stall_retry_enabled = (
+                phase_label_upper == "APPROACH"
+                and retry_on_tolerance_violation
+                and bool(start_joint_vec is not None)
+            )
+            approach_stall_retry_start_sec = max(
+                8.0,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_APPROACH_STALL_RETRY_START_SEC",
+                    12.0,
+                ),
+            )
+            approach_stall_min_motion_rad = max(
+                0.01,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_APPROACH_STALL_MIN_MOTION_RAD",
+                    0.05,
+                ),
+            )
+            approach_stall_retry_scale = max(
+                1.2,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_APPROACH_STALL_RETRY_SCALE",
+                    1.7,
+                ),
+            )
+            approach_long_retry_enabled = (
+                phase_label_upper == "APPROACH"
+                and retry_on_tolerance_violation
+            )
+            approach_long_retry_start_sec = max(
+                30.0,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_START_SEC",
+                    55.0,
+                ),
+            )
+            approach_long_retry_scale = max(
+                1.2,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_SCALE",
+                    1.6,
+                ),
+            )
+            approach_long_retry_joint_tol_rad = max(
+                goal_check_tol_rad,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_JOINT_TOL_RAD",
+                    0.35,
+                ),
+            )
+            approach_long_retry_ee_tol_m = max(
+                ee_goal_check_tol_m,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_EE_TOL_M",
+                    0.18,
                 ),
             )
             goal_check_start_sec = max(
@@ -1598,14 +1943,96 @@ class UR5MoveItBridge(Node):
                     ),
                 ),
             )
+            if target_pose is not None:
+                goal_check_start_sec = min(
+                    float(goal_check_start_sec),
+                    max(
+                        4.0,
+                        self._env_float(
+                            "PANEL_MOVEIT_BRIDGE_EARLY_TARGET_CHECK_START_SEC",
+                            8.0,
+                        ),
+                    ),
+                )
+            if cold_start_first_goal:
+                goal_check_start_sec = min(
+                    float(goal_check_start_sec),
+                    max(
+                        4.0,
+                        self._env_float(
+                            "PANEL_MOVEIT_BRIDGE_FIRST_GOAL_CHECK_START_SEC",
+                            10.0,
+                        ),
+                    ),
+                )
             result_wait_deadline = time.monotonic() + max(1.0, float(timeout_sec))
             result_wait_started = time.monotonic()
             last_goal_check_mono = 0.0
             last_ee_check_mono = 0.0
+            last_feedback_check_mono = 0.0
             while not result_future.done():
                 now_mono = time.monotonic()
                 if now_mono >= result_wait_deadline:
                     break
+                if (
+                    (now_mono - result_wait_started) >= max(3.0, goal_check_start_sec * 0.5)
+                    and (now_mono - last_feedback_check_mono) >= goal_check_poll_sec
+                ):
+                    last_feedback_check_mono = now_mono
+                    with feedback_lock:
+                        feedback_count = int(feedback_state.get("count", 0) or 0)
+                        feedback_last_mono = float(feedback_state.get("last_mono", 0.0) or 0.0)
+                        feedback_stable_since = float(
+                            feedback_state.get("stable_since", 0.0) or 0.0
+                        )
+                        feedback_detail = str(
+                            feedback_state.get("last_detail")
+                            or feedback_state.get("best_detail")
+                            or "feedback_never_received"
+                        )
+                    if feedback_count > 0 and feedback_stable_since > 0.0:
+                        stable_for = max(0.0, now_mono - feedback_stable_since)
+                        if stable_for >= feedback_goal_check_settle_sec:
+                            meta = {
+                                "action": action_name,
+                                "status_text": "FEEDBACK_GOAL_REACHED_BEFORE_RESULT",
+                                "feedback_goal_check": feedback_detail,
+                                "feedback_goal_check_tol_rad": round(
+                                    float(feedback_goal_check_tol_rad), 4
+                                ),
+                            }
+                            self.get_logger().info(
+                                "[BRIDGE_EXEC] FollowJointTrajectory feedback goal reached before terminal result "
+                                f"action={action_name} detail={feedback_detail}"
+                            )
+                            return True, f"fjt_feedback_goal_reached_before_result:{feedback_detail}", meta
+                    if (
+                        feedback_count > 0
+                        and feedback_last_mono > 0.0
+                        and (now_mono - feedback_last_mono)
+                        >= max(
+                            4.0,
+                            self._env_float(
+                                "PANEL_MOVEIT_BRIDGE_FEEDBACK_STALE_FAIL_SEC",
+                                8.0,
+                            ),
+                        )
+                    ):
+                        try:
+                            goal_handle.cancel_goal_async()
+                        except Exception:
+                            pass
+                        meta = {
+                            "action": action_name,
+                            "status_text": "FEEDBACK_STALE",
+                            "feedback_goal_check": feedback_detail,
+                            "feedback_count": feedback_count,
+                        }
+                        self.get_logger().warning(
+                            "[BRIDGE_EXEC] FollowJointTrajectory feedback stale; cerrando fallo terminal "
+                            f"action={action_name} detail={feedback_detail}"
+                        )
+                        return False, f"fjt_feedback_stale:{feedback_detail}", meta
                 if (
                     (now_mono - result_wait_started) >= goal_check_start_sec
                     and (now_mono - last_goal_check_mono) >= goal_check_poll_sec
@@ -1651,6 +2078,160 @@ class UR5MoveItBridge(Node):
                             f"action={action_name} detail={ee_reached_detail}"
                         )
                         return True, f"fjt_ee_target_reached_before_result:{ee_reached_detail}", meta
+                if (
+                    retry_on_tolerance_violation
+                    and micro_goal_profile
+                    and (now_mono - result_wait_started) >= micro_retry_start_sec
+                ):
+                    try:
+                        goal_handle.cancel_goal_async()
+                    except Exception:
+                        pass
+                    slowed = self._scale_joint_trajectory_timing(jt, scale=micro_retry_scale)
+                    retry_timeout = max(
+                        float(timeout_sec),
+                        self._joint_trajectory_duration_sec(slowed) + 12.0,
+                    )
+                    retry_goal_time = max(
+                        12.0,
+                        min(30.0, self._joint_trajectory_duration_sec(slowed) + 6.0),
+                    )
+                    self.get_logger().warning(
+                        "[BRIDGE_EXEC] micro-goal still_waiting early retry "
+                        f"phase={phase_label or 'n/a'} elapsed={now_mono - result_wait_started:.1f}s "
+                        f"scale={micro_retry_scale:.2f} retry_timeout_sec={retry_timeout:.1f} "
+                        f"retry_goal_time_tol={retry_goal_time:.1f}"
+                    )
+                    return self._execute_joint_trajectory_action(
+                        slowed,
+                        timeout_sec=retry_timeout,
+                        retry_on_tolerance_violation=False,
+                        path_tol_override_rad=path_tol_override_rad,
+                        goal_time_override_sec=retry_goal_time,
+                        target_pose=target_pose,
+                        ee_target_tol_m=ee_target_tol_m,
+                        phase_label=phase_label,
+                    )
+                if (
+                    approach_stall_retry_enabled
+                    and (now_mono - result_wait_started) >= approach_stall_retry_start_sec
+                ):
+                    with feedback_lock:
+                        feedback_count = int(feedback_state.get("count", 0) or 0)
+                        feedback_last_detail = str(
+                            feedback_state.get("last_detail")
+                            or feedback_state.get("best_detail")
+                            or "feedback_never_received"
+                        )
+                    motion_delta, motion_detail = self._joint_motion_since_vector(start_joint_vec)
+                    if (
+                        feedback_count <= 0
+                        and motion_delta is not None
+                        and float(motion_delta) < float(approach_stall_min_motion_rad)
+                    ):
+                        try:
+                            goal_handle.cancel_goal_async()
+                        except Exception:
+                            pass
+                        slowed = self._scale_joint_trajectory_timing(
+                            jt,
+                            scale=approach_stall_retry_scale,
+                        )
+                        retry_timeout = max(
+                            float(timeout_sec) * approach_stall_retry_scale,
+                            self._joint_trajectory_duration_sec(slowed) + 16.0,
+                        )
+                        retry_goal_time = max(
+                            float(effective_goal_time_tol_sec),
+                            self._env_float(
+                                "PANEL_MOVEIT_BRIDGE_APPROACH_STALL_RETRY_GOAL_TIME_SEC",
+                                90.0,
+                            ),
+                        )
+                        self.get_logger().warning(
+                            "[BRIDGE_EXEC] approach stall early retry "
+                            f"action={action_name} elapsed={now_mono - result_wait_started:.1f}s "
+                            f"{motion_detail} feedback_count={feedback_count} "
+                            f"feedback_detail={feedback_last_detail} "
+                            f"scale={approach_stall_retry_scale:.2f} "
+                            f"retry_timeout_sec={retry_timeout:.1f} "
+                            f"retry_goal_time_tol={retry_goal_time:.1f}"
+                        )
+                        return self._execute_joint_trajectory_action(
+                            slowed,
+                            timeout_sec=retry_timeout,
+                            retry_on_tolerance_violation=False,
+                            path_tol_override_rad=path_tol_override_rad,
+                            goal_time_override_sec=retry_goal_time,
+                            target_pose=target_pose,
+                            ee_target_tol_m=ee_target_tol_m,
+                            phase_label=phase_label,
+                        )
+                if (
+                    approach_long_retry_enabled
+                    and (now_mono - result_wait_started) >= approach_long_retry_start_sec
+                ):
+                    joint_near, joint_near_detail = self._joint_goal_reached(
+                        jt,
+                        tol_rad=approach_long_retry_joint_tol_rad,
+                    )
+                    ee_near = False
+                    ee_near_detail = "ee_goal_not_checked"
+                    if target_pose is not None:
+                        ee_near, ee_near_detail = self._ee_target_reached(
+                            target_pose,
+                            tol_m=approach_long_retry_ee_tol_m,
+                        )
+                    if not joint_near and not ee_near:
+                        with feedback_lock:
+                            feedback_count = int(feedback_state.get("count", 0) or 0)
+                            feedback_last_detail = str(
+                                feedback_state.get("last_detail")
+                                or feedback_state.get("best_detail")
+                                or "feedback_never_received"
+                            )
+                        motion_delta, motion_detail = self._joint_motion_since_vector(start_joint_vec)
+                        try:
+                            goal_handle.cancel_goal_async()
+                        except Exception:
+                            pass
+                        slowed = self._scale_joint_trajectory_timing(
+                            jt,
+                            scale=approach_long_retry_scale,
+                        )
+                        retry_goal_time = max(
+                            float(effective_goal_time_tol_sec),
+                            self._env_float(
+                                "PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_GOAL_TIME_SEC",
+                                120.0,
+                            ),
+                        )
+                        retry_timeout = max(
+                            float(timeout_sec),
+                            self._joint_trajectory_duration_sec(slowed)
+                            + float(retry_goal_time)
+                            + 16.0,
+                        )
+                        self.get_logger().warning(
+                            "[BRIDGE_EXEC] approach long-wait early retry "
+                            f"action={action_name} elapsed={now_mono - result_wait_started:.1f}s "
+                            f"joint_detail={joint_near_detail} ee_detail={ee_near_detail} "
+                            f"{motion_detail} feedback_count={feedback_count} "
+                            f"feedback_detail={feedback_last_detail} "
+                            f"scale={approach_long_retry_scale:.2f} "
+                            f"retry_timeout_sec={retry_timeout:.1f} "
+                            f"retry_goal_time_tol={retry_goal_time:.1f}"
+                        )
+                        return self._execute_joint_trajectory_action(
+                            slowed,
+                            timeout_sec=retry_timeout,
+                            retry_on_tolerance_violation=False,
+                            path_tol_override_rad=path_tol_override_rad,
+                            goal_time_override_sec=retry_goal_time,
+                            target_pose=target_pose,
+                            ee_target_tol_m=ee_target_tol_m,
+                            phase_label=phase_label,
+                        )
                 time.sleep(0.05)
             if not result_future.done():
                 try:
@@ -1678,7 +2259,7 @@ class UR5MoveItBridge(Node):
                 reached, reached_detail = self._wait_joint_goal_reached(
                     jt,
                     settle_timeout_sec=1.5,
-                    tol_rad=0.08,
+                    tol_rad=goal_check_tol_rad,
                 )
                 if reached:
                     meta = {
@@ -1823,6 +2404,21 @@ class UR5MoveItBridge(Node):
                     settle_timeout_sec=1.0,
                     tol_rad=goal_check_tol_rad,
                 )
+                ee_reached_after_goal_time = False
+                ee_reached_after_goal_time_detail = "ee_goal_not_checked"
+                if target_pose is not None:
+                    ee_reached_after_goal_time, ee_reached_after_goal_time_detail = self._wait_ee_target_reached(
+                        target_pose,
+                        settle_timeout_sec=1.0,
+                        tol_m=ee_goal_check_tol_m,
+                    )
+                self.get_logger().warning(
+                    "[BRIDGE_EXEC] goal_time_tolerance diagnostics "
+                    f"action={action_name} "
+                    f"joint_check={reached_after_goal_time_detail} "
+                    f"ee_check={ee_reached_after_goal_time_detail} "
+                    f"goal_time_tol={float(effective_goal_time_tol_sec):.3f}"
+                )
                 if reached_after_goal_time:
                     meta["status_text"] = "GOAL_TIME_TOLERANCE_GOAL_REACHED"
                     meta["goal_check"] = reached_after_goal_time_detail
@@ -1833,11 +2429,6 @@ class UR5MoveItBridge(Node):
                     )
                     return True, f"fjt_goal_time_but_goal_reached:{reached_after_goal_time_detail}", meta
                 if target_pose is not None:
-                    ee_reached_after_goal_time, ee_reached_after_goal_time_detail = self._wait_ee_target_reached(
-                        target_pose,
-                        settle_timeout_sec=1.0,
-                        tol_m=ee_goal_check_tol_m,
-                    )
                     if ee_reached_after_goal_time:
                         meta["status_text"] = "GOAL_TIME_TOLERANCE_EE_TARGET_REACHED"
                         meta["ee_goal_check"] = ee_reached_after_goal_time_detail
@@ -1853,16 +2444,26 @@ class UR5MoveItBridge(Node):
                     float(timeout_sec) * slow_factor,
                     self._joint_trajectory_duration_sec(slowed) + 12.0,
                 )
+                retry_goal_time = max(
+                    float(effective_goal_time_tol_sec),
+                    self._env_float(
+                        "PANEL_MOVEIT_BRIDGE_APPROACH_GOAL_TIME_RETRY_SEC",
+                        90.0 if phase_label_upper == "APPROACH" else float(effective_goal_time_tol_sec),
+                    ),
+                )
                 self.get_logger().warning(
                     "[BRIDGE_EXEC] FollowJointTrajectory retry por goal_time_tolerance "
-                    f"scale={slow_factor:.1f} timeout_sec={retry_timeout:.1f}"
+                    f"scale={slow_factor:.1f} timeout_sec={retry_timeout:.1f} "
+                    f"goal_time_tol={retry_goal_time:.1f}"
                 )
                 return self._execute_joint_trajectory_action(
                     slowed,
                     timeout_sec=retry_timeout,
                     retry_on_tolerance_violation=False,
+                    goal_time_override_sec=retry_goal_time,
                     target_pose=target_pose,
                     ee_target_tol_m=ee_target_tol_m,
+                    phase_label=phase_label,
                 )
             self.get_logger().warning(f"[BRIDGE_EXEC] FollowJointTrajectory FAIL ({detail})")
             return False, f"fjt_aborted:{detail}", meta
@@ -1888,7 +2489,10 @@ class UR5MoveItBridge(Node):
             return -1.0
 
     def _prepare_joint_trajectory_for_controller(
-        self, jt: JointTrajectory
+        self,
+        jt: JointTrajectory,
+        *,
+        force_cold_start_hold: bool = False,
     ) -> JointTrajectory:
         prepared = deepcopy(jt)
         try:
@@ -2036,7 +2640,60 @@ class UR5MoveItBridge(Node):
                         tfs.sec = sec
                         tfs.nanosec = nsec
 
-                if max_start_err > 0.02:
+                initial_segment_max_delta = max(
+                    0.0,
+                    float(self._joint_trajectory_initial_segment_max_delta(prepared)),
+                )
+                auto_short_goal_hold = False
+                short_goal_first_time_sec = max(0.0, float(first_time_sec))
+                if not force_cold_start_hold and short_goal_first_time_sec <= max(
+                    0.15,
+                    self._env_float(
+                        "PANEL_MOVEIT_BRIDGE_SHORT_GOAL_FIRST_POINT_MAX_SEC",
+                        0.25,
+                    ),
+                ):
+                    auto_short_goal_hold = True
+                cold_hold_needed = bool(force_cold_start_hold)
+                if cold_hold_needed:
+                    cold_hold_needed = bool(
+                        max_start_err > max(
+                            0.05,
+                            self._env_float(
+                                "PANEL_MOVEIT_BRIDGE_FIRST_GOAL_HOLD_MIN_START_ERR_RAD",
+                                0.08,
+                            ),
+                        )
+                        or short_goal_first_time_sec <= max(
+                            0.10,
+                            self._env_float(
+                                "PANEL_MOVEIT_BRIDGE_FIRST_GOAL_HOLD_MIN_FIRST_POINT_SEC",
+                                0.18,
+                            ),
+                        )
+                        or initial_segment_max_delta >= max(
+                            0.05,
+                            self._env_float(
+                                "PANEL_MOVEIT_BRIDGE_FIRST_GOAL_HOLD_MIN_SEGMENT_DELTA_RAD",
+                                0.12,
+                            ),
+                        )
+                    )
+                insert_cold_hold = bool(cold_hold_needed or auto_short_goal_hold)
+                cold_hold_sec = 0.0
+                if insert_cold_hold:
+                    cold_hold_sec = max(
+                        0.25,
+                        self._env_float(
+                            (
+                                "PANEL_MOVEIT_BRIDGE_FIRST_GOAL_HOLD_SEC"
+                                if force_cold_start_hold
+                                else "PANEL_MOVEIT_BRIDGE_SHORT_GOAL_HOLD_SEC"
+                            ),
+                            0.60 if force_cold_start_hold else 0.35,
+                        ),
+                    )
+                if max_start_err > 0.02 or insert_cold_hold:
                     first_point_time = 0.0
                     try:
                         first_tfs = points[0].time_from_start
@@ -2081,6 +2738,21 @@ class UR5MoveItBridge(Node):
                             midpoint.time_from_start.nanosec = mid_nsec
                             points.insert(0, midpoint)
                             inserted_midpoint = True
+                    if cold_hold_sec > 1e-6:
+                        for point in points:
+                            tfs = point.time_from_start
+                            total = (
+                                float(getattr(tfs, "sec", 0) or 0)
+                                + float(getattr(tfs, "nanosec", 0) or 0) / 1_000_000_000.0
+                                + cold_hold_sec
+                            )
+                            sec = int(total)
+                            nsec = int(round((total - sec) * 1_000_000_000.0))
+                            if nsec >= 1_000_000_000:
+                                sec += 1
+                                nsec -= 1_000_000_000
+                            tfs.sec = sec
+                            tfs.nanosec = nsec
                     start_point = deepcopy(points[0])
                     start_point.positions = tuple(current_vec)
                     start_point.velocities = tuple(0.0 for _ in joint_names)
@@ -2089,11 +2761,31 @@ class UR5MoveItBridge(Node):
                     start_point.time_from_start.sec = 0
                     start_point.time_from_start.nanosec = 0
                     points.insert(0, start_point)
+                    if cold_hold_sec > 1e-6:
+                        hold_point = deepcopy(start_point)
+                        hold_sec = int(cold_hold_sec)
+                        hold_nsec = int(round((cold_hold_sec - hold_sec) * 1_000_000_000.0))
+                        if hold_nsec >= 1_000_000_000:
+                            hold_sec += 1
+                            hold_nsec -= 1_000_000_000
+                        hold_point.time_from_start.sec = hold_sec
+                        hold_point.time_from_start.nanosec = hold_nsec
+                        points.insert(1, hold_point)
                     prepared.points = points
                     self.get_logger().info(
                         "[BRIDGE_EXEC] inserted start-state waypoint for controller "
                         f"max_start_err={max_start_err:.4f}rad lead_sec={lead_sec:.2f} "
-                        f"midpoint={str(bool(inserted_midpoint)).lower()}"
+                        f"midpoint={str(bool(inserted_midpoint)).lower()} "
+                        f"cold_hold_sec={cold_hold_sec:.2f} "
+                        f"short_goal_hold={str(bool(auto_short_goal_hold)).lower()} "
+                        f"initial_segment_max_delta={initial_segment_max_delta:.4f}"
+                    )
+                elif force_cold_start_hold:
+                    self.get_logger().info(
+                        "[BRIDGE_EXEC] skipped cold-start hold for controller "
+                        f"max_start_err={max_start_err:.4f}rad "
+                        f"first_point_sec={short_goal_first_time_sec:.3f} "
+                        f"initial_segment_max_delta={initial_segment_max_delta:.4f}"
                     )
                 try:
                     preview_points = list(points[:2])
@@ -2227,14 +2919,15 @@ class UR5MoveItBridge(Node):
         return f"{reliability}/{durability}/{history}@depth={qos.depth}"
 
     @staticmethod
-    def _parse_request_meta(frame_raw: str) -> tuple[str, int | None, str]:
+    def _parse_request_meta(frame_raw: str) -> tuple[str, int | None, str, dict[str, Any]]:
         raw = str(frame_raw or "").strip()
         if not raw:
-            return "", None, ""
+            return "", None, "", {}
         parts = [p.strip() for p in raw.split("|")]
         frame = parts[0] if parts else raw
         req_id = None
         req_uuid = ""
+        meta: dict[str, Any] = {}
         for token in parts[1:]:
             key, sep, value = token.partition("=")
             if sep != "=":
@@ -2250,13 +2943,20 @@ class UR5MoveItBridge(Node):
                     req_id = None
             elif k in ("uid", "uuid", "request_uuid"):
                 req_uuid = v
-        return frame, req_id, req_uuid
+            elif k in ("tol", "tol_m", "ee_tol", "ee_target_tol_m"):
+                try:
+                    meta["tol_m"] = float(v)
+                except Exception:
+                    pass
+            elif k in ("phase", "label"):
+                meta["phase_label"] = v
+        return frame, req_id, req_uuid, meta
 
     def _pose_callback(self, msg: PoseStamped, cartesian: bool = False, topic_name: str = "") -> None:
         try:
             now = time.monotonic()
             frame_raw = str(getattr(msg.header, "frame_id", "") or "")
-            frame_clean, req_from_msg, req_uuid = self._parse_request_meta(frame_raw)
+            frame_clean, req_from_msg, req_uuid, req_meta = self._parse_request_meta(frame_raw)
             if not frame_clean:
                 frame_clean = self._base_frame
             msg.header.frame_id = frame_clean
@@ -2284,6 +2984,13 @@ class UR5MoveItBridge(Node):
                     f"required={self._base_frame}"
                 )
                 return
+            ee_target_tol_m = None
+            try:
+                if "tol_m" in req_meta:
+                    ee_target_tol_m = float(req_meta["tol_m"])
+            except Exception:
+                ee_target_tol_m = None
+            phase_label = str(req_meta.get("phase_label") or "").strip() or None
             if self._require_request_id and req_from_msg is None:
                 self._command_seq += 1
                 rejected_request_id = int(self._command_seq)
@@ -2352,6 +3059,8 @@ class UR5MoveItBridge(Node):
                         msg,
                         cartesian,
                         msg.header.frame_id != self._base_frame,
+                        ee_target_tol_m,
+                        phase_label,
                         req_stamp_ns,
                         now,
                     )
@@ -2369,7 +3078,9 @@ class UR5MoveItBridge(Node):
                 f"topic={topic_name or 'n/a'} request_id={request_id} frame={msg.header.frame_id} "
                 f"pos=({pos.x:.3f},{pos.y:.3f},{pos.z:.3f}) "
                 f"stamp={msg.header.stamp.sec}.{msg.header.stamp.nanosec:09d} "
-                f"frame_raw={frame_raw or 'n/a'} request_uuid={req_uuid or 'n/a'}"
+                f"frame_raw={frame_raw or 'n/a'} request_uuid={req_uuid or 'n/a'} "
+                f"ee_target_tol_m={ee_target_tol_m if ee_target_tol_m is not None else 'n/a'} "
+                f"phase={phase_label or 'n/a'}"
             )
             if now - self._last_pose_log > 2.0:
                 needs_tf = msg.header.frame_id != self._base_frame
@@ -2445,11 +3156,18 @@ class UR5MoveItBridge(Node):
         target: PoseStamped,
         cartesian: bool,
         request_uuid: str = "",
+        ee_target_tol_m: float | None = None,
+        phase_label: str | None = None,
     ) -> tuple[bool, str, bool, bool]:
         if cartesian:
             return self._plan_cartesian(target)
         if self._backend == "moveit_py":
-            return self._plan_with_moveit_py(target, request_uuid=request_uuid)
+            return self._plan_with_moveit_py(
+                target,
+                request_uuid=request_uuid,
+                ee_target_tol_m=ee_target_tol_m,
+                phase_label=phase_label,
+            )
         return self._plan_with_moveit_commander(target)
 
     def _dispatch_plan_request_with_timeout(
@@ -2459,6 +3177,8 @@ class UR5MoveItBridge(Node):
         request_uuid: str,
         target: PoseStamped,
         cartesian: bool,
+        ee_target_tol_m: float | None = None,
+        phase_label: str | None = None,
     ) -> tuple[bool, str, bool, bool]:
         done = threading.Event()
         holder: dict[str, tuple[bool, str, bool, bool]] = {}
@@ -2470,6 +3190,8 @@ class UR5MoveItBridge(Node):
                     target,
                     cartesian,
                     request_uuid=request_uuid,
+                    ee_target_tol_m=ee_target_tol_m,
+                    phase_label=phase_label,
                 )
             except Exception as exc:
                 error["exc"] = exc
@@ -2537,6 +3259,8 @@ class UR5MoveItBridge(Node):
                             target,
                             cartesian,
                             needs_tf,
+                            ee_target_tol_m,
+                            phase_label,
                             request_stamp_ns,
                             queued_mono,
                         ) = self._pose_queue.popleft()
@@ -2660,6 +3384,8 @@ class UR5MoveItBridge(Node):
                             request_uuid=request_uuid,
                             target=target,
                             cartesian=cartesian,
+                            ee_target_tol_m=ee_target_tol_m,
+                            phase_label=phase_label,
                         )
                     except Exception as exc:
                         success = False
@@ -2768,6 +3494,8 @@ class UR5MoveItBridge(Node):
         self,
         target: PoseStamped,
         request_uuid: str = "",
+        ee_target_tol_m: float | None = None,
+        phase_label: str | None = None,
     ) -> tuple[bool, str, bool, bool]:
         if not self._planning_component or not self._moveit_py:
             if self._moveit_py_init_error:
@@ -2933,6 +3661,8 @@ class UR5MoveItBridge(Node):
                     jt_direct,
                     timeout_sec=fjt_timeout,
                     target_pose=target,
+                    ee_target_tol_m=ee_target_tol_m,
+                    phase_label=phase_label,
                 )
                 fjt_detail = self._result_meta_to_message(fjt_meta)
                 if fjt_ok:
@@ -3030,6 +3760,8 @@ class UR5MoveItBridge(Node):
                 jt,
                 timeout_sec=fjt_timeout,
                 target_pose=target,
+                ee_target_tol_m=ee_target_tol_m,
+                phase_label=phase_label,
             )
             fjt_detail = self._result_meta_to_message(fjt_meta)
             if fjt_ok:

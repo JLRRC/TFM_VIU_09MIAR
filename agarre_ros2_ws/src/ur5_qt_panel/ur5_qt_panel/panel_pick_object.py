@@ -20,15 +20,20 @@ except Exception:  # pragma: no cover - ROS not available in unit contexts
 
 try:
     from std_msgs.msg import Empty
+    from std_msgs.msg import Float64MultiArray
 except Exception:  # pragma: no cover - ROS not available in unit contexts
     Empty = None
+    Float64MultiArray = None
 
 from .panel_config import (
     BASKET_DROP,
     BASE_FRAME,
     DROP_NAME_SET,
     GRIPPER_ATTACH_PREFIX,
+    GRIPPER_CMD_TOPIC,
     GRIPPER_JOINT_NAMES,
+    GRIPPER_JOINT2_SIGN,
+    GRIPPER_OPEN_RAD,
     GRIPPER_TCP_Z_OFFSET,
     PICK_DEMO_DROP_Z_OFFSET,
     PICK_DEMO_GRASP_Z_OFFSET,
@@ -981,6 +986,7 @@ def run_pick_object(panel) -> None:
                 *,
                 timeout_sec: float,
                 log_tag: str,
+                require_heartbeat: bool = False,
             ) -> tuple[bool, int, int, int, float, bool]:
                 deadline = time.time() + max(0.5, float(timeout_sec))
                 while time.time() < deadline:
@@ -992,9 +998,12 @@ def run_pick_object(panel) -> None:
                         panel._emit_log(
                             f"[PICK_OBJ][MOVEIT][PLAN] {log_tag} "
                             f"pose_subs={pose_subs} result_pubs={result_pubs} result_subs={result_subs_local} "
-                            f"hb_recent={str(bool(hb_recent_local)).lower()} hb_age={hb_age_local_txt}"
+                            f"hb_recent={str(bool(hb_recent_local)).lower()} hb_age={hb_age_local_txt} "
+                            f"require_heartbeat={str(bool(require_heartbeat)).lower()}"
                         )
-                        if pose_subs > 0 and result_pubs > 0:
+                        if pose_subs > 0 and result_pubs > 0 and (
+                            not require_heartbeat or bool(hb_recent_local)
+                        ):
                             return True, pose_subs, result_pubs, result_subs_local, hb_age_local, hb_recent_local
                     time.sleep(0.4)
                 pose_subs = panel.ros_worker.topic_subscriber_count(topic)
@@ -1018,7 +1027,20 @@ def run_pick_object(panel) -> None:
                     _run_ui_sync(lambda: panel._stop_moveit_bridge(), timeout_sec=2.5)
                     time.sleep(0.2)
                 _run_ui_sync(lambda: panel._start_moveit_bridge(), timeout_sec=3.0)
-                matched, *_diag = _wait_bridge_match(timeout_sec=6.0, log_tag="bridge_recover_check")
+                try:
+                    recover_timeout_sec = float(
+                        os.environ.get(
+                            "PANEL_PICK_OBJECT_MOVEIT_BRIDGE_RECOVER_TIMEOUT_SEC",
+                            "10.0",
+                        )
+                    )
+                except Exception:
+                    recover_timeout_sec = 10.0
+                matched, *_diag = _wait_bridge_match(
+                    timeout_sec=max(6.0, float(recover_timeout_sec)),
+                    log_tag="bridge_recover_check",
+                    require_heartbeat=True,
+                )
                 if matched:
                     return
                 raise RuntimeError("MoveItBridge no recuperado tras reinicio (pose_subs/result_pubs)")
@@ -1085,6 +1107,14 @@ def run_pick_object(panel) -> None:
                 raise RuntimeError(msg)
             result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
             result_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
+            if result_subs <= 0:
+                result_wait_deadline = time.time() + 1.5
+                while time.time() < result_wait_deadline:
+                    result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
+                    result_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
+                    if result_pubs > 0 and result_subs > 0:
+                        break
+                    time.sleep(0.10)
             panel._emit_log(
                 f"[PICK_OBJ][MOVEIT][PLAN] result_path result_pubs={result_pubs} result_subs={result_subs} "
                 f"topic={moveit_result_topic}"
@@ -1883,10 +1913,50 @@ def run_pick_object(panel) -> None:
                 except Exception:
                     open_wait_sec = 2.2
                 open_wait_sec = max(0.1, open_wait_sec)
+                try:
+                    open_cmd_ack_sec = float(
+                        os.environ.get("PANEL_PICK_OBJECT_OPEN_CMD_ACK_SEC", "3.0")
+                    )
+                except Exception:
+                    open_cmd_ack_sec = 3.0
+                open_cmd_ack_sec = max(0.3, open_cmd_ack_sec)
 
                 joint_names = [str(j).strip() for j in (GRIPPER_JOINT_NAMES or []) if str(j).strip()]
                 if not joint_names:
                     joint_names = ["rg2_finger_joint1", "rg2_finger_joint2"]
+
+                def _direct_open_publish() -> bool:
+                    if Float64MultiArray is None:
+                        panel._emit_log(
+                            f"[PICK_OBJ][GRIPPER] direct_open_publish_unavailable before={reason}"
+                        )
+                        return False
+                    try:
+                        panel._ensure_moveit_node()
+                        pub = panel._get_gripper_publisher(GRIPPER_CMD_TOPIC)
+                        if pub is None:
+                            panel._emit_log(
+                                f"[PICK_OBJ][GRIPPER] direct_open_publish_no_publisher before={reason}"
+                            )
+                            return False
+                        target = float(GRIPPER_OPEN_RAD)
+                        msg = Float64MultiArray()
+                        msg.data = [target, float(target) * float(GRIPPER_JOINT2_SIGN)]
+                        panel._gripper_closed = False
+                        panel._gripper_is_closed = False
+                        pub.publish(msg)
+                        panel._emit_log(
+                            "[PICK_OBJ][GRIPPER] direct_open_publish "
+                            f"before={reason} target={target:.3f} "
+                            f"topic={GRIPPER_CMD_TOPIC} ack_timeout={float(open_cmd_ack_sec):.2f}s"
+                        )
+                        return True
+                    except Exception as exc:
+                        panel._emit_log(
+                            "[PICK_OBJ][GRIPPER] direct_open_publish_fail "
+                            f"before={reason} err={type(exc).__name__}:{exc}"
+                        )
+                        return False
 
                 def _current_opening_m() -> tuple[Optional[float], bool]:
                     if panel.ros_worker is None:
@@ -1922,13 +1992,19 @@ def run_pick_object(panel) -> None:
                         state["done"] = True
 
                     panel.signal_run_ui.emit(_open_cmd)
-                    deadline = time.time() + 1.5
+                    deadline = time.time() + open_cmd_ack_sec
                     while time.time() < deadline:
                         if state["done"]:
                             break
                         time.sleep(0.03)
                     if not state["done"]:
-                        raise RuntimeError("gripper_open_timeout_before_moveit")
+                        panel._emit_log(
+                            "[PICK_OBJ][GRIPPER] ui_open_dispatch_timeout "
+                            f"before={reason} ack_timeout={float(open_cmd_ack_sec):.2f}s "
+                            "fallback=direct_publish"
+                        )
+                        state["ok"] = _direct_open_publish()
+                        state["done"] = True
                     if not state["ok"]:
                         raise RuntimeError("gripper_open_command_failed_before_moveit")
                     if bool(getattr(panel, "_gripper_closed", False)):
@@ -2523,13 +2599,63 @@ def run_pick_object(panel) -> None:
                                 return f"skip_constraints:{base_uuid}"
                         return base_uuid
 
-                    def _encode_request_frame(frame: str, request_id: int, request_uuid: str) -> str:
+                    def _phase_tf_tol_m(label_key: str) -> float:
+                        if label_key == "PRE_GRASP":
+                            try:
+                                return float(os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_TOL_M", "0.10"))
+                            except Exception:
+                                return 0.10
+                        if label_key == "PRE_GRASP_RECENTER":
+                            try:
+                                return float(
+                                    os.environ.get(
+                                        "PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_TOL_M",
+                                        os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_TOL_M", "0.10"),
+                                    )
+                                )
+                            except Exception:
+                                return 0.10
+                        if str(label_key).startswith("GRASP_DOWN"):
+                            try:
+                                return float(os.environ.get("PANEL_PICK_OBJECT_GRASP_STEP_TOL_M", "0.04"))
+                            except Exception:
+                                return 0.04
+                        if label_key in ("LIFT", "DROP") or str(label_key).startswith("TRANSPORT"):
+                            try:
+                                return float(os.environ.get("PANEL_PICK_OBJECT_PATH_TOL_M", "0.03"))
+                            except Exception:
+                                return 0.03
+                        if label_key == "APPROACH":
+                            return 0.04
+                        try:
+                            return float(os.environ.get("PANEL_PICK_OBJECT_STEP_TOL_M", "0.02"))
+                        except Exception:
+                            return 0.02
+
+                    def _encode_request_frame(
+                        frame: str,
+                        request_id: int,
+                        request_uuid: str,
+                        *,
+                        tol_m: float | None = None,
+                        phase_label: str | None = None,
+                    ) -> str:
                         base = str(frame or BASE_FRAME or "base_link").strip() or "base_link"
                         rid = int(request_id)
                         uid = str(request_uuid or "").strip()
+                        parts = [base, f"rid={rid}"]
                         if uid:
-                            return f"{base}|rid={rid}|uid={uid}"
-                        return f"{base}|rid={rid}"
+                            parts.append(f"uid={uid}")
+                        if tol_m is not None:
+                            try:
+                                parts.append(f"tol={float(tol_m):.3f}")
+                            except Exception:
+                                pass
+                        phase_txt = str(phase_label or "").strip()
+                        if phase_txt:
+                            phase_txt = phase_txt.replace("|", "_")
+                            parts.append(f"phase={phase_txt}")
+                        return "|".join(parts)
 
                     use_cartesian = False
                     cart_env_name = ""
@@ -2577,18 +2703,15 @@ def run_pick_object(panel) -> None:
                         panel_request_id = _next_panel_request_id()
                         panel_request_uuid = _next_panel_request_uuid(label_up)
                         request_stamp_ns = _ros_clock_now_ns()
-                        if label_up == "APPROACH":
-                            tol_step = 0.04
-                        elif label_up == "PRE_GRASP":
-                            tol_step = 0.03
-                        elif label_up in ("LIFT", "DROP") or label_up.startswith("TRANSPORT"):
-                            tol_step = 0.03
-                        else:
-                            tol_step = 0.02
+                        tol_step = _phase_tf_tol_m(label)
                         pose_to_send = dict(pose_data)
                         pose_to_send["stamp_ns"] = int(request_stamp_ns)
                         pose_to_send["frame"] = _encode_request_frame(
-                            frame_id, panel_request_id, panel_request_uuid
+                            frame_id,
+                            panel_request_id,
+                            panel_request_uuid,
+                            tol_m=tol_step,
+                            phase_label=label_up,
                         )
                         request_wall = max(time.time() - 0.05, float(baseline_wall) - 0.001)
                         pose_subs_now = panel.ros_worker.topic_subscriber_count(moveit_pose_topic)
@@ -2746,36 +2869,7 @@ def run_pick_object(panel) -> None:
                                     f"[PICK_OBJ][ABORT] execute failed label={label} reason={message}"
                                 )
                                 raise RuntimeError(f"execute failed ({label}): {message}")
-                    if label == "PRE_GRASP":
-                        try:
-                            tol = float(os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_TOL_M", "0.10"))
-                        except Exception:
-                            tol = 0.10
-                    elif label == "PRE_GRASP_RECENTER":
-                        try:
-                            tol = float(
-                                os.environ.get(
-                                    "PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_TOL_M",
-                                    os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_TOL_M", "0.10"),
-                                )
-                            )
-                        except Exception:
-                            tol = 0.10
-                    elif label_up in ("LIFT", "DROP") or label_up.startswith("TRANSPORT"):
-                        try:
-                            tol = float(os.environ.get("PANEL_PICK_OBJECT_PATH_TOL_M", "0.03"))
-                        except Exception:
-                            tol = 0.03
-                    elif str(label).startswith("GRASP_DOWN"):
-                        try:
-                            tol = float(os.environ.get("PANEL_PICK_OBJECT_GRASP_STEP_TOL_M", "0.04"))
-                        except Exception:
-                            tol = 0.04
-                    else:
-                        try:
-                            tol = float(os.environ.get("PANEL_PICK_OBJECT_STEP_TOL_M", "0.02"))
-                        except Exception:
-                            tol = 0.02
+                    tol = _phase_tf_tol_m(label)
                     panel._emit_log(
                         f"[PICK_OBJ][MOVEIT][EXEC] {label} ee_link_moveit={ee_link_moveit or 'n/a'} "
                         f"ee_link_tf_check={measured_ee_frame} target_frame={frame_id} "
