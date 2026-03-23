@@ -1,60 +1,36 @@
 # TFM
 
-Raiz principal del proyecto del TFM de agarre inteligente.
+Raiz operativa del TFM para percepcion y agarre con ROS 2.
 
-## Estructura
+## Estructura vigente
 
 - `agarre_inteligente/`: entrenamiento, evaluacion, configuraciones y resultados de vision.
-- `agarre_ros2_ws/`: workspace ROS 2 con panel, Gazebo, MoveIt 2 y utilidades de integracion.
-- `reports/`: artefactos curados del documento, figuras, tablas, metricas y evidencias.
-- `auditoria/`: evidencias operativas y logs de validacion generados durante pruebas del panel.
+- `agarre_ros2_ws/`: workspace ROS 2 (panel, Gazebo, MoveIt 2 y utilidades).
+- `reports/`: artefactos curados de memoria (figuras, tablas, metricas y evidencias).
+- `auditoria/`: trazas operativas y auditorias de ejecucion.
+- `HISTORICO/`: cierres tecnicos previos y material de trazabilidad archivado.
+- `BORRAR/`: cuarentena controlada de material candidato a eliminacion.
 
-## Documentos utiles
+## Scripts raiz
 
-- `docs/panel_v2/README_VALIDACION_PANEL_V2.md`: secuencia recomendada para validar el panel.
-- `docs/panel_v2/ROADMAP_PANEL_V2_OPERATIVO.md`: estado tecnico por fases y pendientes actuales.
-- `docs/panel_v2/AUDITORIA_PANEL_V2_TFM.md`: auditoria tecnica consolidada del panel.
-- `docs/panel_v2/CHECKLIST_TFM_PANEL_V2.md`: checklist de verificacion para la defensa.
+- `./lanzar_panelv2.sh`: arranque principal del panel (detecta SSH y activa modo headless remoto).
+- `./recrear_experimentos_cap5_gpu.sh`: relanza entrenamientos del capitulo 5.
+- `./recrear_artefactos_tfm.sh`: regenera artefactos curados del documento.
 
-## Arranque rapido
-
-Para lanzar el panel desde la raiz:
+## Arranque rapido del panel
 
 ```bash
-./lanzar_panelv2.sh --fg
+./lanzar_panelv2.sh
 ```
 
-Para parar el stack:
+Parada del stack:
 
 ```bash
 ./agarre_ros2_ws/scripts/stop_panel_v2.sh
 ```
 
-## Flujos principales
+## Flujo de reproducibilidad
 
-### Panel ROS 2
-
-- Lanzador principal: `./lanzar_panelv2.sh`
-- Lanzador directo del workspace: `./agarre_ros2_ws/scripts/start_panel_v2.sh`
-- Estado del stack: `./agarre_ros2_ws/scripts/status_panel_v2.sh`
-- Recuperacion del panel: `./agarre_ros2_ws/scripts/recover_panel_v2.sh`
-
-### Vision
-
-- Entrenamiento y evaluacion: `agarre_inteligente/scripts/`
-- Resultados oficiales por experimento: `agarre_inteligente/experiments/`
-
-### Documento
-
-- Figuras finales: `reports/figures/`
-- Tablas finales: `reports/tables/`
-- Metricas validadas: `reports/metrics/validated/`
-- Evidencias funcionales: `reports/evidence/`
-
-## Punto de entrada recomendado
-
-Si quieres trabajar con el sistema completo, empieza por:
-
-1. `./lanzar_panelv2.sh --fg`
-2. `docs/panel_v2/README_VALIDACION_PANEL_V2.md`
-3. `docs/panel_v2/ROADMAP_PANEL_V2_OPERATIVO.md`
+1. Reentrenar (si aplica): `./recrear_experimentos_cap5_gpu.sh`
+2. Regenerar artefactos: `./recrear_artefactos_tfm.sh`
+3. Revisar salida final en `reports/`

@@ -1,8 +1,0 @@
-fase,ruta,bloqueo,estado,evidencia,cambio,siguiente_paso
-FASE_1_APPROACH,pick_object,timeout_fjt_intermitente,VALIDADA_CON_LIMITACIONES,"R6: exec_failed_fjt_direct; R7: APPROACH success",approach_tol_0_10_y_request_timeout_budget,estabilizar_ejecucion_fjt_approach
-FASE_1_APPROACH,tfm_execute,gate_controladores,BLOQUEADA,"MVT_TFM_R1: success=false 'controladores no verificados'",ninguno,desbloquear_gate_controladores_para_entrar_a_moveit
-FASE_2_PRE_GRASP,pick_object,tf_mismatch_en_borde,BLOQUEADA,"R7: dist=0.101 tol=0.100 tras success bridge",ninguno,ajuste_minimo_criterio_tf_pregrasp
-FASE_3_GRASP_DOWN,pick_object,dependencia_fase_2,BLOQUEADA,"no entra por bloqueo PRE_GRASP",ninguno,cerrar_fase_2
-FASE_4_LIFT,pick_object,dependencia_fase_3,BLOQUEADA,"no evaluable",ninguno,cerrar_fase_3
-FASE_5_TRANSPORT_RELEASE,pick_object,dependencia_fase_4,BLOQUEADA,"no evaluable",ninguno,cerrar_fase_4
-FASE_6_REPETIBILIDAD,pick_object_y_tfm_execute,fases_previas_no_cerradas,BLOQUEADA,"sin bateria estable",ninguno,cerrar_fases_1_a_5_y_revalidar

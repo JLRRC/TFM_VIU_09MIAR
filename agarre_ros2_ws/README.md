@@ -1,6 +1,7 @@
 # agarre_ros2_ws
 
 Workspace ROS 2 del TFM para panel, simulacion y planificacion del UR5 con Gazebo y MoveIt 2.
+Se conserva el nombre `agarre_ros2_ws` por compatibilidad con scripts y rutas absolutas ya validadas.
 
 ## Contenido
 

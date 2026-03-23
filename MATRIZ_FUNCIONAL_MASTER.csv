@@ -1,8 +1,0 @@
-fase,bloque,ruta,estado,evidencia,bloqueo_restante,siguiente_accion
-FASE1,arranque_orquestacion,panel_v2,CERRADA,"system_state READY; servicios panel activos",ninguno_relevante,"mantener smoke startup"
-FASE1,release_gate,TFM_infer_remote,CERRADA,"post-parche success=true grasp inferido y publicado",ninguno_relevante,"conservar auto-release remoto"
-FASE2,tramo_corto,PickObject_MoveIt,BLOQUEADA,"APPROACH publicado; wait continuo sin resultado en /desired_grasp/result",request_result_path_no_cierra,"instrumentar bridge/result y timeout operativo por etapa"
-FASE2,tramo_corto,PickDemo_Directo,VALIDADA_CON_LIMITACIONES,"fases directas hasta RELEASE en logs",no_cesta_full_transport,"mantener como ruta secundaria/diagnostica"
-FASE3,ciclo_completo,PickObject_MoveIt,BLOQUEADA,"no supera APPROACH",dependencia_fase2,"cerrar APPROACH PRE_GRASP GRASP_DOWN"
-FASE3,ciclo_completo,TFM_execute,VALIDADA_CON_LIMITACIONES,"historico execute OK; corrida actual fail por grasp expirado",timing_operativo_grasp,"encadenar infer->execute inmediato"
-FASE4,repetibilidad,evidencia_tfm,VALIDADA_CON_LIMITACIONES,"logs + artefactos + comparativa antes/despues parche",falta_bateria_estable_e2e_pick_object,"mini bateria sobre frente APPROACH"

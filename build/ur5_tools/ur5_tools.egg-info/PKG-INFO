@@ -1,7 +1,0 @@
-Metadata-Version: 2.1
-Name: ur5-tools
-Version: 0.0.0
-Summary: Tools for UR5 simulation (MoveIt bridge, utilities).
-Maintainer: laboratorio
-Maintainer-email: jesus.lozano.rodriguez@gmail.com
-License: MIT

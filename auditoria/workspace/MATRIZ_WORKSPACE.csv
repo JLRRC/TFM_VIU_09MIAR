@@ -1,0 +1,23 @@
+elemento,ruta_actual,tipo,categoria,accion,ruta_destino,motivo,afecta_panel,afecta_experimentos,afecta_reports
+agarre_inteligente,/home/laboratorio/TFM/agarre_inteligente,directorio,VIGENTE_ESENCIAL,mantener,/home/laboratorio/TFM/agarre_inteligente,Bloque de vision y scripts de entrenamiento/evaluacion,No,Si,Si
+agarre_ros2_ws,/home/laboratorio/TFM/agarre_ros2_ws,directorio,VIGENTE_ESENCIAL,mantener,/home/laboratorio/TFM/agarre_ros2_ws,Workspace ROS2 operativo para panel y planificacion,Si,No,No
+reports,/home/laboratorio/TFM/reports,directorio,VIGENTE_ESENCIAL,mantener,/home/laboratorio/TFM/reports,Artefactos finales del TFM y evidencias,No,Si,Si
+auditoria,/home/laboratorio/TFM/auditoria,directorio,VIGENTE_ESENCIAL,mantener,/home/laboratorio/TFM/auditoria,Trazabilidad operativa y auditorias de ejecucion,Si,Parcial,Parcial
+HISTORICO,/home/laboratorio/TFM/HISTORICO,directorio,HISTORICO_UTIL,mantener,/home/laboratorio/TFM/HISTORICO,Archivo tecnico de cierres y validaciones,No,No,Si
+BORRAR,/home/laboratorio/TFM/BORRAR,directorio,BORRAR_CANDIDATO,mantener_cuarentena,/home/laboratorio/TFM/BORRAR,Cuarentena de residuales y backups no operativos,No,No,No
+README raiz,/home/laboratorio/TFM/README.md,archivo,VIGENTE_ESENCIAL,actualizar,/home/laboratorio/TFM/README.md,Documentacion operativa raiz desactualizada corregida,Si,Si,Si
+.gitignore,/home/laboratorio/TFM/.gitignore,archivo,VIGENTE_ESENCIAL,mantener,/home/laboratorio/TFM/.gitignore,Reglas de versionado y limpieza,No,No,No
+lanzar_panelv2.sh,/home/laboratorio/TFM/lanzar_panelv2.sh,script,VIGENTE_ESENCIAL,mantener,/home/laboratorio/TFM/lanzar_panelv2.sh,Script principal de arranque del panel,Si,No,No
+recrear_experimentos_cap5_gpu.sh,/home/laboratorio/TFM/recrear_experimentos_cap5_gpu.sh,script,VIGENTE_ESENCIAL,mantener,/home/laboratorio/TFM/recrear_experimentos_cap5_gpu.sh,Recreacion de experimentos capitulo 5,No,Si,Si
+recrear_artefactos_tfm.sh,/home/laboratorio/TFM/recrear_artefactos_tfm.sh,script,VIGENTE_ESENCIAL,actualizar_y_mantener,/home/laboratorio/TFM/recrear_artefactos_tfm.sh,Regeneracion de figuras/tablas con tmp operativo en auditoria,No,Si,Si
+build raiz,/home/laboratorio/TFM/build,directorio,BORRAR_CANDIDATO,mover,/home/laboratorio/TFM/BORRAR/cuarentena_raiz_20260323/build,Artefactos de build fuera del workspace ROS2 operativo,No,No,No
+install raiz,/home/laboratorio/TFM/install,directorio,BORRAR_CANDIDATO,mover,/home/laboratorio/TFM/BORRAR/cuarentena_raiz_20260323/install,Artefactos de install fuera del workspace ROS2 operativo,No,No,No
+log raiz,/home/laboratorio/TFM/log,directorio,BORRAR_CANDIDATO,mover,/home/laboratorio/TFM/BORRAR/cuarentena_raiz_20260323/log,Logs residuales en raiz no requeridos para operacion diaria,No,No,No
+DIRECTO_ALIGN_TO_CLOSE_*,/home/laboratorio/TFM/DIRECTO_ALIGN_TO_CLOSE_*,documentacion,HISTORICO_UTIL,mover,/home/laboratorio/TFM/HISTORICO/cierres/directo/20260323/,Cierre tecnico Directo ya resuelto y conservado para trazabilidad,No,No,Parcial
+DIRECTO_CARRY_*,/home/laboratorio/TFM/DIRECTO_CARRY_*,documentacion,HISTORICO_UTIL,mover,/home/laboratorio/TFM/HISTORICO/cierres/directo/20260323/,Cierre tecnico de carry Directo archivado,No,No,Parcial
+DIRECTO_RELEASE_HOME_*,/home/laboratorio/TFM/DIRECTO_RELEASE_HOME_*,documentacion,HISTORICO_UTIL,mover,/home/laboratorio/TFM/HISTORICO/cierres/directo/20260323/,Cierre tecnico final Directo archivado,No,No,Parcial
+MOVEIT_MASTER_*,/home/laboratorio/TFM/MOVEIT_MASTER_*,documentacion,HISTORICO_UTIL,mover,/home/laboratorio/TFM/HISTORICO/cierres/moveit/20260323/,Ejecuciones maestras MoveIt conservadas sin ocupar raiz,No,No,Parcial
+*_MASTER (autonomo),/home/laboratorio/TFM/*_MASTER.*,documentacion,HISTORICO_UTIL,mover,/home/laboratorio/TFM/HISTORICO/cierres/global/20260323/,Planes y trazas maestras historicas reubicadas,No,No,Parcial
+HISTORICO README,/home/laboratorio/TFM/HISTORICO/README.md,archivo,VIGENTE_ESENCIAL,actualizar,/home/laboratorio/TFM/HISTORICO/README.md,Indice historico alineado con nueva estructura,No,No,Si
+auditoria README,/home/laboratorio/TFM/auditoria/README.md,archivo,VIGENTE_ESENCIAL,crear,/home/laboratorio/TFM/auditoria/README.md,Faltaba README para guiar uso del directorio auditoria,Si,No,Parcial
+agarre_ros2_ws README,/home/laboratorio/TFM/agarre_ros2_ws/README.md,archivo,VIGENTE_ESENCIAL,actualizar,/home/laboratorio/TFM/agarre_ros2_ws/README.md,Aclaracion de compatibilidad de nombre del workspace,Si,No,No

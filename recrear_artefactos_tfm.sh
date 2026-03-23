@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="/home/laboratorio/TFM"
 PYTHON_BIN="${PYTHON_BIN:-/home/laboratorio/.venv-tfm/bin/python}"
-TMP_DIR="$ROOT/BORRAR/report_extra/recreated_tmp"
+TMP_DIR="$ROOT/auditoria/tmp/recreated_tmp"
 LOSS_TMP="$TMP_DIR/loss_shared_ylim"
 BOUNDARY_TMP="$TMP_DIR/boundary_failure"
 
