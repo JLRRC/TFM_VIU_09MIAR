@@ -1,51 +1,43 @@
 {
   "route": "TFM->MoveIt",
-  "session": "20260322_230505_025475",
+  "session": "20260323_185833_863786",
   "selected_object": "box_red",
   "source": "topic:/grasp_rect",
   "grasp_base": {
-    "x": 0.5925732232781246,
-    "y": 0.1146642121878311,
+    "x": 0.5602138757185154,
+    "y": 0.11569952218766187,
     "z": 0.025000000000000022,
-    "yaw_deg": -42.692124927534984
+    "yaw_deg": -56.401569470477625
   },
-  "state": "FAIL_TERMINAL",
+  "state": "EXECUTABLE_GRASP_OK",
   "events": [
     {
-      "ts": 1774217105.0263462,
+      "ts": 1774288713.8641822,
       "state": "READY",
       "detail": "preconditions_ok"
     },
     {
-      "ts": 1774217105.0328505,
+      "ts": 1774288713.8713944,
       "state": "OBJECT_SELECTED",
       "detail": "name=box_red"
     },
     {
-      "ts": 1774217105.0630567,
+      "ts": 1774288713.8739522,
       "state": "GRASP_FRESH",
-      "detail": "source=topic:/grasp_rect age_sec=2.04"
+      "detail": "source=topic:/grasp_rect age_sec=2.61"
     },
     {
-      "ts": 1774217105.0643346,
+      "ts": 1774288713.8784397,
       "state": "VISUAL_GRASP_OK",
       "detail": "topic=/grasp_rect"
     },
     {
-      "ts": 1774217105.064608,
+      "ts": 1774288713.8817685,
       "state": "EXECUTABLE_GRASP_OK",
       "detail": "pose_topic=/desired_grasp cartesian_topic=/desired_grasp_cartesian"
-    },
-    {
-      "ts": 1774217105.3142407,
-      "state": "FAIL_TERMINAL",
-      "detail": "tfm_canonical_pick_object_not_started"
     }
   ],
-  "start_ts": 1774217105.0254898,
-  "success": false,
-  "message": "tfm_canonical_pick_object_not_started",
-  "final_state": "FAIL_TERMINAL",
-  "end_ts": 1774217105.3142407,
-  "duration_sec": 0.28875088691711426
+  "start_ts": 1774288713.8637993,
+  "success": null,
+  "message": ""
 }

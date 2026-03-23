@@ -1,0 +1,2 @@
+base_image,overlay_source,zoom_x1,zoom_y1,zoom_x2,zoom_y2,pred_center_x,pred_center_y,gt_center_x,gt_center_y,centroid_distance_px
+reports/figures/cap5/Ilustracion_5-16_evidencia_funcional_del_pipeline_percepcion_publicacion_consumo_en_ros_2.png,reports/evidence/ros2/panel_audit/figures/overlay_last.png,135,128,211,207,172.850,167.450,172.900,167.300,0.158

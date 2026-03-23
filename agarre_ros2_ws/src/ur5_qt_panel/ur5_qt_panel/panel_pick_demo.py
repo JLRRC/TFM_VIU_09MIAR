@@ -403,14 +403,19 @@ def run_pick_demo(panel) -> None:
                     seed.append(float(snapshot[joint_name]))
                 return seed
 
-            def _read_gripper_state():
+            def _read_gripper_state(*, expected_closed: Optional[bool] = None):
                 joint_snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
                 positions = {}
                 for joint_name in GRIPPER_JOINT_NAMES:
                     if joint_name in joint_snapshot:
                         positions[joint_name] = float(joint_snapshot[joint_name])
+                expected_closed_flag = (
+                    bool(getattr(panel, "_gripper_closed", False))
+                    if expected_closed is None
+                    else bool(expected_closed)
+                )
                 target_mag = abs(
-                    float(GRIPPER_CLOSED_RAD if getattr(panel, "_gripper_closed", False) else GRIPPER_OPEN_RAD)
+                    float(GRIPPER_CLOSED_RAD if expected_closed_flag else GRIPPER_OPEN_RAD)
                 )
                 tol_m = max(
                     0.005,
@@ -448,6 +453,7 @@ def run_pick_demo(panel) -> None:
                     force_est = None
                 return {
                     "closed_flag": bool(getattr(panel, "_gripper_closed", False)),
+                    "expected_closed": bool(expected_closed_flag),
                     "joint_positions": positions,
                     "target_mag": float(target_mag),
                     "opening_sum": opening_sum,
@@ -484,7 +490,7 @@ def run_pick_demo(panel) -> None:
                 )
                 start = time.monotonic()
                 stable_hits = 0
-                last_state = _read_gripper_state()
+                last_state = _read_gripper_state(expected_closed=closed)
                 _append_trace(
                     "[PICK][DIRECT][GRIPPER] "
                     f"wait_start target={'closed' if closed else 'open'} "
@@ -492,7 +498,7 @@ def run_pick_demo(panel) -> None:
                     f"stable_hits={required_hits}"
                 )
                 while (time.monotonic() - start) <= timeout_sec:
-                    state = _read_gripper_state()
+                    state = _read_gripper_state(expected_closed=closed)
                     last_state = state
                     measured_ok = bool(state.get("measured_target_ok"))
                     age_ok = state.get("joint_state_age_sec") is None or float(state.get("joint_state_age_sec")) <= max_state_age_sec
@@ -563,7 +569,7 @@ def run_pick_demo(panel) -> None:
                     0.01,
                     float(os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.030") or 0.030),
                 )
-                gripper_state = _read_gripper_state()
+                gripper_state = _read_gripper_state(expected_closed=True)
                 gripper_closed_measured = bool(gripper_state.get("measured_target_ok"))
                 ok = gripper_closed_measured and xy_dist <= xy_tol and z_error <= z_tol
                 return {
@@ -581,6 +587,102 @@ def run_pick_demo(panel) -> None:
                     "tcp_base": _tuple3(tcp_base),
                     "object_base": _tuple3(obj_base),
                 }
+
+            def _pre_close_alignment_metrics():
+                obj_base = _live_object_base()
+                tcp_base = _live_tcp_base()
+                if obj_base is None or tcp_base is None:
+                    return {
+                        "ok": False,
+                        "reason": "pose_unavailable",
+                        "xy_dist": None,
+                        "z_gap": None,
+                        "z_error": None,
+                        "tcp_obj_dist": None,
+                        "tcp_base": _tuple3(tcp_base),
+                        "object_base": _tuple3(obj_base),
+                    }
+                xy_dist = math.hypot(
+                    float(tcp_base[0]) - float(obj_base[0]),
+                    float(tcp_base[1]) - float(obj_base[1]),
+                )
+                z_gap = float(tcp_base[2]) - float(obj_base[2])
+                z_error = abs(z_gap - float(GRIPPER_TCP_Z_OFFSET))
+                tcp_obj_dist = _dist(tcp_base, obj_base)
+                xy_tol = max(
+                    0.01,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M",
+                            os.environ.get("PANEL_PICK_DEMO_CLOSE_XY_TOL_M", "0.035"),
+                        )
+                        or 0.035
+                    ),
+                )
+                z_tol = max(
+                    0.01,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M",
+                            os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.030"),
+                        )
+                        or 0.030
+                    ),
+                )
+                ok = xy_dist <= xy_tol and z_error <= z_tol
+                return {
+                    "ok": ok,
+                    "reason": "ok" if ok else "alignment_out_of_tolerance",
+                    "xy_dist": float(xy_dist),
+                    "z_gap": float(z_gap),
+                    "z_error": float(z_error),
+                    "tcp_obj_dist": float(tcp_obj_dist),
+                    "xy_tol": float(xy_tol),
+                    "z_tol": float(z_tol),
+                    "tcp_base": _tuple3(tcp_base),
+                    "object_base": _tuple3(obj_base),
+                    "gripper_state": _json_safe(_read_gripper_state()),
+                }
+
+            def _wait_pre_close_alignment(*, timeout_sec: float, min_consecutive: int = 3):
+                deadline = time.time() + max(0.3, float(timeout_sec))
+                consecutive_ok = 0
+                best_xy_dist = None
+                best_z_error = None
+                last_metrics = None
+                while time.time() < deadline:
+                    metrics = _pre_close_alignment_metrics()
+                    last_metrics = metrics
+                    xy_dist = metrics.get("xy_dist")
+                    z_error = metrics.get("z_error")
+                    if xy_dist is not None:
+                        best_xy_dist = (
+                            float(xy_dist)
+                            if best_xy_dist is None
+                            else min(float(best_xy_dist), float(xy_dist))
+                        )
+                    if z_error is not None:
+                        best_z_error = (
+                            float(z_error)
+                            if best_z_error is None
+                            else min(float(best_z_error), float(z_error))
+                        )
+                    if bool(metrics.get("ok")):
+                        consecutive_ok += 1
+                        if consecutive_ok >= max(1, int(min_consecutive)):
+                            done_metrics = dict(metrics)
+                            done_metrics["consecutive_ok"] = int(consecutive_ok)
+                            done_metrics["best_xy_dist"] = best_xy_dist
+                            done_metrics["best_z_error"] = best_z_error
+                            return True, done_metrics
+                    else:
+                        consecutive_ok = 0
+                    time.sleep(0.06)
+                done_metrics = dict(last_metrics or {})
+                done_metrics["consecutive_ok"] = int(consecutive_ok)
+                done_metrics["best_xy_dist"] = best_xy_dist
+                done_metrics["best_z_error"] = best_z_error
+                return False, done_metrics
 
             def _target_world_from_base(target_base):
                 base_coords = _tuple3(target_base)
@@ -1180,24 +1282,52 @@ def run_pick_demo(panel) -> None:
                     float(obj_base_align[2]) + float(GRIPPER_TCP_Z_OFFSET),
                 )
                 target_world_align = _target_world_from_base(target_base_align)
-            _phase_begin(
-                "GRASP_ALIGN_IK",
-                target_world=target_world_align,
-                target_base=target_base_align,
-                frame_used="base_link",
-                offsets={
-                    "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
-                    "ik_mode": "direct_rg2_tcp_to_tool0_numeric",
-                },
-                note="fine alignment IK over live object pose",
-            )
-            align_debug = _align_demo_grasp_direct()
-            _phase_end(
-                "GRASP_ALIGN_IK",
-                ik_solution=align_debug.get("ik_solution") if isinstance(align_debug, dict) else None,
-                note="ik alignment completed",
-                result="ok",
-            )
+            skip_align_if_reachable = str(
+                os.environ.get("PANEL_PICK_DEMO_SKIP_ALIGN_IF_REACHABLE", "1")
+                or "1"
+            ).strip().lower() in ("1", "true", "yes", "on")
+            pre_align_metrics = _pre_close_alignment_metrics()
+            if skip_align_if_reachable and bool(pre_align_metrics.get("ok")):
+                _phase_begin(
+                    "GRASP_ALIGN_IK",
+                    target_world=target_world_align,
+                    target_base=target_base_align,
+                    frame_used="base_link",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "ik_mode": "direct_rg2_tcp_to_tool0_numeric",
+                    },
+                    note="skip align: tcp already within pre-close tolerance",
+                )
+                _phase_end(
+                    "GRASP_ALIGN_IK",
+                    note=json.dumps(_json_safe(pre_align_metrics), ensure_ascii=False, sort_keys=True),
+                    result="skipped",
+                )
+                panel._emit_log(
+                    "[PICK][DIRECT] GRASP_ALIGN_IK skipped: close-window already satisfied "
+                    f"xy_dist={float(pre_align_metrics.get('xy_dist') or 0.0):.3f} "
+                    f"z_error={float(pre_align_metrics.get('z_error') or 0.0):.3f}"
+                )
+            else:
+                _phase_begin(
+                    "GRASP_ALIGN_IK",
+                    target_world=target_world_align,
+                    target_base=target_base_align,
+                    frame_used="base_link",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "ik_mode": "direct_rg2_tcp_to_tool0_numeric",
+                    },
+                    note="fine alignment IK over live object pose",
+                )
+                align_debug = _align_demo_grasp_direct()
+                _phase_end(
+                    "GRASP_ALIGN_IK",
+                    ik_solution=align_debug.get("ik_solution") if isinstance(align_debug, dict) else None,
+                    note="ik alignment completed",
+                    result="ok",
+                )
             extra_down_m = max(
                 0.0,
                 float(os.environ.get("PANEL_PICK_DEMO_EXTRA_GRASP_DOWN_M", "0.0") or 0.0),
@@ -1297,7 +1427,84 @@ def run_pick_demo(panel) -> None:
                     f"obj=({obj_base_pre_close[0]:.3f},{obj_base_pre_close[1]:.3f},{obj_base_pre_close[2]:.3f}) "
                     f"tcp_obj_dist={_dist(tcp_base_pre_close, obj_base_pre_close):.3f}"
                 )
-            _phase_end("PRE_CLOSE", result="ok")
+            pre_close_wait_sec = max(
+                0.4,
+                float(
+                    os.environ.get(
+                        "PANEL_PICK_DEMO_PRE_CLOSE_WAIT_SEC",
+                        "1.2",
+                    )
+                    or 1.2
+                ),
+            )
+            pre_close_min_consecutive = max(
+                1,
+                int(
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_PRE_CLOSE_CONSECUTIVE",
+                            "3",
+                        )
+                        or 3
+                    )
+                ),
+            )
+            pre_close_realign_retries = max(
+                0,
+                int(
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES",
+                            "1",
+                        )
+                        or 1
+                    )
+                ),
+            )
+            pre_close_ok = False
+            pre_close_metrics = {}
+            pre_close_attempt = 0
+            while pre_close_attempt <= pre_close_realign_retries:
+                panel._emit_log(
+                    "[PICK][DIRECT][PRE_CLOSE_GATE] "
+                    f"waiting_alignment attempt={pre_close_attempt + 1}/{pre_close_realign_retries + 1} "
+                    f"timeout={pre_close_wait_sec:.2f}s "
+                    f"min_consecutive={pre_close_min_consecutive}"
+                )
+                pre_close_ok, pre_close_metrics = _wait_pre_close_alignment(
+                    timeout_sec=pre_close_wait_sec,
+                    min_consecutive=pre_close_min_consecutive,
+                )
+                if bool(pre_close_ok):
+                    break
+                if pre_close_attempt >= pre_close_realign_retries:
+                    break
+                panel._emit_log(
+                    "[PICK][DIRECT][PRE_CLOSE_GATE] "
+                    "alignment_not_reached -> retrying fine align before close"
+                )
+                try:
+                    _align_demo_grasp_direct()
+                except Exception as realign_exc:
+                    pre_close_metrics["realign_error"] = str(realign_exc)
+                    break
+                pre_close_attempt += 1
+            pre_close_metrics["wait_timeout_sec"] = float(pre_close_wait_sec)
+            pre_close_metrics["min_consecutive"] = int(pre_close_min_consecutive)
+            pre_close_metrics["realign_retries"] = int(pre_close_realign_retries)
+            pre_close_metrics["attempt_used"] = int(pre_close_attempt + 1)
+            _phase_end(
+                "PRE_CLOSE",
+                note=json.dumps(_json_safe(pre_close_metrics), ensure_ascii=False, sort_keys=True),
+                result="ok" if bool(pre_close_ok) else "failed",
+            )
+            if not bool(pre_close_ok):
+                _abort_grasp(
+                    code="PRE_CLOSE_NOT_ALIGNED",
+                    phase="PRE_CLOSE",
+                    note="tcp not aligned with object before close; refusing to close away from target",
+                    metrics=pre_close_metrics,
+                )
             panel._emit_log("[DEMO] Cerrando pinza")
             def _close_only():
                 panel._command_gripper(True, log_action="PICK", force=True)

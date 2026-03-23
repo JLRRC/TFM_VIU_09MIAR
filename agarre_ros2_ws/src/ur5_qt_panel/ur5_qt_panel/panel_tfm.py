@@ -124,7 +124,13 @@ def tfm_infer(panel) -> tuple[bool, str]:
         panel._emit_log(f"[SAFETY] TFM infer bloqueado: {infer_reason}")
         panel._audit_append("logs/infer.log", f"[TFM] infer_blocked reason={infer_reason}")
         return False, infer_reason
-    qimg, w, h, frame_ts = panel._last_camera_frame
+    frame_snapshot = panel._latest_camera_frame_snapshot() if hasattr(panel, "_latest_camera_frame_snapshot") else panel._last_camera_frame
+    if not frame_snapshot:
+        panel._set_status("TFM en espera: sin frame de cámara", error=True)
+        panel._emit_log("[SAFETY] TFM infer bloqueado: sin frame de cámara")
+        panel._audit_append("logs/infer.log", "[TFM] infer_blocked reason=sin frame de cámara")
+        return False, "sin frame de cámara"
+    qimg, w, h, frame_ts = frame_snapshot
     roi = None
     if INFER_ROI_SIZE and panel._selected_px:
         roi_cx, roi_cy = panel._selected_px

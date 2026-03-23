@@ -251,6 +251,7 @@ from .panel_objects import (
     ObjectLogicalState,
     force_release_all_objects,
     get_object_state,
+    get_object_states,
     is_on_table,
     mark_object_released,
     recalc_object_states,
@@ -604,6 +605,57 @@ class CameraController:
     def __init__(self, panel: "ControlPanelV2") -> None:
         self._panel = panel
 
+    def _sync_from_worker_snapshot(self, *, now: Optional[float] = None) -> bool:
+        p = self._panel
+        if not p._camera_required or not getattr(p, "_camera_subscribed", False):
+            return False
+        if not getattr(p, "_ros_worker_started", False) or not p.ros_worker:
+            return False
+        if now is None:
+            now = time.time()
+        max_age = max(
+            2.0,
+            float(CAMERA_READY_MAX_AGE_SEC),
+            float(getattr(p, "_camera_warmup_grace_sec", 2.0) or 2.0),
+        )
+        synced = False
+        topic_specs = [
+            (str(getattr(p, "camera_topic", "") or "").strip(), "rgb"),
+            (str(getattr(p, "_camera_depth_topic", "") or "").strip(), "depth"),
+        ]
+        for topic, kind in topic_specs:
+            if not topic:
+                continue
+            try:
+                snapshot = p.ros_worker.image_frame_snapshot(topic)
+            except Exception:
+                snapshot = None
+            if not snapshot:
+                continue
+            qimg, w, h, fps, wall, count = snapshot
+            age = max(0.0, now - float(wall))
+            if int(count) <= 0 or age > max_age:
+                continue
+            if kind == "rgb":
+                needs_sync = (p._camera_frame_count <= 0) or (float(wall) > float(p._last_camera_frame_ts) + 1e-6)
+            else:
+                needs_sync = (p._camera_depth_frame_count <= 0) or (
+                    float(wall) > float(p._last_camera_depth_frame_ts) + 1e-6
+                )
+            if not needs_sync:
+                continue
+            self.on_image(topic, qimg, int(w), int(h), float(fps))
+            p._emit_log_throttled(
+                f"camera_snapshot_sync:{kind}",
+                (
+                    f"[CAMERA][RECOVER] snapshot_sync kind={kind} topic={topic} "
+                    f"age={age:.2f}s count={int(count)} size={int(w)}x{int(h)}"
+                ),
+                min_interval=1.0,
+            )
+            synced = True
+        return synced
+
     def schedule_reconnect(self, reason: str, delay_ms: Optional[int] = None) -> None:
         p = self._panel
         if not p._camera_required or not p._bridge_running:
@@ -647,6 +699,7 @@ class CameraController:
         if not p._camera_required:
             return
         now = time.time()
+        self._sync_from_worker_snapshot(now=now)
         camera_ready, camera_fault, camera_source_down, age, in_grace = p._camera_runtime_flags(now)
         depth_required, depth_topic = p._camera_depth_expectation()
         depth_age = now - p._last_camera_depth_frame_ts if p._last_camera_depth_frame_ts > 0.0 else float("inf")
@@ -953,6 +1006,7 @@ class CameraController:
         if p._debug_logs_enabled:
             p._log(f"[CAMERA] Suscripción OK a {topic}")
         self._ensure_depth_subscription()
+        QTimer.singleShot(350, self.health_check)
         self.start_health_check(1200)
         return True
 
@@ -1239,6 +1293,7 @@ class ControlPanelV2(QMainWindow):
         load_object_positions()
         self.ws_dir = WS_DIR
         self.gz_proc = None
+        self.gz_gui_proc = None
         self.bridge_proc = None
         self.bag_proc = None
         self.moveit_proc = None
@@ -1640,6 +1695,7 @@ class ControlPanelV2(QMainWindow):
         self._grasp_rect_subscribed = False
         self._last_grasp_update_ts: float = 0.0
         self._last_grasp_selection_name: str = ""
+        self._last_infer_selection_snapshot: Dict[str, object] = {}
         self._last_infer_image_path: str = ""
         self._last_infer_output_path: str = ""
         self._last_infer_frame_ts: float = 0.0
@@ -3934,9 +3990,10 @@ class ControlPanelV2(QMainWindow):
             return False, "modelo no disponible"
         if not bool(getattr(self, "_camera_subscribed", False)):
             return False, "cámara no conectada"
-        if not self._last_camera_frame:
+        frame_snapshot = self._latest_camera_frame_snapshot()
+        if not frame_snapshot:
             return False, "sin frame de cámara"
-        _qimg, w, h, frame_ts = self._last_camera_frame
+        _qimg, w, h, frame_ts = frame_snapshot
         if w <= 0 or h <= 0:
             return False, "frame inválido"
         now = time.time()
@@ -3945,7 +4002,11 @@ class ControlPanelV2(QMainWindow):
             return False, self._camera_not_ready_reason()
         if frame_ts:
             frame_age = max(0.0, now - float(frame_ts))
-            if frame_age >= max(0.2, float(CAMERA_READY_MAX_AGE_SEC)):
+            infer_frame_max_age_sec = max(
+                max(0.2, float(CAMERA_READY_MAX_AGE_SEC)),
+                float(os.environ.get("PANEL_TFM_INFER_FRAME_MAX_AGE_SEC", "4.0") or 4.0),
+            )
+            if frame_age >= infer_frame_max_age_sec:
                 return False, f"frame stale age={frame_age:.2f}s"
         self._sync_external_release_state()
         if not self._objects_release_done:
@@ -3955,6 +4016,21 @@ class ControlPanelV2(QMainWindow):
         if not self._pose_info_ok:
             return False, "pose/info no disponible"
         return True, ""
+
+    @staticmethod
+    def _tfm_infer_waitable_reason(reason: str) -> bool:
+        text = str(reason or "").strip().lower()
+        if not text:
+            return False
+        if text in {
+            "cámara no lista",
+            "sin frame de cámara",
+            "release de objetos pendiente",
+            "objetos no estabilizados tras release",
+            "pose/info no disponible",
+        }:
+            return True
+        return text.startswith("frame stale age=") or text.startswith("camera_")
 
     def _current_grasp_status(self) -> Tuple[bool, str]:
         if self._tfm_infer_inflight:
@@ -3979,6 +4055,26 @@ class ControlPanelV2(QMainWindow):
         if not self._last_grasp_base and not self._last_grasp_world:
             return False, "grasp base_link no disponible"
         return True, ""
+
+    def _restore_execute_selection_context(self) -> None:
+        snapshot = getattr(self, "_last_infer_selection_snapshot", None)
+        if isinstance(snapshot, dict) and snapshot:
+            self._restore_infer_selection_snapshot(snapshot)
+        grasp_selection = str(getattr(self, "_last_grasp_selection_name", "") or "").strip()
+        if not grasp_selection:
+            return
+        if not str(getattr(self, "_selected_object", "") or "").strip():
+            self._selected_object = grasp_selection
+        if not str(getattr(self, "_selection_last_user_name", "") or "").strip():
+            self._selection_last_user_name = grasp_selection
+        if float(getattr(self, "_selection_last_user_ts", 0.0) or 0.0) <= 0.0:
+            self._selection_last_user_ts = float(
+                getattr(self, "_last_grasp_update_ts", 0.0) or time.time()
+            )
+        self._ensure_selected_object_in_store(
+            grasp_selection,
+            reason="execute_restore_from_grasp",
+        )
 
     def _calibration_action_status(self) -> Tuple[bool, str]:
         if getattr(self, "_pick_target_lock_active", False):
@@ -4473,12 +4569,33 @@ class ControlPanelV2(QMainWindow):
             depth_topic = topic[: -len("/rgb")] + "/depth_image"
         else:
             depth_topic = "/camera_overhead/depth_image"
+        # The runtime camera gate must follow the active TFM model modality.
+        # Recent RGB checkpoints were being blocked by stale depth even though
+        # preprocessing only consumes depth when in_channels == 4.
         depth_required = bool(self._camera_depth_required_env)
-        if hasattr(self, "chk_tfm_use_depth") and self.chk_tfm_use_depth is not None:
+        if not depth_required:
+            in_channels = 0
             try:
-                depth_required = depth_required or bool(self.chk_tfm_use_depth.isChecked())
+                model_info = self.tfm_module.model_info() if self.tfm_module else {}
+                in_channels = int((model_info or {}).get("in_channels", 0) or 0)
             except Exception:
-                pass
+                in_channels = 0
+            if in_channels <= 0:
+                try:
+                    modality = str(getattr(self, "_exp_info", {}).get("modality", "") or "").strip().lower()
+                except Exception:
+                    modality = ""
+                if modality in ("rgbd", "rgb-d"):
+                    in_channels = 4
+                elif modality == "rgb":
+                    in_channels = 3
+            if in_channels > 0:
+                depth_required = in_channels >= 4
+            elif hasattr(self, "chk_tfm_use_depth") and self.chk_tfm_use_depth is not None:
+                try:
+                    depth_required = bool(self.chk_tfm_use_depth.isChecked())
+                except Exception:
+                    pass
         return depth_required, depth_topic
 
     def _camera_runtime_flags(self, now: Optional[float] = None) -> Tuple[bool, bool, bool, float, bool]:
@@ -5855,6 +5972,9 @@ class ControlPanelV2(QMainWindow):
     def _recover_runtime(self) -> None:
         self._log_button("Recover")
         self._emit_log("[RECOVER] Iniciando recuperación en modo diagnóstico")
+        if not self._objects_release_done and not self._detach_inflight:
+            self._emit_log("[RECOVER] release pendiente detectado; lanzando Soltar objetos")
+            self._release_objects()
         self._fatal_latched = False
         self._fatal_shutdown_started = False
         if self._system_state == SystemState.ERROR_FATAL:
@@ -7055,6 +7175,7 @@ class ControlPanelV2(QMainWindow):
                 _log_exception("list parent processes", exc)
         for proc in (
             self.gz_proc,
+            self.gz_gui_proc,
             self.bridge_proc,
             self.bag_proc,
             self.moveit_proc,
@@ -7627,32 +7748,90 @@ class ControlPanelV2(QMainWindow):
         self._complete_pending_tfm_execute_request(bool(success), str(message or ""))
 
     def _restore_infer_selection_snapshot(self, snapshot: object) -> None:
-        if self._selected_object:
-            return
         if not isinstance(snapshot, dict):
             return
         name = str(snapshot.get("name") or "").strip()
         if not name:
             return
+        current_selected = str(getattr(self, "_selected_object", "") or "").strip()
+        if current_selected and current_selected != name:
+            return
         selected_px = snapshot.get("px")
         selected_world = snapshot.get("world")
         selected_base = snapshot.get("base")
-        self._selected_object = name
-        self._selected_px = tuple(selected_px) if selected_px is not None else None
-        self._selected_world = tuple(selected_world) if selected_world is not None else None
-        self._selected_base = tuple(selected_base) if selected_base is not None else None
-        self._selected_base_frame = str(snapshot.get("base_frame") or self._business_base_frame())
+        if not current_selected:
+            self._selected_object = name
+            self._selected_px = tuple(selected_px) if selected_px is not None else None
+            self._selected_world = tuple(selected_world) if selected_world is not None else None
+            self._selected_base = tuple(selected_base) if selected_base is not None else None
+            self._selected_base_frame = str(snapshot.get("base_frame") or self._business_base_frame())
         snap_ts = float(snapshot.get("timestamp", 0.0) or 0.0)
         if snap_ts > 0.0:
-            self._selection_timestamp = snap_ts
+            if float(getattr(self, "_selection_timestamp", 0.0) or 0.0) <= 0.0:
+                self._selection_timestamp = snap_ts
             if not self._selection_last_user_name:
                 self._selection_last_user_name = name
             if not self._selection_last_user_ts:
                 self._selection_last_user_ts = snap_ts
+        store_ok = self._ensure_selected_object_in_store(
+            name,
+            reason="infer_snapshot_restore",
+        )
         self._emit_log(
             "[TFM][INFER] restored_selection_from_snapshot "
-            f"name={name} px={self._selected_px if self._selected_px is not None else 'n/a'}"
+            f"name={name} px={self._selected_px if self._selected_px is not None else 'n/a'} "
+            f"store_ok={str(bool(store_ok)).lower()}"
         )
+
+    def _latest_camera_frame_snapshot(self) -> Optional[Tuple[object, int, int, float]]:
+        latest = self._last_camera_frame
+        with self._camera_frame_lock:
+            pending = self._camera_pending_frame
+        if pending:
+            topic, qimg, w, h, _fps, ts = pending
+            if topic == self.camera_topic and int(w) > 2 and int(h) > 2:
+                latest_ts = float(latest[3]) if latest is not None else 0.0
+                if latest is None or float(ts) >= latest_ts:
+                    latest = (qimg, int(w), int(h), float(ts))
+                    self._last_camera_frame = latest
+        return latest
+
+    def _ensure_selected_object_in_store(self, name: str, *, reason: str) -> bool:
+        target = str(name or "").strip()
+        if not target:
+            return False
+        current = get_object_state(target)
+        if current and current.logical_state == ObjectLogicalState.SELECTED:
+            return True
+        pos = get_object_position(target)
+        if pos is None and current is not None:
+            pos = tuple(current.position)
+        if pos is None or not is_on_table(pos):
+            self._emit_log(
+                "[PICK][SELECT_STORE] restore_skip "
+                f"name={target} reason={reason} "
+                f"pos={'n/a' if pos is None else f'({float(pos[0]):.3f},{float(pos[1]):.3f},{float(pos[2]):.3f})'}"
+            )
+            return False
+        for other_name, other_state in get_object_states().items():
+            if other_name == target:
+                continue
+            if other_state.logical_state == ObjectLogicalState.SELECTED:
+                update_object_state(
+                    other_name,
+                    logical_state=ObjectLogicalState.ON_TABLE,
+                    reason=f"{reason}_clear_other",
+                )
+        ok = update_object_state(
+            target,
+            logical_state=ObjectLogicalState.SELECTED,
+            reason=reason,
+        )
+        self._emit_log(
+            "[PICK][SELECT_STORE] restore "
+            f"name={target} reason={reason} ok={str(bool(ok)).lower()}"
+        )
+        return bool(ok)
 
     def _handle_infer_result(self, result: Dict[str, object]) -> None:
         self._tfm_infer_inflight = False
@@ -7684,7 +7863,15 @@ class ControlPanelV2(QMainWindow):
         self._last_grasp_source = "infer_model"
         self._last_grasp_frame = self.camera_topic or "image"
         self._last_grasp_update_ts = time.time()
-        self._last_grasp_selection_name = str(getattr(self, "_selected_object", "") or "").strip()
+        selection_snapshot = result.get("selection_snapshot")
+        self._last_infer_selection_snapshot = dict(selection_snapshot) if isinstance(selection_snapshot, dict) else {}
+        self._restore_infer_selection_snapshot(selection_snapshot)
+        snapshot_name = ""
+        if isinstance(selection_snapshot, dict):
+            snapshot_name = str(selection_snapshot.get("name") or "").strip()
+        self._last_grasp_selection_name = str(
+            getattr(self, "_selected_object", "") or snapshot_name or ""
+        ).strip()
         self._last_infer_image_path = str(result.get("image_path") or "")
         self._last_infer_output_path = str(result.get("out_path") or "")
         try:
@@ -7716,7 +7903,6 @@ class ControlPanelV2(QMainWindow):
                     "z": float(base_coords[2]),
                     "yaw_deg": float(self._last_grasp_world.get("yaw_deg", 0.0) or 0.0),
                 }
-        self._restore_infer_selection_snapshot(result.get("selection_snapshot"))
         self._refresh_cornell_metrics(frame_w, frame_h)
         self._sync_tfm_module_grasp_state()
         grasp_rect_publish_ok = self._publish_current_grasp_rect()
@@ -8394,6 +8580,7 @@ class ControlPanelV2(QMainWindow):
             self._set_status("TFM: pose/info no disponible", error=True)
             self._audit_append("logs/execute.log", "[TFM] execute FAIL reason=pose/info no disponible")
             return False, "pose/info no disponible"
+        self._restore_execute_selection_context()
         self._ensure_grasp_rect_subscription()
         grasp_ok, grasp_reason = self._current_grasp_status()
         if not grasp_ok:
@@ -10553,6 +10740,64 @@ class ControlPanelV2(QMainWindow):
                 except Exception:
                     pass
 
+        infer_ready, infer_reason = self._tfm_infer_ready_status()
+        if (
+            not infer_ready
+            and str(infer_reason or "").strip().lower() == "release de objetos pendiente"
+            and not bool(getattr(self, "_detach_inflight", False))
+        ):
+            self._emit_log("[TFM][REMOTE] release pendiente; lanzando Soltar objetos")
+            self._release_objects()
+        if request_id and not infer_ready and self._tfm_infer_waitable_reason(infer_reason):
+            wait_sec = max(
+                2.0,
+                float(os.environ.get("PANEL_TFM_REMOTE_INFER_READY_WAIT_SEC", "20.0") or 20.0),
+            )
+            poll_sec = max(
+                0.1,
+                float(os.environ.get("PANEL_TFM_REMOTE_INFER_READY_POLL_SEC", "0.25") or 0.25),
+            )
+            self._tfm_infer_pending_request_id = request_id
+            self._emit_log(
+                "[TFM][REMOTE][INFER_ACK] "
+                f"request_id={request_id} deferred=true waiting_ready=true "
+                f"reason={infer_reason or 'n/a'} wait_sec={wait_sec:.1f}"
+            )
+
+            def _resume_infer_when_ready() -> None:
+                deadline = time.time() + wait_sec
+                last_reason = infer_reason
+                while time.time() < deadline:
+                    ready, reason = self._tfm_infer_ready_status()
+                    last_reason = reason
+                    if ready:
+                        break
+                    if not self._tfm_infer_waitable_reason(reason):
+                        self.signal_run_ui.emit(
+                            lambda reason=reason: self._complete_pending_tfm_infer_request(
+                                False, str(reason or "n/a")
+                            )
+                        )
+                        return
+                    time.sleep(poll_sec)
+
+                def _run_infer_now() -> None:
+                    ready_now, reason_now = self._tfm_infer_ready_status()
+                    if not ready_now:
+                        self._complete_pending_tfm_infer_request(
+                            False,
+                            str(reason_now or last_reason or "n/a"),
+                        )
+                        return
+                    ok_now, msg_now = self._tfm_infer_grasp()
+                    if not bool(ok_now) or not bool(getattr(self, "_tfm_infer_inflight", False)):
+                        self._complete_pending_tfm_infer_request(bool(ok_now), str(msg_now or "n/a"))
+
+                self.signal_run_ui.emit(_run_infer_now)
+
+            self._run_async(_resume_infer_when_ready, name="remote_tfm_infer_wait")
+            return
+
         ok, message = self._tfm_infer_grasp()
         if bool(ok) and request_id and bool(getattr(self, "_tfm_infer_inflight", False)):
             self._tfm_infer_pending_request_id = request_id
@@ -10624,6 +10869,82 @@ class ControlPanelV2(QMainWindow):
                 except Exception:
                     pass
 
+        def _defer_select_until_on_table(reason: str) -> bool:
+            if not request_id or not target:
+                return False
+            wait_sec = max(
+                2.0,
+                float(os.environ.get("PANEL_REMOTE_SELECT_ON_TABLE_WAIT_SEC", "8.0") or 8.0),
+            )
+            poll_sec = max(
+                0.1,
+                float(os.environ.get("PANEL_REMOTE_SELECT_ON_TABLE_POLL_SEC", "0.25") or 0.25),
+            )
+            self._emit_log(
+                "[PICK][REMOTE][ACK] "
+                f"request_id={request_id} deferred=true waiting_select=true "
+                f"reason={reason or 'n/a'} wait_sec={wait_sec:.1f}"
+            )
+
+            def _wait_and_select() -> None:
+                deadline = time.time() + wait_sec
+                last_xyz = None
+                while time.time() < deadline:
+                    pose = None
+                    if getattr(self, "_ros_worker_started", False) and getattr(self, "ros_worker", None) is not None:
+                        try:
+                            poses, _ts = self.ros_worker.pose_snapshot()
+                        except Exception:
+                            poses = {}
+                        pose = poses.get(target)
+                    if pose is None:
+                        pose = get_object_position(target)
+                    if pose is not None and len(pose) >= 3:
+                        try:
+                            xyz = (float(pose[0]), float(pose[1]), float(pose[2]))
+                        except Exception:
+                            xyz = None
+                        if xyz is not None:
+                            last_xyz = xyz
+                            if is_on_table(xyz):
+                                break
+                    time.sleep(poll_sec)
+
+                def _select_now() -> None:
+                    xyz = last_xyz
+                    if (xyz is None or not is_on_table(xyz)) and target:
+                        pose = get_object_position(target)
+                        if pose is not None and len(pose) >= 3:
+                            try:
+                                xyz = (float(pose[0]), float(pose[1]), float(pose[2]))
+                            except Exception:
+                                xyz = None
+                    if xyz is not None and is_on_table(xyz):
+                        x, y, z = xyz
+                        bulk_update_object_positions(
+                            {target: (x, y, z)},
+                            source="remote_pose_select_retry",
+                            objects_stable=True,
+                        )
+                        recalc_object_states("remote_select_pose_retry_sync")
+                        px, py = -1, -1
+                        w = getattr(self.camera_view, "_img_width", 0) if hasattr(self, "camera_view") else 0
+                        h = getattr(self.camera_view, "_img_height", 0) if hasattr(self, "camera_view") else 0
+                        if self._camera_stream_ok and self._pose_info_ok and w > 0 and h > 0:
+                            pix = world_xyz_to_pixel(x, y, z, w, h) or table_xy_to_pixel(x, y, w, h)
+                            if pix:
+                                px, py = int(pix[0]), int(pix[1])
+                        self._select_object(target, px, py, x, y, z, source="remote_pose_retry")
+                    if getattr(self, "_selected_object", None) == target:
+                        _ack(True, "selected")
+                    else:
+                        _ack(False, f"selection_rejected:{target}")
+
+                self.signal_run_ui.emit(_select_now)
+
+            self._run_async(_wait_and_select, name="remote_select_wait")
+            return True
+
         if target.lower() in ("", "clear", "none", "null"):
             if self._selected_object:
                 prev_state = get_object_state(self._selected_object)
@@ -10656,6 +10977,9 @@ class ControlPanelV2(QMainWindow):
             live_pose = poses.get(target)
         if live_pose is not None and len(live_pose) >= 3:
             x, y, z = float(live_pose[0]), float(live_pose[1]), float(live_pose[2])
+            if not (self._objects_settled or is_on_table((x, y, z))):
+                if _defer_select_until_on_table("remote_pose_not_on_table_yet"):
+                    return
             if self._objects_settled or is_on_table((x, y, z)):
                 bulk_update_object_positions(
                     {target: (x, y, z)},
@@ -10674,6 +10998,8 @@ class ControlPanelV2(QMainWindow):
             if getattr(self, "_selected_object", None) == target:
                 _ack(True, "selected")
             else:
+                if _defer_select_until_on_table("selection_rejected_transient"):
+                    return
                 _ack(False, f"selection_rejected:{target}")
             return
         objects = get_object_positions() or {}
@@ -14657,6 +14983,7 @@ class ControlPanelV2(QMainWindow):
         self._kill_proc(self.release_service_proc, "release_objects_service")
         self._kill_proc(self.world_tf_proc, "world_tf_publisher")
         self._kill_proc(self.rsp_proc, "robot_state_publisher")
+        self._kill_proc(self.gz_gui_proc, "gz sim gui")
         self._kill_proc(self.gz_proc, "gz sim")
         self.bag_proc = None
         self.bridge_proc = None
@@ -14664,6 +14991,7 @@ class ControlPanelV2(QMainWindow):
         self.release_service_proc = None
         self.world_tf_proc = None
         self.rsp_proc = None
+        self.gz_gui_proc = None
         self.gz_proc = None
         self._force_cleanup_leftovers()
         if self._moveit_node is not None:

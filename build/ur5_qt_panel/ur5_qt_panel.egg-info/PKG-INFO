@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: ur5-qt-panel
+Version: 0.1.0
+Summary: Qt control panel for UR5 simulation (Gazebo + MoveIt + cameras).
+Maintainer: laboratorio
+Maintainer-email: jesus.lozano.rodriguez@gmail.com
+License: MIT

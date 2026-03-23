@@ -157,22 +157,31 @@ def select_reference_gt(ious: np.ndarray, angles: np.ndarray, iou_thr: float, an
 
 
 def candidate_score(row: pd.Series, iou_thr: float, angle_thr: float) -> float:
-    iou_gap = max(iou_thr - float(row["iou"]), 0.0) / iou_thr
-    angle_gap = max(float(row["angle_deg"]) - angle_thr, 0.0) / angle_thr
+    iou = float(row["iou"])
+    angle = float(row["angle_deg"])
+    area = float(row["gt_area_frac"])
+    iou_gap = max(iou_thr - iou, 0.0) / iou_thr
+    angle_gap = max(angle - angle_thr, 0.0) / angle_thr
     boundary = math.hypot(iou_gap, angle_gap)
     center_dist = float(row["center_dist_px"]) / max(float(row["image_diag_px"]), 1.0)
-    size_penalty = max(0.02 - float(row["gt_area_frac"]), 0.0) * 8.0
+    # Penaliza objetos muy pequeños para evitar ejemplos poco legibles en la memoria.
+    size_penalty = (max(0.018 - area, 0.0) * 10.0) + (max(0.012 - area, 0.0) * 8.0)
+    dual_fail_penalty = 0.10 if (iou < iou_thr and angle > angle_thr) else 0.0
     implausible_penalty = 0.0
-    if float(row["iou"]) < 0.15:
+    if iou < 0.15:
         implausible_penalty += 0.35
-    if float(row["angle_deg"]) > 45.0:
+    if angle > 45.0:
         implausible_penalty += 0.35
     near_bonus = 0.0
-    if 0.20 <= float(row["iou"]) < iou_thr:
-        near_bonus -= 0.18
-    if angle_thr < float(row["angle_deg"]) <= 40.0:
-        near_bonus -= 0.18
-    return boundary + (0.45 * center_dist) + size_penalty + implausible_penalty + near_bonus
+    if (iou_thr - 0.03) <= iou < iou_thr:
+        near_bonus -= 0.22
+    elif 0.20 <= iou < iou_thr:
+        near_bonus -= 0.12
+    if angle <= angle_thr:
+        near_bonus -= 0.06
+    elif angle_thr < angle <= 35.0:
+        near_bonus -= 0.08
+    return boundary + (0.45 * center_dist) + size_penalty + dual_fail_penalty + implausible_penalty + near_bonus
 
 
 def choose_checkpoints(experiments_root: Path, experiments: list[str]) -> list[SelectedCheckpoint]:
@@ -316,15 +325,36 @@ def infer_candidates_for_checkpoint(checkpoint_info: SelectedCheckpoint, batch_s
 
 def filter_top_candidates(all_rows: pd.DataFrame, top_k: int) -> pd.DataFrame:
     failures = all_rows.loc[~all_rows["success"]].copy()
-    mask = (
-        ((failures["iou"] >= 0.20) & (failures["iou"] < failures["iou_thr"]))
-        | ((failures["angle_deg"] > failures["angle_thr"]) & (failures["angle_deg"] <= 40.0))
-        | ((failures["iou"] >= 0.18) & (failures["angle_deg"] <= 35.0))
+    # Prioriza falsos negativos más "pedagógicos":
+    # 1) fallo por IoU muy cercano al umbral con ángulo válido y objeto suficientemente visible.
+    preferred = failures.loc[
+        (failures["iou"] < failures["iou_thr"])
+        & (failures["iou"] >= (failures["iou_thr"] - 0.03))
+        & (failures["angle_deg"] <= failures["angle_thr"])
+        & (failures["gt_area_frac"] >= 0.015)
+    ].copy()
+
+    if preferred.empty:
+        near_single = failures.loc[
+            (
+                (failures["iou"] < failures["iou_thr"])
+                & (failures["iou"] >= (failures["iou_thr"] - 0.05))
+                & (failures["angle_deg"] <= failures["angle_thr"])
+            )
+            | (
+                (failures["iou"] >= failures["iou_thr"])
+                & (failures["angle_deg"] > failures["angle_thr"])
+                & (failures["angle_deg"] <= (failures["angle_thr"] + 4.0))
+            )
+        ].copy()
+        if not near_single.empty:
+            preferred = near_single
+
+    focused = preferred if not preferred.empty else failures.copy()
+    focused = focused.sort_values(
+        ["selection_score", "iou", "gt_area_frac", "center_dist_px", "angle_deg"],
+        ascending=[True, False, False, True, True],
     )
-    focused = failures.loc[mask].copy()
-    if focused.empty:
-        focused = failures.copy()
-    focused = focused.sort_values(["selection_score", "iou", "angle_deg"], ascending=[True, False, True])
     return focused.head(top_k).reset_index(drop=True)
 
 

@@ -1587,6 +1587,7 @@ class UR5MoveItBridge(Node):
         target_pose: PoseStamped | None = None,
         ee_target_tol_m: float | None = None,
         phase_label: str | None = None,
+        approach_replan_attempt: int = 0,
     ) -> tuple[bool, str, dict[str, Any]]:
         cold_start_first_goal = False
         try:
@@ -1595,6 +1596,12 @@ class UR5MoveItBridge(Node):
         except Exception:
             cold_start_first_goal = False
         phase_label_upper = str(phase_label or "").upper()
+        approach_max_total_timeout_sec = float(
+            self._env_float(
+                "PANEL_MOVEIT_BRIDGE_APPROACH_MAX_TOTAL_TIMEOUT_SEC",
+                120.0,
+            )
+        )
         effective_goal_time_tol_sec = (
             float(goal_time_override_sec)
             if goal_time_override_sec is not None
@@ -1608,6 +1615,14 @@ class UR5MoveItBridge(Node):
                     75.0,
                 ),
             )
+            if int(approach_replan_attempt) >= 1:
+                effective_goal_time_tol_sec = max(
+                    effective_goal_time_tol_sec,
+                    self._env_float(
+                        "PANEL_MOVEIT_BRIDGE_APPROACH_REPLAN_GOAL_TIME_TOL_SEC",
+                        120.0,
+                    ),
+                )
         if retry_on_tolerance_violation and self._force_fjt_direct_for_walltime_sim:
             pre_scale = 2.0
             jt = self._scale_joint_trajectory_timing(jt, scale=pre_scale)
@@ -1620,6 +1635,27 @@ class UR5MoveItBridge(Node):
             force_cold_start_hold=cold_start_first_goal,
         )
         prepared_traj_sec = self._joint_trajectory_duration_sec(jt)
+        if phase_label_upper == "APPROACH" and int(approach_replan_attempt) >= 1:
+            approach_replan_min_traj_sec = max(
+                30.0,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_APPROACH_REPLAN_MIN_TRAJ_SEC",
+                    45.0,
+                ),
+            )
+            if prepared_traj_sec + 1e-6 < approach_replan_min_traj_sec:
+                replan_scale = max(
+                    1.0,
+                    float(approach_replan_min_traj_sec) / max(0.001, float(prepared_traj_sec)),
+                )
+                jt = self._scale_joint_trajectory_timing(jt, scale=replan_scale)
+                prepared_traj_sec = self._joint_trajectory_duration_sec(jt)
+                self.get_logger().warning(
+                    "[BRIDGE_EXEC] approach replan trajectory duration raised "
+                    f"attempt={int(approach_replan_attempt)} "
+                    f"scale={replan_scale:.2f} min_traj_sec={float(approach_replan_min_traj_sec):.1f} "
+                    f"prepared_traj_sec={float(prepared_traj_sec):.3f}"
+                )
         prepared_timeout = self._fjt_timeout_for_trajectory(
             prepared_traj_sec,
             extra_margin_sec=8.0,
@@ -1634,6 +1670,12 @@ class UR5MoveItBridge(Node):
                 f"traj_sec={float(prepared_traj_sec):.3f}"
             )
             timeout_sec = float(prepared_timeout)
+        if phase_label_upper == "APPROACH" and float(timeout_sec) > approach_max_total_timeout_sec:
+            self.get_logger().warning(
+                "[BRIDGE_EXEC] APPROACH timeout capped "
+                f"original={float(timeout_sec):.1f} max={approach_max_total_timeout_sec:.1f}"
+            )
+            timeout_sec = float(approach_max_total_timeout_sec)
         ready, action_name, action_names, candidates = self._wait_for_expected_controller_action(
             timeout_sec=1.5
         )
@@ -1837,6 +1879,14 @@ class UR5MoveItBridge(Node):
                         0.10,
                     ),
                 )
+            if phase_label_upper == "PRE_GRASP":
+                ee_goal_check_tol_m = max(
+                    ee_goal_check_tol_m,
+                    self._env_float(
+                        "PANEL_MOVEIT_BRIDGE_PREGRASP_EE_TARGET_TOL_M",
+                        0.12,
+                    ),
+                )
             ee_goal_check_settle_sec = max(
                 0.15,
                 self._env_float(
@@ -1857,6 +1907,22 @@ class UR5MoveItBridge(Node):
                 )
                 self.get_logger().info(
                     "[BRIDGE_EXEC] approach early-close profile "
+                    f"ee_goal_check_tol_m={float(ee_goal_check_tol_m):.3f} "
+                    f"ee_goal_check_settle_sec={float(ee_goal_check_settle_sec):.3f}"
+                )
+            if phase_label_upper == "PRE_GRASP":
+                ee_goal_check_settle_sec = min(
+                    float(ee_goal_check_settle_sec),
+                    max(
+                        0.15,
+                        self._env_float(
+                            "PANEL_MOVEIT_BRIDGE_PREGRASP_EE_TARGET_SETTLE_SEC",
+                            0.20,
+                        ),
+                    ),
+                )
+                self.get_logger().info(
+                    "[BRIDGE_EXEC] pregrasp early-close profile "
                     f"ee_goal_check_tol_m={float(ee_goal_check_tol_m):.3f} "
                     f"ee_goal_check_settle_sec={float(ee_goal_check_settle_sec):.3f}"
                 )
@@ -1904,6 +1970,7 @@ class UR5MoveItBridge(Node):
             approach_long_retry_enabled = (
                 phase_label_upper == "APPROACH"
                 and retry_on_tolerance_violation
+                and int(approach_replan_attempt) <= 0
             )
             approach_long_retry_start_sec = max(
                 30.0,
@@ -1933,6 +2000,17 @@ class UR5MoveItBridge(Node):
                     0.18,
                 ),
             )
+            approach_replan_max_attempts = max(
+                1,
+                int(
+                    round(
+                        self._env_float(
+                            "PANEL_MOVEIT_BRIDGE_APPROACH_REPLAN_MAX_ATTEMPTS",
+                            2.0,
+                        )
+                    )
+                ),
+            )
             goal_check_start_sec = max(
                 4.0,
                 min(
@@ -1951,6 +2029,17 @@ class UR5MoveItBridge(Node):
                         self._env_float(
                             "PANEL_MOVEIT_BRIDGE_EARLY_TARGET_CHECK_START_SEC",
                             8.0,
+                        ),
+                    ),
+                )
+            if phase_label_upper == "PRE_GRASP":
+                goal_check_start_sec = min(
+                    float(goal_check_start_sec),
+                    max(
+                        4.0,
+                        self._env_float(
+                            "PANEL_MOVEIT_BRIDGE_PREGRASP_EARLY_TARGET_CHECK_START_SEC",
+                            6.0,
                         ),
                     ),
                 )
@@ -2111,6 +2200,7 @@ class UR5MoveItBridge(Node):
                         target_pose=target_pose,
                         ee_target_tol_m=ee_target_tol_m,
                         phase_label=phase_label,
+                        approach_replan_attempt=approach_replan_attempt,
                     )
                 if (
                     approach_stall_retry_enabled
@@ -2141,6 +2231,8 @@ class UR5MoveItBridge(Node):
                             float(timeout_sec) * approach_stall_retry_scale,
                             self._joint_trajectory_duration_sec(slowed) + 16.0,
                         )
+                        if phase_label_upper == "APPROACH" and retry_timeout > approach_max_total_timeout_sec:
+                            retry_timeout = float(approach_max_total_timeout_sec)
                         retry_goal_time = max(
                             float(effective_goal_time_tol_sec),
                             self._env_float(
@@ -2166,6 +2258,7 @@ class UR5MoveItBridge(Node):
                             target_pose=target_pose,
                             ee_target_tol_m=ee_target_tol_m,
                             phase_label=phase_label,
+                            approach_replan_attempt=approach_replan_attempt,
                         )
                 if (
                     approach_long_retry_enabled
@@ -2212,8 +2305,10 @@ class UR5MoveItBridge(Node):
                             + float(retry_goal_time)
                             + 16.0,
                         )
+                        if phase_label_upper == "APPROACH" and retry_timeout > approach_max_total_timeout_sec:
+                            retry_timeout = float(approach_max_total_timeout_sec)
                         self.get_logger().warning(
-                            "[BRIDGE_EXEC] approach long-wait early retry "
+                            "[BRIDGE_EXEC] approach long-wait requires replan from current state "
                             f"action={action_name} elapsed={now_mono - result_wait_started:.1f}s "
                             f"joint_detail={joint_near_detail} ee_detail={ee_near_detail} "
                             f"{motion_detail} feedback_count={feedback_count} "
@@ -2222,15 +2317,20 @@ class UR5MoveItBridge(Node):
                             f"retry_timeout_sec={retry_timeout:.1f} "
                             f"retry_goal_time_tol={retry_goal_time:.1f}"
                         )
-                        return self._execute_joint_trajectory_action(
-                            slowed,
-                            timeout_sec=retry_timeout,
-                            retry_on_tolerance_violation=False,
-                            path_tol_override_rad=path_tol_override_rad,
-                            goal_time_override_sec=retry_goal_time,
-                            target_pose=target_pose,
-                            ee_target_tol_m=ee_target_tol_m,
-                            phase_label=phase_label,
+                        return (
+                            False,
+                            "fjt_approach_replan_from_current_state:"
+                            f"{joint_near_detail};{ee_near_detail};{motion_detail}",
+                            {
+                                "action": action_name,
+                                "status_text": "APPROACH_REPLAN_FROM_CURRENT_STATE",
+                                "joint_goal_check": joint_near_detail,
+                                "ee_goal_check": ee_near_detail,
+                                "joint_motion": motion_detail,
+                                "feedback_goal_check": feedback_last_detail,
+                                "retry_timeout_sec": round(float(retry_timeout), 3),
+                                "retry_goal_time_tol_sec": round(float(retry_goal_time), 3),
+                            },
                         )
                 time.sleep(0.05)
             if not result_future.done():
@@ -2336,6 +2436,14 @@ class UR5MoveItBridge(Node):
                     settle_timeout_sec=1.0,
                     tol_rad=goal_check_tol_rad,
                 )
+                ee_reached_after_abort = False
+                ee_reached_after_abort_detail = "ee_goal_not_checked"
+                if target_pose is not None:
+                    ee_reached_after_abort, ee_reached_after_abort_detail = self._wait_ee_target_reached(
+                        target_pose,
+                        settle_timeout_sec=1.0,
+                        tol_m=ee_goal_check_tol_m,
+                    )
                 if reached_after_abort:
                     meta["status_text"] = "ABORTED_GOAL_REACHED"
                     meta["goal_check"] = reached_after_abort_detail
@@ -2345,21 +2453,37 @@ class UR5MoveItBridge(Node):
                         f"action={action_name} detail={reached_after_abort_detail}"
                     )
                     return True, f"fjt_aborted_but_goal_reached:{reached_after_abort_detail}", meta
-                if target_pose is not None:
-                    ee_reached_after_abort, ee_reached_after_abort_detail = self._wait_ee_target_reached(
-                        target_pose,
-                        settle_timeout_sec=1.0,
-                        tol_m=ee_goal_check_tol_m,
+                if target_pose is not None and ee_reached_after_abort:
+                    meta["status_text"] = "ABORTED_EE_TARGET_REACHED"
+                    meta["ee_goal_check"] = ee_reached_after_abort_detail
+                    self.get_logger().warning(
+                        "[BRIDGE_EXEC] FollowJointTrajectory path tolerance violation "
+                        "pero el ee target ya esta alcanzado; aceptando success "
+                        f"action={action_name} detail={ee_reached_after_abort_detail}"
                     )
-                    if ee_reached_after_abort:
-                        meta["status_text"] = "ABORTED_EE_TARGET_REACHED"
-                        meta["ee_goal_check"] = ee_reached_after_abort_detail
-                        self.get_logger().warning(
-                            "[BRIDGE_EXEC] FollowJointTrajectory path tolerance violation "
-                            "pero el ee target ya esta alcanzado; aceptando success "
-                            f"action={action_name} detail={ee_reached_after_abort_detail}"
-                        )
-                        return True, f"fjt_aborted_but_ee_target_reached:{ee_reached_after_abort_detail}", meta
+                    return True, f"fjt_aborted_but_ee_target_reached:{ee_reached_after_abort_detail}", meta
+                if (
+                    phase_label_upper == "APPROACH"
+                    and int(approach_replan_attempt) < int(approach_replan_max_attempts)
+                ):
+                    self.get_logger().warning(
+                        "[BRIDGE_EXEC] APPROACH abort por path tolerance; "
+                        "replanificando desde el estado actual "
+                        f"attempt={int(approach_replan_attempt) + 1}/{int(approach_replan_max_attempts)} "
+                        f"joint_check={reached_after_abort_detail} "
+                        f"ee_check={ee_reached_after_abort_detail}"
+                    )
+                    return (
+                        False,
+                        "fjt_approach_replan_from_current_state:"
+                        f"path_tolerance:{reached_after_abort_detail};{ee_reached_after_abort_detail}",
+                        {
+                            **meta,
+                            "status_text": "APPROACH_REPLAN_FROM_CURRENT_STATE",
+                            "joint_goal_check": reached_after_abort_detail,
+                            "ee_goal_check": ee_reached_after_abort_detail,
+                        },
+                    )
                 slow_factor = 2.0
                 slowed = self._scale_joint_trajectory_timing(jt, scale=slow_factor)
                 retry_timeout = max(
@@ -2393,6 +2517,7 @@ class UR5MoveItBridge(Node):
                     goal_time_override_sec=retry_goal_time,
                     target_pose=target_pose,
                     ee_target_tol_m=ee_target_tol_m,
+                    approach_replan_attempt=approach_replan_attempt,
                 )
             if (
                 retry_on_tolerance_violation
@@ -2438,12 +2563,44 @@ class UR5MoveItBridge(Node):
                             f"action={action_name} detail={ee_reached_after_goal_time_detail}"
                         )
                         return True, f"fjt_goal_time_but_ee_target_reached:{ee_reached_after_goal_time_detail}", meta
+                if (
+                    phase_label_upper == "APPROACH"
+                    and int(approach_replan_attempt) < int(approach_replan_max_attempts)
+                ):
+                    self.get_logger().warning(
+                        "[BRIDGE_EXEC] APPROACH goal_time_tolerance; "
+                        "replanificando desde el estado actual "
+                        f"attempt={int(approach_replan_attempt) + 1}/{int(approach_replan_max_attempts)} "
+                        f"joint_check={reached_after_goal_time_detail} "
+                        f"ee_check={ee_reached_after_goal_time_detail}"
+                    )
+                    return (
+                        False,
+                        "fjt_approach_replan_from_current_state:"
+                        f"goal_time_tolerance:{reached_after_goal_time_detail};"
+                        f"{ee_reached_after_goal_time_detail}",
+                        {
+                            **meta,
+                            "status_text": "APPROACH_REPLAN_FROM_CURRENT_STATE",
+                            "joint_goal_check": reached_after_goal_time_detail,
+                            "ee_goal_check": ee_reached_after_goal_time_detail,
+                        },
+                    )
                 slow_factor = 2.0
                 slowed = self._scale_joint_trajectory_timing(jt, scale=slow_factor)
                 retry_timeout = max(
                     float(timeout_sec) * slow_factor,
                     self._joint_trajectory_duration_sec(slowed) + 12.0,
                 )
+                # APPROACH specific: enforce maximum timeout to prevent infinite retries
+                if phase_label_upper == "APPROACH":
+                    max_approach_timeout = float(approach_max_total_timeout_sec)
+                    if retry_timeout > max_approach_timeout:
+                        self.get_logger().warning(
+                            "[BRIDGE_EXEC] APPROACH retry_timeout capped "
+                            f"original={retry_timeout:.1f} max={max_approach_timeout:.1f}"
+                        )
+                        retry_timeout = max_approach_timeout
                 retry_goal_time = max(
                     float(effective_goal_time_tol_sec),
                     self._env_float(
@@ -2464,6 +2621,7 @@ class UR5MoveItBridge(Node):
                     target_pose=target_pose,
                     ee_target_tol_m=ee_target_tol_m,
                     phase_label=phase_label,
+                    approach_replan_attempt=approach_replan_attempt,
                 )
             self.get_logger().warning(f"[BRIDGE_EXEC] FollowJointTrajectory FAIL ({detail})")
             return False, f"fjt_aborted:{detail}", meta
@@ -3201,6 +3359,12 @@ class UR5MoveItBridge(Node):
         thread = threading.Thread(target=_runner, daemon=True, name=f"plan_request_{request_id}")
         thread.start()
         timeout_sec = self._effective_request_timeout_sec()
+        start_wall_us = int(time.time() * 1_000_000)
+        self.get_logger().info(
+            f"[BRIDGE][DISPATCH_START] request_id={request_id} "
+            f"request_uuid={request_uuid or 'n/a'} timeout_sec={timeout_sec:.1f} "
+            f"start_wall_us={start_wall_us} cartesian={cartesian}"
+        )
         start_mono = time.monotonic()
         deadline_mono = start_mono + float(timeout_sec)
         while True:
@@ -3241,7 +3405,16 @@ class UR5MoveItBridge(Node):
             return False, f"execute_timeout:{detail}", False, False
         if "exc" in error:
             raise error["exc"]
-        return holder.get("result", (False, "empty_result", False, False))
+        end_wall_us = int(time.time() * 1_000_000)
+        result = holder.get("result", (False, "empty_result", False, False))
+        elapsed_us = max(0, end_wall_us - start_wall_us)
+        self.get_logger().info(
+            f"[BRIDGE][DISPATCH_END] request_id={request_id} "
+            f"request_uuid={request_uuid or 'n/a'} "
+            f"end_wall_us={end_wall_us} elapsed_us={elapsed_us} "
+            f"success={result[0]} plan_ok={result[2]} exec_ok={result[3]}"
+        )
+        return result
 
     def _plan_worker(self) -> None:
         while rclpy.ok() and not self._shutdown:
@@ -3403,6 +3576,13 @@ class UR5MoveItBridge(Node):
                         )
                     finally:
                         try:
+                            pub_ts_us = int(time.time() * 1_000_000)
+                            self.get_logger().info(
+                                f"[BRIDGE][RESULT_DIAG] request_id={request_id} "
+                                f"request_uuid={request_uuid or 'n/a'} "
+                                f"about_to_publish_result pub_ts_us={pub_ts_us} "
+                                f"success={success} plan_ok={plan_ok} exec_ok={exec_ok}"
+                            )
                             self._publish_result(
                                 request_id=request_id,
                                 request_uuid=request_uuid,
@@ -3413,6 +3593,12 @@ class UR5MoveItBridge(Node):
                                 plan_ok=plan_ok,
                                 exec_ok=exec_ok,
                                 message=message,
+                            )
+                            pub_ts_us_after = int(time.time() * 1_000_000)
+                            self.get_logger().info(
+                                f"[BRIDGE][RESULT_PUBLISHED] request_id={request_id} "
+                                f"request_uuid={request_uuid or 'n/a'} "
+                                f"pub_elapsed_us={pub_ts_us_after - pub_ts_us} pub_ts_us={pub_ts_us_after}"
                             )
                         except Exception as pub_exc:
                             self.get_logger().error(
@@ -3496,6 +3682,7 @@ class UR5MoveItBridge(Node):
         request_uuid: str = "",
         ee_target_tol_m: float | None = None,
         phase_label: str | None = None,
+        _replan_from_current_state_attempt: int = 0,
     ) -> tuple[bool, str, bool, bool]:
         if not self._planning_component or not self._moveit_py:
             if self._moveit_py_init_error:
@@ -3663,8 +3850,20 @@ class UR5MoveItBridge(Node):
                     target_pose=target,
                     ee_target_tol_m=ee_target_tol_m,
                     phase_label=phase_label,
+                    approach_replan_attempt=_replan_from_current_state_attempt,
                 )
                 fjt_detail = self._result_meta_to_message(fjt_meta)
+                approach_replan_max_attempts = max(
+                    1,
+                    int(
+                        round(
+                            self._env_float(
+                                "PANEL_MOVEIT_BRIDGE_APPROACH_REPLAN_MAX_ATTEMPTS",
+                                2.0,
+                            )
+                        )
+                    ),
+                )
                 if fjt_ok:
                     self._log_bridge_status(
                         "[BRIDGE_STATUS] exec_ok backend=moveit_py mode=fjt_direct_time_domain"
@@ -3674,6 +3873,45 @@ class UR5MoveItBridge(Node):
                         f"exec_ok_fjt_direct:{fjt_msg};fjt_meta={fjt_detail}",
                         True,
                         True,
+                    )
+                fjt_status_text = str((fjt_meta or {}).get("status_text", "") or "").upper()
+                if (
+                    str(phase_label or "").strip().upper() == "APPROACH"
+                    and _replan_from_current_state_attempt < approach_replan_max_attempts
+                    and fjt_status_text == "APPROACH_REPLAN_FROM_CURRENT_STATE"
+                ):
+                    settle_ok, settle_reason = self._wait_for_joint_state_settled(
+                        timeout_sec=2.0,
+                        stable_sec=0.35,
+                        tol_rad=0.03,
+                    )
+                    self.get_logger().warning(
+                        "[BRIDGE_EXEC] replanificando APPROACH desde el estado actual "
+                        f"attempt={_replan_from_current_state_attempt + 1} "
+                        f"joint_state_settled={str(bool(settle_ok)).lower()} "
+                        f"detail={settle_reason}"
+                    )
+                    return self._plan_with_moveit_py(
+                        target,
+                        request_uuid=request_uuid,
+                        ee_target_tol_m=ee_target_tol_m,
+                        phase_label=phase_label,
+                        _replan_from_current_state_attempt=_replan_from_current_state_attempt + 1,
+                    )
+                if (
+                    str(phase_label or "").strip().upper() == "APPROACH"
+                    and _replan_from_current_state_attempt >= approach_replan_max_attempts
+                ):
+                    self.get_logger().warning(
+                        "[BRIDGE_EXEC] APPROACH replan attempt ya consumido; "
+                        "evitando topic publish fallback y devolviendo fallo directo "
+                        f"status={fjt_status_text or 'n/a'}"
+                    )
+                    return (
+                        False,
+                        f"exec_failed_fjt_direct:{fjt_msg};fjt_meta={fjt_detail}",
+                        True,
+                        False,
                     )
                 topic_timeout = self._fjt_timeout_for_trajectory(
                     traj_sec,

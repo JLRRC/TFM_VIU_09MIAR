@@ -129,7 +129,10 @@ class RosWorker(QObject):
         self._pubs: Dict[str, object] = {}
         self._fps: Dict[str, List[float]] = {}
         self._frame_count: Dict[str, int] = {}
+        self._image_msg_count: Dict[str, int] = {}
         self._frame_buffers: Dict[str, object] = {}
+        self._latest_image_snapshot: Dict[str, Tuple[QImage, int, int, float, float]] = {}
+        self._image_decode_error_logged: Dict[str, bool] = {}
         self._last_clock_wall = 0.0
         self._last_clock_stamp_ns: Optional[int] = None
         self._last_clock_advance_wall = 0.0
@@ -427,6 +430,23 @@ class RosWorker(QObject):
             return node.get_topic_names_and_types()
         except Exception:
             return []
+
+    def image_frame_snapshot(
+        self, topic: str
+    ) -> Optional[Tuple[QImage, int, int, float, float, int]]:
+        topic = (topic or "").strip()
+        if not topic:
+            return None
+        with self._lock:
+            item = self._latest_image_snapshot.get(topic)
+            count = int(self._frame_count.get(topic, 0))
+        if not item:
+            return None
+        qimg, w, h, fps, wall = item
+        try:
+            return (qimg.copy(), int(w), int(h), float(fps), float(wall), count)
+        except Exception:
+            return None
 
     def service_names_and_types(self) -> List[Tuple[str, List[str]]]:
         with self._lock:
@@ -1291,9 +1311,20 @@ class RosWorker(QObject):
                     except Exception:
                         msg_cls = Image
                         callback = self._on_image
-                sub = self._node.create_subscription(msg_cls, topic, lambda msg, t=topic: callback(msg, t), qos_profile_sensor_data)
+                kwargs = {}
+                if self._io_callback_group is not None:
+                    kwargs["callback_group"] = self._io_callback_group
+                sub = self._node.create_subscription(
+                    msg_cls,
+                    topic,
+                    lambda msg, t=topic: callback(msg, t),
+                    qos_profile_sensor_data,
+                    **kwargs,
+                )
                 self._subs[topic] = sub
                 self._fps[topic] = [0.0, time.time(), 0.0]
+                self._image_msg_count[topic] = 0
+                self._image_decode_error_logged[topic] = False
                 qos_summary = self._format_qos(getattr(sub, "qos_profile", None))
                 self._safe_log(f"[ROS] Suscrito a {topic} ({qos_summary})")
                 return True
@@ -2011,6 +2042,11 @@ class RosWorker(QObject):
             import numpy as np
 
             enc = (msg.encoding or "").lower()
+            self._image_msg_count[topic] = self._image_msg_count.get(topic, 0) + 1
+            if self._image_msg_count.get(topic, 0) == 1:
+                self._safe_log(
+                    f"[ROS][CAMERA] first_msg topic={topic} size={int(msg.width)}x{int(msg.height)} enc={enc or 'n/a'} step={int(msg.step)}"
+                )
             if any(flag in enc for flag in ("32fc1", "16uc1", "mono16")) or "depth" in topic:
                 try:
                     cv_depth = self._bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
@@ -2022,21 +2058,33 @@ class RosWorker(QObject):
                     self._latest_depth_frame[topic] = (np.ascontiguousarray(cv_depth), now)
                 bgr = self._decode_depth_to_bgr(cv_depth, topic)
             else:
-                try:
-                    bgr = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-                except Exception:
-                    w = int(msg.width)
-                    h = int(msg.height)
-                    step = int(msg.step)
-                    data = msg.data
-                    if step == w * 3 and len(data) >= h * step:
-                        arr = np.frombuffer(data, dtype=np.uint8).reshape((h, w, 3))
+                w = int(msg.width)
+                h = int(msg.height)
+                step = int(msg.step)
+                data = msg.data
+                row_bytes = max(0, w * 3)
+                if enc in ("rgb8", "bgr8") and step >= row_bytes and len(data) >= h * step:
+                    arr = np.frombuffer(data, dtype=np.uint8).reshape((h, step))
+                    arr = arr[:, :row_bytes].reshape((h, w, 3))
+                    if enc == "rgb8":
                         bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
                     else:
-                        bgr = self._bridge.imgmsg_to_cv2(msg)
+                        bgr = np.ascontiguousarray(arr)
+                else:
+                    try:
+                        bgr = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+                    except Exception:
+                        if step == row_bytes and len(data) >= h * step:
+                            arr = np.frombuffer(data, dtype=np.uint8).reshape((h, w, 3))
+                            bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+                        else:
+                            bgr = self._bridge.imgmsg_to_cv2(msg)
             self._emit_frame(topic, bgr)
         except Exception as exc:
-            if DEBUG_FRAME_LOG:
+            if not self._image_decode_error_logged.get(topic, False):
+                self._image_decode_error_logged[topic] = True
+                self._safe_log(f"[ROS][CAMERA] decode_error topic={topic}: {exc}")
+            elif DEBUG_FRAME_LOG:
                 self.log.emit(f"[ROS] ERROR frame {topic}: {exc}")
 
     def _emit_frame(self, topic: str, bgr):
@@ -2086,6 +2134,15 @@ class RosWorker(QObject):
                     qimg = qimg.copy()
                 else:
                     self._frame_buffers[topic] = rgb
+            with self._lock:
+                prev = self._latest_image_snapshot.get(topic)
+                prev_wall = float(prev[4]) if prev is not None else 0.0
+                if prev is None or (now - prev_wall) >= 0.20:
+                    self._latest_image_snapshot[topic] = (qimg.copy(), int(w), int(h), fps, now)
+            if self._frame_count.get(topic, 0) == 1:
+                self._safe_log(
+                    f"[ROS][CAMERA] first_frame topic={topic} size={int(w)}x{int(h)} fps={float(fps):.2f}"
+                )
             self.image.emit(topic, qimg, w, h, fps)
         except Exception as exc:
             if DEBUG_FRAME_LOG:

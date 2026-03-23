@@ -71,6 +71,26 @@ def _env_float_opt(name: str) -> float | None:
     except Exception:
         return None
 
+
+def _resolve_gui_config_path(ws_dir: str) -> str:
+    candidates = [
+        "/opt/ros/jazzy/opt/gz_sim_vendor/share/gz/gz-sim8/gui/gui.config",
+        os.path.join(
+            ws_dir,
+            "install",
+            "ur5_bringup",
+            "share",
+            "ur5_bringup",
+            "config",
+            "gz_gui_ogre.config",
+        ),
+        os.path.join(ws_dir, "src", "ur5_bringup", "config", "gz_gui_ogre.config"),
+    ]
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+    return ""
+
 def start_world_tf_publisher(panel, world_name: str) -> None:
     if panel.world_tf_proc is not None and panel.world_tf_proc.poll() is None:
         return
@@ -184,7 +204,9 @@ def start_gazebo(panel):
     def worker():
         ensure_dir(LOG_DIR)
         gz_log = os.path.join(LOG_DIR, "gz_server.log")
+        gz_gui_log = os.path.join(LOG_DIR, "gz_gui.log")
         rotate_log(gz_log)
+        rotate_log(gz_gui_log)
         runtime_models_root = os.path.join(LOG_DIR, "gz_models")
         runtime_ur5_model = os.path.join(runtime_models_root, "ur5_rg2")
         controllers_yaml = UR5_CONTROLLERS_YAML
@@ -255,11 +277,14 @@ def start_gazebo(panel):
             _log_exception("prepare runtime world", exc)
             runtime_world = world
         if mode == "gui":
-            cmd_core = with_line_buffer(f"gz sim -r -v 1 {shlex.quote(runtime_world)}")
+            cmd_core = with_line_buffer(
+                "gz sim -s -r --headless-rendering "
+                f"--render-engine {shlex.quote(render_engine)} -v 1 {shlex.quote(runtime_world)}"
+            )
             cmd = bash_preamble(panel.ws_dir) + env + log_to_file(cmd_core, gz_log, None)
         else:
             cmd_core = with_line_buffer(
-                "gz sim -s -r --headless-rendering --render-engine ogre2 -v 1 "
+                f"gz sim -s -r --headless-rendering --render-engine {shlex.quote(render_engine)} -v 1 "
                 + shlex.quote(runtime_world)
             )
             cmd = (
@@ -295,6 +320,60 @@ def start_gazebo(panel):
                 except Exception as exc:
                     _log_exception("tail gz log", exc)
             panel._run_async(monitor)
+            if mode == "gui":
+                panel.gz_gui_proc = None
+                gui_delay_sec = max(
+                    0.1,
+                    _env_float_opt("PANEL_GZ_GUI_DELAY_SEC") or 2.0,
+                )
+                gui_config = _resolve_gui_config_path(panel.ws_dir)
+                panel._emit_log(
+                    "[GZ][GUI] launching separate client "
+                    f"delay={gui_delay_sec:.1f}s config={gui_config or 'default'}"
+                )
+                time.sleep(gui_delay_sec)
+                gui_cmd_core = "gz sim -g"
+                if gui_config:
+                    gui_cmd_core += f" --gui-config {shlex.quote(gui_config)}"
+                gui_safe_env = ""
+                if _env_flag("PANEL_GZ_GUI_SAFE_RENDER", True):
+                    gui_safe_env = (
+                        "export LIBGL_ALWAYS_SOFTWARE=${LIBGL_ALWAYS_SOFTWARE:-1}; "
+                        "export QT_QUICK_BACKEND=${QT_QUICK_BACKEND:-software}; "
+                        "export QSG_RENDER_LOOP=${QSG_RENDER_LOOP:-basic}; "
+                    )
+                gui_cmd = bash_preamble(panel.ws_dir) + env + log_to_file(
+                    gui_safe_env + with_line_buffer(gui_cmd_core),
+                    gz_gui_log,
+                    None,
+                )
+                panel.gz_gui_proc = subprocess.Popen(
+                    ["bash", "-lc", gui_cmd],
+                    preexec_fn=os.setsid,
+                )
+
+                def monitor_gui():
+                    rc = panel.gz_gui_proc.wait()
+                    panel._emit_log(f"[GZ][GUI] exited rc={rc} (log: {gz_gui_log})")
+                    try:
+                        tail = subprocess.run(
+                            ["bash", "-lc", f"tail -n 80 {shlex.quote(gz_gui_log)}"],
+                            text=True,
+                            capture_output=True,
+                            timeout=2.0,
+                        )
+                        if tail.stdout:
+                            for line in tail.stdout.splitlines():
+                                panel._emit_log(f"[GZ][GUI][LOG] {line}")
+                    except Exception as exc:
+                        _log_exception("tail gz gui log", exc)
+                    if rc not in (0, -15):
+                        panel._ui_set_status(
+                            "Gazebo servidor activo; GUI cerrada inesperadamente",
+                            error=True,
+                        )
+
+                panel._run_async(monitor_gui)
             panel._started_gazebo = True
             panel._gz_running = True
             panel._gz_world_name = read_world_name(world) or GZ_WORLD
@@ -327,6 +406,8 @@ def stop_gazebo(panel):
     panel._log_button("Stop Gazebo")
     panel._set_status("Deteniendo Gazebo…")
     panel._stop_debug_poses()
+    panel._kill_proc(getattr(panel, "gz_gui_proc", None), "gz sim gui")
+    panel.gz_gui_proc = None
     panel._kill_proc(panel.gz_proc, "gz sim")
     panel.gz_proc = None
     panel._kill_proc(panel.rsp_proc, "robot_state_publisher")

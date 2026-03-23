@@ -379,6 +379,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time")
     world_file = LaunchConfiguration("world_file")
     render_engine = LaunchConfiguration("render_engine")
+    gui_config_file = LaunchConfiguration("gui_config_file")
 
     rsp_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -437,13 +438,27 @@ def generate_launch_description():
         output="screen",
         condition=IfCondition(headless),
     )
+    gz_gui_server = ExecuteProcess(
+        cmd=[
+            "gz",
+            "sim",
+            "-s",
+            "-r",
+            "--headless-rendering",
+            "--render-engine",
+            render_engine,
+            world_file,
+        ],
+        output="screen",
+        condition=UnlessCondition(headless),
+    )
     gz_gui = ExecuteProcess(
-        cmd=["gz", "sim", "-r", world_file],
+        cmd=["gz", "sim", "-g", "--gui-config", gui_config_file],
         output="screen",
         condition=UnlessCondition(headless),
     )
     gz_group = GroupAction(
-        actions=[gz_headless, gz_gui],
+        actions=[gz_headless, gz_gui_server, gz_gui],
         condition=IfCondition(launch_gazebo),
     )
     gz_shutdown_headless = RegisterEventHandler(
@@ -455,8 +470,8 @@ def generate_launch_description():
     )
     gz_shutdown_gui = RegisterEventHandler(
         OnProcessExit(
-            target_action=gz_gui,
-            on_exit=[EmitEvent(event=Shutdown(reason="gz sim exited (gui)"))],
+            target_action=gz_gui_server,
+            on_exit=[EmitEvent(event=Shutdown(reason="gz sim server exited (gui mode)"))],
         ),
         condition=IfCondition(launch_gazebo),
     )
@@ -681,6 +696,10 @@ def generate_launch_description():
                 "rmw_implementation", default_value="rmw_fastrtps_cpp"
             ),
             DeclareLaunchArgument("render_engine", default_value="ogre2"),
+            DeclareLaunchArgument(
+                "gui_config_file",
+                default_value="/opt/ros/jazzy/opt/gz_sim_vendor/share/gz/gz-sim8/gui/gui.config",
+            ),
             OpaqueFunction(function=_prepare_runtime),
             OpaqueFunction(function=_maybe_moveit),
             rsp_launch,

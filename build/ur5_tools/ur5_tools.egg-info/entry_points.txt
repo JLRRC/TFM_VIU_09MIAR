@@ -1,0 +1,13 @@
+[console_scripts]
+clock_probe = ur5_tools.clock_probe:main
+controller_bootstrap = ur5_tools.controller_bootstrap:main
+gripper_attach_backend = ur5_tools.gripper_attach_backend:main
+gz_pose_bridge = ur5_tools.gz_pose_bridge:main
+gz_ros_control_guard = ur5_tools.gz_ros_control_guard:main
+jt_smoke_test = ur5_tools.jt_smoke_test:main
+planning_scene_sync = ur5_tools.planning_scene_sync:main
+release_objects_service = ur5_tools.release_objects_service:main
+system_state_manager = ur5_tools.system_state_manager:main
+tf_probe = ur5_tools.tf_probe:main
+ur5_moveit_bridge = ur5_tools.ur5_moveit_bridge:main
+world_tf_publisher = ur5_tools.world_tf_publisher:main

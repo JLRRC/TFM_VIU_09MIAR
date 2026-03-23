@@ -79,9 +79,17 @@ export WS_DIR
 : "${PANEL_MOVEIT_MODE:=auto}"        # auto|move_group|bridge
 : "${PANEL_ROS_EXECUTOR_THREADS:=3}"  # executor del RosWorker para no bloquear /clock durante servicios largos
 : "${RMW_IMPLEMENTATION:=rmw_fastrtps_cpp}"
+if [[ -z "${PANEL_GZ_GUI+x}" ]]; then
+  if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" && "${QT_QPA_PLATFORM:-}" != "offscreen" ]]; then
+    PANEL_GZ_GUI="1"
+  else
+    PANEL_GZ_GUI="0"
+  fi
+fi
 export RMW_IMPLEMENTATION
 export PANEL_CONTROLLER_MANAGER
 export PANEL_ROS_EXECUTOR_THREADS
+export PANEL_GZ_GUI
 
 if [[ -z "${PANEL_VENV_DIR}" ]]; then
   for candidate in \
@@ -245,9 +253,18 @@ export USE_SIM_TIME="${USE_SIM_TIME:-1}"
 log "GZ_SIM_RESOURCE_PATH set to: $GZ_SIM_RESOURCE_PATH"
 
 if [[ -z "${LIBGL_ALWAYS_SOFTWARE:-}" ]]; then
-  export LIBGL_ALWAYS_SOFTWARE=0
+  # En GUI priorizamos estabilidad de gz-gui (evitar segfaults OpenGL/QtQuick).
+  if [[ "${PANEL_GZ_GUI:-0}" == "1" ]]; then
+    export LIBGL_ALWAYS_SOFTWARE=1
+  else
+    export LIBGL_ALWAYS_SOFTWARE=0
+  fi
 fi
 export QT_XCB_GL_INTEGRATION=none
+if [[ "${PANEL_GZ_GUI:-0}" == "1" ]]; then
+  export QT_QUICK_BACKEND="${QT_QUICK_BACKEND:-software}"
+  export QSG_RENDER_LOOP="${QSG_RENDER_LOOP:-basic}"
+fi
 export PANEL_SKIP_CLEANUP="${PANEL_SKIP_CLEANUP:-0}"
 export PANEL_KILL_STALE="${PANEL_KILL_STALE:-1}"
 
@@ -445,12 +462,6 @@ if [[ "${PANEL_GZ_GUI:-0}" == "1" ]]; then
   HEADLESS="false"
 fi
 
-# ESTRATEGIA: Headless-rendering SIEMPRE para máxima estabilidad
-HEADLESS="true"
-if [[ "${PANEL_GZ_GUI:-0}" == "1" ]]; then
-  HEADLESS="false"
-fi
-
 if [[ -z "${GZ_RENDER_ENGINE:-}" ]]; then
   if [[ "$HEADLESS" == "true" ]]; then
     # En headless priorizamos estabilidad del simulador para evitar caidas durante pick.
@@ -459,6 +470,7 @@ if [[ -z "${GZ_RENDER_ENGINE:-}" ]]; then
     export GZ_RENDER_ENGINE="ogre"
   fi
 fi
+log "PANEL_GZ_GUI=${PANEL_GZ_GUI} HEADLESS=${HEADLESS}"
 
 LAUNCH_GZ="false"
 LAUNCH_RSP="false"

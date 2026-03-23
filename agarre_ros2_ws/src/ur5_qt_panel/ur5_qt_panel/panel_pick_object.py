@@ -229,17 +229,51 @@ def run_pick_object(panel) -> None:
         f"user_selected={user_selected or 'none'} user_ts={user_selected_ts:.3f}"
     )
     if ui_selected and not latest_store_name:
-        _clear_stale_ui_selection("store_selected_none")
-        _block(
-            "selection_missing",
-            status_text="PICK Objeto: selección no disponible en store, vuelve a seleccionar",
-            error=True,
-        )
-        panel._emit_log(
-            "[PICK_OBJ][ABORT] selection_missing_after_reset "
-            f"ui_selected={ui_selected}"
-        )
-        return
+        restored_missing_store = False
+        restore_candidate = ui_selected if ui_selected == user_selected else ""
+        if restore_candidate and hasattr(panel, "_ensure_selected_object_in_store"):
+            try:
+                restored_missing_store = bool(
+                    panel._ensure_selected_object_in_store(
+                        restore_candidate,
+                        reason="pick_object_restore_missing_store",
+                    )
+                )
+            except Exception as exc:
+                panel._emit_log(
+                    "[PICK_OBJ][SELECT_RESTORE] error "
+                    f"name={restore_candidate} err={type(exc).__name__}:{exc}"
+                )
+            if restored_missing_store:
+                selected_states = [
+                    (name, st)
+                    for name, st in get_object_states().items()
+                    if st.logical_state == ObjectLogicalState.SELECTED
+                ]
+                selected_states.sort(key=lambda item: float(item[1].last_update_ts), reverse=True)
+                latest_store_name = selected_states[0][0] if selected_states else ""
+                latest_store_ts = (
+                    float(getattr(selected_states[0][1], "last_update_ts", 0.0) or 0.0)
+                    if selected_states
+                    else 0.0
+                )
+                panel._emit_log(
+                    "[PICK_OBJ][SELECT_RESTORE] restored_missing_store "
+                    f"name={restore_candidate} store_selected={latest_store_name or 'none'} "
+                    f"store_ts={latest_store_ts:.3f}"
+                )
+        if ui_selected and not latest_store_name:
+            _clear_stale_ui_selection("store_selected_none")
+            _block(
+                "selection_missing",
+                status_text="PICK Objeto: selección no disponible en store, vuelve a seleccionar",
+                error=True,
+            )
+            panel._emit_log(
+                "[PICK_OBJ][ABORT] selection_missing_after_reset "
+                f"ui_selected={ui_selected}"
+            )
+            return
     selection_max_age_sec = max(
         5.0,
         float(os.environ.get("PANEL_PICK_OBJECT_SELECTION_MAX_AGE_SEC", "600.0") or 600.0),
@@ -1201,6 +1235,15 @@ def run_pick_object(panel) -> None:
                     req_id = int(data.get("request_id", -1) or -1)
                     got_stamp_ns = int(data.get("target_stamp_ns", 0) or 0)
                     got_uuid = str(data.get("request_uuid", "") or "")
+                    rcv_wall_us = int(time.time() * 1_000_000)
+                    pub_wall_us = int(getattr(_wait_moveit_result, "_pub_wall_us", 0) or 0)
+                    wall_us_delta = max(0, rcv_wall_us - pub_wall_us)
+                    panel._emit_log(
+                        f"[PICK_OBJ][RESULT_DIAGNOSTIC] label={label} got_request_id={req_id} "
+                        f"expected_request_id={expected_request_id} rcv_wall_us={rcv_wall_us} "
+                        f"pub_wall_us={pub_wall_us} delta_us={wall_us_delta} "
+                        f"got_uuid={got_uuid or 'n/a'} expected_uuid={expected_request_uuid or 'n/a'}"
+                    )
                     panel._emit_log(
                         f"[PANEL][RESULT_RX] label={label} got_request_id={req_id} "
                         f"expected_request_id={expected_request_id} got_stamp={got_stamp_ns} "
@@ -1669,19 +1712,44 @@ def run_pick_object(panel) -> None:
                 force_home_start = str(
                     os.environ.get("PANEL_PICK_OBJECT_FORCE_HOME_START", "1")
                 ).strip().lower() not in ("0", "false", "no", "off")
+                preflight_mode_now = str(
+                    os.environ.get("PANEL_PICK_OBJECT_PREFLIGHT_MODE", "home")
+                ).strip().lower()
+                home_like_preflight = preflight_mode_now in (
+                    "home",
+                    "home_only",
+                    "direct",
+                    "default",
+                    "none",
+                    "off",
+                    "0",
+                    "false",
+                )
+                conditional_home_if_far = str(
+                    os.environ.get("PANEL_PICK_OBJECT_HOME_START_IF_FAR", "1")
+                ).strip().lower() not in ("0", "false", "no", "off")
                 if not force_home_start:
                     panel._emit_log(
                         "[PICK_OBJ] FASE 1: HOME inicial desactivado por entorno "
                         "(PANEL_PICK_OBJECT_FORCE_HOME_START=0)"
                     )
-                    return
                 try:
                     home_tol_rad = float(
                         os.environ.get("PANEL_PICK_OBJECT_HOME_TOL_RAD", "0.08")
                     )
                 except Exception:
                     home_tol_rad = 0.08
+                try:
+                    force_if_far_max_err_rad = float(
+                        os.environ.get(
+                            "PANEL_PICK_OBJECT_HOME_START_IF_FAR_MAX_ERR_RAD",
+                            "2.0",
+                        )
+                    )
+                except Exception:
+                    force_if_far_max_err_rad = 2.0
                 current_joints = _read_current_arm_joint_positions()
+                need_home_start = force_home_start
                 if current_joints is not None:
                     home_err = _max_joint_error(current_joints, home_pose)
                     if home_err <= home_tol_rad:
@@ -1690,11 +1758,36 @@ def run_pick_object(panel) -> None:
                             f"(max_err={home_err:.3f}rad tol={home_tol_rad:.3f}rad)"
                         )
                         return
+                    if (
+                        (not need_home_start)
+                        and conditional_home_if_far
+                        and home_like_preflight
+                        and home_err > force_if_far_max_err_rad
+                    ):
+                        need_home_start = True
+                        panel._emit_log(
+                            "[PICK_OBJ] FASE 1: HOME inicial reactivado por arranque frío "
+                            f"(preflight={preflight_mode_now} max_err={home_err:.3f}rad "
+                            f"gate={force_if_far_max_err_rad:.3f}rad)"
+                        )
+                    if not need_home_start:
+                        panel._emit_log(
+                            "[PICK_OBJ] FASE 1: HOME inicial omitido "
+                            f"(max_err={home_err:.3f}rad tol={home_tol_rad:.3f}rad "
+                            f"gate={force_if_far_max_err_rad:.3f}rad preflight={preflight_mode_now})"
+                        )
+                        return
                     panel._emit_log(
                         f"[PICK_OBJ] FASE 1: Ir a HOME antes del pick "
                         f"(max_err={home_err:.3f}rad tol={home_tol_rad:.3f}rad)"
                     )
                 else:
+                    if not need_home_start:
+                        panel._emit_log(
+                            "[PICK_OBJ] FASE 1: HOME inicial omitido "
+                            "(joint_state actual no disponible y HOME no forzado)"
+                        )
+                        return
                     panel._emit_log(
                         "[PICK_OBJ] FASE 1: Ir a HOME antes del pick "
                         "(joint_state actual no disponible)"
@@ -2671,11 +2764,7 @@ def run_pick_object(panel) -> None:
                         grasp_cartesian_raw = str(
                             os.environ.get(
                                 cart_env_name,
-                                (
-                                    "0"
-                                    if cart_env_name == "PANEL_PICK_OBJECT_GRASP_CARTESIAN"
-                                    else "1"
-                                ),
+                                "1",
                             )
                         ).strip().lower()
                         use_cartesian = grasp_cartesian_raw not in ("0", "false", "no", "off")
@@ -2739,6 +2828,7 @@ def run_pick_object(panel) -> None:
                             f"topic={moveit_pose_topic} subs_count={pose_subs_now} "
                             f"lock_id={target_lock_id_local}"
                         )
+                        pub_wall_us = int(time.time() * 1_000_000)
                         published = panel._publish_moveit_pose(
                             label,
                             pose_to_send,
@@ -2754,6 +2844,12 @@ def run_pick_object(panel) -> None:
                         setattr(_wait_moveit_result, "_expected_request_uuid", panel_request_uuid)
                         setattr(_wait_moveit_result, "_since_seq", int(baseline_seq))
                         setattr(_wait_moveit_result, "_panel_request_id", int(panel_request_id))
+                        setattr(_wait_moveit_result, "_pub_wall_us", pub_wall_us)
+                        panel._emit_log(
+                            f"[PICK_OBJ][APPROACH_DIAGNOSTIC] label={label} "
+                            f"request_id={panel_request_id} request_uuid={panel_request_uuid} "
+                            f"pub_wall_us={pub_wall_us} pub_ok=true"
+                        )
                         try:
                             result_data = _wait_moveit_result(label, request_wall, timeout_total=timeout_sec)
                         finally:
