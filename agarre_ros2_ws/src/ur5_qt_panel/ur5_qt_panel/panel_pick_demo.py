@@ -255,6 +255,12 @@ def run_pick_demo(panel) -> None:
                     return "none"
                 return f"({vec3[0]:.3f},{vec3[1]:.3f},{vec3[2]:.3f})"
 
+            def _fmt_scalar(value, *, digits: int = 3) -> str:
+                try:
+                    return f"{float(value):.{digits}f}"
+                except Exception:
+                    return "none"
+
             def _vector_minus(a, b):
                 av = _tuple3(a)
                 bv = _tuple3(b)
@@ -303,7 +309,7 @@ def run_pick_demo(panel) -> None:
                 wait_timeout = move_sec + 2.0 if timeout_sec is None else timeout_sec
                 if panel._wait_for_joint_target(joints, wait_timeout, tol_rad=tol_rad):
                     return
-                if label in {"HOME", "MESA", "PICK_IMAGE", "HOME_WITH_OBJECT", "CESTA", "CESTA_RELEASE"}:
+                if label in {"HOME", "MESA", "PICK_IMAGE", "HOME_WITH_OBJECT", "CESTA", "CESTA_RELEASE", "HOME_FINAL"}:
                     panel._emit_log(
                         f"[PICK][RECOVERY] {label} no alcanzado; reintentando una vez diffs={_joint_error_snapshot(joints)}"
                     )
@@ -540,6 +546,37 @@ def run_pick_demo(panel) -> None:
                     "follow_confirmed": bool(demo_follow_confirmed),
                 }
 
+            def _release_observation(*, tag: str, reason: str = ""):
+                tcp_world = _tuple3(_live_tcp_world())
+                obj_world = _tuple3(_live_object_world())
+                tcp_base = _tuple3(_live_tcp_base())
+                obj_base = _tuple3(_live_object_base())
+                dist_world = _dist(tcp_world, obj_world) if tcp_world is not None and obj_world is not None else None
+                dist_base = _dist(tcp_base, obj_base) if tcp_base is not None and obj_base is not None else None
+                attach_state = _json_safe(_read_attach_state()) or {}
+                gripper_open_state = _json_safe(_read_gripper_state(expected_closed=False)) or {}
+                panel._emit_log(
+                    "[PICK][DIRECT][RELEASE] "
+                    f"tag={tag} reason={reason or 'none'} "
+                    f"tcp_world={_fmt_vec(tcp_world)} obj_world={_fmt_vec(obj_world)} "
+                    f"tcp_base={_fmt_vec(tcp_base)} obj_base={_fmt_vec(obj_base)} "
+                    f"dist_world={_fmt_scalar(dist_world)} dist_base={_fmt_scalar(dist_base)} "
+                    f"attach_state={json.dumps(attach_state, ensure_ascii=False, sort_keys=True)} "
+                    f"gripper_open_ok={gripper_open_state.get('measured_target_ok')} "
+                    f"gripper_opening_sum={_fmt_scalar(gripper_open_state.get('opening_sum'))} "
+                    f"gripper_open_err={_fmt_scalar(gripper_open_state.get('max_abs_err'))}"
+                )
+                return {
+                    "tcp_world": tcp_world,
+                    "obj_world": obj_world,
+                    "tcp_base": tcp_base,
+                    "obj_base": obj_base,
+                    "dist_world": dist_world,
+                    "dist_base": dist_base,
+                    "attach_state": attach_state,
+                    "gripper_open_state": gripper_open_state,
+                }
+
             def _close_alignment_metrics():
                 obj_base = _live_object_base()
                 tcp_base = _live_tcp_base()
@@ -683,6 +720,43 @@ def run_pick_demo(panel) -> None:
                 done_metrics["best_xy_dist"] = best_xy_dist
                 done_metrics["best_z_error"] = best_z_error
                 return False, done_metrics
+
+            def _emit_transition_decision(
+                *,
+                from_phase: str,
+                to_phase: str,
+                decision: str,
+                reason: str,
+                condition: str | None = None,
+                metrics=None,
+            ) -> None:
+                metric_dict = _json_safe(metrics) or {}
+                tcp_base = _tuple3(metric_dict.get("tcp_base")) or _tuple3(_live_tcp_base())
+                obj_base = _tuple3(metric_dict.get("object_base")) or _tuple3(_live_object_base())
+                tcp_obj_dist = metric_dict.get("tcp_obj_dist")
+                if tcp_obj_dist is None and tcp_base is not None and obj_base is not None:
+                    tcp_obj_dist = _dist(tcp_base, obj_base)
+                gripper = _json_safe(_read_gripper_state()) or {}
+                attach = _json_safe(_read_attach_state()) or {}
+                panel._emit_log(
+                    "[PICK][DIRECT][TRANSITION] "
+                    f"from={from_phase} to={to_phase} decision={decision} reason={reason} "
+                    f"condition={condition or 'none'} "
+                    f"tcp={_fmt_vec(tcp_base)} obj={_fmt_vec(obj_base)} "
+                    f"tcp_obj_dist={_fmt_scalar(tcp_obj_dist)} "
+                    f"xy_dist={_fmt_scalar(metric_dict.get('xy_dist'))} "
+                    f"z_error={_fmt_scalar(metric_dict.get('z_error'))} "
+                    f"z_gap={_fmt_scalar(metric_dict.get('z_gap'))} "
+                    f"xy_tol={_fmt_scalar(metric_dict.get('xy_tol'))} "
+                    f"z_tol={_fmt_scalar(metric_dict.get('z_tol'))} "
+                    f"gripper_closed={bool(gripper.get('closed_flag'))} "
+                    f"gripper_measured={bool(gripper.get('measured_target_ok'))} "
+                    f"opening_sum={_fmt_scalar(gripper.get('opening_sum'))} "
+                    f"max_abs_err={_fmt_scalar(gripper.get('max_abs_err'))} "
+                    f"attach_logical={attach.get('logical_attached')} "
+                    f"attach_state={attach.get('logical_state')} "
+                    f"attach_owner={attach.get('owner')}"
+                )
 
             def _target_world_from_base(target_base):
                 base_coords = _tuple3(target_base)
@@ -1049,10 +1123,13 @@ def run_pick_demo(panel) -> None:
                 best_tcp_dist = float("inf")
                 last_obj_base = None
                 last_tcp_base = None
+                expected_z_gap = float(GRIPPER_TCP_Z_OFFSET)
+                next_sample_log_ts = 0.0
                 panel._emit_log(
                     "[PICK][DIRECT][ATTACH] "
                     f"waiting_follow timeout={float(timeout_sec):.2f}s "
-                    f"max_tcp_dist={float(max_tcp_dist_m):.3f}"
+                    f"max_tcp_dist={float(max_tcp_dist_m):.3f} "
+                    f"expected_z_gap={expected_z_gap:.3f}"
                 )
                 while time.time() < deadline:
                     obj_base = _live_object_base()
@@ -1063,15 +1140,27 @@ def run_pick_demo(panel) -> None:
                         consecutive_ok = 0
                         time.sleep(0.08)
                         continue
+                    dx = float(obj_base[0]) - float(tcp_base[0])
+                    dy = float(obj_base[1]) - float(tcp_base[1])
+                    z_gap = float(tcp_base[2]) - float(obj_base[2])
                     tcp_dist = _dist(obj_base, tcp_base)
                     best_tcp_dist = min(best_tcp_dist, tcp_dist)
+                    now_ts = time.time()
+                    if now_ts >= next_sample_log_ts:
+                        panel._emit_log(
+                            "[PICK][DIRECT][ATTACH] "
+                            f"sample tcp={_fmt_vec(tcp_base)} obj={_fmt_vec(obj_base)} "
+                            f"dx={dx:.3f} dy={dy:.3f} z_gap={z_gap:.3f} "
+                            f"tcp_dist={tcp_dist:.3f} within_follow={str(tcp_dist <= float(max_tcp_dist_m)).lower()}"
+                        )
+                        next_sample_log_ts = now_ts + 0.24
                     if tcp_dist <= float(max_tcp_dist_m):
                         consecutive_ok += 1
                         if consecutive_ok >= max(1, int(min_consecutive)):
                             panel._emit_log(
                                 "[PICK][DIRECT][ATTACH] "
-                                f"follow_confirmed tcp_dist={tcp_dist:.3f} "
-                                f"consecutive={consecutive_ok}"
+                                f"follow_confirmed tcp_dist={tcp_dist:.3f} z_gap={z_gap:.3f} "
+                                f"dx={dx:.3f} dy={dy:.3f} consecutive={consecutive_ok}"
                             )
                             return
                     else:
@@ -1089,10 +1178,14 @@ def run_pick_demo(panel) -> None:
                         f"({float(last_tcp_base[0]):.3f},{float(last_tcp_base[1]):.3f},"
                         f"{float(last_tcp_base[2]):.3f})"
                     )
+                last_z_gap_txt = "none"
+                if last_obj_base is not None and last_tcp_base is not None:
+                    last_z_gap_txt = f"{(float(last_tcp_base[2]) - float(last_obj_base[2])):.3f}"
                 raise RuntimeError(
                     "demo_attach_follow_not_confirmed "
                     f"best_tcp_dist={best_tcp_dist:.3f} "
-                    f"last_obj_base={obj_txt} last_tcp_base={tcp_txt}"
+                    f"last_obj_base={obj_txt} last_tcp_base={tcp_txt} "
+                    f"last_z_gap={last_z_gap_txt}"
                 )
 
             def _lift_demo_object_direct(lift_m: float) -> None:
@@ -1158,17 +1251,26 @@ def run_pick_demo(panel) -> None:
                 best_tcp_dist = float("inf")
                 last_obj_world = None
                 last_tcp_base = None
+                last_obj_base = None
+                fail_reasons = {
+                    "obj_move_below_min": 0,
+                    "lift_delta_below_min": 0,
+                    "tcp_dist_above_max": 0,
+                }
+                next_sample_log_ts = 0.0
                 panel._emit_log(
                     "[PICK][DIRECT][PHYSICS] "
                     f"phase={phase} start initial_obj_world=({initial_obj_world[0]:.3f},{initial_obj_world[1]:.3f},{initial_obj_world[2]:.3f}) "
                     f"min_obj_move={float(min_obj_move_m):.3f} min_lift_delta={float(min_lift_delta_m):.3f} "
-                    f"max_tcp_dist={float(max_tcp_dist_m):.3f}"
+                    f"max_tcp_dist={float(max_tcp_dist_m):.3f} "
+                    f"expected_tcp_obj_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f}"
                 )
                 while time.time() < deadline:
                     obj_world = _live_object_world()
                     obj_base = _live_object_base()
                     tcp_base = _live_tcp_base()
                     last_obj_world = obj_world
+                    last_obj_base = obj_base
                     last_tcp_base = tcp_base
                     if obj_world is None or obj_base is None or tcp_base is None:
                         consecutive_ok = 0
@@ -1177,20 +1279,41 @@ def run_pick_demo(panel) -> None:
                     obj_move = _dist(obj_world, initial_obj_world)
                     lift_delta = float(obj_world[2]) - float(initial_obj_world[2])
                     tcp_dist = _dist(obj_base, tcp_base)
+                    z_gap = float(tcp_base[2]) - float(obj_base[2])
                     best_obj_move = max(best_obj_move, obj_move)
                     best_lift = max(best_lift, lift_delta)
                     best_tcp_dist = min(best_tcp_dist, tcp_dist)
+                    cond_obj_move = obj_move >= float(min_obj_move_m)
+                    cond_lift = lift_delta >= float(min_lift_delta_m)
+                    cond_tcp = tcp_dist <= float(max_tcp_dist_m)
+                    if not cond_obj_move:
+                        fail_reasons["obj_move_below_min"] += 1
+                    if not cond_lift:
+                        fail_reasons["lift_delta_below_min"] += 1
+                    if not cond_tcp:
+                        fail_reasons["tcp_dist_above_max"] += 1
+                    now_ts = time.time()
+                    if now_ts >= next_sample_log_ts:
+                        panel._emit_log(
+                            "[PICK][DIRECT][PHYSICS] "
+                            f"phase={phase} sample obj_world={_fmt_vec(obj_world)} obj_base={_fmt_vec(obj_base)} "
+                            f"tcp_base={_fmt_vec(tcp_base)} obj_move={obj_move:.3f} lift_delta={lift_delta:.3f} "
+                            f"tcp_dist={tcp_dist:.3f} z_gap={z_gap:.3f} "
+                            f"cond_obj_move={str(cond_obj_move).lower()} "
+                            f"cond_lift={str(cond_lift).lower()} cond_tcp={str(cond_tcp).lower()}"
+                        )
+                        next_sample_log_ts = now_ts + 0.24
                     if (
-                        obj_move >= float(min_obj_move_m)
-                        and lift_delta >= float(min_lift_delta_m)
-                        and tcp_dist <= float(max_tcp_dist_m)
+                        cond_obj_move
+                        and cond_lift
+                        and cond_tcp
                     ):
                         consecutive_ok += 1
                         if consecutive_ok >= max(1, int(min_consecutive)):
                             panel._emit_log(
                                 "[PICK][DIRECT][PHYSICS] "
                                 f"phase={phase} ok obj_move={obj_move:.3f} lift_delta={lift_delta:.3f} "
-                                f"tcp_dist={tcp_dist:.3f} consecutive={consecutive_ok}"
+                                f"tcp_dist={tcp_dist:.3f} z_gap={z_gap:.3f} consecutive={consecutive_ok}"
                             )
                             return
                     else:
@@ -1198,14 +1321,21 @@ def run_pick_demo(panel) -> None:
                     time.sleep(0.08)
                 obj_txt = "none"
                 tcp_txt = "none"
+                obj_base_txt = "none"
                 if last_obj_world is not None:
                     obj_txt = f"({last_obj_world[0]:.3f},{last_obj_world[1]:.3f},{last_obj_world[2]:.3f})"
+                if last_obj_base is not None:
+                    obj_base_txt = f"({last_obj_base[0]:.3f},{last_obj_base[1]:.3f},{last_obj_base[2]:.3f})"
                 if last_tcp_base is not None:
                     tcp_txt = f"({last_tcp_base[0]:.3f},{last_tcp_base[1]:.3f},{last_tcp_base[2]:.3f})"
+                fail_reason_keys = [
+                    key for key, count in fail_reasons.items() if int(count) > 0
+                ] or ["unknown"]
                 raise RuntimeError(
                     "demo_carry_validation_failed "
                     f"phase={phase} best_obj_move={best_obj_move:.3f} best_lift_delta={best_lift:.3f} "
-                    f"best_tcp_dist={best_tcp_dist:.3f} last_obj_world={obj_txt} last_tcp_base={tcp_txt}"
+                    f"best_tcp_dist={best_tcp_dist:.3f} fail_reasons={','.join(fail_reason_keys)} "
+                    f"last_obj_world={obj_txt} last_obj_base={obj_base_txt} last_tcp_base={tcp_txt}"
                 )
 
             demo_attach_published = False
@@ -1328,77 +1458,149 @@ def run_pick_demo(panel) -> None:
                     note="ik alignment completed",
                     result="ok",
                 )
+            post_align_metrics = _pre_close_alignment_metrics()
+            _emit_transition_decision(
+                from_phase="GRASP_ALIGN_IK",
+                to_phase="PRE_CLOSE",
+                decision="gate_check",
+                reason="grasp_align_completed",
+                condition="prepare_pre_close_gate",
+                metrics=post_align_metrics,
+            )
             extra_down_m = max(
                 0.0,
                 float(os.environ.get("PANEL_PICK_DEMO_EXTRA_GRASP_DOWN_M", "0.0") or 0.0),
             )
             if extra_down_m > 1e-4:
                 try:
-                    tcp_pose = panel.get_tcp_base()
-                except Exception:
-                    tcp_pose = None
-                if tcp_pose is not None:
-                    base_frame = str(getattr(tcp_pose.header, "frame_id", "") or panel._business_base_frame())
-                    tcp_pos = tcp_pose.pose.position
-                    tcp_ori = tcp_pose.pose.orientation
-                    target_z = float(tcp_pos.z) - float(extra_down_m)
-                    request_id = int(getattr(panel, "_panel_moveit_request_id", 0) or 0) + 1
-                    setattr(panel, "_panel_moveit_request_id", request_id)
-                    request_uuid = uuid.uuid4().hex
-                    pose_data = {
-                        "position": (float(tcp_pos.x), float(tcp_pos.y), float(target_z)),
-                        "orientation": (
-                            float(tcp_ori.x),
-                            float(tcp_ori.y),
-                            float(tcp_ori.z),
-                            float(tcp_ori.w),
-                        ),
-                        "frame": f"{base_frame}|rid={request_id}|uid={request_uuid}",
-                    }
-                    has_results = False
-                    if panel._ros_worker_started and panel.ros_worker and panel.ros_worker.node_ready():
-                        try:
-                            has_results = bool(
-                                panel.ros_worker.subscribe_moveit_result("/desired_grasp/result")
-                            )
-                        except Exception:
-                            has_results = False
-                    panel._emit_log(
-                        f"[DEMO] GRASP_DOWN extra cartesian {extra_down_m:.3f} m "
-                        f"target_z={target_z:.3f} frame={base_frame}"
-                    )
-                    since_wall = 0.0
-                    since_seq = -1
-                    if has_results and panel.ros_worker:
-                        _raw, since_wall, since_seq = panel.ros_worker.moveit_result_snapshot()
-                    if not panel._publish_moveit_pose("GRASP_DOWN_EXTRA", pose_data, cartesian=True):
-                        raise RuntimeError("GRASP_DOWN_EXTRA publish_failed")
-                    if has_results:
-                        ok_extra, msg_extra = panel._wait_tfm_moveit_result(
-                            "GRASP_DOWN_EXTRA",
-                            since_wall=since_wall,
-                            since_seq=since_seq,
-                            timeout_sec=move_sec + 8.0,
-                            expected_request_id=request_id,
-                            expected_request_uuid=request_uuid,
-                        )
-                        if not ok_extra:
-                            raise RuntimeError(f"GRASP_DOWN_EXTRA result_failed:{msg_extra}")
-                    else:
-                        time.sleep(0.8)
-                        panel._motion_in_progress = False
-                    if not panel._wait_for_tcp_base_z(target_z, timeout_sec=4.0, tol_m=0.015):
+                    try:
+                        tcp_pose = panel.get_tcp_base()
+                    except Exception:
+                        tcp_pose = None
+                    if tcp_pose is not None:
+                        base_frame = str(getattr(tcp_pose.header, "frame_id", "") or panel._business_base_frame())
+                        tcp_pos = tcp_pose.pose.position
+                        tcp_ori = tcp_pose.pose.orientation
+                        target_z = float(tcp_pos.z) - float(extra_down_m)
+                        request_id = int(getattr(panel, "_panel_moveit_request_id", 0) or 0) + 1
+                        setattr(panel, "_panel_moveit_request_id", request_id)
+                        request_uuid = uuid.uuid4().hex
+                        pose_data = {
+                            "position": (float(tcp_pos.x), float(tcp_pos.y), float(target_z)),
+                            "orientation": (
+                                float(tcp_ori.x),
+                                float(tcp_ori.y),
+                                float(tcp_ori.z),
+                                float(tcp_ori.w),
+                            ),
+                            "frame": f"{base_frame}|rid={request_id}|uid={request_uuid}",
+                        }
+                        has_results = False
+                        if panel._ros_worker_started and panel.ros_worker and panel.ros_worker.node_ready():
+                            try:
+                                has_results = bool(
+                                    panel.ros_worker.subscribe_moveit_result("/desired_grasp/result")
+                                )
+                            except Exception:
+                                has_results = False
                         panel._emit_log(
-                            f"[DEMO] WARN: GRASP_DOWN_EXTRA tcp_z no confirmado target_z={target_z:.3f}"
+                            f"[DEMO] GRASP_DOWN extra cartesian {extra_down_m:.3f} m "
+                            f"target_z={target_z:.3f} frame={base_frame}"
                         )
-                else:
-                    panel._emit_log("[DEMO] WARN: tcp_base no disponible; omitiendo extra_down")
+                        since_wall = 0.0
+                        since_seq = -1
+                        if has_results and panel.ros_worker:
+                            _raw, since_wall, since_seq = panel.ros_worker.moveit_result_snapshot()
+                        if not panel._publish_moveit_pose("GRASP_DOWN_EXTRA", pose_data, cartesian=True):
+                            raise RuntimeError("GRASP_DOWN_EXTRA publish_failed")
+                        if has_results:
+                            ok_extra, msg_extra = panel._wait_tfm_moveit_result(
+                                "GRASP_DOWN_EXTRA",
+                                since_wall=since_wall,
+                                since_seq=since_seq,
+                                timeout_sec=move_sec + 8.0,
+                                expected_request_id=request_id,
+                                expected_request_uuid=request_uuid,
+                            )
+                            if not ok_extra:
+                                raise RuntimeError(f"GRASP_DOWN_EXTRA result_failed:{msg_extra}")
+                        else:
+                            time.sleep(0.8)
+                            panel._motion_in_progress = False
+                        if not panel._wait_for_tcp_base_z(target_z, timeout_sec=4.0, tol_m=0.015):
+                            panel._emit_log(
+                                f"[DEMO] WARN: GRASP_DOWN_EXTRA tcp_z no confirmado target_z={target_z:.3f}"
+                            )
+                    else:
+                        panel._emit_log("[DEMO] WARN: tcp_base no disponible; omitiendo extra_down")
+                except Exception as extra_down_exc:
+                    _emit_transition_decision(
+                        from_phase="GRASP_ALIGN_IK",
+                        to_phase="PRE_CLOSE",
+                        decision="blocked",
+                        reason=f"extra_down_failed:{extra_down_exc}",
+                        condition="extra_down_completed",
+                        metrics=_pre_close_alignment_metrics(),
+                    )
+                    raise
             else:
                 panel._emit_log("[PICK][DIRECT] moveit_extra_down=disabled route=direct_joint_only")
-            time.sleep(3.0)
+            post_align_settle_sec = max(
+                0.0,
+                float(
+                    os.environ.get(
+                        "PANEL_PICK_DEMO_POST_ALIGN_SETTLE_SEC",
+                        "0.20",
+                    )
+                    or 0.20
+                ),
+            )
+            panel._emit_log(
+                "[PICK][DIRECT][TRANSITION] "
+                f"from=GRASP_ALIGN_IK to=PRE_CLOSE decision=settle_wait reason=post_align_settle "
+                f"condition=post_align_settle_sec wait_sec={post_align_settle_sec:.2f}"
+            )
+            if post_align_settle_sec > 1e-4:
+                time.sleep(post_align_settle_sec)
             initial_obj_world = _live_object_world()
             if initial_obj_world is None:
-                raise RuntimeError("demo_object_pose_unavailable_before_close")
+                fallback_initial_obj_world = (
+                    _tuple3(target_world_align)
+                    or _tuple3(last_target.get("target_world"))
+                )
+                if fallback_initial_obj_world is not None:
+                    initial_obj_world = fallback_initial_obj_world
+                    panel._emit_log(
+                        "[PICK][DIRECT][WARN] "
+                        f"initial_obj_world unavailable; using fallback={_fmt_vec(initial_obj_world)}"
+                    )
+                    _emit_transition_decision(
+                        from_phase="GRASP_ALIGN_IK",
+                        to_phase="PRE_CLOSE",
+                        decision="enter",
+                        reason="object_pose_unavailable_using_fallback",
+                        condition="initial_obj_world_available",
+                        metrics=_pre_close_alignment_metrics(),
+                    )
+                else:
+                    _emit_transition_decision(
+                        from_phase="GRASP_ALIGN_IK",
+                        to_phase="PRE_CLOSE",
+                        decision="blocked",
+                        reason="object_pose_unavailable_before_pre_close",
+                        condition="initial_obj_world_available",
+                        metrics=_pre_close_alignment_metrics(),
+                    )
+                    raise RuntimeError("demo_object_pose_unavailable_before_close")
+            else:
+                _emit_transition_decision(
+                    from_phase="GRASP_ALIGN_IK",
+                    to_phase="PRE_CLOSE",
+                    decision="enter",
+                    reason="object_pose_available_before_pre_close",
+                    condition="initial_obj_world_available",
+                    metrics=_pre_close_alignment_metrics(),
+                )
             obj_base_pre = _live_object_base()
             target_base_pre = None
             target_world_pre = None
@@ -1499,12 +1701,28 @@ def run_pick_demo(panel) -> None:
                 result="ok" if bool(pre_close_ok) else "failed",
             )
             if not bool(pre_close_ok):
+                _emit_transition_decision(
+                    from_phase="PRE_CLOSE",
+                    to_phase="CLOSE",
+                    decision="blocked",
+                    reason="pre_close_gate_not_satisfied",
+                    condition="pre_close_ok",
+                    metrics=pre_close_metrics,
+                )
                 _abort_grasp(
                     code="PRE_CLOSE_NOT_ALIGNED",
                     phase="PRE_CLOSE",
                     note="tcp not aligned with object before close; refusing to close away from target",
                     metrics=pre_close_metrics,
                 )
+            _emit_transition_decision(
+                from_phase="PRE_CLOSE",
+                to_phase="CLOSE",
+                decision="enter",
+                reason="pre_close_gate_satisfied",
+                condition="pre_close_ok",
+                metrics=pre_close_metrics,
+            )
             panel._emit_log("[DEMO] Cerrando pinza")
             def _close_only():
                 panel._command_gripper(True, log_action="PICK", force=True)
@@ -1542,6 +1760,14 @@ def run_pick_demo(panel) -> None:
                 result="ok" if bool(close_confirmed) and bool(close_metrics.get("ok")) else "failed",
             )
             if not bool(close_confirmed):
+                _emit_transition_decision(
+                    from_phase="CLOSE",
+                    to_phase="ATTACH_GATE",
+                    decision="blocked",
+                    reason="close_not_confirmed",
+                    condition="close_confirmed",
+                    metrics=close_metrics,
+                )
                 _abort_grasp(
                     code="CLOSE_NOT_CONFIRMED",
                     phase="CLOSE",
@@ -1549,12 +1775,28 @@ def run_pick_demo(panel) -> None:
                     metrics=close_metrics,
                 )
             if not bool(close_metrics.get("ok")):
+                _emit_transition_decision(
+                    from_phase="CLOSE",
+                    to_phase="ATTACH_GATE",
+                    decision="blocked",
+                    reason="close_metrics_not_ok",
+                    condition="close_metrics_ok",
+                    metrics=close_metrics,
+                )
                 _abort_grasp(
                     code="CLOSE_WITHOUT_OBJECT",
                     phase="CLOSE",
                     note="gripper closed but object not geometrically acquired",
                     metrics=close_metrics,
                 )
+            _emit_transition_decision(
+                from_phase="CLOSE",
+                to_phase="ATTACH_GATE",
+                decision="enter",
+                reason="close_confirmed_and_metrics_ok",
+                condition="close_confirmed&&close_metrics_ok",
+                metrics=close_metrics,
+            )
             tcp_base_grasp = _live_tcp_base()
             obj_base_grasp = _live_object_base()
             if tcp_base_grasp is None or obj_base_grasp is None:
@@ -1599,6 +1841,13 @@ def run_pick_demo(panel) -> None:
                 z_tol_m=max(0.02, float(os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.080") or 0.080)),
                 z_ref_mode="center",
             )
+            panel._emit_log(
+                "[PICK][DIRECT][ATTACH] "
+                f"attach_result={str(bool(attach_ok)).lower()} "
+                f"tcp={_fmt_vec(tcp_base_grasp)} obj={_fmt_vec(obj_base_grasp)} "
+                f"tcp_obj_dist={_fmt_scalar(_dist(tcp_base_grasp, obj_base_grasp))} "
+                f"expected_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f}"
+            )
             if not attach_ok:
                 _phase_end("ATTACH_GATE", attach_state=_read_attach_state(), result="failed", note="attach gate returned false")
                 raise RuntimeError("demo_attach_failed")
@@ -1628,6 +1877,29 @@ def run_pick_demo(panel) -> None:
             )
             demo_follow_confirmed = True
             attach_metrics = _close_alignment_metrics()
+            panel._emit_log(
+                "[PICK][DIRECT][ATTACH] "
+                f"attach_follow_result=ok attach_published={str(bool(demo_attach_published)).lower()} "
+                f"follow_confirmed={str(bool(demo_follow_confirmed)).lower()} "
+                f"attach_state={json.dumps(_json_safe(_read_attach_state()), ensure_ascii=False, sort_keys=True)}"
+            )
+            post_attach_hold_sec = max(
+                0.0,
+                float(
+                    os.environ.get(
+                        "PANEL_PICK_DEMO_POST_ATTACH_HOLD_SEC",
+                        "0.90",
+                    )
+                    or 0.90
+                ),
+            )
+            if post_attach_hold_sec > 1e-4:
+                panel._emit_log(
+                    "[PICK][DIRECT][ATTACH] "
+                    f"post_attach_hold wait_sec={post_attach_hold_sec:.2f} "
+                    "reason=allow_backend_follow_lock"
+                )
+                time.sleep(post_attach_hold_sec)
             _phase_end(
                 "ATTACH_GATE",
                 attach_state=_read_attach_state(),
@@ -1660,6 +1932,9 @@ def run_pick_demo(panel) -> None:
                 },
                 note="post-grasp short lift",
             )
+            tcp_base_before_lift = _live_tcp_base()
+            obj_world_before_lift = _live_object_world()
+            obj_base_before_lift = _live_object_base()
             lift_debug = _lift_demo_object_direct(
                 max(
                     0.04,
@@ -1671,6 +1946,27 @@ def run_pick_demo(panel) -> None:
                         or 0.120
                     ),
                 )
+            )
+            tcp_base_after_lift = _live_tcp_base()
+            obj_world_after_lift = _live_object_world()
+            obj_base_after_lift = _live_object_base()
+            tcp_lift_delta = None
+            obj_lift_delta = None
+            tcp_obj_dist_after_lift = None
+            if tcp_base_before_lift is not None and tcp_base_after_lift is not None:
+                tcp_lift_delta = float(tcp_base_after_lift[2]) - float(tcp_base_before_lift[2])
+            if obj_world_before_lift is not None and obj_world_after_lift is not None:
+                obj_lift_delta = float(obj_world_after_lift[2]) - float(obj_world_before_lift[2])
+            if tcp_base_after_lift is not None and obj_base_after_lift is not None:
+                tcp_obj_dist_after_lift = _dist(tcp_base_after_lift, obj_base_after_lift)
+            panel._emit_log(
+                "[PICK][DIRECT][LIFT] "
+                f"tcp_before={_fmt_vec(tcp_base_before_lift)} tcp_after={_fmt_vec(tcp_base_after_lift)} "
+                f"obj_world_before={_fmt_vec(obj_world_before_lift)} obj_world_after={_fmt_vec(obj_world_after_lift)} "
+                f"obj_base_after={_fmt_vec(obj_base_after_lift)} "
+                f"tcp_lift_delta={_fmt_scalar(tcp_lift_delta)} obj_lift_delta={_fmt_scalar(obj_lift_delta)} "
+                f"tcp_obj_dist_after={_fmt_scalar(tcp_obj_dist_after_lift)} "
+                f"expected_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f}"
             )
             _phase_end(
                 "LIFT",
@@ -1724,9 +2020,8 @@ def run_pick_demo(panel) -> None:
             if short_release_mode:
                 panel._emit_log("[PICK][DEMO] short_release_mode=true")
 
-                def _open_and_release_short():
+                def _open_gripper_short():
                     panel._command_gripper(False, log_action="DROP", force=True)
-                    mark_object_released(PICK_DEMO_OBJECT_NAME, reason="demo_short_release")
 
                 _phase_begin(
                     "RELEASE",
@@ -1737,18 +2032,123 @@ def run_pick_demo(panel) -> None:
                     },
                     note="open gripper and detach after validated short lift",
                 )
-                panel.signal_run_ui.emit(_open_and_release_short)
+                release_pre = _release_observation(
+                    tag="pre_open",
+                    reason="before short release open command",
+                )
+                panel.signal_run_ui.emit(_open_gripper_short)
                 time.sleep(0.4)
+                release_mark_ok = bool(
+                    mark_object_released(
+                        PICK_DEMO_OBJECT_NAME,
+                        reason="demo_short_release_worker",
+                    )
+                )
+                panel._emit_log(
+                    "[PICK][DIRECT][RELEASE] "
+                    f"mark_object_released={str(release_mark_ok).lower()} "
+                    "reason=demo_short_release_worker"
+                )
                 _detach_demo_object("demo_short_release")
                 demo_logical_attached = False
-                time.sleep(0.8)
-                _phase_end("RELEASE", attach_state=_read_attach_state(), result="ok")
+                release_wait_timeout = max(
+                    0.8,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_RELEASE_WAIT_SEC",
+                            "1.6",
+                        )
+                        or 1.6
+                    ),
+                )
+                release_wait_deadline = time.monotonic() + release_wait_timeout
+                release_retry_sent = False
+                release_wait_ok = False
+                while time.monotonic() < release_wait_deadline:
+                    wait_attach = _json_safe(_read_attach_state()) or {}
+                    wait_detached = not bool(wait_attach.get("logical_attached"))
+                    wait_owner_none = str(wait_attach.get("owner") or "").upper() in {"", "NONE"}
+                    wait_state_ok = str(wait_attach.get("logical_state") or "").upper() in {
+                        "RELEASED",
+                        "ON_TABLE",
+                        "SPAWNED",
+                        "",
+                    }
+                    if wait_detached and wait_owner_none and wait_state_ok:
+                        release_wait_ok = True
+                        break
+                    if (not release_retry_sent) and ((time.monotonic() + 0.45) >= release_wait_deadline):
+                        _detach_demo_object("demo_short_release_retry")
+                        mark_object_released(PICK_DEMO_OBJECT_NAME, reason="demo_short_release_retry")
+                        release_retry_sent = True
+                    time.sleep(0.08)
+                release_post = _release_observation(
+                    tag="post_detach",
+                    reason="after short release detach wait",
+                )
+                release_attach = _json_safe(release_post.get("attach_state")) or {}
+                release_detached = not bool(release_attach.get("logical_attached"))
+                release_owner_none = str(release_attach.get("owner") or "").upper() in {"", "NONE"}
+                release_state_ok = str(release_attach.get("logical_state") or "").upper() in {
+                    "RELEASED",
+                    "ON_TABLE",
+                    "SPAWNED",
+                    "",
+                }
+                release_ok = bool(release_detached and release_owner_none and release_state_ok)
+                panel._emit_log(
+                    "[PICK][DIRECT][RELEASE] "
+                    f"validation={str(release_ok).lower()} wait_ok={str(release_wait_ok).lower()} "
+                    f"mark_ok={str(release_mark_ok).lower()} detached={str(release_detached).lower()} "
+                    f"owner_none={str(release_owner_none).lower()} state_ok={str(release_state_ok).lower()} "
+                    f"dist_world={_fmt_scalar(release_post.get('dist_world'))} "
+                    f"dist_base={_fmt_scalar(release_post.get('dist_base'))}"
+                )
+                _phase_end(
+                    "RELEASE",
+                    attach_state=_read_attach_state(),
+                    note=json.dumps(
+                        _json_safe(
+                            {
+                                "release_ok": release_ok,
+                                "release_pre": release_pre,
+                                "release_post": release_post,
+                            }
+                        ),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    result="ok" if release_ok else "warning",
+                )
+                _phase_begin(
+                    "HOME_FINAL",
+                    frame_used="base_link",
+                    note="return home after short_release",
+                )
+                home_final_ok = True
+                home_final_note = "ok"
+                _release_observation(
+                    tag="before_home_final",
+                    reason="starting HOME_FINAL after release",
+                )
                 try:
                     _run_joint_step("HOME_FINAL", home_pose)
                 except Exception as home_final_exc:
+                    home_final_ok = False
+                    home_final_note = str(home_final_exc)
                     panel._emit_log(
                         f"[PICK][DEMO] HOME_FINAL warning after short_release: {home_final_exc}"
                     )
+                _release_observation(
+                    tag="after_home_final",
+                    reason="HOME_FINAL completed",
+                )
+                _phase_end(
+                    "HOME_FINAL",
+                    attach_state=_read_attach_state(),
+                    note=home_final_note,
+                    result="ok" if home_final_ok else "warning",
+                )
                 panel._ui_set_status("Pick demo completado (lift + release)", error=False)
                 panel._emit_log("[PICK][DEMO] Secuencia completada en modo short_release")
                 return
@@ -1797,8 +2197,22 @@ def run_pick_demo(panel) -> None:
             panel.signal_run_ui.emit(lambda: panel._command_gripper(True, log_action="DROP", force=True))
             time.sleep(0.4)
             _phase_end("RELEASE", attach_state=_read_attach_state(), result="ok")
-
-            _run_joint_step("HOME_FINAL", home_pose)
+            _phase_begin(
+                "HOME_FINAL",
+                frame_used="base_link",
+                note="return home after basket release",
+            )
+            try:
+                _run_joint_step("HOME_FINAL", home_pose)
+            except Exception as home_final_exc:
+                _phase_end(
+                    "HOME_FINAL",
+                    attach_state=_read_attach_state(),
+                    note=str(home_final_exc),
+                    result="failed",
+                )
+                raise
+            _phase_end("HOME_FINAL", attach_state=_read_attach_state(), result="ok")
 
             panel._ui_set_status("Pick demo: verificando entrega en cesta…")
             panel._emit_log("[PICK] Secuencia PICK completada; validando entrega física.")

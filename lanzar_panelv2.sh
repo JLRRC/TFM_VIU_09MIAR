@@ -4,8 +4,17 @@
 
 set -e
 
-# Comprobar entorno gráfico
-if [[ -z "$DISPLAY" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" && "${QT_QPA_PLATFORM:-}" != "offscreen" ]]; then
+# Detectar ejecución remota (SSH) para forzar modo headless
+if [[ -n "${SSH_CONNECTION:-}" ]]; then
+  export HEADLESS=true
+  export PANEL_GZ_GUI=0
+else
+  export HEADLESS=false
+  export PANEL_GZ_GUI=1
+fi
+
+# Comprobar entorno gráfico solo en modo no headless
+if [[ "${HEADLESS}" != "true" && -z "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" && "${QT_QPA_PLATFORM:-}" != "offscreen" ]]; then
   echo "[ERROR] No está definida la variable DISPLAY. Abre una terminal gráfica (no TTY/SSH) y vuelve a intentarlo."
   echo "[INFO] Alternativa sin GUI: export PANEL_FORCE_OFFSCREEN=1"
   exit 1

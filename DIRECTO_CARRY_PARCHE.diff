@@ -1,0 +1,188 @@
+diff --git a/agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py b/agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py
+index e4b40b9..37272db 100644
+--- a/agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py
++++ b/agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py
+@@ -1049,10 +1092,13 @@ def run_pick_demo(panel) -> None:
+                 best_tcp_dist = float("inf")
+                 last_obj_base = None
+                 last_tcp_base = None
++                expected_z_gap = float(GRIPPER_TCP_Z_OFFSET)
++                next_sample_log_ts = 0.0
+                 panel._emit_log(
+                     "[PICK][DIRECT][ATTACH] "
+                     f"waiting_follow timeout={float(timeout_sec):.2f}s "
+-                    f"max_tcp_dist={float(max_tcp_dist_m):.3f}"
++                    f"max_tcp_dist={float(max_tcp_dist_m):.3f} "
++                    f"expected_z_gap={expected_z_gap:.3f}"
+                 )
+                 while time.time() < deadline:
+                     obj_base = _live_object_base()
+@@ -1158,17 +1220,26 @@ def run_pick_demo(panel) -> None:
+                 best_tcp_dist = float("inf")
+                 last_obj_world = None
+                 last_tcp_base = None
++                last_obj_base = None
++                fail_reasons = {
++                    "obj_move_below_min": 0,
++                    "lift_delta_below_min": 0,
++                    "tcp_dist_above_max": 0,
++                }
++                next_sample_log_ts = 0.0
+                 panel._emit_log(
+                     "[PICK][DIRECT][PHYSICS] "
+                     f"phase={phase} start initial_obj_world=({initial_obj_world[0]:.3f},{initial_obj_world[1]:.3f},{initial_obj_world[2]:.3f}) "
+                     f"min_obj_move={float(min_obj_move_m):.3f} min_lift_delta={float(min_lift_delta_m):.3f} "
+-                    f"max_tcp_dist={float(max_tcp_dist_m):.3f}"
++                    f"max_tcp_dist={float(max_tcp_dist_m):.3f} "
++                    f"expected_tcp_obj_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f}"
+                 )
+                 while time.time() < deadline:
+                     obj_world = _live_object_world()
+                     obj_base = _live_object_base()
+                     tcp_base = _live_tcp_base()
+                     last_obj_world = obj_world
++                    last_obj_base = obj_base
+                     last_tcp_base = tcp_base
+                     if obj_world is None or obj_base is None or tcp_base is None:
+                         consecutive_ok = 0
+@@ -1177,20 +1248,41 @@ def run_pick_demo(panel) -> None:
+                     obj_move = _dist(obj_world, initial_obj_world)
+                     lift_delta = float(obj_world[2]) - float(initial_obj_world[2])
+                     tcp_dist = _dist(obj_base, tcp_base)
++                    z_gap = float(tcp_base[2]) - float(obj_base[2])
+                     best_obj_move = max(best_obj_move, obj_move)
+                     best_lift = max(best_lift, lift_delta)
+                     best_tcp_dist = min(best_tcp_dist, tcp_dist)
++                    cond_obj_move = obj_move >= float(min_obj_move_m)
++                    cond_lift = lift_delta >= float(min_lift_delta_m)
++                    cond_tcp = tcp_dist <= float(max_tcp_dist_m)
++                    if not cond_obj_move:
++                        fail_reasons["obj_move_below_min"] += 1
++                    if not cond_lift:
++                        fail_reasons["lift_delta_below_min"] += 1
++                    if not cond_tcp:
++                        fail_reasons["tcp_dist_above_max"] += 1
++                    now_ts = time.time()
++                    if now_ts >= next_sample_log_ts:
++                        panel._emit_log(
++                            "[PICK][DIRECT][PHYSICS] "
++                            f"phase={phase} sample obj_world={_fmt_vec(obj_world)} obj_base={_fmt_vec(obj_base)} "
++                            f"tcp_base={_fmt_vec(tcp_base)} obj_move={obj_move:.3f} lift_delta={lift_delta:.3f} "
++                            f"tcp_dist={tcp_dist:.3f} z_gap={z_gap:.3f} "
++                            f"cond_obj_move={str(cond_obj_move).lower()} "
++                            f"cond_lift={str(cond_lift).lower()} cond_tcp={str(cond_tcp).lower()}"
++                        )
++                        next_sample_log_ts = now_ts + 0.24
+                     if (
+-                        obj_move >= float(min_obj_move_m)
+-                        and lift_delta >= float(min_lift_delta_m)
+-                        and tcp_dist <= float(max_tcp_dist_m)
++                        cond_obj_move
++                        and cond_lift
++                        and cond_tcp
+                     ):
+                         consecutive_ok += 1
+                         if consecutive_ok >= max(1, int(min_consecutive)):
+                             panel._emit_log(
+                                 "[PICK][DIRECT][PHYSICS] "
+                                 f"phase={phase} ok obj_move={obj_move:.3f} lift_delta={lift_delta:.3f} "
+-                                f"tcp_dist={tcp_dist:.3f} consecutive={consecutive_ok}"
++                                f"tcp_dist={tcp_dist:.3f} z_gap={z_gap:.3f} consecutive={consecutive_ok}"
+                             )
+                             return
+                     else:
+@@ -1198,14 +1290,21 @@ def run_pick_demo(panel) -> None:
+                     time.sleep(0.08)
+                 obj_txt = "none"
+                 tcp_txt = "none"
++                obj_base_txt = "none"
+                 if last_obj_world is not None:
+                     obj_txt = f"({last_obj_world[0]:.3f},{last_obj_world[1]:.3f},{last_obj_world[2]:.3f})"
++                if last_obj_base is not None:
++                    obj_base_txt = f"({last_obj_base[0]:.3f},{last_obj_base[1]:.3f},{last_obj_base[2]:.3f})"
+                 if last_tcp_base is not None:
+                     tcp_txt = f"({last_tcp_base[0]:.3f},{last_tcp_base[1]:.3f},{last_tcp_base[2]:.3f})"
++                fail_reason_keys = [
++                    key for key, count in fail_reasons.items() if int(count) > 0
++                ] or ["unknown"]
+                 raise RuntimeError(
+                     "demo_carry_validation_failed "
+                     f"phase={phase} best_obj_move={best_obj_move:.3f} best_lift_delta={best_lift:.3f} "
+-                    f"best_tcp_dist={best_tcp_dist:.3f} last_obj_world={obj_txt} last_tcp_base={tcp_txt}"
++                    f"best_tcp_dist={best_tcp_dist:.3f} fail_reasons={','.join(fail_reason_keys)} "
++                    f"last_obj_world={obj_txt} last_obj_base={obj_base_txt} last_tcp_base={tcp_txt}"
+                 )
+ 
+             demo_attach_published = False
+@@ -1599,6 +1810,13 @@ def run_pick_demo(panel) -> None:
+                 z_tol_m=max(0.02, float(os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.080") or 0.080)),
+                 z_ref_mode="center",
+             )
++            panel._emit_log(
++                "[PICK][DIRECT][ATTACH] "
++                f"attach_result={str(bool(attach_ok)).lower()} "
++                f"tcp={_fmt_vec(tcp_base_grasp)} obj={_fmt_vec(obj_base_grasp)} "
++                f"tcp_obj_dist={_fmt_scalar(_dist(tcp_base_grasp, obj_base_grasp))} "
++                f"expected_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f}"
++            )
+             if not attach_ok:
+                 _phase_end("ATTACH_GATE", attach_state=_read_attach_state(), result="failed", note="attach gate returned false")
+                 raise RuntimeError("demo_attach_failed")
+@@ -1628,6 +1846,29 @@ def run_pick_demo(panel) -> None:
+             )
+             demo_follow_confirmed = True
+             attach_metrics = _close_alignment_metrics()
++            panel._emit_log(
++                "[PICK][DIRECT][ATTACH] "
++                f"attach_follow_result=ok attach_published={str(bool(demo_attach_published)).lower()} "
++                f"follow_confirmed={str(bool(demo_follow_confirmed)).lower()} "
++                f"attach_state={json.dumps(_json_safe(_read_attach_state()), ensure_ascii=False, sort_keys=True)}"
++            )
++            post_attach_hold_sec = max(
++                0.0,
++                float(
++                    os.environ.get(
++                        "PANEL_PICK_DEMO_POST_ATTACH_HOLD_SEC",
++                        "0.90",
++                    )
++                    or 0.90
++                ),
++            )
++            if post_attach_hold_sec > 1e-4:
++                panel._emit_log(
++                    "[PICK][DIRECT][ATTACH] "
++                    f"post_attach_hold wait_sec={post_attach_hold_sec:.2f} "
++                    "reason=allow_backend_follow_lock"
++                )
++                time.sleep(post_attach_hold_sec)
+             _phase_end(
+                 "ATTACH_GATE",
+                 attach_state=_read_attach_state(),
+@@ -1672,6 +1916,27 @@ def run_pick_demo(panel) -> None:
+                     ),
+                 )
+             )
++            tcp_base_after_lift = _live_tcp_base()
++            obj_world_after_lift = _live_object_world()
++            obj_base_after_lift = _live_object_base()
++            tcp_lift_delta = None
++            obj_lift_delta = None
++            tcp_obj_dist_after_lift = None
++            if tcp_base_before_lift is not None and tcp_base_after_lift is not None:
++                tcp_lift_delta = float(tcp_base_after_lift[2]) - float(tcp_base_before_lift[2])
++            if obj_world_before_lift is not None and obj_world_after_lift is not None:
++                obj_lift_delta = float(obj_world_after_lift[2]) - float(obj_world_before_lift[2])
++            if tcp_base_after_lift is not None and obj_base_after_lift is not None:
++                tcp_obj_dist_after_lift = _dist(tcp_base_after_lift, obj_base_after_lift)
++            panel._emit_log(
++                "[PICK][DIRECT][LIFT] "
++                f"tcp_before={_fmt_vec(tcp_base_before_lift)} tcp_after={_fmt_vec(tcp_base_after_lift)} "
++                f"obj_world_before={_fmt_vec(obj_world_before_lift)} obj_world_after={_fmt_vec(obj_world_after_lift)} "
++                f"obj_base_after={_fmt_vec(obj_base_after_lift)} "
++                f"tcp_lift_delta={_fmt_scalar(tcp_lift_delta)} obj_lift_delta={_fmt_scalar(obj_lift_delta)} "
++                f"tcp_obj_dist_after={_fmt_scalar(tcp_obj_dist_after_lift)} "
++                f"expected_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f}"
++            )
+             _phase_end(
+                 "LIFT",
+                 target_base=lift_debug.get("target_tcp_runtime") if isinstance(lift_debug, dict) else None,

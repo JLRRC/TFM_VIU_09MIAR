@@ -1,0 +1,215 @@
+diff --git a/agarre_ros2_ws/scripts/start_panel_v2.sh b/agarre_ros2_ws/scripts/start_panel_v2.sh
+index 1f7202f..33e9128 100755
+--- a/agarre_ros2_ws/scripts/start_panel_v2.sh
++++ b/agarre_ros2_ws/scripts/start_panel_v2.sh
+@@ -311,6 +311,7 @@ export PANEL_PICK_OBJECT_DETERMINISTIC_JOINT_AFTER_APPROACH="${PANEL_PICK_OBJECT
+ export PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MAX_M="${PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MAX_M:-0.80}"
+ export PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MIN_CONSECUTIVE="${PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MIN_CONSECUTIVE:-1}"
+ export PANEL_PICK_OBJECT_APPROACH_SKIP_RETRY_ON_FALLBACK="${PANEL_PICK_OBJECT_APPROACH_SKIP_RETRY_ON_FALLBACK:-1}"
++export PANEL_PICK_OBJECT_APPROACH_TOL_M="${PANEL_PICK_OBJECT_APPROACH_TOL_M:-0.10}"
+ export PANEL_PICK_OBJECT_PRE_GRASP_TOL_M="${PANEL_PICK_OBJECT_PRE_GRASP_TOL_M:-0.10}"
+ export PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_TOL_M="${PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_TOL_M:-0.10}"
+ export PANEL_PICK_OBJECT_PRE_GRASP_ABORT_RECOVERY_TOL_M="${PANEL_PICK_OBJECT_PRE_GRASP_ABORT_RECOVERY_TOL_M:-0.10}"
+@@ -602,6 +603,7 @@ if [[ "${PANEL_WRITE_PID}" == "1" ]]; then
+     moveit_mode:="$MOVEIT_MODE" \
+     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
+     panel_managed:="$PANEL_MANAGED" \
++    camera_required:="$PANEL_CAMERA_REQUIRED" \
+     panel_auto_bridge:="${PANEL_AUTO_BRIDGE:-0}" \
+     panel_auto_bridge_delay_ms:="${PANEL_AUTO_BRIDGE_DELAY_MS:-1200}" \
+     > "$launch_log" 2>&1 < /dev/null &
+@@ -630,6 +632,7 @@ if [[ "${PANEL_AUTO_EXIT_ON_PANEL}" == "1" ]]; then
+     moveit_mode:="$MOVEIT_MODE" \
+     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
+     panel_managed:="$PANEL_MANAGED" \
++    camera_required:="$PANEL_CAMERA_REQUIRED" \
+     panel_auto_bridge:="${PANEL_AUTO_BRIDGE:-0}" \
+     panel_auto_bridge_delay_ms:="${PANEL_AUTO_BRIDGE_DELAY_MS:-1200}" \
+     > >(tee "$launch_log") 2> >(tee -a "$launch_log" >&2) &
+diff --git a/agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_object.py b/agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_object.py
+index c4f8a93..fa3005b 100644
+--- a/agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_object.py
++++ b/agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_object.py
+@@ -2719,7 +2719,15 @@ def run_pick_object(panel) -> None:
+                             except Exception:
+                                 return 0.03
+                         if label_key == "APPROACH":
+-                            return 0.04
++                            try:
++                                return float(
++                                    os.environ.get(
++                                        "PANEL_PICK_OBJECT_APPROACH_TOL_M",
++                                        "0.10",
++                                    )
++                                )
++                            except Exception:
++                                return 0.10
+                         try:
+                             return float(os.environ.get("PANEL_PICK_OBJECT_STEP_TOL_M", "0.02"))
+                         except Exception:
+diff --git a/agarre_ros2_ws/src/ur5_tools/ur5_tools/ur5_moveit_bridge.py b/agarre_ros2_ws/src/ur5_tools/ur5_tools/ur5_moveit_bridge.py
+index 816fc45..19467a4 100644
+--- a/agarre_ros2_ws/src/ur5_tools/ur5_tools/ur5_moveit_bridge.py
++++ b/agarre_ros2_ws/src/ur5_tools/ur5_tools/ur5_moveit_bridge.py
+@@ -691,7 +691,11 @@ class UR5MoveItBridge(Node):
+         req = str(request_uuid or "").strip().lower()
+         return req.startswith("test_touch:") or req.startswith("skip_constraints:")
+ 
+-    def _build_joint_path_constraints(self, request_uuid: str = "") -> Constraints | None:
++    def _build_joint_path_constraints(
++        self,
++        request_uuid: str = "",
++        phase_label: str | None = None,
++    ) -> Constraints | None:
+         """Build joint path constraints to prevent IK configuration flipping.
+ 
+         Constrains shoulder_pan, shoulder_lift, and elbow joints
+@@ -704,6 +708,20 @@ class UR5MoveItBridge(Node):
+                 f"{request_uuid or 'n/a'}"
+             )
+             return None
++        phase_upper = str(phase_label or "").strip().upper()
++        if phase_upper == "APPROACH":
++            skip_approach_raw = str(
++                os.environ.get(
++                    "PANEL_MOVEIT_BRIDGE_APPROACH_SKIP_CONSTRAINTS",
++                    "1",
++                )
++            ).strip().lower()
++            if skip_approach_raw not in ("0", "false", "no", "off"):
++                self.get_logger().info(
++                    "[BRIDGE_CONSTRAINT] skip constraints for APPROACH "
++                    f"phase={phase_upper} env={skip_approach_raw or '1'}"
++                )
++                return None
+         tol = self._path_constraint_joint_tol
+         if tol <= 0.0:
+             return None
+@@ -1301,6 +1319,18 @@ class UR5MoveItBridge(Node):
+             "error_string",
+             "action",
+             "accepted",
++            "timeout_sec",
++            "goal_check",
++            "ee_goal_check",
++            "joint_goal_check",
++            "joint_motion",
++            "feedback_goal_check",
++            "retry_timeout_sec",
++            "retry_goal_time_tol_sec",
++            "diag_reason",
++            "joint_state_age_sec",
++            "controller_action_available",
++            "active_controllers",
+             "val",
+         ):
+             if key in meta:
+@@ -3359,6 +3389,46 @@ class UR5MoveItBridge(Node):
+         thread = threading.Thread(target=_runner, daemon=True, name=f"plan_request_{request_id}")
+         thread.start()
+         timeout_sec = self._effective_request_timeout_sec()
++        phase_upper = str(phase_label or "").strip().upper()
++        if phase_upper == "APPROACH":
++            approach_max_total_timeout_sec = max(
++                20.0,
++                self._env_float(
++                    "PANEL_MOVEIT_BRIDGE_APPROACH_MAX_TOTAL_TIMEOUT_SEC",
++                    120.0,
++                ),
++            )
++            approach_replan_max_attempts = max(
++                1,
++                int(
++                    round(
++                        self._env_float(
++                            "PANEL_MOVEIT_BRIDGE_APPROACH_REPLAN_MAX_ATTEMPTS",
++                            2.0,
++                        )
++                    )
++                ),
++            )
++            approach_request_cushion_sec = max(
++                10.0,
++                self._env_float(
++                    "PANEL_MOVEIT_BRIDGE_APPROACH_REQUEST_TIMEOUT_CUSHION_SEC",
++                    20.0,
++                ),
++            )
++            approach_budget_timeout_sec = (
++                float(approach_max_total_timeout_sec)
++                * float(approach_replan_max_attempts + 1)
++                + float(approach_request_cushion_sec)
++            )
++            if float(timeout_sec) < float(approach_budget_timeout_sec):
++                self.get_logger().info(
++                    "[BRIDGE_EXEC] request timeout elevated for APPROACH "
++                    f"from={float(timeout_sec):.1f}s to={float(approach_budget_timeout_sec):.1f}s "
++                    f"attempts={int(approach_replan_max_attempts) + 1} "
++                    f"per_attempt_cap={float(approach_max_total_timeout_sec):.1f}s"
++                )
++                timeout_sec = float(approach_budget_timeout_sec)
+         start_wall_us = int(time.time() * 1_000_000)
+         self.get_logger().info(
+             f"[BRIDGE][DISPATCH_START] request_id={request_id} "
+@@ -3714,7 +3784,10 @@ class UR5MoveItBridge(Node):
+             except TypeError:
+                 # Fallback for older MoveItPy bindings.
+                 self._planning_component.set_goal_state(target, self._ee_frame)
+-            path_constraints = self._build_joint_path_constraints(request_uuid=request_uuid)
++            path_constraints = self._build_joint_path_constraints(
++                request_uuid=request_uuid,
++                phase_label=phase_label,
++            )
+             if path_constraints is not None:
+                 self._planning_component.set_path_constraints(path_constraints)
+             try:
+@@ -3875,19 +3948,37 @@ class UR5MoveItBridge(Node):
+                         True,
+                     )
+                 fjt_status_text = str((fjt_meta or {}).get("status_text", "") or "").upper()
+-                if (
+-                    str(phase_label or "").strip().upper() == "APPROACH"
++                phase_upper = str(phase_label or "").strip().upper()
++                should_replan_from_current = (
++                    phase_upper == "APPROACH"
+                     and _replan_from_current_state_attempt < approach_replan_max_attempts
+-                    and fjt_status_text == "APPROACH_REPLAN_FROM_CURRENT_STATE"
++                    and fjt_status_text in ("APPROACH_REPLAN_FROM_CURRENT_STATE", "TIMEOUT")
++                )
++                if (
++                    should_replan_from_current
+                 ):
+                     settle_ok, settle_reason = self._wait_for_joint_state_settled(
+                         timeout_sec=2.0,
+                         stable_sec=0.35,
+                         tol_rad=0.03,
+                     )
++                    replan_reason = (
++                        "timeout_terminal"
++                        if fjt_status_text == "TIMEOUT"
++                        else "approach_replan_signal"
++                    )
++                    joint_goal_check = str((fjt_meta or {}).get("joint_goal_check") or "n/a")
++                    ee_goal_check = str((fjt_meta or {}).get("ee_goal_check") or "n/a")
++                    goal_check = str((fjt_meta or {}).get("goal_check") or "n/a")
++                    feedback_goal_check = str((fjt_meta or {}).get("feedback_goal_check") or "n/a")
++                    joint_motion = str((fjt_meta or {}).get("joint_motion") or "n/a")
+                     self.get_logger().warning(
+                         "[BRIDGE_EXEC] replanificando APPROACH desde el estado actual "
+                         f"attempt={_replan_from_current_state_attempt + 1} "
++                        f"reason={replan_reason} status={fjt_status_text or 'n/a'} "
++                        f"joint_goal_check={joint_goal_check} ee_goal_check={ee_goal_check} "
++                        f"goal_check={goal_check} feedback_goal_check={feedback_goal_check} "
++                        f"joint_motion={joint_motion} "
+                         f"joint_state_settled={str(bool(settle_ok)).lower()} "
+                         f"detail={settle_reason}"
+                     )
+@@ -3899,7 +3990,7 @@ class UR5MoveItBridge(Node):
+                         _replan_from_current_state_attempt=_replan_from_current_state_attempt + 1,
+                     )
+                 if (
+-                    str(phase_label or "").strip().upper() == "APPROACH"
++                    phase_upper == "APPROACH"
+                     and _replan_from_current_state_attempt >= approach_replan_max_attempts
+                 ):
+                     self.get_logger().warning(

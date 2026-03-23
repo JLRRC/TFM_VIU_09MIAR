@@ -23,17 +23,11 @@ LOSS_EXPERIMENTS = (
     ("EXP3_RESNET18_RGB_AUGMENT", "5_4"),
     ("EXP4_RESNET18_RGBD", "5_5"),
 )
-YLIM_POLICY_BY_EXPERIMENT = {
-    "EXP2_SIMPLE_RGBD": "independent_train_val",
+YLIM_POLICY_BY_EXPERIMENT: dict[str, str] = {}
+MANUAL_SHARED_YLIM_BY_EXPERIMENT: dict[str, tuple[float, float]] = {
+    "EXP2_SIMPLE_RGBD": (0.0300, 0.0400),
 }
-MANUAL_SHARED_YLIM_BY_EXPERIMENT: dict[str, tuple[float, float]] = {}
-EDITORIAL_EXCEPTION_HINTS = {
-    "EXP2_SIMPLE_RGBD": (
-        "Comentario del tutor: esta ilustracion se mantiene como excepcion editorial activa, "
-        "con `ylim` independiente por subplot, porque forzar la misma escala se considera poco practico "
-        "en este caso concreto."
-    )
-}
+EDITORIAL_EXCEPTION_HINTS: dict[str, str] = {}
 
 
 @dataclass(frozen=True)
@@ -320,8 +314,8 @@ def _write_loss_log(log_path: Path, reports: list[LossFigureReport]) -> None:
         f"- Script modificado: `{Path(__file__).resolve()}`",
         "- Criterio de eje Y por defecto: min/max global conjunto de `train_loss` y `val_loss` por experimento, con margen simétrico del 5%, aplicado idénticamente a ambos subplots.",
         "- Soporte de excepciones: se permite configurar `ylim` manual compartido o `ylim` independiente por subplot si existe una justificación editorial explícita y sin recortar datos.",
-        "- Nota del tutor incorporada: esta recomendación se extiende a las ilustraciones análogas y se activa la excepción editorial para la ilustración equivalente a EXP2.",
-        "- Verificacion esperada: cada pareja train/val comparte exactamente el mismo `ylim` salvo excepciones documentadas; se conservan títulos, leyendas y seeds.",
+        "- Nota del tutor incorporada: se fuerza en EXP2 un `ylim` manual compartido [0.0300, 0.0400] para facilitar comparación directa entre train y val.",
+        "- Verificacion esperada: cada pareja train/val comparte exactamente el mismo `ylim`; se conservan títulos, leyendas y seeds.",
         "",
         "## Figuras regeneradas",
         "",

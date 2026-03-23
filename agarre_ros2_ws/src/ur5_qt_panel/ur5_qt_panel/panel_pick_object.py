@@ -2719,7 +2719,15 @@ def run_pick_object(panel) -> None:
                             except Exception:
                                 return 0.03
                         if label_key == "APPROACH":
-                            return 0.04
+                            try:
+                                return float(
+                                    os.environ.get(
+                                        "PANEL_PICK_OBJECT_APPROACH_TOL_M",
+                                        "0.10",
+                                    )
+                                )
+                            except Exception:
+                                return 0.10
                         try:
                             return float(os.environ.get("PANEL_PICK_OBJECT_STEP_TOL_M", "0.02"))
                         except Exception:
