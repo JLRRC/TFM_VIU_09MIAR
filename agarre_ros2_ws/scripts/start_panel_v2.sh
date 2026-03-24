@@ -78,6 +78,7 @@ export WS_DIR
 : "${PANEL_STRICT_RUNTIME_SANITY:=1}" # 1 = bloquea arranque si detecta otro stack ROS activo
 : "${PANEL_MOVEIT_MODE:=auto}"        # auto|move_group|bridge
 : "${PANEL_ROS_EXECUTOR_THREADS:=3}"  # executor del RosWorker para no bloquear /clock durante servicios largos
+: "${PANEL_GRIPPER_CLOSED_RAD:=0.60}" # RG2 en este modelo suele cerrar alrededor de ~0.60 rad
 : "${RMW_IMPLEMENTATION:=rmw_fastrtps_cpp}"
 if [[ -z "${PANEL_GZ_GUI+x}" ]]; then
   if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" && "${QT_QPA_PLATFORM:-}" != "offscreen" ]]; then
@@ -89,6 +90,7 @@ fi
 export RMW_IMPLEMENTATION
 export PANEL_CONTROLLER_MANAGER
 export PANEL_ROS_EXECUTOR_THREADS
+export PANEL_GRIPPER_CLOSED_RAD
 export PANEL_GZ_GUI
 
 if [[ -z "${PANEL_VENV_DIR}" ]]; then

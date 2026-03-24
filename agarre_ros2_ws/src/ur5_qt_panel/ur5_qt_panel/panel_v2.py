@@ -390,7 +390,13 @@ MOVEIT_CARTESIAN_POSE_TOPIC = "/desired_grasp_cartesian"
 GLOBAL_FRAME_EFFECTIVE = "base_link"
 GRASP_RECT_TOPIC = os.environ.get("PANEL_GRASP_RECT_TOPIC", "/grasp_rect").strip() or "/grasp_rect"
 TEST_CORNER_OVERLAY = os.environ.get("PANEL_TEST_CORNER_OVERLAY", "0").strip().lower() not in ("0", "false", "off", "no")
-TCP_POSE_OVERLAY = os.environ.get("PANEL_TCP_POSE_OVERLAY", "0").strip().lower() not in ("0", "false", "off", "no")
+TCP_POSE_OVERLAY = os.environ.get("PANEL_TCP_POSE_OVERLAY", "1").strip().lower() not in ("0", "false", "off", "no")
+FAR_FRONT_CAMERA_TOPIC_CANDIDATES = (
+    "/camera_west/image",
+    "/camera_south/image",
+    "/camera_north/image",
+    "/camera_east/image",
+)
 
 _DEBUG_EXCEPTIONS = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
 
@@ -941,7 +947,9 @@ class CameraController:
     def connect(self) -> None:
         p = self._panel
         p._log_button("Conectar cámara")
-        if bool(getattr(p, "_script_motion_active", False)):
+        if bool(getattr(p, "_script_motion_active", False)) and not bool(
+            getattr(p, "_allow_camera_while_script_motion", False)
+        ):
             p._emit_log("[CAMERA] connect bloqueado: robot en movimiento")
             p._set_status("Cámara bloqueada: robot en movimiento", error=False)
             return
@@ -1198,8 +1206,7 @@ class CameraController:
                 display = p._draw_grasp_overlay(display, w, h)
             if TEST_CORNER_OVERLAY:
                 display = p._draw_test_corner_overlay(display, w, h)
-            if TCP_POSE_OVERLAY:
-                display = p._draw_tcp_pose_overlay(display, w, h)
+            display = p._draw_tcp_pose_overlay(display, w, h)
         p.camera_view.set_frame(display, w, h)
         now = time.time()
         if (now - p._camera_info_last_ts) >= max(0.05, float(CAMERA_INFO_INTERVAL_SEC)):
@@ -1288,6 +1295,17 @@ class ControlPanelV2(QMainWindow):
     def __init__(self):
         super().__init__()
         self._state_event = threading.Event()
+        self._debug_motion_lock = threading.Lock()
+        self._debug_motion_continue_event = threading.Event()
+        self._debug_motion_wait_active = False
+        self._debug_motion_wait_reason = ""
+        self._debug_motion_pause_alcance_enabled = str(
+            os.environ.get("PANEL_DEBUG_PAUSE_ALCANCE", "0") or "0"
+        ).strip().lower() not in {"0", "false", "no", "off"}
+        self._debug_motion_pause_timeout_sec = max(
+            0.0,
+            float(os.environ.get("PANEL_DEBUG_PAUSE_TIMEOUT_SEC", "0") or 0.0),
+        )
         self.setWindowTitle("Panel V2")
         self.setMinimumWidth(1200)
         load_object_positions()
@@ -1580,6 +1598,15 @@ class ControlPanelV2(QMainWindow):
         self._manual_inflight = False
         self._manual_pending = False
         self._script_motion_active = False
+        self._allow_camera_while_script_motion = str(
+            os.environ.get("PANEL_ALLOW_CAMERA_WHILE_MOTION", "1") or "1"
+        ).strip().lower() not in {"0", "false", "no", "off"}
+        self._allow_gripper_while_script_motion = str(
+            os.environ.get("PANEL_ALLOW_GRIPPER_WHILE_MOTION", "1") or "1"
+        ).strip().lower() not in {"0", "false", "no", "off"}
+        self._manual_controls_always_enabled = str(
+            os.environ.get("PANEL_MANUAL_CONTROLS_ALWAYS_ENABLED", "1") or "1"
+        ).strip().lower() not in {"0", "false", "no", "off"}
         self._closing = False
         self._shutdown_complete = False
         self._last_tcp_world = None
@@ -3242,6 +3269,11 @@ class ControlPanelV2(QMainWindow):
         self.btn_camera_refresh.clicked.connect(self._camera_ctrl.refresh_topics)
         self.btn_camera_connect = QPushButton("Conectar")
         self.btn_camera_connect.clicked.connect(self._camera_ctrl.connect)
+        self.btn_camera_far_front = QPushButton("Vista frontal")
+        self.btn_camera_far_front.setToolTip(
+            "Cambia a una cámara frontal lejana de la mesa (prioriza /camera_west/image)."
+        )
+        self.btn_camera_far_front.clicked.connect(self._set_far_front_camera_view)
         self.btn_release_objects = QPushButton("Soltar objetos")
         self.btn_release_objects.setMinimumHeight(32)
         self.btn_release_objects.setToolTip("Libera todos los objetos del drop anchor en Gazebo")
@@ -3257,6 +3289,7 @@ class ControlPanelV2(QMainWindow):
         cam_top.addWidget(self.camera_topic_combo, 1)
         cam_top.addWidget(self.btn_camera_refresh)
         cam_top.addWidget(self.btn_camera_connect)
+        cam_top.addWidget(self.btn_camera_far_front)
         cam_top.addWidget(self.btn_release_objects)
         cam_top.addWidget(self.btn_calibrate)
         cam_top.addWidget(self.btn_recover)
@@ -3502,17 +3535,32 @@ class ControlPanelV2(QMainWindow):
         robot_layout.setVerticalSpacing(6)
 
         self.btn_test_robot = QPushButton("TEST ROBOT")
+        self.btn_debug_motion = QPushButton("DEBUG MOVIMIENTO")
         self.btn_auto_tune_touch = QPushButton("AUTO TUNE TOUCH (MoveIt)")
         self.btn_home = QPushButton("UR5 → HOME")
         self.btn_table = QPushButton("UR5 → Mesa")
         self.btn_basket = QPushButton("UR5 → Cesta")
-        for b in (self.btn_test_robot, self.btn_auto_tune_touch, self.btn_home, self.btn_table, self.btn_basket):
+        for b in (
+            self.btn_test_robot,
+            self.btn_debug_motion,
+            self.btn_auto_tune_touch,
+            self.btn_home,
+            self.btn_table,
+            self.btn_basket,
+        ):
             b.setMinimumHeight(32)
+        # Keep TEST ROBOT for internal state handling, but do not show it in the panel.
+        self.btn_test_robot.setVisible(False)
+        self.btn_debug_motion.setToolTip(
+            "Pausa manual de depuración: cuando haya una pausa activa, pulsa para continuar."
+        )
         self.btn_test_robot.clicked.connect(self._run_robot_test)
+        self.btn_debug_motion.clicked.connect(self._on_debug_motion_button)
         self.btn_auto_tune_touch.clicked.connect(self._run_auto_tune_touch)
         self.btn_home.clicked.connect(self._go_home)
         self.btn_table.clicked.connect(self._go_table)
         self.btn_basket.clicked.connect(self._go_basket)
+        self._set_debug_motion_button_waiting(False)
 
         self.btn_pick_demo = QPushButton("Agarre Objeto (Directo)")
         self.btn_pick_demo.setMinimumHeight(32)
@@ -3575,7 +3623,7 @@ class ControlPanelV2(QMainWindow):
 
         baseline_col = QVBoxLayout()
         baseline_col.setSpacing(6)
-        baseline_col.addWidget(self.btn_test_robot)
+        baseline_col.addWidget(self.btn_debug_motion)
         baseline_col.addWidget(self.btn_auto_tune_touch)
         baseline_col.addWidget(self.btn_home)
         baseline_col.addWidget(self.btn_table)
@@ -4390,6 +4438,79 @@ class ControlPanelV2(QMainWindow):
     @pyqtSlot(object, int)
     def _run_ui_delayed(self, fn, delay_ms: int) -> None:
         QTimer.singleShot(int(delay_ms), fn)
+
+    def _set_debug_motion_button_waiting(self, waiting: bool, reason: str = "") -> None:
+        btn = getattr(self, "btn_debug_motion", None)
+        if btn is None:
+            return
+        btn.setEnabled(True)
+        if waiting:
+            btn.setText("DEBUG MOVIMIENTO: CONTINUAR")
+            btn.setStyleSheet("background:#f59e0b; color:#0f172a; font-weight:700;")
+            btn.setToolTip(
+                f"Pausa activa ({reason or 'debug_manual'}). Pulsa para continuar la secuencia."
+            )
+        else:
+            btn.setText("DEBUG MOVIMIENTO")
+            btn.setStyleSheet("")
+            btn.setToolTip(
+                "Pausa manual de depuración: cuando haya una pausa activa, pulsa para continuar."
+            )
+
+    def _on_debug_motion_button(self) -> None:
+        with self._debug_motion_lock:
+            waiting = bool(self._debug_motion_wait_active)
+            reason = str(self._debug_motion_wait_reason or "")
+            self._debug_motion_continue_event.set()
+        if waiting:
+            self._emit_log(
+                "[DEBUG][MOTION] continue_button=pressed "
+                f"reason={reason or 'debug_manual_pause'}"
+            )
+            self._set_status("DEBUG MOVIMIENTO: reanudando secuencia", error=False)
+        else:
+            self._emit_log("[DEBUG][MOTION] continue_button=pressed waiting=false")
+
+    def _debug_motion_wait_for_continue(self, *, reason: str, timeout_sec: Optional[float] = None) -> bool:
+        if not bool(getattr(self, "_debug_motion_pause_alcance_enabled", False)):
+            return True
+        wait_timeout = (
+            float(self._debug_motion_pause_timeout_sec)
+            if timeout_sec is None
+            else max(0.0, float(timeout_sec))
+        )
+        with self._debug_motion_lock:
+            self._debug_motion_continue_event.clear()
+            self._debug_motion_wait_active = True
+            self._debug_motion_wait_reason = str(reason or "debug_manual_pause")
+        self.signal_run_ui.emit(
+            lambda: self._set_debug_motion_button_waiting(True, str(reason or "debug_manual_pause"))
+        )
+        self._emit_log(
+            "[DEBUG][MOTION] pause_enter "
+            f"reason={reason or 'debug_manual_pause'} "
+            f"timeout={'inf' if wait_timeout <= 0.0 else f'{wait_timeout:.1f}s'}"
+        )
+        if wait_timeout <= 0.0:
+            resumed = bool(self._debug_motion_continue_event.wait())
+        else:
+            resumed = bool(self._debug_motion_continue_event.wait(wait_timeout))
+        with self._debug_motion_lock:
+            self._debug_motion_wait_active = False
+            self._debug_motion_wait_reason = ""
+            self._debug_motion_continue_event.clear()
+        self.signal_run_ui.emit(lambda: self._set_debug_motion_button_waiting(False, ""))
+        if resumed:
+            self._emit_log(
+                "[DEBUG][MOTION] pause_exit "
+                f"reason={reason or 'debug_manual_pause'} resume=button"
+            )
+            return True
+        self._emit_log(
+            "[DEBUG][MOTION] pause_timeout "
+            f"reason={reason or 'debug_manual_pause'} timeout={wait_timeout:.1f}s"
+        )
+        return False
 
     def _run_async(self, fn, *, name: str = "", on_done=None) -> QThread:
         thread = _FnThread(fn, name=name)
@@ -5352,6 +5473,48 @@ class ControlPanelV2(QMainWindow):
     @pyqtSlot()
     def _connect_camera(self):
         self._camera_ctrl.connect()
+
+    def _switch_camera_topic(self, topic_candidates: List[str], *, label: str) -> bool:
+        if not topic_candidates:
+            return False
+        combo = getattr(self, "camera_topic_combo", None)
+        if combo is None:
+            return False
+        normalized = [str(t).strip() for t in topic_candidates if str(t).strip()]
+        if not normalized:
+            return False
+
+        selected = ""
+        selected_idx = -1
+        for topic in normalized:
+            idx = combo.findText(topic)
+            if idx >= 0:
+                selected = topic
+                selected_idx = idx
+                break
+        if not selected:
+            selected = normalized[0]
+
+        if selected_idx >= 0:
+            combo.setCurrentIndex(selected_idx)
+        else:
+            combo.setEditText(selected)
+
+        self.camera_topic = selected
+        self._emit_log(f"[CAMERA] preset={label} topic={selected}")
+        self._camera_ctrl.connect()
+        return True
+
+    @pyqtSlot()
+    def _set_far_front_camera_view(self) -> None:
+        ok = self._switch_camera_topic(
+            list(FAR_FRONT_CAMERA_TOPIC_CANDIDATES),
+            label="frontal_lejana",
+        )
+        if ok:
+            self._set_status("Cámara: vista frontal lejana", error=False)
+        else:
+            self._set_status("No se pudo activar vista frontal", error=True)
 
     def _subscribe_camera(self, topic: str) -> bool:
         return self._camera_ctrl.subscribe(topic)
@@ -6997,10 +7160,27 @@ class ControlPanelV2(QMainWindow):
         return False
 
     def _world_frame_last_first(self, fallback: Optional[str] = None) -> str:
-        return fallback or self._last_selection_frame or WORLD_FRAME or "world"
+        frame = (
+            fallback
+            or WORLD_FRAME
+            or self._last_selection_frame
+            or "world"
+        )
+        frame_norm = str(frame or "").split("|", 1)[0].strip() or "world"
+        base_frame = str(self._business_base_frame() or "base_link").strip() or "base_link"
+        if frame_norm in {base_frame, "base", "tool0", "rg2_tcp"}:
+            # Guardrail: las poses de pose/info llegan en world, no en base_link.
+            # Si este valor se contamina, los cálculos geométricos se desalinean.
+            frame_norm = str(WORLD_FRAME or "world").strip() or "world"
+            self._emit_log_throttled(
+                "FRAME:world_frame_guard",
+                f"[FRAME] world_frame inválido ({frame}); usando {frame_norm}",
+                min_interval=2.0,
+            )
+        return frame_norm
 
     def _world_frame_config_first(self) -> str:
-        return WORLD_FRAME or self._last_selection_frame or "world"
+        return self._world_frame_last_first(WORLD_FRAME or "world")
 
     def _follow_joint_traj_ready(self) -> bool:
         if not ROS_AVAILABLE or ActionClient is None or FollowJointTrajectory is None:
@@ -7436,6 +7616,8 @@ class ControlPanelV2(QMainWindow):
         self.camera_topic_combo.setEnabled(False)
         self.btn_camera_refresh.setEnabled(False)
         self.btn_camera_connect.setEnabled(False)
+        if getattr(self, "btn_camera_far_front", None) is not None:
+            self.btn_camera_far_front.setEnabled(False)
         if self.btn_calibrate is not None:
             self.btn_calibrate.setEnabled(False)
         if self.btn_release_objects is not None:
@@ -7449,15 +7631,18 @@ class ControlPanelV2(QMainWindow):
         if hasattr(self, "btn_save_episode"):
             self.btn_save_episode.setEnabled(False)
         
-        # Control manual (deshabilitado hasta que bridge esté activo)
-        self.btn_send_joints.setEnabled(False)
-        self.joint_time.setEnabled(False)
-        self.chk_auto_joints.setEnabled(False)
+        # Control manual de joints: por defecto lo mantenemos disponible para depuración.
+        manual_boot_enabled = bool(getattr(self, "_manual_controls_always_enabled", False))
+        self.btn_send_joints.setEnabled(manual_boot_enabled)
+        self.joint_time.setEnabled(manual_boot_enabled)
+        self.chk_auto_joints.setEnabled(manual_boot_enabled)
         for slider in self.joint_sliders:
-            slider.setEnabled(False)
+            slider.setEnabled(manual_boot_enabled)
 
         # Botones de movimiento (bloqueados hasta bridge)
         self.btn_test_robot.setEnabled(False)
+        self.btn_debug_motion.setEnabled(True)
+        self._set_debug_motion_button_waiting(False)
         self.btn_home.setEnabled(False)
         self.btn_table.setEnabled(False)
         self.btn_basket.setEnabled(False)
@@ -12620,11 +12805,7 @@ class ControlPanelV2(QMainWindow):
                     return "none"
                 return "none"
             px_dist = None
-            if tcp_px is not None and obj_px is not None:
-                px_dist = math.hypot(
-                    float(tcp_px[0]) - float(obj_px[0]),
-                    float(tcp_px[1]) - float(obj_px[1]),
-                )
+            if tcp_px is not None:
                 painter.setPen(QPen(QColor(34, 211, 238, 220), 2))
                 painter.drawLine(
                     QPointF(float(tcp_px[0]) - 8.0, float(tcp_px[1])),
@@ -12633,6 +12814,11 @@ class ControlPanelV2(QMainWindow):
                 painter.drawLine(
                     QPointF(float(tcp_px[0]), float(tcp_px[1]) - 8.0),
                     QPointF(float(tcp_px[0]), float(tcp_px[1]) + 8.0),
+                )
+            if tcp_px is not None and obj_px is not None:
+                px_dist = math.hypot(
+                    float(tcp_px[0]) - float(obj_px[0]),
+                    float(tcp_px[1]) - float(obj_px[1]),
                 )
                 painter.setPen(QPen(QColor(250, 204, 21, 220), 2))
                 painter.setBrush(Qt.NoBrush)
@@ -12685,8 +12871,7 @@ class ControlPanelV2(QMainWindow):
             display = self._draw_grasp_overlay(display, w, h)
         if TEST_CORNER_OVERLAY:
             display = self._draw_test_corner_overlay(display, w, h)
-        if TCP_POSE_OVERLAY:
-            display = self._draw_tcp_pose_overlay(display, w, h)
+        display = self._draw_tcp_pose_overlay(display, w, h)
         out = Path(str(out_path)).expanduser()
         ensure_dir(str(out.parent))
         return bool(display.save(str(out)))

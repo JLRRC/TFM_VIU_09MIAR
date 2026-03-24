@@ -474,10 +474,10 @@
 
     <model name="camera_east">
       <static>true</static>
-      <pose>0.95 0.75 0 0 0 0</pose>
+      <pose>0.45 0.75 0 0 0 0</pose>
       <link name="link">
         <sensor name="camera_east_rgbd" type="rgbd_camera">
-          <pose>0 0 2.90 0 1.05 -2.475</pose>
+          <pose>0 0 1.90 0 1.05 -2.475</pose>
           <always_on>true</always_on>
           <update_rate>60</update_rate>
           <topic>/camera_east</topic>
@@ -510,7 +510,7 @@
 
     <model name="camera_west">
       <static>true</static>
-      <pose>1.30 0.00 0 0 0 0</pose>
+      <pose>0.30 0.00 0 0 0 0</pose>
       <link name="link">
         <sensor name="camera_west_rgbd" type="camera">
           <pose>0 0 2.00 0 0.85 3.1416</pose>

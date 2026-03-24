@@ -61,11 +61,16 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
     """Confirma por posicion que el objeto demo esta en la cesta."""
     start = time.monotonic()
     basket_world = tuple(float(v) for v in BASKET_DROP)
+    world_frame = str(
+        getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
+            WORLD_FRAME or "world"
+        )
+    ).strip() or "world"
     base_frame = str(getattr(panel, "_base_frame_effective", "") or BASE_FRAME)
     basket_base, _ = transform_point_to_frame(
         basket_world,
         base_frame,
-        source_frame=WORLD_FRAME,
+        source_frame=world_frame,
     )
     xy_tol_world = 0.35
     z_tol_world = 0.35
@@ -91,7 +96,7 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
                 obj_base, _ = transform_point_to_frame(
                     (xw, yw, zw),
                     base_frame,
-                    source_frame=WORLD_FRAME,
+                    source_frame=world_frame,
                 )
                 if obj_base:
                     dxb = float(obj_base[0]) - float(basket_base[0])
@@ -358,6 +363,11 @@ def run_pick_demo(panel) -> None:
                 world_pos = _live_object_world()
                 if world_pos is None:
                     return None
+                world_frame = str(
+                    getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
+                        WORLD_FRAME or "world"
+                    )
+                ).strip() or "world"
                 try:
                     base_frame = str(panel._business_base_frame() or BASE_FRAME or "base_link")
                 except Exception:
@@ -365,7 +375,7 @@ def run_pick_demo(panel) -> None:
                 obj_base, _ = transform_point_to_frame(
                     world_pos,
                     base_frame,
-                    source_frame=WORLD_FRAME,
+                    source_frame=world_frame,
                 )
                 if not obj_base:
                     try:
@@ -532,6 +542,7 @@ def run_pick_demo(panel) -> None:
                     f"opening_ref_sum={opening_ref_sum}"
                 )
                 while (time.monotonic() - start) <= timeout_sec:
+                    _monitor_alcance(trigger=f"GRIPPER_WAIT_{'CLOSE' if closed else 'OPEN'}")
                     state = _read_gripper_state(expected_closed=closed)
                     last_state = state
                     measured_ok = bool(state.get("measured_target_ok"))
@@ -780,6 +791,7 @@ def run_pick_demo(panel) -> None:
                 best_z_error = None
                 last_metrics = None
                 while time.time() < deadline:
+                    _monitor_alcance(trigger="PRE_CLOSE_WAIT")
                     metrics = _pre_close_alignment_metrics()
                     last_metrics = metrics
                     xy_dist = metrics.get("xy_dist")
@@ -849,6 +861,36 @@ def run_pick_demo(panel) -> None:
                     f"attach_state={attach.get('logical_state')} "
                     f"attach_owner={attach.get('owner')}"
                 )
+
+            def _trace_phase_pose(
+                *,
+                phase: str,
+                event: str,
+                target_base=None,
+                frame_used: str = "base_link",
+                offsets=None,
+                decision: str = "",
+            ) -> None:
+                obj_base = _tuple3(_live_object_base())
+                tcp_base = _tuple3(_live_tcp_base())
+                dx = dy = dz = dist = None
+                if obj_base is not None and tcp_base is not None:
+                    dx = float(tcp_base[0]) - float(obj_base[0])
+                    dy = float(tcp_base[1]) - float(obj_base[1])
+                    dz = float(tcp_base[2]) - float(obj_base[2])
+                    dist = _dist(tcp_base, obj_base)
+                msg = (
+                    "[PICK][DIRECT][POSE_TRACE] "
+                    f"phase={phase} event={event} frame={frame_used} "
+                    f"obj_base={_fmt_vec(obj_base)} tcp_base={_fmt_vec(tcp_base)} "
+                    f"dx={_fmt_scalar(dx)} dy={_fmt_scalar(dy)} dz={_fmt_scalar(dz)} dist={_fmt_scalar(dist)} "
+                    f"target_base={_fmt_vec(target_base)} "
+                    f"offsets={json.dumps(_json_safe(offsets) or {}, ensure_ascii=False, sort_keys=True)} "
+                    f"decision={decision or 'none'}"
+                )
+                panel._emit_log(msg)
+                _append_trace(msg)
+                _monitor_alcance(trigger=f"{phase}:{event}")
 
             def _target_world_from_base(target_base):
                 base_coords = _tuple3(target_base)
@@ -1035,6 +1077,7 @@ def run_pick_demo(panel) -> None:
                 }
                 if phase in visual_focus_phases:
                     _emit_visual_coherence(phase, event="enter")
+                _monitor_alcance(trigger=f"{phase}:enter")
 
             def _phase_end(
                 phase: str,
@@ -1120,6 +1163,7 @@ def run_pick_demo(panel) -> None:
                 )
                 if phase in visual_focus_phases:
                     _emit_visual_coherence(phase, event="exit")
+                _monitor_alcance(trigger=f"{phase}:exit")
                 _append_trace(f"[PICK][DIRECT][DEBUG] EXIT_PHASE {phase}")
                 current_phase["data"] = None
                 return payload
@@ -1711,27 +1755,160 @@ def run_pick_demo(panel) -> None:
 
             demo_attach_published = False
             demo_logical_attached = False
-            alcance_alert_emitted = False
+            encima_alert_emitted = False
+            listo_alert_emitted = False
+            alcance_pause_done = False
+            alcance_monitor_last_log_ts = 0.0
+            debug_pause_grasp_align_enabled = str(
+                os.environ.get("PANEL_PICK_DEMO_DEBUG_PAUSE_GRASP_ALIGN_IK", "0") or "0"
+            ).strip().lower() in {"1", "true", "yes", "on"}
+            debug_pause_grasp_align_done = False
 
-            def _emit_alcance_alert(*, phase: str, metrics) -> None:
-                nonlocal alcance_alert_emitted
+            def _monitor_alcance(*, trigger: str) -> dict:
+                nonlocal encima_alert_emitted
+                nonlocal listo_alert_emitted
+                nonlocal alcance_pause_done
+                nonlocal alcance_monitor_last_log_ts
+                metrics = _pre_close_alignment_metrics()
                 metric_dict = _json_safe(metrics) or {}
-                if not bool(metric_dict.get("ok")):
+                xy_dist_raw = metric_dict.get("xy_dist")
+                xy_ready_tol_raw = metric_dict.get("xy_tol")
+                try:
+                    xy_dist = float(xy_dist_raw) if xy_dist_raw is not None else float("inf")
+                except Exception:
+                    xy_dist = float("inf")
+                try:
+                    xy_ready_tol = float(xy_ready_tol_raw) if xy_ready_tol_raw is not None else 0.035
+                except Exception:
+                    xy_ready_tol = 0.035
+                on_top_xy_tol = max(
+                    0.01,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_ON_TOP_XY_TOL_M",
+                            str(xy_ready_tol),
+                        )
+                        or xy_ready_tol
+                    ),
+                )
+                on_top = bool(math.isfinite(xy_dist) and xy_dist <= on_top_xy_tol)
+                ready = bool(metric_dict.get("ok"))
+                now_ts = time.time()
+                if now_ts >= (alcance_monitor_last_log_ts + 0.25):
+                    monitor_msg = (
+                        "[PICK][DIRECT][ALCANCE_MONITOR] "
+                        f"trigger={trigger} on_top={str(on_top).lower()} ready={str(ready).lower()} "
+                        f"tcp_obj_dist={_fmt_scalar(metric_dict.get('tcp_obj_dist'))} "
+                        f"xy_dist={_fmt_scalar(metric_dict.get('xy_dist'))}/{_fmt_scalar(metric_dict.get('xy_tol'))} "
+                        f"z_error={_fmt_scalar(metric_dict.get('z_error'))}/{_fmt_scalar(metric_dict.get('z_tol'))} "
+                        f"z_gap={_fmt_scalar(metric_dict.get('z_gap'))}"
+                    )
+                    panel._emit_log(monitor_msg)
+                    _append_trace(monitor_msg)
+                    alcance_monitor_last_log_ts = now_ts
+                if on_top and not encima_alert_emitted:
+                    encima_alert_emitted = True
+                    alert_on_top_msg = (
+                        "[PICK][DIRECT] AVISO: ENCIMA DEL OBJETO "
+                        f"trigger={trigger} "
+                        f"tcp_obj_dist={_fmt_scalar(metric_dict.get('tcp_obj_dist'))} "
+                        f"xy_dist={_fmt_scalar(metric_dict.get('xy_dist'))}/{_fmt_scalar(on_top_xy_tol)} "
+                        f"z_gap={_fmt_scalar(metric_dict.get('z_gap'))}"
+                    )
+                    panel._emit_log(alert_on_top_msg)
+                    _append_trace(alert_on_top_msg)
+                if ready and not listo_alert_emitted:
+                    listo_alert_emitted = True
+                    alert_ready_msg = (
+                        "[PICK][DIRECT] AVISO: LISTO PARA COGER "
+                        f"trigger={trigger} "
+                        f"tcp_obj_dist={_fmt_scalar(metric_dict.get('tcp_obj_dist'))} "
+                        f"xy_dist={_fmt_scalar(metric_dict.get('xy_dist'))}/{_fmt_scalar(metric_dict.get('xy_tol'))} "
+                        f"z_error={_fmt_scalar(metric_dict.get('z_error'))}/{_fmt_scalar(metric_dict.get('z_tol'))} "
+                        f"z_gap={_fmt_scalar(metric_dict.get('z_gap'))}"
+                    )
+                    panel._emit_log(alert_ready_msg)
+                    _append_trace(alert_ready_msg)
+                    if not alcance_pause_done:
+                        alcance_pause_done = True
+                        pause_fn = getattr(panel, "_debug_motion_wait_for_continue", None)
+                        if callable(pause_fn):
+                            pause_reason = "ALCANCE_DIRECTO"
+                            pause_req_msg = (
+                                "[PICK][DIRECT][ALCANCE_DEBUG] "
+                                f"pause_requested reason={pause_reason} trigger={trigger} "
+                                "waiting_button=DEBUG_MOVIMIENTO"
+                            )
+                            panel._emit_log(pause_req_msg)
+                            _append_trace(pause_req_msg)
+                            try:
+                                resumed = bool(pause_fn(reason=pause_reason))
+                            except Exception as exc:
+                                resumed = True
+                                err_msg = (
+                                    "[PICK][DIRECT][ALCANCE_DEBUG] "
+                                    f"pause_error reason={pause_reason} exc={exc}"
+                                )
+                                panel._emit_log(err_msg)
+                                _append_trace(err_msg)
+                            resume_msg = (
+                                "[PICK][DIRECT][ALCANCE_DEBUG] "
+                                f"pause_resume reason={pause_reason} trigger={trigger} "
+                                f"resumed={str(resumed).lower()}"
+                            )
+                            panel._emit_log(resume_msg)
+                            _append_trace(resume_msg)
+                return metric_dict
+
+            def _debug_pause_grasp_align_if_enabled(*, trigger: str) -> None:
+                nonlocal debug_pause_grasp_align_done
+                if debug_pause_grasp_align_done or not debug_pause_grasp_align_enabled:
                     return
-                if alcance_alert_emitted:
-                    return
-                alcance_alert_emitted = True
-                panel._emit_log(
-                    "[PICK][DIRECT] AVISO: AL ALCANCE "
-                    f"phase={phase} "
+                debug_pause_grasp_align_done = True
+                metrics = _pre_close_alignment_metrics()
+                metric_dict = _json_safe(metrics) or {}
+                pause_msg = (
+                    "[PICK][DIRECT][DEBUG_PAUSE] "
+                    f"phase=GRASP_ALIGN_IK trigger={trigger} "
+                    f"tcp={_fmt_vec(metric_dict.get('tcp_base'))} "
+                    f"obj={_fmt_vec(metric_dict.get('object_base'))} "
                     f"tcp_obj_dist={_fmt_scalar(metric_dict.get('tcp_obj_dist'))} "
                     f"xy_dist={_fmt_scalar(metric_dict.get('xy_dist'))}/{_fmt_scalar(metric_dict.get('xy_tol'))} "
                     f"z_error={_fmt_scalar(metric_dict.get('z_error'))}/{_fmt_scalar(metric_dict.get('z_tol'))} "
                     f"z_gap={_fmt_scalar(metric_dict.get('z_gap'))}"
                 )
+                panel._emit_log(pause_msg)
+                _append_trace(pause_msg)
+                panel.signal_run_ui.emit(
+                    lambda: panel._ui_set_status(
+                        "DEBUG GRASP_ALIGN_IK: pausa activa, pulsa DEBUG MOVIMIENTO para continuar",
+                        error=False,
+                    )
+                )
+                pause_fn = getattr(panel, "_debug_motion_wait_for_continue", None)
+                if callable(pause_fn):
+                    try:
+                        resumed = bool(pause_fn(reason="GRASP_ALIGN_IK"))
+                    except Exception as exc:
+                        resumed = True
+                        err_msg = (
+                            "[PICK][DIRECT][DEBUG_PAUSE] "
+                            f"phase=GRASP_ALIGN_IK pause_error={exc}"
+                        )
+                        panel._emit_log(err_msg)
+                        _append_trace(err_msg)
+                else:
+                    resumed = True
+                resume_msg = (
+                    "[PICK][DIRECT][DEBUG_PAUSE] "
+                    f"phase=GRASP_ALIGN_IK resumed={str(resumed).lower()} trigger={trigger}"
+                )
+                panel._emit_log(resume_msg)
+                _append_trace(resume_msg)
 
             _run_joint_step("HOME", home_pose)
             _run_joint_step("MESA", JOINT_TABLE_POSE_RAD)
+            _monitor_alcance(trigger="DIRECT_PICK_START")
 
             panel._emit_log("[DEMO] Abriendo pinza en posición MESA")
             panel.signal_run_ui.emit(lambda: panel._command_gripper(False, log_action="PICK", force=True))
@@ -1762,7 +1939,23 @@ def run_pick_demo(panel) -> None:
                 joint_goal=[float(v) for v in JOINT_GRASP_DOWN_POSE_RAD],
                 note="coarse target computed before GRASP_DOWN_JOINT",
             )
+            _trace_phase_pose(
+                phase="APPROACH_COARSE",
+                event="target_set",
+                target_base=target_base_coarse,
+                frame_used="base_link",
+                offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "mode": "joint_preset_coarse"},
+                decision="phase_enter",
+            )
             _phase_end("APPROACH_COARSE", result="ok")
+            _trace_phase_pose(
+                phase="APPROACH_COARSE",
+                event="phase_end",
+                target_base=target_base_coarse,
+                frame_used="base_link",
+                offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "mode": "joint_preset_coarse"},
+                decision="phase_exit",
+            )
             _phase_begin(
                 "GRASP_DOWN_JOINT",
                 target_world=target_world_coarse,
@@ -1774,6 +1967,14 @@ def run_pick_demo(panel) -> None:
                 },
                 joint_goal=[float(v) for v in JOINT_GRASP_DOWN_POSE_RAD],
                 note="preset descent to grasp-down joint pose",
+            )
+            _trace_phase_pose(
+                phase="GRASP_DOWN_JOINT",
+                event="target_set",
+                target_base=target_base_coarse,
+                frame_used="base_link",
+                offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "mode": "joint_preset"},
+                decision="phase_enter",
             )
             _run_joint_step(
                 "GRASP_DOWN_JOINT",
@@ -1792,6 +1993,14 @@ def run_pick_demo(panel) -> None:
                     f"tcp_obj_dist={_dist(tcp_after_joint, obj_after_joint):.3f}"
                 )
             _phase_end("GRASP_DOWN_JOINT", result="ok")
+            _trace_phase_pose(
+                phase="GRASP_DOWN_JOINT",
+                event="phase_end",
+                target_base=target_base_coarse,
+                frame_used="base_link",
+                offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "mode": "joint_preset"},
+                decision="phase_exit",
+            )
             obj_base_align = _live_object_base()
             target_base_align = None
             target_world_align = None
@@ -1819,10 +2028,27 @@ def run_pick_demo(panel) -> None:
                     },
                     note="skip align: tcp already within pre-close tolerance",
                 )
+                _trace_phase_pose(
+                    phase="GRASP_ALIGN_IK",
+                    event="target_set",
+                    target_base=target_base_align,
+                    frame_used="base_link",
+                    offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "ik_mode": "direct_rg2_tcp_to_tool0_numeric"},
+                    decision="phase_enter_skip",
+                )
+                _debug_pause_grasp_align_if_enabled(trigger="phase_enter_skip")
                 _phase_end(
                     "GRASP_ALIGN_IK",
                     note=json.dumps(_json_safe(pre_align_metrics), ensure_ascii=False, sort_keys=True),
                     result="skipped",
+                )
+                _trace_phase_pose(
+                    phase="GRASP_ALIGN_IK",
+                    event="phase_end",
+                    target_base=target_base_align,
+                    frame_used="base_link",
+                    offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "ik_mode": "direct_rg2_tcp_to_tool0_numeric"},
+                    decision="skip_align_preclose_ok",
                 )
                 panel._emit_log(
                     "[PICK][DIRECT] GRASP_ALIGN_IK skipped: close-window already satisfied "
@@ -1841,12 +2067,67 @@ def run_pick_demo(panel) -> None:
                     },
                     note="fine alignment IK over live object pose",
                 )
-                align_debug = _align_demo_grasp_direct()
+                _trace_phase_pose(
+                    phase="GRASP_ALIGN_IK",
+                    event="target_set",
+                    target_base=target_base_align,
+                    frame_used="base_link",
+                    offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "ik_mode": "direct_rg2_tcp_to_tool0_numeric"},
+                    decision="phase_enter",
+                )
+                _debug_pause_grasp_align_if_enabled(trigger="phase_enter")
+                align_retries = max(
+                    1,
+                    int(
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_GRASP_ALIGN_MAX_ATTEMPTS",
+                                "3",
+                            )
+                            or 3
+                        )
+                    ),
+                )
+                align_debug = None
+                align_metrics = {}
+                for align_attempt in range(1, align_retries + 1):
+                    align_debug = _align_demo_grasp_direct()
+                    align_metrics = _pre_close_alignment_metrics()
+                    _trace_phase_pose(
+                        phase="GRASP_ALIGN_IK",
+                        event=f"attempt_{align_attempt}",
+                        target_base=target_base_align,
+                        frame_used="base_link",
+                        offsets={
+                            "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                            "ik_mode": "direct_rg2_tcp_to_tool0_numeric",
+                            "attempt": int(align_attempt),
+                            "max_attempts": int(align_retries),
+                        },
+                        decision="align_retry",
+                    )
+                    if bool(align_metrics.get("ok")):
+                        break
+                    if align_attempt < align_retries:
+                        panel._emit_log(
+                            "[PICK][DIRECT][ALIGN] "
+                            f"retry attempt={align_attempt + 1}/{align_retries} "
+                            f"xy_dist={_fmt_scalar(align_metrics.get('xy_dist'))} "
+                            f"z_error={_fmt_scalar(align_metrics.get('z_error'))}"
+                        )
                 _phase_end(
                     "GRASP_ALIGN_IK",
                     ik_solution=align_debug.get("ik_solution") if isinstance(align_debug, dict) else None,
-                    note="ik alignment completed",
-                    result="ok",
+                    note=json.dumps(_json_safe(align_metrics), ensure_ascii=False, sort_keys=True),
+                    result="ok" if bool(align_metrics.get("ok")) else "partial",
+                )
+                _trace_phase_pose(
+                    phase="GRASP_ALIGN_IK",
+                    event="phase_end",
+                    target_base=target_base_align,
+                    frame_used="base_link",
+                    offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "ik_mode": "direct_rg2_tcp_to_tool0_numeric"},
+                    decision="phase_exit",
                 )
             post_align_metrics = _pre_close_alignment_metrics()
             _emit_transition_decision(
@@ -2113,7 +2394,7 @@ def run_pick_demo(panel) -> None:
                 condition="pre_close_ok",
                 metrics=pre_close_metrics,
             )
-            _emit_alcance_alert(phase="PRE_CLOSE", metrics=pre_close_metrics)
+            _monitor_alcance(trigger="PRE_CLOSE_GATE_OK")
             panel._emit_log("[DEMO] Cerrando pinza")
             def _close_only():
                 panel._command_gripper(True, log_action="PICK", force=True)

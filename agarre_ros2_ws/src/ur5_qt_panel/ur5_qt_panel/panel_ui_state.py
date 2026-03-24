@@ -89,10 +89,15 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         panel.btn_star.setEnabled((not running) and (not panel._star_inflight))
         panel.btn_kill_hard.setEnabled(running or panel._star_inflight)
 
-    camera_enabled = bridge_active and not panel._script_motion_active
+    camera_enabled = bridge_active and (
+        not panel._script_motion_active
+        or bool(getattr(panel, "_allow_camera_while_script_motion", False))
+    )
     panel.camera_topic_combo.setEnabled(camera_enabled)
     panel.btn_camera_refresh.setEnabled(camera_enabled)
     panel.btn_camera_connect.setEnabled(camera_enabled)
+    if getattr(panel, "btn_camera_far_front", None) is not None:
+        panel.btn_camera_far_front.setEnabled(camera_enabled)
     calib_ok, calib_reason = panel._calibration_action_status()
     if getattr(panel, "btn_calibrate", None) is not None:
         panel._set_btn_state(
@@ -134,14 +139,21 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         panel.btn_save_episode.setEnabled(trace_enabled)
 
     manual_ok, manual_reason = panel._manual_control_status()
-    manual_enabled = manual_ok and not panel._script_motion_active and camera_gate_ok and not test_pending
-    basic_reason = manual_reason or (effective_reason or effective_state.value)
-    if not camera_gate_ok:
-        basic_reason = "Cámara no lista"
-    elif not camera_ready and camera_degraded_ok:
-        basic_reason = "Cámara sin frames (modo degradado)"
-    elif test_pending:
-        basic_reason = "Ejecuta TEST ROBOT para habilitar"
+    manual_force_enabled = bool(getattr(panel, "_manual_controls_always_enabled", False))
+    if manual_force_enabled:
+        # Mantener disponibles los mandos manuales de joints incluso durante gates
+        # de cámara/test/script; solo respetamos la seguridad base de manual_ok.
+        manual_enabled = manual_ok
+        basic_reason = manual_reason or (effective_reason or effective_state.value)
+    else:
+        manual_enabled = manual_ok and not panel._script_motion_active and camera_gate_ok and not test_pending
+        basic_reason = manual_reason or (effective_reason or effective_state.value)
+        if not camera_gate_ok:
+            basic_reason = "Cámara no lista"
+        elif not camera_ready and camera_degraded_ok:
+            basic_reason = "Cámara sin frames (modo degradado)"
+        elif test_pending:
+            basic_reason = "Ejecuta TEST ROBOT para habilitar"
     panel._set_btn_state(
         panel.btn_send_joints,
         manual_enabled,
@@ -153,7 +165,12 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         slider.setEnabled(manual_enabled)
 
     motion_enabled = manual_ok and not panel._script_motion_active
+    gripper_motion_enabled = manual_ok and (
+        not panel._script_motion_active
+        or bool(getattr(panel, "_allow_gripper_while_script_motion", False))
+    )
     motion_tip = "" if motion_enabled else f"Bloqueado: {basic_reason}"
+    gripper_motion_tip = "" if gripper_motion_enabled else f"Bloqueado: {basic_reason}"
     traj_topic = panel._select_traj_topic()
     externals = panel._external_publishers_for_topic(traj_topic) if traj_topic else []
     external_block = bool(externals)
@@ -239,7 +256,7 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         panel._set_btn_state(panel.btn_home, motion_enabled, motion_tip)
         panel._set_btn_state(panel.btn_table, motion_enabled, motion_tip)
         panel._set_btn_state(panel.btn_basket, motion_enabled, motion_tip)
-        panel._set_btn_state(panel.btn_gripper, motion_enabled, motion_tip)
+        panel._set_btn_state(panel.btn_gripper, gripper_motion_enabled, gripper_motion_tip)
     panel._schedule_controller_check()
     pick_ok, pick_reason = panel._moveit_control_status()
     pick_enabled = pick_ok and bool(panel._ee_frame_effective)
@@ -318,7 +335,8 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         panel._set_btn_state(panel.btn_home, False, busy_tip)
         panel._set_btn_state(panel.btn_table, False, busy_tip)
         panel._set_btn_state(panel.btn_basket, False, busy_tip)
-        panel._set_btn_state(panel.btn_gripper, False, busy_tip)
+        if not bool(getattr(panel, "_allow_gripper_while_script_motion", False)):
+            panel._set_btn_state(panel.btn_gripper, False, busy_tip)
         panel._set_btn_state(panel.btn_pick_demo, False, busy_tip)
         panel._set_btn_state(panel.btn_pick_object, False, busy_tip)
         if panel.tfm_module:

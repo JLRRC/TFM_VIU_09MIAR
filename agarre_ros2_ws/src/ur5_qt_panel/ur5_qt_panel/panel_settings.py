@@ -159,7 +159,9 @@ class PanelSettings:
     pick_log_min_interval_sec: float = 2.0
     gripper_cmd_topic: str = "/gripper_controller/commands"
     gripper_open_rad: float = 1.0
-    gripper_closed_rad: float = 0.0
+    # In this Gazebo RG2 model, mechanical close typically settles near ~0.60 rad.
+    # Using 0.0 as default causes false CLOSE_NOT_CONFIRMED and misleading telemetry.
+    gripper_closed_rad: float = 0.60
     gripper_joint2_sign: float = 1.0
     panel_managed: bool = False
     panel_moveit_required: bool = True
@@ -334,7 +336,7 @@ class PanelSettings:
             pick_log_min_interval_sec=_env_float("PANEL_PICK_LOG_MIN_INTERVAL_SEC", 2.0),
             gripper_cmd_topic=_env_str("PANEL_GRIPPER_CMD_TOPIC", "/gripper_controller/commands"),
             gripper_open_rad=_env_float("PANEL_GRIPPER_OPEN_RAD", 1.0),
-            gripper_closed_rad=_env_float("PANEL_GRIPPER_CLOSED_RAD", 0.0),
+            gripper_closed_rad=_env_float("PANEL_GRIPPER_CLOSED_RAD", 0.60),
             gripper_joint2_sign=_env_float("PANEL_GRIPPER_JOINT2_SIGN", 1.0),
             panel_managed=_env_bool("PANEL_MANAGED", False),
             panel_moveit_required=_env_bool("PANEL_MOVEIT_REQUIRED", True),
