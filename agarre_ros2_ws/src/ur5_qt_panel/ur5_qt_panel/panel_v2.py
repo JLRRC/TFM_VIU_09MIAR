@@ -12520,33 +12520,141 @@ class ControlPanelV2(QMainWindow):
             panel_x = 10.0
             panel_y = 10.0
             panel_w = min(float(w - 20), 420.0)
-            panel_h = 68.0
+            panel_h = 86.0
             bg = QColor(15, 23, 42, 165)
             border = QColor(148, 163, 184, 210)
             painter.setPen(QPen(border, 1))
             painter.setBrush(QBrush(bg))
             painter.drawRoundedRect(QRectF(panel_x, panel_y, panel_w, panel_h), 8.0, 8.0)
 
-            tcp_world = self._last_tcp_world
+            tcp_base = None
+            tcp_source = "none"
+            for src_name, src_val in (
+                ("trace_tf_rg2_tcp", self._last_trace_tcp_base),
+                ("debug_tf_rg2_tcp", self._last_debug_tcp_base),
+                ("joint_fk_tool0", self._last_tcp_base),
+            ):
+                if (
+                    isinstance(src_val, (list, tuple))
+                    and len(src_val) >= 3
+                ):
+                    tcp_base = (
+                        float(src_val[0]),
+                        float(src_val[1]),
+                        float(src_val[2]),
+                    )
+                    tcp_source = src_name
+                    break
             rpy = self._last_tcp_rpy_deg
             line1 = "TCP(base): --"
-            line2 = "EE frame: --"
+            line2 = "TCP source: --"
             line3 = "RPY[deg]: --"
-            tcp_base = self._last_tcp_base
-            if tcp_base is None and tcp_world is not None and isinstance(tcp_world, (list, tuple)) and len(tcp_world) >= 3:
-                bx, by, bz = world_to_base(float(tcp_world[0]), float(tcp_world[1]), float(tcp_world[2]))
-                tcp_base = (bx, by, bz)
-            if tcp_base is not None and isinstance(tcp_base, (list, tuple)) and len(tcp_base) >= 3:
-                bx = float(tcp_base[0])
-                by = float(tcp_base[1])
-                bz = float(tcp_base[2])
+            line4 = "TCP↔OBJ(px): --"
+            if tcp_base is not None:
+                bx, by, bz = tcp_base
                 line1 = f"TCP(base): x={bx:+.3f} y={by:+.3f} z={bz:+.3f}"
-                line2 = f"EE frame: {self._ee_frame_effective or 'rg2_tcp'}"
+                line2 = f"TCP source: {tcp_source}"
             if rpy is not None and isinstance(rpy, (list, tuple)) and len(rpy) >= 3:
                 rr = float(rpy[0])
                 pp = float(rpy[1])
                 yy = float(rpy[2])
                 line3 = f"RPY[deg]:  r={rr:+.1f} p={pp:+.1f} y={yy:+.1f}"
+
+            obj_name = str(self._selected_object or PICK_DEMO_OBJECT_NAME or "").strip()
+            obj_base: Optional[Tuple[float, float, float]] = None
+            if obj_name:
+                st = get_object_state(obj_name)
+                if st is not None and isinstance(st.position, (list, tuple)) and len(st.position) >= 3:
+                    world_pos = (
+                        float(st.position[0]),
+                        float(st.position[1]),
+                        float(st.position[2]),
+                    )
+                    obj_base = self._ensure_base_coords(
+                        world_pos,
+                        self._world_frame_last_first(),
+                        timeout_sec=0.05,
+                    )
+                    if obj_base is None:
+                        try:
+                            obj_base = world_to_base(*world_pos)
+                        except Exception:
+                            obj_base = None
+
+            def _project_base_to_px(base_xyz: Optional[Tuple[float, float, float]]) -> Tuple[Optional[Tuple[float, float]], str]:
+                if base_xyz is None:
+                    return None, "none"
+                world_xyz = self._base_to_world_coords(base_xyz, timeout_sec=0.05)
+                if world_xyz is None:
+                    return None, "base_to_world_fail"
+                px = world_xyz_to_pixel_float(
+                    float(world_xyz[0]),
+                    float(world_xyz[1]),
+                    float(world_xyz[2]),
+                    w,
+                    h,
+                )
+                if px is not None:
+                    return (float(px[0]), float(px[1])), "world_xyz"
+                px = table_xy_to_pixel_float(
+                    float(world_xyz[0]),
+                    float(world_xyz[1]),
+                    w,
+                    h,
+                )
+                if px is not None:
+                    return (float(px[0]), float(px[1])), "table_xy"
+                return None, "projection_fail"
+
+            tcp_px, tcp_px_src = _project_base_to_px(tcp_base)
+            obj_px, obj_px_src = _project_base_to_px(obj_base)
+            def _fmt_vec_any(vec: Optional[Tuple[float, ...]]) -> str:
+                if vec is None:
+                    return "none"
+                try:
+                    if len(vec) >= 3:
+                        return f"({float(vec[0]):.3f},{float(vec[1]):.3f},{float(vec[2]):.3f})"
+                    if len(vec) == 2:
+                        return f"({float(vec[0]):.1f},{float(vec[1]):.1f})"
+                except Exception:
+                    return "none"
+                return "none"
+            px_dist = None
+            if tcp_px is not None and obj_px is not None:
+                px_dist = math.hypot(
+                    float(tcp_px[0]) - float(obj_px[0]),
+                    float(tcp_px[1]) - float(obj_px[1]),
+                )
+                painter.setPen(QPen(QColor(34, 211, 238, 220), 2))
+                painter.drawLine(
+                    QPointF(float(tcp_px[0]) - 8.0, float(tcp_px[1])),
+                    QPointF(float(tcp_px[0]) + 8.0, float(tcp_px[1])),
+                )
+                painter.drawLine(
+                    QPointF(float(tcp_px[0]), float(tcp_px[1]) - 8.0),
+                    QPointF(float(tcp_px[0]), float(tcp_px[1]) + 8.0),
+                )
+                painter.setPen(QPen(QColor(250, 204, 21, 220), 2))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawEllipse(QPointF(float(obj_px[0]), float(obj_px[1])), 6.0, 6.0)
+                painter.setPen(QPen(QColor(125, 211, 252, 150), 1, Qt.DashLine))
+                painter.drawLine(
+                    QPointF(float(tcp_px[0]), float(tcp_px[1])),
+                    QPointF(float(obj_px[0]), float(obj_px[1])),
+                )
+                line4 = f"TCP↔OBJ(px): {px_dist:.1f} src=({tcp_px_src},{obj_px_src})"
+            elif tcp_px is not None:
+                line4 = f"TCP↔OBJ(px): obj n/a src=({tcp_px_src},{obj_px_src})"
+            elif obj_px is not None:
+                line4 = f"TCP↔OBJ(px): tcp n/a src=({tcp_px_src},{obj_px_src})"
+            self._emit_log_throttled(
+                "VISUAL:coherence",
+                "[PICK][VISUAL][OVERHEAD] "
+                f"tcp_base={_fmt_vec_any(tcp_base)} obj_base={_fmt_vec_any(obj_base)} "
+                f"tcp_px={_fmt_vec_any(tcp_px)} obj_px={_fmt_vec_any(obj_px)} "
+                f"px_dist={px_dist if px_dist is not None else float('nan'):.2f} "
+                f"tcp_source={tcp_source} topic={self.camera_topic or 'none'}",
+            )
 
             painter.setPen(QPen(QColor(226, 232, 240), 1))
             tx = panel_x + 10.0
@@ -12554,9 +12662,34 @@ class ControlPanelV2(QMainWindow):
             painter.drawText(QPointF(tx, ty), line1)
             painter.drawText(QPointF(tx, ty + 18.0), line2)
             painter.drawText(QPointF(tx, ty + 36.0), line3)
+            painter.drawText(QPointF(tx, ty + 54.0), line4)
         finally:
             painter.end()
         return img_copy
+
+    def _save_overhead_frame_with_overlays(self, out_path: str) -> bool:
+        """Save current camera frame with the same overlays used in runtime display."""
+        if not self._last_camera_frame:
+            return False
+        qimg, w, h, _ts = self._last_camera_frame
+        display = qimg
+        topic = str(self.camera_topic or "").strip()
+        overhead_only = self._overhead_camera_active(topic)
+        if OVERLAY_CALIB and (self._calibrating or (time.time() <= self._calib_grid_until)):
+            display = self._draw_calib_overlay(display, w, h)
+        if OVERLAY_REACH and overhead_only and self._reach_overlay_enabled:
+            display = self._draw_reach_overlay(display, w, h)
+        if OVERLAY_SELECTION and overhead_only and self._selected_px:
+            display = self._draw_selection_overlay(display, w, h)
+        if overhead_only and self._last_grasp_px:
+            display = self._draw_grasp_overlay(display, w, h)
+        if TEST_CORNER_OVERLAY:
+            display = self._draw_test_corner_overlay(display, w, h)
+        if TCP_POSE_OVERLAY:
+            display = self._draw_tcp_pose_overlay(display, w, h)
+        out = Path(str(out_path)).expanduser()
+        ensure_dir(str(out.parent))
+        return bool(display.save(str(out)))
 
     def _save_grasp_overlay(self, filename: str = "overlay_last.png") -> str:
         if not self._last_camera_frame or not self._last_grasp_px:

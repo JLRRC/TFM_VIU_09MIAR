@@ -8,8 +8,6 @@ Raiz operativa del TFM para percepcion y agarre con ROS 2.
 - `agarre_ros2_ws/`: workspace ROS 2 (panel, Gazebo, MoveIt 2 y utilidades).
 - `reports/`: artefactos curados de memoria (figuras, tablas, metricas y evidencias).
 - `auditoria/`: trazas operativas y auditorias de ejecucion.
-- `HISTORICO/`: cierres tecnicos previos y material de trazabilidad archivado.
-- `BORRAR/`: cuarentena controlada de material candidato a eliminacion.
 
 ## Scripts raiz
 

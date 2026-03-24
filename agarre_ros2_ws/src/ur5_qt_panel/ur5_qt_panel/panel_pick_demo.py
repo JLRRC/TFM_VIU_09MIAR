@@ -48,7 +48,12 @@ from .panel_objects import (
     ObjectLogicalState,
 )
 from .panel_readiness import tf_ready_status
-from .panel_utils import transform_point_to_frame, world_to_base
+from .panel_utils import (
+    transform_point_to_frame,
+    world_to_base,
+    world_xyz_to_pixel_float,
+    table_xy_to_pixel_float,
+)
 from .ur5_kinematics import fk_ur5, ik_ur5
 
 
@@ -473,6 +478,7 @@ def run_pick_demo(panel) -> None:
                 closed: bool,
                 *,
                 timeout_sec: float = 1.8,
+                opening_ref_sum: Optional[float] = None,
             ):
                 required_hits = max(
                     1,
@@ -494,40 +500,125 @@ def run_pick_demo(panel) -> None:
                         or 0.35
                     ),
                 )
+                close_min_delta_sum = max(
+                    0.02,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM",
+                            "0.08",
+                        )
+                        or 0.08
+                    ),
+                )
+                close_fallback_opening_sum = max(
+                    0.02,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_CLOSE_FALLBACK_OPENING_SUM",
+                            "0.40",
+                        )
+                        or 0.40
+                    ),
+                )
                 start = time.monotonic()
                 stable_hits = 0
                 last_state = _read_gripper_state(expected_closed=closed)
+                best_close_delta = float("-inf")
+                last_debug_log_ts = 0.0
                 _append_trace(
                     "[PICK][DIRECT][GRIPPER] "
                     f"wait_start target={'closed' if closed else 'open'} "
-                    f"target_mag={last_state.get('target_mag')} timeout={timeout_sec:.2f}s "
-                    f"stable_hits={required_hits}"
+                    f"target_mag={last_state.get('target_mag')} timeout={timeout_sec:.2f}s stable_hits={required_hits} "
+                    f"opening_ref_sum={opening_ref_sum}"
                 )
                 while (time.monotonic() - start) <= timeout_sec:
                     state = _read_gripper_state(expected_closed=closed)
                     last_state = state
                     measured_ok = bool(state.get("measured_target_ok"))
-                    age_ok = state.get("joint_state_age_sec") is None or float(state.get("joint_state_age_sec")) <= max_state_age_sec
+                    age_ok = (
+                        state.get("joint_state_age_sec") is None
+                        or float(state.get("joint_state_age_sec")) <= max_state_age_sec
+                    )
+                    opening_sum = state.get("opening_sum")
+                    close_delta = None
+                    if (
+                        opening_ref_sum is not None
+                        and opening_sum is not None
+                    ):
+                        close_delta = float(opening_ref_sum) - float(opening_sum)
+                        best_close_delta = max(best_close_delta, float(close_delta))
+                    close_heuristic_ok = False
+                    if closed:
+                        if (
+                            age_ok
+                            and bool(state.get("closed_flag"))
+                            and opening_sum is not None
+                        ):
+                            delta_ok = (
+                                close_delta is not None
+                                and float(close_delta) >= float(close_min_delta_sum)
+                            )
+                            fallback_ok = (
+                                opening_ref_sum is None
+                                and float(opening_sum) <= float(close_fallback_opening_sum)
+                            )
+                            close_heuristic_ok = bool(delta_ok or fallback_ok)
+                    confirm_mode = "none"
+                    confirm_ok = False
                     if measured_ok and age_ok:
+                        confirm_ok = True
+                        confirm_mode = "measured_target_ok"
+                    elif close_heuristic_ok:
+                        confirm_ok = True
+                        confirm_mode = "closing_delta_ok"
+                    now_ts = time.monotonic()
+                    if now_ts >= (last_debug_log_ts + 0.20):
+                        _append_trace(
+                            "[PICK][DIRECT][GRIPPER] "
+                            f"wait_sample target={'closed' if closed else 'open'} "
+                            f"closed_flag={bool(state.get('closed_flag'))} measured_ok={measured_ok} age_ok={age_ok} "
+                            f"opening_sum={state.get('opening_sum')} max_abs_err={state.get('max_abs_err')} "
+                            f"close_delta={close_delta} min_delta={close_min_delta_sum} mode={confirm_mode}"
+                        )
+                        last_debug_log_ts = now_ts
+                    if confirm_ok:
                         stable_hits += 1
                         if stable_hits >= required_hits:
+                            done_state = dict(state)
+                            done_state["confirm_mode"] = confirm_mode
+                            done_state["close_delta_from_ref"] = close_delta
+                            done_state["close_delta_best"] = (
+                                None
+                                if best_close_delta == float("-inf")
+                                else float(best_close_delta)
+                            )
                             _append_trace(
                                 "[PICK][DIRECT][GRIPPER] "
                                 f"wait_ok target={'closed' if closed else 'open'} "
                                 f"opening_sum={state.get('opening_sum')} max_abs_err={state.get('max_abs_err')} "
-                                f"age={state.get('joint_state_age_sec')}"
+                                f"age={state.get('joint_state_age_sec')} mode={confirm_mode} "
+                                f"close_delta={close_delta}"
                             )
-                            return True, state
+                            return True, done_state
                     else:
                         stable_hits = 0
                     time.sleep(0.05)
+                timeout_state = dict(last_state or {})
+                timeout_state["confirm_mode"] = "timeout"
+                timeout_state["close_delta_best"] = (
+                    None if best_close_delta == float("-inf") else float(best_close_delta)
+                )
                 _append_trace(
                     "[PICK][DIRECT][GRIPPER] "
                     f"wait_timeout target={'closed' if closed else 'open'} "
                     f"opening_sum={last_state.get('opening_sum')} max_abs_err={last_state.get('max_abs_err')} "
-                    f"age={last_state.get('joint_state_age_sec')}"
+                    f"age={last_state.get('joint_state_age_sec')} "
+                    f"closed_flag={bool(last_state.get('closed_flag'))} "
+                    f"measured_ok={bool(last_state.get('measured_target_ok'))} "
+                    f"opening_ref_sum={opening_ref_sum} "
+                    f"close_delta_best={timeout_state.get('close_delta_best')}"
                 )
-                return False, last_state
+                return False, timeout_state
 
             def _read_attach_state():
                 st = get_object_state(PICK_DEMO_OBJECT_NAME)
@@ -608,10 +699,11 @@ def run_pick_demo(panel) -> None:
                 )
                 gripper_state = _read_gripper_state(expected_closed=True)
                 gripper_closed_measured = bool(gripper_state.get("measured_target_ok"))
-                ok = gripper_closed_measured and xy_dist <= xy_tol and z_error <= z_tol
+                geometry_ok = bool(xy_dist <= xy_tol and z_error <= z_tol)
                 return {
-                    "ok": ok,
-                    "reason": "ok" if ok else "alignment_out_of_tolerance",
+                    "ok": geometry_ok,
+                    "geometry_ok": geometry_ok,
+                    "reason": "ok" if geometry_ok else "alignment_out_of_tolerance",
                     "xy_dist": float(xy_dist),
                     "z_gap": float(z_gap),
                     "z_error": float(z_error),
@@ -768,6 +860,101 @@ def run_pick_demo(panel) -> None:
                     world = None
                 return _tuple3(world)
 
+            visual_focus_phases = {"GRASP_ALIGN_IK", "PRE_CLOSE", "ATTACH_GATE"}
+
+            def _camera_frame_size() -> tuple[int, int]:
+                view = getattr(panel, "camera_view", None)
+                if view is None:
+                    return 0, 0
+                try:
+                    fw = int(getattr(view, "_img_width", 0) or 0)
+                    fh = int(getattr(view, "_img_height", 0) or 0)
+                except Exception:
+                    fw, fh = 0, 0
+                return fw, fh
+
+            def _project_base_to_overhead(base_coords, frame_w: int, frame_h: int):
+                base_3 = _tuple3(base_coords)
+                if base_3 is None or frame_w <= 0 or frame_h <= 0:
+                    return None, None, "none"
+                world_3 = _target_world_from_base(base_3)
+                if world_3 is None:
+                    return None, None, "base_to_world_fail"
+                px = world_xyz_to_pixel_float(
+                    float(world_3[0]),
+                    float(world_3[1]),
+                    float(world_3[2]),
+                    frame_w,
+                    frame_h,
+                )
+                if px is not None:
+                    return world_3, (float(px[0]), float(px[1])), "world_xyz"
+                px = table_xy_to_pixel_float(
+                    float(world_3[0]),
+                    float(world_3[1]),
+                    frame_w,
+                    frame_h,
+                )
+                if px is not None:
+                    return world_3, (float(px[0]), float(px[1])), "table_xy"
+                return world_3, None, "projection_fail"
+
+            def _save_visual_snapshot(phase: str, event: str) -> str | None:
+                seq = int(phase_seq["value"])
+                file_name = f"{seq:02d}_{phase}_{event}_overhead.png"
+                out_path = run_snapshots_dir / file_name
+                saver = getattr(panel, "_save_overhead_frame_with_overlays", None)
+                if callable(saver):
+                    try:
+                        if saver(str(out_path)):
+                            return str(out_path)
+                    except Exception:
+                        return None
+                    return None
+                frame = getattr(panel, "_last_camera_frame", None)
+                if not frame:
+                    return None
+                try:
+                    qimg, _w, _h, _ts = frame
+                    if qimg is not None and qimg.save(str(out_path)):
+                        return str(out_path)
+                except Exception:
+                    return None
+                return None
+
+            def _emit_visual_coherence(phase: str, *, event: str) -> None:
+                frame_w, frame_h = _camera_frame_size()
+                tcp_base = _tuple3(_live_tcp_base())
+                obj_base = _tuple3(_live_object_base())
+                tcp_world, tcp_px, tcp_src = _project_base_to_overhead(tcp_base, frame_w, frame_h)
+                obj_world, obj_px, obj_src = _project_base_to_overhead(obj_base, frame_w, frame_h)
+                def _fmt_px(px) -> str:
+                    if px is None:
+                        return "none"
+                    try:
+                        return f"({float(px[0]):.1f},{float(px[1]):.1f})"
+                    except Exception:
+                        return "none"
+                px_dist = None
+                if tcp_px is not None and obj_px is not None:
+                    px_dist = math.hypot(
+                        float(tcp_px[0]) - float(obj_px[0]),
+                        float(tcp_px[1]) - float(obj_px[1]),
+                    )
+                snap_path = _save_visual_snapshot(phase, event)
+                panel._emit_log(
+                    "[PICK][DIRECT][VISUAL_FISICA] "
+                    f"phase={phase} event={event} "
+                    f"camera_topic={str(getattr(panel, 'camera_topic', '') or 'none')} "
+                    f"frame={frame_w}x{frame_h} "
+                    f"tcp_base={_fmt_vec(tcp_base)} obj_base={_fmt_vec(obj_base)} "
+                    f"tcp_world={_fmt_vec(tcp_world)} obj_world={_fmt_vec(obj_world)} "
+                    f"tcp_px={_fmt_px(tcp_px)} obj_px={_fmt_px(obj_px)} "
+                    f"tcp_px_src={tcp_src} obj_px_src={obj_src} "
+                    f"px_dist={_fmt_scalar(px_dist)} "
+                    f"snapshot={snap_path or 'none'}"
+                )
+
             def _write_json_snapshot(path: Path, payload: dict) -> None:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 with path.open("w", encoding="utf-8") as fh:
@@ -846,6 +1033,8 @@ def run_pick_demo(panel) -> None:
                     "ik_solution": _json_safe(ik_solution if ik_solution is not None else last_target.get("ik_solution")),
                     "note": note or last_target.get("note"),
                 }
+                if phase in visual_focus_phases:
+                    _emit_visual_coherence(phase, event="enter")
 
             def _phase_end(
                 phase: str,
@@ -929,6 +1118,8 @@ def run_pick_demo(panel) -> None:
                     f"gripper_measured={bool(gripper_payload.get('measured_target_ok'))} "
                     f"attach={json.dumps(attach_payload or {}, ensure_ascii=False, sort_keys=True)}"
                 )
+                if phase in visual_focus_phases:
+                    _emit_visual_coherence(phase, event="exit")
                 _append_trace(f"[PICK][DIRECT][DEBUG] EXIT_PHASE {phase}")
                 current_phase["data"] = None
                 return payload
@@ -1013,7 +1204,7 @@ def run_pick_demo(panel) -> None:
                 if tcp_base is None:
                     raise RuntimeError(f"{label.lower()}_tcp_pose_unavailable")
                 seed = _current_joint_seed()
-                seed_pos, target_rot = fk_ur5(seed)
+                _seed_pos, target_rot = fk_ur5(seed)
                 delta_runtime = (
                     float(target_tcp_runtime[0]) - float(tcp_base[0]),
                     float(target_tcp_runtime[1]) - float(tcp_base[1]),
@@ -1067,13 +1258,83 @@ def run_pick_demo(panel) -> None:
                         f"{label.lower()}_ik_failed err_norm={float(err_norm):.4f}"
                     )
                 solved_q_list = [float(v) for v in solved_q.tolist()]
+                align_joint_tol_rad = max(
+                    0.01,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_DIRECT_IK_JOINT_TOL_RAD",
+                            "0.03",
+                        )
+                        or 0.03
+                    ),
+                )
                 _run_joint_step(
                     label,
                     solved_q_list,
                     timeout_sec=max(float(timeout_sec), move_sec + 2.0),
-                    tol_rad=0.08,
+                    tol_rad=align_joint_tol_rad,
                 )
                 tcp_after = _live_tcp_base()
+                runtime_target_ok = None
+                runtime_target_dist = None
+                runtime_target_pos = None
+                runtime_target_tol_m = max(
+                    0.01,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_DIRECT_IK_TCP_TOL_M",
+                            "0.040",
+                        )
+                        or 0.040
+                    ),
+                )
+                runtime_target_timeout_sec = max(
+                    0.5,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_DIRECT_IK_TCP_TIMEOUT_SEC",
+                            "4.0",
+                        )
+                        or 4.0
+                    ),
+                )
+                try:
+                    wait_fn = getattr(panel, "_wait_for_tcp_base_target", None)
+                    if callable(wait_fn):
+                        runtime_target_ok, runtime_target_pos, runtime_target_dist = wait_fn(
+                            target_tcp_runtime,
+                            timeout_sec=runtime_target_timeout_sec,
+                            tol_xyz_m=runtime_target_tol_m,
+                            ee_frame="rg2_tcp",
+                        )
+                except Exception:
+                    runtime_target_ok = None
+                q_after = _current_joint_seed()
+                fk_after_pos, _fk_after_rot = fk_ur5(q_after)
+                model_target_err = math.sqrt(
+                    (float(fk_after_pos[0]) - float(target_ik[0])) ** 2
+                    + (float(fk_after_pos[1]) - float(target_ik[1])) ** 2
+                    + (float(fk_after_pos[2]) - float(target_ik[2])) ** 2
+                )
+                model_live_delta = math.sqrt(
+                    (float(fk_after_pos[0]) - float(_seed_pos[0])) ** 2
+                    + (float(fk_after_pos[1]) - float(_seed_pos[1])) ** 2
+                    + (float(fk_after_pos[2]) - float(_seed_pos[2])) ** 2
+                )
+                panel._emit_log(
+                    "[PICK][DIRECT][IK_MODEL] "
+                    f"label={label} "
+                    f"seed_pos=({_seed_pos[0]:.3f},{_seed_pos[1]:.3f},{_seed_pos[2]:.3f}) "
+                    f"fk_after=({fk_after_pos[0]:.3f},{fk_after_pos[1]:.3f},{fk_after_pos[2]:.3f}) "
+                    f"target_ik=({target_ik[0]:.3f},{target_ik[1]:.3f},{target_ik[2]:.3f}) "
+                    f"model_target_err={model_target_err:.3f} "
+                    f"model_move_delta={model_live_delta:.3f} "
+                    f"joint_tol_rad={align_joint_tol_rad:.3f} "
+                    f"runtime_target_ok={runtime_target_ok} "
+                    f"runtime_target_dist={_fmt_scalar(runtime_target_dist)} "
+                    f"runtime_target_tol={runtime_target_tol_m:.3f} "
+                    f"runtime_target_pos={_fmt_vec(runtime_target_pos)}"
+                )
                 if tcp_after is not None:
                     obj_after = _live_object_base()
                     target_err = _dist(tcp_after, target_tcp_runtime)
@@ -1095,21 +1356,131 @@ def run_pick_demo(panel) -> None:
                     "ik_solution": solved_q_list,
                     "err_norm": float(err_norm),
                     "ik_ok": bool(ik_ok),
+                    "runtime_target_ok": runtime_target_ok,
+                    "runtime_target_dist": (
+                        float(runtime_target_dist)
+                        if runtime_target_dist is not None
+                        else None
+                    ),
                 }
 
             def _align_demo_grasp_direct() -> None:
-                obj_base = _live_object_base()
-                if obj_base is None:
-                    raise RuntimeError("demo_object_pose_unavailable_before_align")
-                target_tcp_runtime = (
-                    float(obj_base[0]),
-                    float(obj_base[1]),
-                    float(obj_base[2]) + float(GRIPPER_TCP_Z_OFFSET),
+                max_attempts = max(
+                    1,
+                    int(
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_ATTEMPTS",
+                                "3",
+                            )
+                            or 3
+                        )
+                    ),
                 )
-                return _move_tcp_direct(
-                    label="GRASP_ALIGN_IK",
-                    target_tcp_runtime=target_tcp_runtime,
-                    timeout_sec=move_sec + 8.0,
+                last_metrics = None
+                last_debug = None
+                for attempt in range(1, max_attempts + 1):
+                    obj_base = _live_object_base()
+                    if obj_base is None:
+                        raise RuntimeError("demo_object_pose_unavailable_before_align")
+                    target_tcp_runtime_raw = (
+                        float(obj_base[0]),
+                        float(obj_base[1]),
+                        float(obj_base[2]) + float(GRIPPER_TCP_Z_OFFSET),
+                    )
+                    target_tcp_runtime = target_tcp_runtime_raw
+                    tcp_before = _live_tcp_base()
+                    pre_metrics = _pre_close_alignment_metrics()
+                    xy_lock_factor = max(
+                        1.0,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_ALIGN_XY_LOCK_FACTOR",
+                                "2.0",
+                            )
+                            or 2.0
+                        ),
+                    )
+                    xy_tol_pre = float(pre_metrics.get("xy_tol") or 0.035)
+                    z_tol_pre = float(pre_metrics.get("z_tol") or 0.030)
+                    xy_dist_pre = (
+                        float(pre_metrics.get("xy_dist"))
+                        if pre_metrics.get("xy_dist") is not None
+                        else None
+                    )
+                    z_error_pre = (
+                        float(pre_metrics.get("z_error"))
+                        if pre_metrics.get("z_error") is not None
+                        else None
+                    )
+                    decision = "full_xy_z"
+                    if (
+                        tcp_before is not None
+                        and xy_dist_pre is not None
+                        and z_error_pre is not None
+                        and xy_dist_pre <= (xy_tol_pre * xy_lock_factor)
+                        and z_error_pre > z_tol_pre
+                    ):
+                        # Si el TCP ya esta encima en XY, evitar correccion lateral
+                        # que pueda degradar la alineacion visual; solo corregir Z.
+                        target_tcp_runtime = (
+                            float(tcp_before[0]),
+                            float(tcp_before[1]),
+                            float(target_tcp_runtime_raw[2]),
+                        )
+                        decision = "z_only_keep_xy"
+                    delta_raw = None
+                    delta_used = None
+                    if tcp_before is not None:
+                        delta_raw = (
+                            float(target_tcp_runtime_raw[0]) - float(tcp_before[0]),
+                            float(target_tcp_runtime_raw[1]) - float(tcp_before[1]),
+                            float(target_tcp_runtime_raw[2]) - float(tcp_before[2]),
+                        )
+                        delta_used = (
+                            float(target_tcp_runtime[0]) - float(tcp_before[0]),
+                            float(target_tcp_runtime[1]) - float(tcp_before[1]),
+                            float(target_tcp_runtime[2]) - float(tcp_before[2]),
+                        )
+                    panel._emit_log(
+                        "[PICK][DIRECT][IK_GEOM] "
+                        f"attempt={attempt}/{max_attempts} "
+                        f"tcp_before={_fmt_vec(tcp_before)} "
+                        f"obj_base={_fmt_vec(obj_base)} "
+                        f"target_tcp_raw={_fmt_vec(target_tcp_runtime_raw)} "
+                        f"target_tcp_used={_fmt_vec(target_tcp_runtime)} "
+                        f"delta_raw={_fmt_vec(delta_raw)} "
+                        f"delta_used={_fmt_vec(delta_used)} "
+                        f"xy_dist_pre={_fmt_scalar(xy_dist_pre)} "
+                        f"z_error_pre={_fmt_scalar(z_error_pre)} "
+                        f"xy_tol_pre={xy_tol_pre:.3f} "
+                        f"z_tol_pre={z_tol_pre:.3f} "
+                        f"xy_lock_factor={xy_lock_factor:.2f} "
+                        f"decision={decision}"
+                    )
+                    last_debug = _move_tcp_direct(
+                        label="GRASP_ALIGN_IK",
+                        target_tcp_runtime=target_tcp_runtime,
+                        timeout_sec=move_sec + 8.0,
+                    )
+                    last_metrics = _pre_close_alignment_metrics()
+                    runtime_ok = bool((last_debug or {}).get("runtime_target_ok"))
+                    panel._emit_log(
+                        "[PICK][DIRECT][IK_RUNTIME] "
+                        f"attempt={attempt}/{max_attempts} "
+                        f"runtime_ok={runtime_ok} "
+                        f"xy_dist={_fmt_scalar(last_metrics.get('xy_dist'))} "
+                        f"z_error={_fmt_scalar(last_metrics.get('z_error'))} "
+                        f"tcp_obj_dist={_fmt_scalar(last_metrics.get('tcp_obj_dist'))} "
+                        f"ok={bool(last_metrics.get('ok'))}"
+                    )
+                    if bool(last_metrics.get("ok")):
+                        return last_debug
+                raise RuntimeError(
+                    "grasp_align_ik_runtime_not_aligned "
+                    f"attempts={max_attempts} "
+                    f"xy_dist={_fmt_scalar((last_metrics or {}).get('xy_dist'))} "
+                    f"z_error={_fmt_scalar((last_metrics or {}).get('z_error'))}"
                 )
 
             def _wait_demo_attach_follow(
@@ -1340,6 +1711,25 @@ def run_pick_demo(panel) -> None:
 
             demo_attach_published = False
             demo_logical_attached = False
+            alcance_alert_emitted = False
+
+            def _emit_alcance_alert(*, phase: str, metrics) -> None:
+                nonlocal alcance_alert_emitted
+                metric_dict = _json_safe(metrics) or {}
+                if not bool(metric_dict.get("ok")):
+                    return
+                if alcance_alert_emitted:
+                    return
+                alcance_alert_emitted = True
+                panel._emit_log(
+                    "[PICK][DIRECT] AVISO: AL ALCANCE "
+                    f"phase={phase} "
+                    f"tcp_obj_dist={_fmt_scalar(metric_dict.get('tcp_obj_dist'))} "
+                    f"xy_dist={_fmt_scalar(metric_dict.get('xy_dist'))}/{_fmt_scalar(metric_dict.get('xy_tol'))} "
+                    f"z_error={_fmt_scalar(metric_dict.get('z_error'))}/{_fmt_scalar(metric_dict.get('z_tol'))} "
+                    f"z_gap={_fmt_scalar(metric_dict.get('z_gap'))}"
+                )
+
             _run_joint_step("HOME", home_pose)
             _run_joint_step("MESA", JOINT_TABLE_POSE_RAD)
 
@@ -1723,6 +2113,7 @@ def run_pick_demo(panel) -> None:
                 condition="pre_close_ok",
                 metrics=pre_close_metrics,
             )
+            _emit_alcance_alert(phase="PRE_CLOSE", metrics=pre_close_metrics)
             panel._emit_log("[DEMO] Cerrando pinza")
             def _close_only():
                 panel._command_gripper(True, log_action="PICK", force=True)
@@ -1734,6 +2125,15 @@ def run_pick_demo(panel) -> None:
                 frame_used="base_link",
                 offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET)},
                 note="closing gripper over target",
+            )
+            close_state_pre_cmd = _read_gripper_state(expected_closed=False)
+            panel._emit_log(
+                "[PICK][DIRECT][CLOSE] "
+                f"pre_cmd opening_sum={_fmt_scalar(close_state_pre_cmd.get('opening_sum'))} "
+                f"max_abs_err={_fmt_scalar(close_state_pre_cmd.get('max_abs_err'))} "
+                f"measured_ok={bool(close_state_pre_cmd.get('measured_target_ok'))} "
+                f"age={_fmt_scalar(close_state_pre_cmd.get('joint_state_age_sec'))} "
+                f"closed_flag={bool(close_state_pre_cmd.get('closed_flag'))}"
             )
             panel.signal_run_ui.emit(_close_only)
             time.sleep(0.1)
@@ -1749,6 +2149,18 @@ def run_pick_demo(panel) -> None:
                         or 1.8
                     ),
                 ),
+                opening_ref_sum=close_state_pre_cmd.get("opening_sum"),
+            )
+            panel._emit_log(
+                "[PICK][DIRECT][CLOSE] "
+                f"wait_done confirmed={bool(close_confirmed)} "
+                f"mode={str((close_wait_state or {}).get('confirm_mode') or 'none')} "
+                f"opening_sum={_fmt_scalar((close_wait_state or {}).get('opening_sum'))} "
+                f"max_abs_err={_fmt_scalar((close_wait_state or {}).get('max_abs_err'))} "
+                f"measured_ok={bool((close_wait_state or {}).get('measured_target_ok'))} "
+                f"closed_flag={bool((close_wait_state or {}).get('closed_flag'))} "
+                f"age={_fmt_scalar((close_wait_state or {}).get('joint_state_age_sec'))} "
+                f"close_delta_best={_fmt_scalar((close_wait_state or {}).get('close_delta_best'))}"
             )
             close_metrics = _close_alignment_metrics()
             close_metrics["close_confirmed"] = bool(close_confirmed)
