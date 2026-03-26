@@ -1079,7 +1079,12 @@ class RosWorker(QObject):
             f"[ROS][SELECT_OBJECT][SERVICE] request_id={request_id} name={name or 'clear'} waiting_ack=true"
         )
         self._emit_object_select_request(name, f"service:{self._select_object_service}#{request_id}")
-        ack_ok = done.wait(timeout=max(0.1, self._object_select_timeout_sec))
+        wait_timeout = max(0.1, self._object_select_timeout_sec)
+        remote_wait_timeout = max(
+            2.0,
+            float(os.environ.get("PANEL_REMOTE_SELECT_ON_TABLE_WAIT_SEC", "8.0") or 8.0) + 5.0,
+        )
+        ack_ok = done.wait(timeout=max(wait_timeout, remote_wait_timeout))
         with self._lock:
             _pending = self._object_select_pending.pop(request_id, None)
         if _pending is not None:

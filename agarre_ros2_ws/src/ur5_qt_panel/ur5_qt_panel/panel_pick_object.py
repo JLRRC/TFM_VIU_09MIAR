@@ -29,6 +29,7 @@ from .panel_config import (
     BASKET_DROP,
     BASE_FRAME,
     DROP_NAME_SET,
+    PICK_DEMO_NAME_SET,
     GRIPPER_ATTACH_PREFIX,
     GRIPPER_CMD_TOPIC,
     GRIPPER_JOINT_NAMES,
@@ -47,12 +48,13 @@ from .panel_robot_presets import (
     JOINT_PICK_IMAGE_POSE_RAD,
     _make_pose_data,
 )
-from .panel_utils import get_object_positions, transform_point_to_frame, get_tf_helper
+from .panel_utils import get_object_positions, transform_point_to_frame, get_tf_helper, nearest_table_object
 from .panel_objects import (
     ObjectLogicalState,
     ObjectOwner,
     get_object_state,
     get_object_states,
+    is_on_table,
     mark_object_attached,
     mark_object_grasped,
     mark_object_released,
@@ -205,6 +207,78 @@ def run_pick_object(panel) -> None:
         panel._emit_log(f"[PICK] controladores no listos ({reason})")
         return
 
+    def _world_ready_pending() -> list[str]:
+        pending: list[str] = []
+        if not bool(getattr(panel, "_pose_info_ok", False)):
+            pending.append("pose_info:not_ready")
+            return pending
+        positions = get_object_positions() or {}
+        tracked_names = sorted(set(DROP_NAME_SET) | set(PICK_DEMO_NAME_SET))
+        for name in tracked_names:
+            pose = positions.get(name)
+            if pose is None or len(pose) < 3:
+                pending.append(f"{name}:missing")
+                continue
+            try:
+                xyz = (float(pose[0]), float(pose[1]), float(pose[2]))
+            except Exception:
+                pending.append(f"{name}:invalid")
+                continue
+            if not is_on_table(xyz):
+                pending.append(f"{name}:z={xyz[2]:.3f}")
+        return pending
+
+    def _wait_for_world_ready() -> bool:
+        try:
+            wait_sec = float(
+                os.environ.get("PANEL_PICK_OBJECT_WORLD_READY_WAIT_SEC", "20.0")
+            )
+        except Exception:
+            wait_sec = 20.0
+        try:
+            poll_sec = float(
+                os.environ.get("PANEL_PICK_OBJECT_WORLD_READY_POLL_SEC", "0.25")
+            )
+        except Exception:
+            poll_sec = 0.25
+        wait_sec = max(1.0, wait_sec)
+        poll_sec = max(0.1, poll_sec)
+        deadline = time.time() + wait_sec
+        last_log_ts = 0.0
+        last_summary = ""
+        while time.time() < deadline:
+            pending = _world_ready_pending()
+            if not pending:
+                panel._emit_log(
+                    "[PICK_OBJ][WORLD_READY] ready scene=on_table_all "
+                    f"tracked={len(set(DROP_NAME_SET) | set(PICK_DEMO_NAME_SET))}"
+                )
+                return True
+            now = time.time()
+            summary = ",".join(pending[:4])
+            if summary != last_summary or (now - last_log_ts) >= 1.5:
+                panel._emit_log(
+                    "[PICK_OBJ][WORLD_READY] waiting "
+                    f"pending={summary} total_pending={len(pending)}"
+                )
+                last_summary = summary
+                last_log_ts = now
+            panel._wait_for_state_change(poll_sec)
+        pending = _world_ready_pending()
+        panel._emit_log(
+            "[PICK_OBJ][WORLD_READY] timeout "
+            f"pending={','.join(pending[:6]) or 'unknown'} total_pending={len(pending)}"
+        )
+        return False
+
+    if not _wait_for_world_ready():
+        _block(
+            "world_not_ready",
+            status_text="PICK Objeto: escena Gazebo no lista (objetos fuera de mesa)",
+            error=True,
+        )
+        return
+
     ui_selected = str(getattr(panel, "_selected_object", "") or "").strip()
     ui_selected_ts = float(getattr(panel, "_selection_timestamp", 0.0) or 0.0)
     user_selected = str(getattr(panel, "_selection_last_user_name", "") or "").strip()
@@ -278,6 +352,75 @@ def run_pick_object(panel) -> None:
         5.0,
         float(os.environ.get("PANEL_PICK_OBJECT_SELECTION_MAX_AGE_SEC", "600.0") or 600.0),
     )
+    if (not user_selected or user_selected_ts <= 0.0) and ui_selected and latest_store_name:
+        if ui_selected == latest_store_name:
+            recovered_ts = max(ui_selected_ts, latest_store_ts)
+            if recovered_ts <= 0.0:
+                recovered_ts = time.time()
+            panel._selection_last_user_name = ui_selected
+            panel._selection_last_user_ts = recovered_ts
+            user_selected = ui_selected
+            user_selected_ts = recovered_ts
+            panel._emit_log(
+                "[PICK][SELECT_RESTORE] restored_user_from_effective_selection "
+                f"name={user_selected} ts={user_selected_ts:.3f}"
+            )
+    if not user_selected or user_selected_ts <= 0.0:
+        grasp_world = getattr(panel, "_last_grasp_world", None)
+        grasp_x = grasp_y = None
+        if isinstance(grasp_world, dict):
+            try:
+                grasp_x = float(grasp_world.get("x", 0.0))
+                grasp_y = float(grasp_world.get("y", 0.0))
+            except Exception:
+                grasp_x = grasp_y = None
+        if grasp_x is not None and grasp_y is not None:
+            candidate = str(nearest_table_object(grasp_x, grasp_y) or "").strip()
+            positions = get_object_positions() or {}
+            pose = positions.get(candidate)
+            if candidate and pose is not None and len(pose) >= 3:
+                try:
+                    px, py, pz = float(pose[0]), float(pose[1]), float(pose[2])
+                except Exception:
+                    px = py = pz = 0.0
+                if is_on_table((px, py, pz)) and hasattr(panel, "_select_object"):
+                    try:
+                        panel._select_object(
+                            candidate,
+                            -1,
+                            -1,
+                            px,
+                            py,
+                            pz,
+                            source="pick_object_restore_from_last_grasp",
+                        )
+                    except Exception as exc:
+                        panel._emit_log(
+                            "[PICK_OBJ][SELECT_RESTORE] error "
+                            f"source=last_grasp name={candidate} err={type(exc).__name__}:{exc}"
+                        )
+                    ui_selected = str(getattr(panel, "_selected_object", "") or "").strip()
+                    ui_selected_ts = float(getattr(panel, "_selection_timestamp", 0.0) or 0.0)
+                    user_selected = str(getattr(panel, "_selection_last_user_name", "") or "").strip()
+                    user_selected_ts = float(getattr(panel, "_selection_last_user_ts", 0.0) or 0.0)
+                    selected_states = [
+                        (name, st)
+                        for name, st in get_object_states().items()
+                        if st.logical_state == ObjectLogicalState.SELECTED
+                    ]
+                    selected_states.sort(key=lambda item: float(item[1].last_update_ts), reverse=True)
+                    latest_store_name = selected_states[0][0] if selected_states else ""
+                    latest_store_ts = (
+                        float(getattr(selected_states[0][1], "last_update_ts", 0.0) or 0.0)
+                        if selected_states
+                        else 0.0
+                    )
+                    if user_selected and user_selected_ts > 0.0:
+                        panel._emit_log(
+                            "[PICK][SELECT_RESTORE] restored_from_last_grasp "
+                            f"name={user_selected} ui_selected={ui_selected or 'none'} "
+                            f"store_selected={latest_store_name or 'none'}"
+                        )
     if not user_selected or user_selected_ts <= 0.0:
         _block(
             "no_user_selection",
@@ -322,15 +465,15 @@ def run_pick_object(panel) -> None:
         )
         return
     snapshot_name = user_selected
-    if snapshot_name not in DROP_NAME_SET:
+    if snapshot_name not in DROP_NAME_SET and snapshot_name not in PICK_DEMO_NAME_SET:
         _block(
             "selection_not_drop_object",
-            status_text="PICK Objeto: seleccion actual no corresponde a un objeto DROP",
+            status_text="PICK Objeto: seleccion actual no corresponde a un objeto pickable",
             error=True,
         )
         panel._emit_log(
             "[PICK_OBJ][ABORT] selection_not_drop_object "
-            f"name={snapshot_name or 'none'}"
+            f"name={snapshot_name or 'none'} allowed=DROP|PICK_DEMO"
         )
         return
     selected_state = get_object_state(snapshot_name)
@@ -478,6 +621,8 @@ def run_pick_object(panel) -> None:
         obj_base_stamp_ns = int(_obj_tf_stamp.sec) * 1_000_000_000 + int(_obj_tf_stamp.nanosec)
     except Exception:
         obj_base_stamp_ns = 0
+    except Exception:
+        obj_base_stamp_ns = 0
     grasp_yaw_deg: Optional[float] = None
     if canonical_active:
         override_selected = str(canonical_override.get("selected_object", "") or "").strip()
@@ -544,7 +689,6 @@ def run_pick_object(panel) -> None:
             )
             override_x = float(bx)
             override_y = float(by)
-        grasp_yaw_deg = float(canonical_override.get("yaw_deg", 0.0) or 0.0)
         panel._emit_log(
             "[PICK_OBJ][TFM_CANON] override_xy "
             f"selected_xy=({float(bx):.3f},{float(by):.3f}) "
@@ -721,9 +865,9 @@ def run_pick_object(panel) -> None:
     except Exception:
         grasp_micro_step_m = 0.012
     try:
-        grasp_micro_steps_max = int(os.environ.get("PANEL_PICK_OBJECT_GRASP_MICRO_STEPS_MAX", "4"))
+        grasp_micro_steps_max = int(os.environ.get("PANEL_PICK_OBJECT_GRASP_MICRO_STEPS_MAX", "0"))
     except Exception:
-        grasp_micro_steps_max = 4
+        grasp_micro_steps_max = 0
     grasp_micro_steps_max = max(0, min(grasp_micro_steps_max, 12))
     grasp_micro_poses: List[tuple] = []
     if grasp_micro_steps_max > 0 and grasp_down_pose[2] < pre_grasp_pose[2]:
@@ -1812,11 +1956,19 @@ def run_pick_object(panel) -> None:
                         "HOME_START controladores no listos tras espera: "
                         f"{reason}"
                     )
+                try:
+                    home_start_dur_sec = float(
+                        os.environ.get("PANEL_PICK_OBJECT_HOME_START_DUR_SEC", "8.0")
+                    )
+                except Exception:
+                    home_start_dur_sec = 8.0
+                home_start_dur_sec = max(move_sec, home_start_dur_sec)
                 _run_joint_step(
                     "HOME_START",
                     home_pose,
-                    timeout_sec=move_sec + 3.0,
+                    timeout_sec=home_start_dur_sec + 3.0,
                     tol_rad=home_tol_rad,
+                    duration_sec=home_start_dur_sec,
                     require_reached=True,
                 )
 
@@ -2999,8 +3151,14 @@ def run_pick_object(panel) -> None:
                             f"tf_stamp={tf_stamp} tf_age={tf_age_txt} fresh={fresh} "
                             f"reason={fail_reason}"
                         )
-                        panel._emit_log(f"[PICK_OBJ][ABORT] {msg}")
-                        raise RuntimeError(msg)
+                        if label_up == "PRE_GRASP" and fail_reason == "pos_not_reached":
+                            panel._emit_log(
+                                "[PICK_OBJ][RECOVERY] PRE_GRASP tf_mismatch diferido al gate de alineacion "
+                                f"dist={dist:.3f} tol={tol:.3f}"
+                            )
+                        else:
+                            panel._emit_log(f"[PICK_OBJ][ABORT] {msg}")
+                            raise RuntimeError(msg)
                     panel._emit_log(
                         f"[PICK_OBJ][MOVEIT][EXEC] {label} traj_msgs={moveit_monitor_total} "
                         f"manual_conflicts={moveit_monitor_manual} topic={moveit_monitor_topic}"

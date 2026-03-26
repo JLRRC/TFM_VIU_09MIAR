@@ -391,6 +391,7 @@ GLOBAL_FRAME_EFFECTIVE = "base_link"
 GRASP_RECT_TOPIC = os.environ.get("PANEL_GRASP_RECT_TOPIC", "/grasp_rect").strip() or "/grasp_rect"
 TEST_CORNER_OVERLAY = os.environ.get("PANEL_TEST_CORNER_OVERLAY", "0").strip().lower() not in ("0", "false", "off", "no")
 TCP_POSE_OVERLAY = os.environ.get("PANEL_TCP_POSE_OVERLAY", "1").strip().lower() not in ("0", "false", "off", "no")
+TCP_POSE_TEXT_OVERLAY = os.environ.get("PANEL_TCP_POSE_TEXT_OVERLAY", "0").strip().lower() not in ("0", "false", "off", "no")
 FAR_FRONT_CAMERA_TOPIC_CANDIDATES = (
     "/camera_west/image",
     "/camera_south/image",
@@ -421,6 +422,13 @@ def _env_float(name: str, default: float) -> float:
         return float(raw)
     except Exception:
         return default
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in ("1", "true", "yes", "on")
 
 
 SETTLE_MANUAL = {"pick_demo"}
@@ -1206,7 +1214,9 @@ class CameraController:
                 display = p._draw_grasp_overlay(display, w, h)
             if TEST_CORNER_OVERLAY:
                 display = p._draw_test_corner_overlay(display, w, h)
-            display = p._draw_tcp_pose_overlay(display, w, h)
+            # Mantener permanente la linea canonica TCP↔OBJ en overhead.
+            if overhead_only:
+                display = p._draw_tcp_pose_overlay(display, w, h)
         p.camera_view.set_frame(display, w, h)
         now = time.time()
         if (now - p._camera_info_last_ts) >= max(0.05, float(CAMERA_INFO_INTERVAL_SEC)):
@@ -1517,8 +1527,10 @@ class ControlPanelV2(QMainWindow):
         self._settle_thread: Optional[QThread] = None
         self._async_threads: List[QThread] = []
         self._objects_release_done = False
-        # Los objetos DROP arrancan suspendidos; solo deben caer al pulsar "Soltar objetos".
-        self._auto_release_drop_objects = False
+        # Activable por entorno para forzar escena canonical lista tras bridge.
+        self._auto_release_drop_objects = _env_flag(
+            "PANEL_AUTO_RELEASE_DROP_OBJECTS", True
+        )
         self._drop_nudge_done = False
         self._drop_hold_last_ts = 0.0
         self._drop_hold_inflight = False
@@ -4071,6 +4083,7 @@ class ControlPanelV2(QMainWindow):
         if not text:
             return False
         if text in {
+            "cámara no conectada",
             "cámara no lista",
             "sin frame de cámara",
             "release de objetos pendiente",
@@ -11012,6 +11025,46 @@ class ControlPanelV2(QMainWindow):
                 except Exception:
                     pass
 
+        basic_ok, basic_reason = self._basic_ready_status()
+        if request_id and not basic_ok:
+            wait_sec = max(
+                2.0,
+                float(os.environ.get("PANEL_TFM_REMOTE_EXECUTE_READY_WAIT_SEC", "90.0") or 90.0),
+            )
+            poll_sec = max(
+                0.5,
+                float(os.environ.get("PANEL_TFM_REMOTE_EXECUTE_READY_POLL_SEC", "1.0") or 1.0),
+            )
+            self._emit_log(
+                "[TFM][REMOTE][EXEC_ACK] "
+                f"request_id={request_id} deferred=true waiting_basic=true "
+                f"reason={basic_reason or 'n/a'} wait_sec={wait_sec:.1f}"
+            )
+            self._tfm_execute_pending_request_id = request_id
+
+            def _resume_execute_when_ready() -> None:
+                deadline = time.time() + wait_sec
+                last_reason = basic_reason
+                while time.time() < deadline:
+                    ok, reason = self._basic_ready_status()
+                    last_reason = reason
+                    if ok:
+                        break
+                    time.sleep(poll_sec)
+
+                def _run_execute_now() -> None:
+                    ok_now, msg_now = self._tfm_publish_grasp()
+                    if bool(ok_now) and bool(getattr(self, "_tfm_execute_inflight", False)):
+                        return
+                    if getattr(self, "_tfm_execute_pending_request_id", "") == request_id:
+                        self._tfm_execute_pending_request_id = ""
+                    _ack(bool(ok_now), str(msg_now or last_reason or "n/a"))
+
+                self.signal_run_ui.emit(_run_execute_now)
+
+            self._run_async(_resume_execute_when_ready, name="remote_tfm_execute_wait")
+            return
+
         ok, message = self._tfm_publish_grasp()
         if bool(ok) and request_id and bool(getattr(self, "_tfm_execute_inflight", False)):
             self._tfm_execute_pending_request_id = request_id
@@ -11153,6 +11206,11 @@ class ControlPanelV2(QMainWindow):
             self._set_status("Selección remota limpiada", error=False)
             _ack(True, "selection_cleared")
             return
+        if not bool(getattr(self, "_objects_release_done", False)) and not bool(
+            getattr(self, "_detach_inflight", False)
+        ):
+            self._emit_log("[PICK][REMOTE] release pendiente; lanzando Soltar objetos")
+            self._release_objects()
         live_pose = None
         if getattr(self, "_ros_worker_started", False) and getattr(self, "ros_worker", None) is not None:
             try:
@@ -11191,6 +11249,9 @@ class ControlPanelV2(QMainWindow):
         obj_pose = objects.get(target)
         if obj_pose is not None and len(obj_pose) >= 3:
             x, y, z = float(obj_pose[0]), float(obj_pose[1]), float(obj_pose[2])
+            if not is_on_table((x, y, z)):
+                if _defer_select_until_on_table("remote_store_not_on_table"):
+                    return
             px, py = -1, -1
             w = getattr(self.camera_view, "_img_width", 0) if hasattr(self, "camera_view") else 0
             h = getattr(self.camera_view, "_img_height", 0) if hasattr(self, "camera_view") else 0
@@ -11200,6 +11261,9 @@ class ControlPanelV2(QMainWindow):
                     px, py = int(pix[0]), int(pix[1])
             self._select_object(target, px, py, x, y, z, source="remote_store")
         else:
+            # Sin pose conocida: diferir hasta que Gazebo publique posición sobre mesa
+            if _defer_select_until_on_table("remote_no_pose"):
+                return
             self._on_object_clicked(target)
         if getattr(self, "_selected_object", None) == target:
             _ack(True, "selected")
@@ -12702,35 +12766,39 @@ class ControlPanelV2(QMainWindow):
         if OVERLAY_ANTIALIAS:
             painter.setRenderHint(QPainter.Antialiasing)
         try:
-            panel_x = 10.0
-            panel_y = 10.0
-            panel_w = min(float(w - 20), 420.0)
-            panel_h = 86.0
-            bg = QColor(15, 23, 42, 165)
-            border = QColor(148, 163, 184, 210)
-            painter.setPen(QPen(border, 1))
-            painter.setBrush(QBrush(bg))
-            painter.drawRoundedRect(QRectF(panel_x, panel_y, panel_w, panel_h), 8.0, 8.0)
-
             tcp_base = None
             tcp_source = "none"
-            for src_name, src_val in (
-                ("trace_tf_rg2_tcp", self._last_trace_tcp_base),
-                ("debug_tf_rg2_tcp", self._last_debug_tcp_base),
-                ("joint_fk_tool0", self._last_tcp_base),
-            ):
+            base_frame = self._business_base_frame()
+            tcp_pose_base, rpy, tcp_reason = tf_get_tcp_in_base(
+                base_frame=base_frame,
+                ee_frame="rg2_tcp",
+                timeout=0.03,
+                logger=None,
+            )
+            if tcp_pose_base is not None:
+                tcp_base = (
+                    float(tcp_pose_base.pose.position.x),
+                    float(tcp_pose_base.pose.position.y),
+                    float(tcp_pose_base.pose.position.z),
+                )
+                tcp_source = "tf2:rg2_tcp@base_link"
+            else:
+                trace_age = float("inf")
+                if self._last_trace_tcp_ts > 0.0:
+                    trace_age = max(0.0, time.monotonic() - float(self._last_trace_tcp_ts))
                 if (
-                    isinstance(src_val, (list, tuple))
-                    and len(src_val) >= 3
+                    isinstance(self._last_trace_tcp_base, (list, tuple))
+                    and len(self._last_trace_tcp_base) >= 3
+                    and trace_age <= 0.20
                 ):
                     tcp_base = (
-                        float(src_val[0]),
-                        float(src_val[1]),
-                        float(src_val[2]),
+                        float(self._last_trace_tcp_base[0]),
+                        float(self._last_trace_tcp_base[1]),
+                        float(self._last_trace_tcp_base[2]),
                     )
-                    tcp_source = src_name
-                    break
-            rpy = self._last_tcp_rpy_deg
+                    tcp_source = f"trace_cache:rg2_tcp age={trace_age:.2f}s"
+                else:
+                    tcp_source = f"tf2:rg2_tcp_unavailable:{tcp_reason}"
             line1 = "TCP(base): --"
             line2 = "TCP source: --"
             line3 = "RPY[deg]: --"
@@ -12745,8 +12813,14 @@ class ControlPanelV2(QMainWindow):
                 yy = float(rpy[2])
                 line3 = f"RPY[deg]:  r={rr:+.1f} p={pp:+.1f} y={yy:+.1f}"
 
-            obj_name = str(self._selected_object or PICK_DEMO_OBJECT_NAME or "").strip()
+            obj_name = str(
+                self._selected_object
+                or getattr(self, "_last_grasp_selection_name", "")
+                or PICK_DEMO_OBJECT_NAME
+                or ""
+            ).strip()
             obj_base: Optional[Tuple[float, float, float]] = None
+            obj_world: Optional[Tuple[float, float, float]] = None
             if obj_name:
                 st = get_object_state(obj_name)
                 if st is not None and isinstance(st.position, (list, tuple)) and len(st.position) >= 3:
@@ -12755,6 +12829,7 @@ class ControlPanelV2(QMainWindow):
                         float(st.position[1]),
                         float(st.position[2]),
                     )
+                    obj_world = world_pos
                     obj_base = self._ensure_base_coords(
                         world_pos,
                         self._world_frame_last_first(),
@@ -12766,12 +12841,25 @@ class ControlPanelV2(QMainWindow):
                         except Exception:
                             obj_base = None
 
-            def _project_base_to_px(base_xyz: Optional[Tuple[float, float, float]]) -> Tuple[Optional[Tuple[float, float]], str]:
+            def _project_base_to_px_canonical(base_xyz: Optional[Tuple[float, float, float]]) -> Tuple[Optional[Tuple[float, float]], Optional[Tuple[float, float, float]], str]:
                 if base_xyz is None:
-                    return None, "none"
-                world_xyz = self._base_to_world_coords(base_xyz, timeout_sec=0.05)
+                    return None, None, "none"
+                world_frame = self._world_frame_last_first()
+                world_xyz_raw, _ = transform_point_to_frame(
+                    (float(base_xyz[0]), float(base_xyz[1]), float(base_xyz[2])),
+                    world_frame,
+                    source_frame=base_frame,
+                    timeout_sec=0.30,
+                )
+                world_xyz = None
+                if world_xyz_raw:
+                    world_xyz = (
+                        float(world_xyz_raw[0]),
+                        float(world_xyz_raw[1]),
+                        float(world_xyz_raw[2]),
+                    )
                 if world_xyz is None:
-                    return None, "base_to_world_fail"
+                    return None, None, "base_to_world_tf_fail"
                 px = world_xyz_to_pixel_float(
                     float(world_xyz[0]),
                     float(world_xyz[1]),
@@ -12780,7 +12868,15 @@ class ControlPanelV2(QMainWindow):
                     h,
                 )
                 if px is not None:
-                    return (float(px[0]), float(px[1])), "world_xyz"
+                    return (float(px[0]), float(px[1])), world_xyz, "world_xyz_3d"
+                return None, world_xyz, "world_xyz_no_camera"
+
+            def _project_base_to_px_ghost(base_xyz: Optional[Tuple[float, float, float]]) -> Tuple[Optional[Tuple[float, float]], str]:
+                if base_xyz is None:
+                    return None, "none"
+                world_xyz = self._base_to_world_coords(base_xyz, timeout_sec=0.05)
+                if world_xyz is None:
+                    return None, "legacy_base_to_world_fail"
                 px = table_xy_to_pixel_float(
                     float(world_xyz[0]),
                     float(world_xyz[1]),
@@ -12788,11 +12884,36 @@ class ControlPanelV2(QMainWindow):
                     h,
                 )
                 if px is not None:
-                    return (float(px[0]), float(px[1])), "table_xy"
-                return None, "projection_fail"
+                    return (float(px[0]), float(px[1])), "legacy_table_xy"
+                return None, "legacy_projection_fail"
 
-            tcp_px, tcp_px_src = _project_base_to_px(tcp_base)
-            obj_px, obj_px_src = _project_base_to_px(obj_base)
+            tcp_px, tcp_world, tcp_px_src = _project_base_to_px_canonical(tcp_base)
+            tcp_ghost_px, tcp_ghost_src = _project_base_to_px_ghost(tcp_base)
+            obj_px = None
+            obj_px_src = "none"
+            if obj_world is not None:
+                obj_px_raw = world_xyz_to_pixel_float(
+                    float(obj_world[0]),
+                    float(obj_world[1]),
+                    float(obj_world[2]),
+                    w,
+                    h,
+                )
+                if obj_px_raw is not None:
+                    obj_px = (float(obj_px_raw[0]), float(obj_px_raw[1]))
+                    obj_px_src = "world_xyz_3d"
+                else:
+                    obj_px_raw = table_xy_to_pixel_float(
+                        float(obj_world[0]),
+                        float(obj_world[1]),
+                        w,
+                        h,
+                    )
+                    if obj_px_raw is not None:
+                        obj_px = (float(obj_px_raw[0]), float(obj_px_raw[1]))
+                        obj_px_src = "table_xy_fallback"
+                    else:
+                        obj_px_src = "projection_fail"
             def _fmt_vec_any(vec: Optional[Tuple[float, ...]]) -> str:
                 if vec is None:
                     return "none"
@@ -12805,8 +12926,18 @@ class ControlPanelV2(QMainWindow):
                     return "none"
                 return "none"
             px_dist = None
+            ghost_gap_px = None
+            dist_m = None
+            if tcp_base is not None and obj_base is not None:
+                dist_m = math.sqrt(
+                    (float(tcp_base[0]) - float(obj_base[0])) ** 2
+                    + (float(tcp_base[1]) - float(obj_base[1])) ** 2
+                    + (float(tcp_base[2]) - float(obj_base[2])) ** 2
+                )
             if tcp_px is not None:
                 painter.setPen(QPen(QColor(34, 211, 238, 220), 2))
+                painter.setBrush(QBrush(QColor(34, 211, 238, 210)))
+                painter.drawEllipse(QPointF(float(tcp_px[0]), float(tcp_px[1])), 3.5, 3.5)
                 painter.drawLine(
                     QPointF(float(tcp_px[0]) - 8.0, float(tcp_px[1])),
                     QPointF(float(tcp_px[0]) + 8.0, float(tcp_px[1])),
@@ -12814,6 +12945,24 @@ class ControlPanelV2(QMainWindow):
                 painter.drawLine(
                     QPointF(float(tcp_px[0]), float(tcp_px[1]) - 8.0),
                     QPointF(float(tcp_px[0]), float(tcp_px[1]) + 8.0),
+                )
+            if tcp_ghost_px is not None:
+                gx = float(tcp_ghost_px[0])
+                gy = float(tcp_ghost_px[1])
+                painter.setPen(QPen(QColor(168, 85, 247, 220), 2, Qt.DashLine))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawEllipse(QPointF(gx, gy), 5.0, 5.0)
+                painter.drawLine(QPointF(gx - 6.0, gy - 6.0), QPointF(gx + 6.0, gy + 6.0))
+                painter.drawLine(QPointF(gx - 6.0, gy + 6.0), QPointF(gx + 6.0, gy - 6.0))
+            if tcp_px is not None and tcp_ghost_px is not None:
+                ghost_gap_px = math.hypot(
+                    float(tcp_px[0]) - float(tcp_ghost_px[0]),
+                    float(tcp_px[1]) - float(tcp_ghost_px[1]),
+                )
+                painter.setPen(QPen(QColor(168, 85, 247, 120), 1, Qt.DotLine))
+                painter.drawLine(
+                    QPointF(float(tcp_px[0]), float(tcp_px[1])),
+                    QPointF(float(tcp_ghost_px[0]), float(tcp_ghost_px[1])),
                 )
             if tcp_px is not None and obj_px is not None:
                 px_dist = math.hypot(
@@ -12828,27 +12977,66 @@ class ControlPanelV2(QMainWindow):
                     QPointF(float(tcp_px[0]), float(tcp_px[1])),
                     QPointF(float(obj_px[0]), float(obj_px[1])),
                 )
-                line4 = f"TCP↔OBJ(px): {px_dist:.1f} src=({tcp_px_src},{obj_px_src})"
+                line4 = (
+                    f"TCP↔OBJ(px): {px_dist:.1f} src=({tcp_px_src},{obj_px_src}) "
+                    f"dist_m={dist_m:.3f}"
+                )
             elif tcp_px is not None:
                 line4 = f"TCP↔OBJ(px): obj n/a src=({tcp_px_src},{obj_px_src})"
             elif obj_px is not None:
                 line4 = f"TCP↔OBJ(px): tcp n/a src=({tcp_px_src},{obj_px_src})"
+            if ghost_gap_px is not None:
+                line4 = f"{line4} ghost_gap_px={ghost_gap_px:.1f}"
+
+            aligned_gap_px = 14.0
+            ghost_warn_gap_px = 28.0
+            if ghost_gap_px is not None and ghost_gap_px <= aligned_gap_px:
+                self._emit_log_throttled(
+                    "VISUAL:tcp_overhead_aligned",
+                    "AVISO: TCP OVERHEAD ALINEADO "
+                    f"gap_px={ghost_gap_px:.2f} tcp_src={tcp_px_src} ghost_src={tcp_ghost_src} "
+                    f"tcp_world={_fmt_vec_any(tcp_world)}",
+                    min_interval=2.0,
+                )
+            if ghost_gap_px is not None:
+                self._emit_log_throttled(
+                    "VISUAL:ghost_solo_depuracion",
+                    "AVISO: GHOST SOLO DEPURACION "
+                    f"gap_px={ghost_gap_px:.2f} threshold_px={ghost_warn_gap_px:.1f} "
+                    f"tcp_src={tcp_px_src} ghost_src={tcp_ghost_src} canonical_only=true",
+                    min_interval=4.0,
+                )
+
             self._emit_log_throttled(
-                "VISUAL:coherence",
-                "[PICK][VISUAL][OVERHEAD] "
-                f"tcp_base={_fmt_vec_any(tcp_base)} obj_base={_fmt_vec_any(obj_base)} "
-                f"tcp_px={_fmt_vec_any(tcp_px)} obj_px={_fmt_vec_any(obj_px)} "
+                "VISUAL:tcp_obj_line",
+                "[PICK][VISUAL][TCP_OBJ_LINE] "
+                f"origin=rg2_tcp@base_link obj={obj_name or 'none'} "
+                f"tcp_base={_fmt_vec_any(tcp_base)} tcp_world={_fmt_vec_any(tcp_world)} obj_base={_fmt_vec_any(obj_base)} "
+                f"tcp_px={_fmt_vec_any(tcp_px)} ghost_px={_fmt_vec_any(tcp_ghost_px)} obj_px={_fmt_vec_any(obj_px)} "
+                f"dist_m={dist_m if dist_m is not None else float('nan'):.4f} "
                 f"px_dist={px_dist if px_dist is not None else float('nan'):.2f} "
+                f"ghost_gap_px={ghost_gap_px if ghost_gap_px is not None else float('nan'):.2f} "
+                f"src=({tcp_px_src},{tcp_ghost_src},{obj_px_src}) "
                 f"tcp_source={tcp_source} topic={self.camera_topic or 'none'}",
             )
 
-            painter.setPen(QPen(QColor(226, 232, 240), 1))
-            tx = panel_x + 10.0
-            ty = panel_y + 20.0
-            painter.drawText(QPointF(tx, ty), line1)
-            painter.drawText(QPointF(tx, ty + 18.0), line2)
-            painter.drawText(QPointF(tx, ty + 36.0), line3)
-            painter.drawText(QPointF(tx, ty + 54.0), line4)
+            if TCP_POSE_TEXT_OVERLAY:
+                panel_x = 10.0
+                panel_y = 10.0
+                panel_w = min(float(w - 20), 460.0)
+                panel_h = 86.0
+                bg = QColor(15, 23, 42, 165)
+                border = QColor(148, 163, 184, 210)
+                painter.setPen(QPen(border, 1))
+                painter.setBrush(QBrush(bg))
+                painter.drawRoundedRect(QRectF(panel_x, panel_y, panel_w, panel_h), 8.0, 8.0)
+                painter.setPen(QPen(QColor(226, 232, 240), 1))
+                tx = panel_x + 10.0
+                ty = panel_y + 20.0
+                painter.drawText(QPointF(tx, ty), line1)
+                painter.drawText(QPointF(tx, ty + 18.0), line2)
+                painter.drawText(QPointF(tx, ty + 36.0), line3)
+                painter.drawText(QPointF(tx, ty + 54.0), line4)
         finally:
             painter.end()
         return img_copy
@@ -12871,7 +13059,9 @@ class ControlPanelV2(QMainWindow):
             display = self._draw_grasp_overlay(display, w, h)
         if TEST_CORNER_OVERLAY:
             display = self._draw_test_corner_overlay(display, w, h)
-        display = self._draw_tcp_pose_overlay(display, w, h)
+        # Persistir siempre la linea canonica en snapshots overhead.
+        if overhead_only:
+            display = self._draw_tcp_pose_overlay(display, w, h)
         out = Path(str(out_path)).expanduser()
         ensure_dir(str(out.parent))
         return bool(display.save(str(out)))

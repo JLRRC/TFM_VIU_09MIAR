@@ -1629,7 +1629,7 @@ class UR5MoveItBridge(Node):
         approach_max_total_timeout_sec = float(
             self._env_float(
                 "PANEL_MOVEIT_BRIDGE_APPROACH_MAX_TOTAL_TIMEOUT_SEC",
-                120.0,
+                600.0,  # FIX: aumentado de 120 a 600s para sim con RTF bajo
             )
         )
         effective_goal_time_tol_sec = (
@@ -3395,7 +3395,7 @@ class UR5MoveItBridge(Node):
                 20.0,
                 self._env_float(
                     "PANEL_MOVEIT_BRIDGE_APPROACH_MAX_TOTAL_TIMEOUT_SEC",
-                    120.0,
+                    600.0,  # FIX: aumentado de 120 a 600s para sim con RTF bajo
                 ),
             )
             approach_replan_max_attempts = max(
