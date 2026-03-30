@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CYCLES="${1:-${PICK_VALIDATE_CYCLES:-3}}"
+WAIT_LOOPS="${PICK_VALIDATE_WAIT_LOOPS:-600}"
+WAIT_SLEEP_SEC="${PICK_VALIDATE_WAIT_SLEEP_SEC:-1}"
 SUMMARY_FILE="$ROOT_DIR/auditoria/pick_${CYCLES}_cycles_summary_$(date +%Y%m%d_%H%M%S).log"
 mkdir -p "$ROOT_DIR/auditoria"
 
@@ -47,7 +49,7 @@ run_cycle() {
   ros2 service call /panel/pick_object std_srvs/srv/Trigger "{}" >/dev/null 2>&1
 
   local result="TIMEOUT"
-  for _ in $(seq 1 200); do
+  for _ in $(seq 1 "$WAIT_LOOPS"); do
     if tail -n "+${start_line}" "$log_file" | grep -q 'SECUENCIA COMPLETADA EXITOSAMENTE'; then
       result="PASS"
       break
@@ -56,7 +58,7 @@ run_cycle() {
       result="FAIL"
       break
     fi
-    sleep 1
+    sleep "$WAIT_SLEEP_SEC"
   done
 
   echo "CYCLE_${cycle}=${result}" | tee -a "$SUMMARY_FILE"

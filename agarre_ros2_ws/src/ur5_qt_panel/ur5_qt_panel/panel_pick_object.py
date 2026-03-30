@@ -1337,6 +1337,8 @@ def run_pick_object(panel) -> None:
             cursor_seq = int(getattr(_wait_moveit_result, "_since_seq", -1) or -1)
             lost_pub_since = None
             wait_extended = False
+            last_seen_request_id = -1
+            last_seen_request_uuid = ""
             try:
                 active_request_grace_sec = float(
                     os.environ.get(
@@ -1362,6 +1364,11 @@ def run_pick_object(panel) -> None:
             expected_stamp_ns = int(getattr(_wait_moveit_result, "_expected_stamp_ns", 0) or 0)
             expected_request_uuid = str(getattr(_wait_moveit_result, "_expected_request_uuid", "") or "")
             panel_request_id = int(getattr(_wait_moveit_result, "_panel_request_id", -1) or -1)
+            panel._emit_log(
+                f"[PICK_OBJ][WAIT_RESULT] state=enter label={label} elapsed=0.0s "
+                f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
+                f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
+            )
             while time.time() < deadline:
                 wait_chunk = min(1.0, max(0.2, deadline - time.time()))
                 ok, raw, _wall, _seq = panel.ros_worker.wait_for_moveit_result(
@@ -1379,6 +1386,8 @@ def run_pick_object(panel) -> None:
                     req_id = int(data.get("request_id", -1) or -1)
                     got_stamp_ns = int(data.get("target_stamp_ns", 0) or 0)
                     got_uuid = str(data.get("request_uuid", "") or "")
+                    last_seen_request_id = req_id
+                    last_seen_request_uuid = got_uuid
                     rcv_wall_us = int(time.time() * 1_000_000)
                     pub_wall_us = int(getattr(_wait_moveit_result, "_pub_wall_us", 0) or 0)
                     wall_us_delta = max(0, rcv_wall_us - pub_wall_us)
@@ -1396,6 +1405,16 @@ def run_pick_object(panel) -> None:
                     )
                     if expected_request_id >= 0 and req_id != expected_request_id:
                         panel._emit_log(
+                            f"[PICK_OBJ][RX_RESULT] ts={time.time():.6f} req_id={req_id} "
+                            f"req_uuid={got_uuid or 'n/a'} success={str(bool(data.get('success', False))).lower()} "
+                            "match=false accepted=false reason=request_id_mismatch"
+                        )
+                        panel._emit_log(
+                            f"[PICK_OBJ][WAIT_RESULT] state=mismatch_id label={label} elapsed={time.time() - started:.1f}s "
+                            f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
+                            f"last_seen_id={req_id} last_seen_uuid={got_uuid or 'n/a'}"
+                        )
+                        panel._emit_log(
                             f"[PICK_OBJ][MOVEIT][RESULT] {label} ignore_unmatched request_id={req_id} "
                             f"expected_request_id={expected_request_id} target_stamp_ns={got_stamp_ns}"
                         )
@@ -1404,6 +1423,16 @@ def run_pick_object(panel) -> None:
                         continue
                     if expected_request_uuid and got_uuid != expected_request_uuid:
                         panel._emit_log(
+                            f"[PICK_OBJ][RX_RESULT] ts={time.time():.6f} req_id={req_id} "
+                            f"req_uuid={got_uuid or 'n/a'} success={str(bool(data.get('success', False))).lower()} "
+                            "match=false accepted=false reason=request_uuid_mismatch"
+                        )
+                        panel._emit_log(
+                            f"[PICK_OBJ][WAIT_RESULT] state=mismatch_uuid label={label} elapsed={time.time() - started:.1f}s "
+                            f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
+                            f"last_seen_id={req_id} last_seen_uuid={got_uuid or 'n/a'}"
+                        )
+                        panel._emit_log(
                             f"[PICK_OBJ][RESULT_STALE] {label} ignore_unmatched_uuid got_uuid={got_uuid or 'n/a'} "
                             f"expected_uuid={expected_request_uuid} request_id={req_id}"
                         )
@@ -1411,6 +1440,11 @@ def run_pick_object(panel) -> None:
                         cursor_seq = max(cursor_seq, int(_seq))
                         continue
                     raw = json.dumps(data, ensure_ascii=True)
+                    panel._emit_log(
+                        f"[PICK_OBJ][RX_RESULT] ts={time.time():.6f} req_id={req_id} "
+                        f"req_uuid={got_uuid or 'n/a'} success={str(bool(data.get('success', False))).lower()} "
+                        "match=true accepted=true reason=matched_expected"
+                    )
                     break
                 now = time.time()
                 elapsed = now - started
@@ -1426,6 +1460,11 @@ def run_pick_object(panel) -> None:
                         f"timeout={max(0.0, deadline - started):.1f}s result_pubs={result_pubs} result_subs={result_subs} "
                         f"bridge_alive={str(bridge_alive).lower()} "
                         f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
+                    )
+                    panel._emit_log(
+                        f"[PICK_OBJ][WAIT_RESULT] state=still_waiting label={label} elapsed={elapsed:.1f}s "
+                        f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
+                        f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
                     )
                     last_diag = now
                     if result_pubs <= 0:
@@ -1479,6 +1518,11 @@ def run_pick_object(panel) -> None:
                     else f"{max(0.0, time.time() - float(lost_pub_since)):.1f}s"
                 )
                 if result_pubs > 0 and result_subs > 0 and bridge_alive:
+                    panel._emit_log(
+                        f"[PICK_OBJ][WAIT_RESULT] state=timeout_active_request label={label} elapsed={elapsed:.1f}s "
+                        f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
+                        f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
+                    )
                     raise RuntimeError(
                         f"result_timeout_active_request:{moveit_result_topic}:{label}:"
                         f"elapsed={elapsed:.1f}s pubs={result_pubs} subs={result_subs} "
@@ -1488,6 +1532,11 @@ def run_pick_object(panel) -> None:
                         f"expected_request_id={expected_request_id} expected_stamp_ns={expected_stamp_ns} "
                         f"expected_uuid={expected_request_uuid or 'n/a'}"
                     )
+                panel._emit_log(
+                    f"[PICK_OBJ][WAIT_RESULT] state=timeout_lost_publisher label={label} elapsed={elapsed:.1f}s "
+                    f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
+                    f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
+                )
                 raise RuntimeError(
                     f"lost_result_publisher:{moveit_result_topic}:{label}:"
                     f"elapsed={elapsed:.1f}s pubs={result_pubs} subs={result_subs} "
@@ -1518,6 +1567,11 @@ def run_pick_object(panel) -> None:
                 f"[PICK_OBJ][MOVEIT][RESULT] {label} request_id={req_id} target_stamp_ns={stamp_ns} "
                 f"success={str(success).lower()} plan_ok={str(plan_ok).lower()} "
                 f"exec_ok={str(exec_ok).lower()} msg={message or 'n/a'}"
+            )
+            panel._emit_log(
+                f"[PICK_OBJ][WAIT_RESULT] state=success label={label} elapsed={time.time() - started:.1f}s "
+                f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
+                f"last_seen_id={req_id} last_seen_uuid={got_uuid or 'n/a'}"
             )
             return data
 
@@ -3010,6 +3064,13 @@ def run_pick_object(panel) -> None:
                             f"request_id={panel_request_id} request_uuid={panel_request_uuid} "
                             f"pub_wall_us={pub_wall_us} pub_ok=true"
                         )
+                        if label_up == "APPROACH":
+                            panel._emit_log(
+                                f"[PICK_OBJ][TX][APPROACH] ts_us={pub_wall_us} req_id={panel_request_id} "
+                                f"req_uuid={panel_request_uuid or 'n/a'} topic={moveit_pose_topic} "
+                                f"frame={frame_id} pose=({float(position[0]):.3f},{float(position[1]):.3f},{float(position[2]):.3f}) "
+                                f"label={label}"
+                            )
                         try:
                             result_data = _wait_moveit_result(label, request_wall, timeout_total=timeout_sec)
                         finally:

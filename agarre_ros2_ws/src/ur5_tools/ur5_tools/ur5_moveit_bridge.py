@@ -3155,6 +3155,14 @@ class UR5MoveItBridge(Node):
             if frame_clean in ("base", "/base") and self._base_frame == "base_link":
                 self._command_seq += 1
                 rejected_request_id = int(self._command_seq)
+                rx_ts_us = int(time.time() * 1_000_000)
+                self.get_logger().warning(
+                    "[MOVEIT_BRIDGE][RX] "
+                    f"ts_us={rx_ts_us} req_id={req_from_msg if req_from_msg is not None else rejected_request_id} "
+                    f"req_uuid={req_uuid or 'n/a'} frame={frame_clean or 'n/a'} "
+                    f"pose=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f}) "
+                    "accepted=false reason=invalid_business_frame"
+                )
                 self._publish_result(
                     request_id=rejected_request_id,
                     request_uuid=req_uuid,
@@ -3182,6 +3190,14 @@ class UR5MoveItBridge(Node):
             if self._require_request_id and req_from_msg is None:
                 self._command_seq += 1
                 rejected_request_id = int(self._command_seq)
+                rx_ts_us = int(time.time() * 1_000_000)
+                self.get_logger().warning(
+                    "[MOVEIT_BRIDGE][RX] "
+                    f"ts_us={rx_ts_us} req_id={rejected_request_id} req_uuid={req_uuid or 'n/a'} "
+                    f"frame={frame_clean or 'n/a'} "
+                    f"pose=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f}) "
+                    "accepted=false reason=missing_request_id"
+                )
                 self._publish_result(
                     request_id=rejected_request_id,
                     request_uuid=req_uuid,
@@ -3223,6 +3239,14 @@ class UR5MoveItBridge(Node):
                         f"request_id={request_id} active_request_id={active_request_id} "
                         f"active_request_uuid={active_request_uuid or 'n/a'} active_age={busy_age:.2f}s"
                     )
+                    rx_ts_us = int(time.time() * 1_000_000)
+                    self.get_logger().warning(
+                        "[MOVEIT_BRIDGE][RX] "
+                        f"ts_us={rx_ts_us} req_id={request_id} req_uuid={req_uuid or 'n/a'} "
+                        f"frame={frame_clean or 'n/a'} "
+                        f"pose=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f}) "
+                        "accepted=false reason=bridge_busy"
+                    )
                     self._publish_result(
                         request_id=request_id,
                         request_uuid=req_uuid,
@@ -3253,6 +3277,14 @@ class UR5MoveItBridge(Node):
                         now,
                     )
                 )
+            rx_ts_us = int(time.time() * 1_000_000)
+            self.get_logger().info(
+                "[MOVEIT_BRIDGE][RX] "
+                f"ts_us={rx_ts_us} req_id={request_id} req_uuid={req_uuid or 'n/a'} "
+                f"frame={msg.header.frame_id or 'n/a'} "
+                f"pose=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f}) "
+                "accepted=true"
+            )
             self._plan_event.set()
             pos = msg.pose.position
             if dropped_pending > 0:
@@ -3744,6 +3776,13 @@ class UR5MoveItBridge(Node):
             f"request_uuid={request_uuid or 'n/a'} "
             f"plan_ok={str(bool(plan_ok)).lower()} exec_ok={str(bool(exec_ok)).lower()} "
             f"message={message or 'n/a'} topic={self._result_topic}"
+        )
+        self.get_logger().info(
+            "[MOVEIT_BRIDGE][TX_RESULT] "
+            f"ts_us={int(time.time() * 1_000_000)} req_id={request_id} req_uuid={request_uuid or 'n/a'} "
+            f"success={str(bool(success)).lower()} reason={message or 'n/a'} "
+            f"ee={self._ee_frame or 'n/a'} frame={str(target.header.frame_id or 'n/a')} "
+            f"finalized={str(bool(success) or (not bool(plan_ok) or not bool(exec_ok))).lower()}"
         )
 
     def _plan_with_moveit_py(

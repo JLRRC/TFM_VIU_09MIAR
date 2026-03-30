@@ -773,11 +773,32 @@ class RosWorker(QObject):
             data = getattr(msg, "data", "") or ""
         except Exception:
             data = ""
+        req_id = -1
+        req_uuid = ""
+        success = "n/a"
+        parse_status = "raw"
+        try:
+            payload = json.loads(str(data or ""))
+            req_id = int(payload.get("request_id", -1) or -1)
+            req_uuid = str(payload.get("request_uuid", "") or "")
+            success = str(bool(payload.get("success", False))).lower()
+            parse_status = "json"
+        except Exception:
+            pass
         with self._lock:
             self._moveit_result_last = str(data)
             self._moveit_result_wall = time.time()
             self._moveit_result_seq += 1
             self._moveit_result_event.set()
+            seq = int(self._moveit_result_seq)
+            topic = str(self._moveit_result_topic or "/desired_grasp/result")
+            wall_ts = float(self._moveit_result_wall)
+        self.log.emit(
+            "[PICK_OBJ][RX_RESULT] "
+            f"ts={wall_ts:.6f} req_id={req_id} req_uuid={req_uuid or 'n/a'} "
+            f"success={success} match=unknown accepted=queued reason={parse_status} "
+            f"topic={topic} seq={seq}"
+        )
 
     def _on_moveit_bridge_heartbeat(self, _msg: "Bool") -> None:
         with self._lock:
