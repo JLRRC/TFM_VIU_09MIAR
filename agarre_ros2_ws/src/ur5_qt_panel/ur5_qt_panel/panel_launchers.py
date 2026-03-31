@@ -522,7 +522,7 @@ def start_bridge(panel):
     # Deshabilitar botón mientras arranca para que se vea en gris como Gazebo
     panel._bridge_running = True
     panel._started_bridge = True
-    panel._bridge_start_ts = time.time()
+    panel._bridge_start_ts = time.monotonic()
     panel._refresh_controls()
 
     def worker():

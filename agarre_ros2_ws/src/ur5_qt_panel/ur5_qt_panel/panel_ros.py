@@ -28,6 +28,11 @@ from .panel_config import (
 
 CLOCK_MAX_AGE_SEC = 8.0
 
+
+def _steady_time() -> float:
+    """Return a process-local steady timestamp for watchdogs and freshness checks."""
+    return time.monotonic()
+
 try:
     import rclpy
     from rclpy.callback_groups import ReentrantCallbackGroup
@@ -208,6 +213,10 @@ class RosWorker(QObject):
         self._pick_object_srv = None
         self._select_object_sub = None
         self._select_object_srv = None
+        self._pick_demo_timeout_sec = float(
+            os.environ.get("PANEL_PICK_DEMO_SERVICE_TIMEOUT_SEC", "120.0") or "120.0"
+        )
+        self._pick_demo_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
         self._object_select_timeout_sec = float(
             os.environ.get("PANEL_SELECT_OBJECT_SERVICE_TIMEOUT_SEC", "10.0") or "10.0"
         )
@@ -619,9 +628,9 @@ class RosWorker(QObject):
                     self._moveit_result_seq,
                 )
             self._moveit_result_event.clear()
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            remaining = max(0.01, deadline - time.time())
+        deadline = _steady_time() + timeout
+        while _steady_time() < deadline:
+            remaining = max(0.01, deadline - _steady_time())
             self._moveit_result_event.wait(timeout=remaining)
             with self._lock:
                 if self._moveit_result_seq > since_seq and self._moveit_result_wall >= (since_wall - 1e-3):
@@ -644,10 +653,10 @@ class RosWorker(QObject):
         """Consume stale moveit result updates for a short window."""
         drained = 0
         timeout = max(0.0, float(duration_sec))
-        deadline = time.time() + timeout
+        deadline = _steady_time() + timeout
         _raw, cursor_wall, cursor_seq = self.moveit_result_snapshot()
-        while time.time() < deadline:
-            wait_chunk = min(0.05, max(0.01, deadline - time.time()))
+        while _steady_time() < deadline:
+            wait_chunk = min(0.05, max(0.01, deadline - _steady_time()))
             ok, _raw, wall, seq = self.wait_for_moveit_result(
                 since_wall=cursor_wall,
                 since_seq=cursor_seq,
@@ -762,7 +771,7 @@ class RosWorker(QObject):
             last = float(self._moveit_bridge_hb_wall)
         if last <= 0.0:
             return float("inf")
-        return max(0.0, time.time() - last)
+        return max(0.0, _steady_time() - last)
 
     def has_recent_moveit_bridge_heartbeat(self, max_age_sec: float = 1.0) -> bool:
         age = self.moveit_bridge_heartbeat_age()
@@ -787,7 +796,7 @@ class RosWorker(QObject):
             pass
         with self._lock:
             self._moveit_result_last = str(data)
-            self._moveit_result_wall = time.time()
+            self._moveit_result_wall = _steady_time()
             self._moveit_result_seq += 1
             self._moveit_result_event.set()
             seq = int(self._moveit_result_seq)
@@ -802,7 +811,7 @@ class RosWorker(QObject):
 
     def _on_moveit_bridge_heartbeat(self, _msg: "Bool") -> None:
         with self._lock:
-            self._moveit_bridge_hb_wall = time.time()
+            self._moveit_bridge_hb_wall = _steady_time()
             self._moveit_bridge_hb_event.set()
 
     def _resolve_ros_message_class(self, type_name: str):
@@ -877,7 +886,7 @@ class RosWorker(QObject):
         payload = self._extract_grasp_rect(msg)
         if not payload:
             return
-        now = time.time()
+        now = _steady_time()
         payload["ts_wall"] = now
         with self._lock:
             payload["topic"] = self._grasp_rect_topic
@@ -1068,10 +1077,33 @@ class RosWorker(QObject):
         return response
 
     def _on_pick_demo_service(self, _request: object, response: object) -> object:
-        self._emit_pick_demo_request(f"service:{self._pick_demo_service}")
+        request_id = f"pickdemo-{time.monotonic_ns()}"
+        done = threading.Event()
+        result: Dict[str, object] = {
+            "success": False,
+            "message": "timeout esperando confirmación del panel",
+        }
+        with self._lock:
+            self._pick_demo_pending[request_id] = (done, result)
+        self._safe_log(
+            f"[ROS][PICK_DEMO][SERVICE] request_id={request_id} waiting_ack=true"
+        )
+        self._emit_pick_demo_request(f"service:{self._pick_demo_service}#{request_id}")
+        ack_ok = done.wait(timeout=max(0.1, self._pick_demo_timeout_sec))
+        with self._lock:
+            _pending = self._pick_demo_pending.pop(request_id, None)
+        if _pending is not None:
+            _done, payload = _pending
+            result = payload
+        self._safe_log(
+            "[ROS][PICK_DEMO][SERVICE] "
+            f"request_id={request_id} ack={str(bool(ack_ok)).lower()} "
+            f"success={str(bool(result.get('success', False))).lower()} "
+            f"message={str(result.get('message', '') or 'n/a')}"
+        )
         try:
-            response.success = True
-            response.message = "pick_demo_triggered"
+            response.success = bool(result.get("success", False))
+            response.message = str(result.get("message", "") or "")
         except Exception:
             pass
         return response
@@ -1123,6 +1155,25 @@ class RosWorker(QObject):
         except Exception:
             pass
         return response
+
+    def complete_pick_demo_request(self, request_id: str, success: bool, message: str) -> None:
+        req_id = str(request_id or "").strip()
+        if not req_id:
+            return
+        with self._lock:
+            pending = self._pick_demo_pending.get(req_id)
+        if pending is None:
+            self._safe_log(
+                f"[ROS][PICK_DEMO][ACK] request_id={req_id} pending=false success={str(bool(success)).lower()} message={message or 'n/a'}"
+            )
+            return
+        done, payload = pending
+        payload["success"] = bool(success)
+        payload["message"] = str(message or "")
+        self._safe_log(
+            f"[ROS][PICK_DEMO][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
+        )
+        done.set()
 
     def complete_object_select_request(self, request_id: str, success: bool, message: str) -> None:
         req_id = str(request_id or "").strip()
@@ -1224,7 +1275,7 @@ class RosWorker(QObject):
                         f"[PHYSICS][POSE_INFO][DIAG] TFMessage sin nombres: frame_id={frame_id or 'n/a'} child_frame_id={child_id or 'n/a'}"
                     )
                     self._pose_info_empty_logged = True
-            self._pose_last_wall = time.time()
+            self._pose_last_wall = _steady_time()
             self._pose_msg_count += 1
         self._pose_event.set()
 
@@ -1237,7 +1288,7 @@ class RosWorker(QObject):
         with self._lock:
             last = float(self._pose_last_wall)
             count = int(self._pose_msg_count)
-        age = time.time() - last if last else float("inf")
+        age = _steady_time() - last if last else float("inf")
         return count, age
 
     def pose_info_details(self) -> Tuple[int, float, int, str]:
@@ -1247,7 +1298,7 @@ class RosWorker(QObject):
             count = int(self._pose_msg_count)
             entities = int(self._pose_last_entities)
             topic = str(self._pose_topic)
-        age = time.time() - last if last else float("inf")
+        age = _steady_time() - last if last else float("inf")
         return count, age, entities, topic
 
     def wait_for_pose_info(self, timeout_sec: float) -> bool:
@@ -1302,7 +1353,7 @@ class RosWorker(QObject):
             return False, f"position_mismatch:names={len(joint_names)},pos={len(positions)}"
 
         # Validar que el mensaje no sea muy antiguo
-        age = time.time() - wall
+        age = _steady_time() - wall
         if age > timeout_sec:
             return False, f"stale_joint_state:age={age:.2f}s"
 
@@ -1348,7 +1399,7 @@ class RosWorker(QObject):
                     **kwargs,
                 )
                 self._subs[topic] = sub
-                self._fps[topic] = [0.0, time.time(), 0.0]
+                self._fps[topic] = [0.0, _steady_time(), 0.0]
                 self._image_msg_count[topic] = 0
                 self._image_decode_error_logged[topic] = False
                 qos_summary = self._format_qos(getattr(sub, "qos_profile", None))
@@ -1481,7 +1532,28 @@ class RosWorker(QObject):
             node_kwargs = {}
             if overrides:
                 node_kwargs["parameter_overrides"] = overrides
-            self._node = rclpy.create_node("panel_superpro", **node_kwargs)
+                node_kwargs["automatically_declare_parameters_from_overrides"] = True
+            try:
+                self._node = rclpy.create_node("panel_superpro", **node_kwargs)
+            except TypeError:
+                node_kwargs.pop("automatically_declare_parameters_from_overrides", None)
+                self._node = rclpy.create_node("panel_superpro", **node_kwargs)
+            try:
+                effective_sim_time = bool(use_sim_time)
+                if not self._node.has_parameter("use_sim_time"):
+                    self._node.declare_parameter("use_sim_time", effective_sim_time)
+                current_sim_time = bool(self._node.get_parameter("use_sim_time").value)
+                if current_sim_time != effective_sim_time and Parameter is not None:
+                    self._node.set_parameters([Parameter("use_sim_time", value=effective_sim_time)])
+                    current_sim_time = bool(self._node.get_parameter("use_sim_time").value)
+                self.log.emit(
+                    "[ROS][SIM_TIME] "
+                    f"requested={str(bool(use_sim_time)).lower()} "
+                    f"effective={str(bool(current_sim_time)).lower()} "
+                    f"force_realtime={str(bool(self._force_realtime)).lower()}"
+                )
+            except Exception as exc:
+                self.log.emit(f"[ROS][SIM_TIME] WARN no se pudo confirmar use_sim_time: {exc}")
             self._bridge = CvBridge()
             if ReentrantCallbackGroup is not None:
                 self._service_callback_group = ReentrantCallbackGroup()
@@ -1873,9 +1945,11 @@ class RosWorker(QObject):
                     self._log_exception("destroy select_object service", exc)
                 self._select_object_srv = None
             with self._lock:
-                pending = list(self._object_select_pending.values())
+                pending = list(self._pick_demo_pending.values())
+                pending.extend(self._object_select_pending.values())
                 pending.extend(self._tfm_infer_pending.values())
                 pending.extend(self._tfm_execute_pending.values())
+                self._pick_demo_pending.clear()
                 self._object_select_pending.clear()
                 self._tfm_infer_pending.clear()
                 self._tfm_execute_pending.clear()
@@ -1907,7 +1981,7 @@ class RosWorker(QObject):
         self._bridge = None
 
     def _update_clock(self, msg: "Clock") -> None:
-        now = time.time()
+        now = _steady_time()
         try:
             stamp_ns = int(msg.clock.sec) * 1_000_000_000 + int(msg.clock.nanosec)
         except Exception:
@@ -1928,10 +2002,10 @@ class RosWorker(QObject):
         with self._lock:
             if self._last_clock_wall <= 0.0:
                 return False, float("inf")
-            age = time.time() - self._last_clock_wall
+            age = _steady_time() - self._last_clock_wall
             if self._last_clock_advance_wall <= 0.0:
                 return False, float("inf")
-            advance_age = time.time() - self._last_clock_advance_wall
+            advance_age = _steady_time() - self._last_clock_advance_wall
             ok = age < CLOCK_MAX_AGE_SEC and advance_age < CLOCK_MAX_AGE_SEC
             return ok, max(age, advance_age)
 
@@ -1951,7 +2025,7 @@ class RosWorker(QObject):
         if not ROS_AVAILABLE:
             return
 
-        now = time.time()
+        now = _steady_time()
 
         # construir payload
         stamp = None
@@ -2059,7 +2133,7 @@ class RosWorker(QObject):
     def _on_image(self, msg: "Image", topic: str):
         if not ROS_AVAILABLE or not self._bridge:
             return
-        now = time.time()
+        now = _steady_time()
         last = self._last_emit.get(topic, 0.0)
         if (now - last) < self._min_emit_interval:
             return
@@ -2114,7 +2188,7 @@ class RosWorker(QObject):
                 self.log.emit(f"[ROS] ERROR frame {topic}: {exc}")
 
     def _emit_frame(self, topic: str, bgr):
-        now = time.time()
+        now = _steady_time()
         last = self._last_emit.get(topic, 0.0)
         if (now - last) < self._min_emit_interval:
             return
@@ -2132,13 +2206,13 @@ class RosWorker(QObject):
                 new_h = max(1, int(h * scale))
                 bgr = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
                 h, w = bgr.shape[:2]
-            rec = self._fps.get(topic, [0.0, time.time(), 0.0])
+            rec = self._fps.get(topic, [0.0, _steady_time(), 0.0])
             rec[0] += 1.0
-            dt = max(1e-6, time.time() - rec[1])
+            dt = max(1e-6, _steady_time() - rec[1])
             if dt >= 1.0:
                 rec[2] = rec[0] / dt
                 rec[0] = 0.0
-                rec[1] = time.time()
+                rec[1] = _steady_time()
                 if DEBUG_FRAME_LOG:
                     frames_total = self._frame_count.get(topic, 0)
                     self.log.emit(f"[CAMERA] {topic} frames={frames_total} fps={rec[2]:.1f}")
@@ -2177,7 +2251,7 @@ class RosWorker(QObject):
     def _on_compressed_image(self, msg: "CompressedImage", topic: str):
         if not ROS_AVAILABLE:
             return
-        now = time.time()
+        now = _steady_time()
         last = self._last_emit.get(topic, 0.0)
         if (now - last) < self._min_emit_interval:
             return

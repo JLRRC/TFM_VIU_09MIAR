@@ -174,8 +174,16 @@ class GripperAttachBackend(Node):
         self.declare_parameter("startup_detach_max_attempts", 12)
         self.declare_parameter("startup_detach_period_sec", 0.5)
         self.declare_parameter("detachable_shadow_follow", True)
-        self.declare_parameter("prefer_tool_anchor_objects", ["pick_demo"])
-        self.declare_parameter("demo_transport_objects", ["pick_demo"])
+        # FIX-ATTACH-ROUTES: pick_demo removed from both soft-attach lists.
+        # prefer_tool_anchor bypasses ALL distance checks (_relay_tool_anchor_attach
+        # publishes state=True with zero geometry verification).
+        # demo_transport uses kinematic respawn+teleport (virtual grasp, not physics-based).
+        # Both lists default to empty so pick_demo falls through to _activate_follow_attachment
+        # which enforces attach_max_dist_m (set to 0.05 m via launch).
+        # To re-enable either mechanism for a specific object, pass the parameter explicitly:
+        #   ros2 launch ... prefer_tool_anchor_objects:=['box_blue']
+        self.declare_parameter("prefer_tool_anchor_objects", [])
+        self.declare_parameter("demo_transport_objects", [])
         self.declare_parameter("demo_transport_rate_hz", 25.0)
         self.declare_parameter("demo_transport_min_step_m", 0.001)
         self.declare_parameter("demo_transport_respawn_sleep_sec", 0.08)
@@ -1579,6 +1587,43 @@ class GripperAttachBackend(Node):
         self.get_logger().info(
             f"[ATTACH_BACKEND] attach_request_received object={name} src={src_topic} mode={self._attach_mode}"
         )
+        # TRACE-ATTACH-ROUTE: log TCP↔object distance and selected route before branching.
+        # This makes every attach decision auditable without additional tooling.
+        _ta_obj = self._lookup_pose(name)
+        _ta_tcp = self._lookup_tcp_pose()
+        if _ta_obj is not None and _ta_tcp is not None:
+            _ta_dist = math.sqrt(
+                (_ta_obj.x - _ta_tcp.x) ** 2
+                + (_ta_obj.y - _ta_tcp.y) ** 2
+                + (_ta_obj.z - _ta_tcp.z) ** 2
+            )
+            _ta_route = (
+                "demo_transport" if name in self._demo_transport_objects
+                else "tool_anchor" if name in self._prefer_tool_anchor_objects
+                else "follow_tcp"
+            )
+            _ta_will_pass = _ta_dist <= self._attach_max_dist_m
+            self.get_logger().info(
+                f"[ATTACH_BACKEND] attach_route_decision object={name} "
+                f"route={_ta_route} "
+                f"dist={_ta_dist:.4f}m max={self._attach_max_dist_m:.4f}m "
+                f"geometry_ok={str(_ta_will_pass).lower()} "
+                f"tcp=({_ta_tcp.x:.3f},{_ta_tcp.y:.3f},{_ta_tcp.z:.3f}) "
+                f"obj=({_ta_obj.x:.3f},{_ta_obj.y:.3f},{_ta_obj.z:.3f})"
+            )
+            if not _ta_will_pass:
+                self.get_logger().warning(
+                    f"[ATTACH_BACKEND] attach_blocked object={name} "
+                    f"route={_ta_route} "
+                    f"detail=distance_too_large dist={_ta_dist:.4f}m max={self._attach_max_dist_m:.4f}m"
+                )
+        else:
+            self.get_logger().warning(
+                f"[ATTACH_BACKEND] attach_route_decision object={name} "
+                f"detail=pose_unavailable "
+                f"obj_available={str(_ta_obj is not None).lower()} "
+                f"tcp_available={str(_ta_tcp is not None).lower()}"
+            )
         if name in self._demo_transport_objects:
             self._force_drop_anchor_detach(name)
             self._relay_tool_anchor_detach(

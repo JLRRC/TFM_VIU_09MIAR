@@ -9,6 +9,7 @@ Ejecutar con: python -m ur5_qt_panel.panel_v2
 from __future__ import annotations
 
 import os
+import copy
 import csv
 import re
 import math
@@ -192,6 +193,7 @@ from .panel_config import (
     INFER_CKPT,
     INFER_ROI_SIZE,
     INFER_RETRY_ERR_PX,
+    PICK_DEMO_SPAWN_POSE,
 )
 from .panel_utils import (
     bash_preamble,
@@ -249,6 +251,7 @@ from .panel_utils import (
 )
 from .panel_objects import (
     ObjectLogicalState,
+    ObjectOwner,
     force_release_all_objects,
     get_object_state,
     get_object_states,
@@ -406,6 +409,11 @@ def _log_exception(context: str, exc: Exception) -> None:
     if not _DEBUG_EXCEPTIONS:
         return
     print(timestamped_line(f"[PANEL_V2][WARN] {context}: {exc}"), file=sys.stderr, flush=True)
+
+
+def _runtime_time() -> float:
+    """Return a steady local timestamp for runtime freshness and watchdog logic."""
+    return time.monotonic()
 
 
 def _camera_required_label(value: Optional[bool]) -> str:
@@ -626,7 +634,7 @@ class CameraController:
         if not getattr(p, "_ros_worker_started", False) or not p.ros_worker:
             return False
         if now is None:
-            now = time.time()
+            now = _runtime_time()
         max_age = max(
             2.0,
             float(CAMERA_READY_MAX_AGE_SEC),
@@ -712,7 +720,7 @@ class CameraController:
         p = self._panel
         if not p._camera_required:
             return
-        now = time.time()
+        now = _runtime_time()
         self._sync_from_worker_snapshot(now=now)
         camera_ready, camera_fault, camera_source_down, age, in_grace = p._camera_runtime_flags(now)
         depth_required, depth_topic = p._camera_depth_expectation()
@@ -825,7 +833,7 @@ class CameraController:
         p = self._panel
         if not p._camera_required:
             return
-        now = time.time()
+        now = _runtime_time()
         _camera_ready, _camera_fault, camera_source_down, _age, _in_grace = p._camera_runtime_flags(now)
         if camera_source_down:
             p._camera_stream_ok = False
@@ -842,7 +850,7 @@ class CameraController:
 
         def worker():
             try:
-                now = time.time()
+                now = _runtime_time()
                 _camera_ready, camera_fault, _camera_source_down, _age, in_grace = p._camera_runtime_flags(now)
                 last_age = now - p._last_camera_frame_ts if p._last_camera_frame_ts else float("inf")
                 depth_required, depth_topic = p._camera_depth_expectation()
@@ -949,7 +957,7 @@ class CameraController:
             return True
         if not p._last_camera_frame_ts:
             return True
-        age = time.time() - p._last_camera_frame_ts
+        age = _runtime_time() - p._last_camera_frame_ts
         return age >= max(0.2, float(CAMERA_READY_MAX_AGE_SEC))
 
     def connect(self) -> None:
@@ -996,7 +1004,7 @@ class CameraController:
             p._log(f"[CAMERA] Suscribiendo a {topic} (tipo={msg_type})")
         self.clear_frame(reset_info=False)
         p._camera_initializing = True
-        p._camera_init_start = time.time()
+        p._camera_init_start = _runtime_time()
         p._camera_subscribe_ts = p._camera_init_start
         p._critical_camera_deadline = time.monotonic() + max(0.1, CAMERA_INIT_GRACE_SEC)
         p._camera_frame_count = 0
@@ -1137,7 +1145,7 @@ class CameraController:
 
     def on_image(self, topic: str, qimg, w: int, h: int, fps: float) -> None:
         p = self._panel
-        now = time.time()
+        now = _runtime_time()
         if topic == p._camera_depth_topic and topic != p.camera_topic:
             p._last_camera_depth_frame_ts = now
             p._camera_depth_frame_count += 1
@@ -1218,7 +1226,7 @@ class CameraController:
             if overhead_only:
                 display = p._draw_tcp_pose_overlay(display, w, h)
         p.camera_view.set_frame(display, w, h)
-        now = time.time()
+        now = _runtime_time()
         if (now - p._camera_info_last_ts) >= max(0.05, float(CAMERA_INFO_INTERVAL_SEC)):
             p.camera_info.setText(f"Conectado · {w}x{h} · fps {fps:.1f}")
             # TFM/MoveIt grasp execution uses _motion_in_progress rather than
@@ -1747,6 +1755,7 @@ class ControlPanelV2(QMainWindow):
         self._exp_info: Dict[str, object] = {}
         self._tfm_infer_inflight = False
         self._tfm_execute_inflight = False
+        self._pick_demo_pending_request_id: str = ""
         self._tfm_infer_pending_request_id: str = ""
         self._tfm_execute_pending_request_id: str = ""
         self._tfm_canonical_ctx: Optional[Dict[str, object]] = None
@@ -1783,6 +1792,12 @@ class ControlPanelV2(QMainWindow):
         self.science_group: Optional[QGroupBox] = None
         self._spawn_positions_snapshot = get_object_positions()
         self._drop_spawn_positions = dict(DROP_OBJECTS)
+        self._pick_demo_spawn_pose = tuple(float(v) for v in PICK_DEMO_SPAWN_POSE)
+        self._pick_demo_recover_inflight = False
+        self._pick_demo_recover_last_ts = 0.0
+        self._pick_demo_recover_gz_cli: str = ""
+        self._pick_demo_recover_sdf: str = ""
+        self._pick_demo_recover_world_sdf: str = ""
         self._external_state: Optional[str] = None
         self._external_state_reason: str = ""
         self._external_state_last: float = 0.0
@@ -1833,7 +1848,10 @@ class ControlPanelV2(QMainWindow):
         self._emit_log("[STARTUP] Creando CalibrationService")
         self.calib_service = CalibrationService(log_fn=self._log)
         self._emit_log("[STARTUP] Creando RosWorker")
-        self.ros_worker = RosWorker(force_realtime=True)
+        # FIX-SIM-TIME: force_realtime=False allows use_sim_time to follow USE_SIM_TIME env.
+        # Previously hardcoded True caused panel_superpro to run with use_sim_time=False
+        # even in simulation, breaking watchdogs and clock-sensitive subscribers.
+        self.ros_worker = RosWorker(force_realtime=False)
         self.ros_worker.image.connect(self._camera_ctrl.on_image)
         self.ros_worker.joint_state.connect(self._on_joint_state)
         self.ros_worker.grasp_rect.connect(self._on_grasp_rect)
@@ -3563,6 +3581,9 @@ class ControlPanelV2(QMainWindow):
             b.setMinimumHeight(32)
         # Keep TEST ROBOT for internal state handling, but do not show it in the panel.
         self.btn_test_robot.setVisible(False)
+        # DEBUG MOVIMIENTO is only useful for niche manual pause/resume diagnostics.
+        # Keep the implementation available, but remove the button from the operator UI.
+        self.btn_debug_motion.setVisible(False)
         self.btn_debug_motion.setToolTip(
             "Pausa manual de depuración: cuando haya una pausa activa, pulsa para continuar."
         )
@@ -3635,7 +3656,6 @@ class ControlPanelV2(QMainWindow):
 
         baseline_col = QVBoxLayout()
         baseline_col.setSpacing(6)
-        baseline_col.addWidget(self.btn_debug_motion)
         baseline_col.addWidget(self.btn_auto_tune_touch)
         baseline_col.addWidget(self.btn_home)
         baseline_col.addWidget(self.btn_table)
@@ -4007,7 +4027,7 @@ class ControlPanelV2(QMainWindow):
         return list_controllers_not_ready_reason(kind)
 
     def _camera_not_ready_reason(self) -> str:
-        now = time.time()
+        now = _runtime_time()
         _ready, fault, source_down, age, in_grace = self._camera_runtime_flags(now)
         depth_required, depth_topic = self._camera_depth_expectation()
         depth_age = now - self._last_camera_depth_frame_ts if self._last_camera_depth_frame_ts else float("inf")
@@ -4056,7 +4076,7 @@ class ControlPanelV2(QMainWindow):
         _qimg, w, h, frame_ts = frame_snapshot
         if w <= 0 or h <= 0:
             return False, "frame inválido"
-        now = time.time()
+        now = _runtime_time()
         camera_ready, _fault, _source_down, age, _in_grace = self._camera_runtime_flags(now)
         if not camera_ready:
             return False, self._camera_not_ready_reason()
@@ -4106,7 +4126,7 @@ class ControlPanelV2(QMainWindow):
             float(os.environ.get("PANEL_TFM_GRASP_MAX_AGE_SEC", "60.0") or 60.0),
         )
         if grasp_ts > 0.0:
-            age = max(0.0, time.time() - grasp_ts)
+            age = max(0.0, _runtime_time() - grasp_ts)
             if age > max_age_sec:
                 return False, f"grasp expirado age={age:.1f}s max_age={max_age_sec:.1f}s"
         current_selection = str(getattr(self, "_selected_object", "") or "").strip()
@@ -4129,9 +4149,7 @@ class ControlPanelV2(QMainWindow):
         if not str(getattr(self, "_selection_last_user_name", "") or "").strip():
             self._selection_last_user_name = grasp_selection
         if float(getattr(self, "_selection_last_user_ts", 0.0) or 0.0) <= 0.0:
-            self._selection_last_user_ts = float(
-                getattr(self, "_last_grasp_update_ts", 0.0) or time.time()
-            )
+            self._selection_last_user_ts = float(time.time())
         self._ensure_selected_object_in_store(
             grasp_selection,
             reason="execute_restore_from_grasp",
@@ -4410,6 +4428,30 @@ class ControlPanelV2(QMainWindow):
         reason = self._system_state_reason or self._system_state.value
         return False, reason
 
+    def _pick_demo_remote_ready_status(self) -> Tuple[bool, str, bool]:
+        if getattr(self, "_script_motion_active", False) or getattr(self, "_manual_inflight", False):
+            return False, "ejecución en curso", False
+        ok, reason = pick_ui_status(self)
+        if not ok:
+            return False, str(reason or "pick_ui_no_listo"), True
+        controllers_ok, controllers_reason = self._controllers_ready()
+        if not controllers_ok:
+            return False, str(controllers_reason or "controladores no listos"), True
+        if not bool(self._ee_frame_effective):
+            return False, self._tf_not_ready_reason(), True
+        if not bool(getattr(self, "_objects_settled", False)):
+            return False, "objetos no estabilizados", True
+        selected_name = str(getattr(self, "_selected_object", "") or "").strip()
+        user_selected = str(getattr(self, "_selection_last_user_name", "") or "").strip()
+        if selected_name != PICK_DEMO_OBJECT_NAME or user_selected != PICK_DEMO_OBJECT_NAME:
+            reason = (
+                "selección inválida "
+                f"(selected={selected_name or 'none'} user_selected={user_selected or 'none'} "
+                f"required={PICK_DEMO_OBJECT_NAME})"
+            )
+            return False, reason, False
+        return True, "", False
+
     def _require_ready_vision(self, action: str) -> bool:
         return self._safety.require_ready_vision(action)
 
@@ -4485,6 +4527,9 @@ class ControlPanelV2(QMainWindow):
             self._emit_log("[DEBUG][MOTION] continue_button=pressed waiting=false")
 
     def _debug_motion_wait_for_continue(self, *, reason: str, timeout_sec: Optional[float] = None) -> bool:
+        btn = getattr(self, "btn_debug_motion", None)
+        if btn is None or not btn.isVisible():
+            return True
         if not bool(getattr(self, "_debug_motion_pause_alcance_enabled", False)):
             return True
         wait_timeout = (
@@ -4579,7 +4624,7 @@ class ControlPanelV2(QMainWindow):
         bridge_ok = self._bridge_running
         last_age = "n/a"
         if self._last_camera_frame_ts:
-            last_age = f"{time.time() - self._last_camera_frame_ts:.1f}s"
+            last_age = f"{_runtime_time() - self._last_camera_frame_ts:.1f}s"
         topics = []
         if node_ready:
             try:
@@ -4659,7 +4704,7 @@ class ControlPanelV2(QMainWindow):
                 return False, f"{topic}:joint_identity_mismatch missing={','.join(missing)} sample={sample}"
         age = float("inf")
         if ts:
-            age = max(0.0, time.time() - ts)
+            age = max(0.0, _runtime_time() - ts)
         if age > 2.0:
             return False, f"{topic}:stale age={age:.2f}s"
         return True, f"topic={topic} age={age:.2f}s names={len(names)}"
@@ -4735,7 +4780,7 @@ class ControlPanelV2(QMainWindow):
     def _camera_runtime_flags(self, now: Optional[float] = None) -> Tuple[bool, bool, bool, float, bool]:
         """Return camera_ready, camera_fault, camera_source_down, frame_age, warmup_grace."""
         if now is None:
-            now = time.time()
+            now = _runtime_time()
         age = now - self._last_camera_frame_ts if self._last_camera_frame_ts else float("inf")
         gz_state = self._gazebo_state()
         gazebo_ready = gz_state == "GAZEBO_READY"
@@ -4855,7 +4900,7 @@ class ControlPanelV2(QMainWindow):
         if not poses:
             return False
         if ts:
-            age = time.time() - ts
+            age = _runtime_time() - ts
             if age > POSE_INFO_MAX_AGE_SEC:
                 return False
         return True
@@ -5683,31 +5728,14 @@ class ControlPanelV2(QMainWindow):
         }
         self._last_grasp_source = f"topic:{payload.get('topic') or self._grasp_rect_topic}"
         self._last_grasp_frame = self.camera_topic or "image"
-        self._last_grasp_update_ts = time.time()
+        self._last_grasp_update_ts = _runtime_time()
         self._last_grasp_selection_name = str(getattr(self, "_selected_object", "") or "").strip()
         frame_w = frame_h = 0
         if self._last_camera_frame:
             _qimg, frame_w, frame_h, _ts = self._last_camera_frame
         if frame_w > 0 and frame_h > 0:
             self._last_grasp_world = self._compute_world_grasp(frame_w, frame_h)
-            self._last_grasp_base = None
-            if self._last_grasp_world:
-                base_coords = self._ensure_base_coords(
-                    (
-                        float(self._last_grasp_world.get("x", 0.0)),
-                        float(self._last_grasp_world.get("y", 0.0)),
-                        float(self._last_grasp_world.get("z", 0.0)),
-                ),
-                    self._world_frame_config_first(),
-                    timeout_sec=0.35,
-                )
-                if base_coords is not None:
-                    self._last_grasp_base = {
-                        "x": float(base_coords[0]),
-                        "y": float(base_coords[1]),
-                        "z": float(base_coords[2]),
-                        "yaw_deg": float(self._last_grasp_world.get("yaw_deg", 0.0) or 0.0),
-                    }
+            self._last_grasp_base = self._world_grasp_to_base(self._last_grasp_world)
             ref = self._build_reference_grasp(frame_w, frame_h)
             if ref and self._last_grasp_px:
                 self._update_cornell_metrics(self._last_grasp_px, ref)
@@ -6103,7 +6131,7 @@ class ControlPanelV2(QMainWindow):
         self._run_async(sequence.run, name="start_all")
 
     def _log_moveit_autostart_blocked(self, reason: str) -> None:
-        now = time.time()
+        now = _runtime_time()
         camera_ready, camera_fault, camera_source_down, age, in_grace = self._camera_runtime_flags(now)
         self._emit_log(
             "[AUTO] MoveIt no autoiniciado: "
@@ -6591,6 +6619,194 @@ class ControlPanelV2(QMainWindow):
                 return name
         return None
 
+    def _resolve_gz_cli(self) -> Optional[str]:
+        cached = str(getattr(self, "_pick_demo_recover_gz_cli", "") or "").strip()
+        if cached and os.path.isfile(cached):
+            return cached
+        candidates = [
+            shutil.which("gz"),
+            "/opt/ros/jazzy/opt/gz_tools_vendor/bin/gz",
+            "/opt/ros/humble/opt/gz_tools_vendor/bin/gz",
+        ]
+        for candidate in candidates:
+            if candidate and os.path.isfile(candidate):
+                self._pick_demo_recover_gz_cli = candidate
+                return candidate
+        return None
+
+    def _resolve_world_sdf_path(self) -> str:
+        world_path = self.world_combo.currentText().strip()
+        if world_path and os.path.isfile(world_path):
+            return world_path
+        if world_path:
+            cand = os.path.join(WORLDS_DIR, world_path)
+            if os.path.isfile(cand):
+                return cand
+            if not cand.endswith(".sdf") and os.path.isfile(cand + ".sdf"):
+                return cand + ".sdf"
+        for cand in DEFAULT_WORLD_CANDIDATES:
+            if os.path.isfile(cand):
+                return cand
+        return ""
+
+    def _load_pick_demo_recover_sdf(self) -> Optional[str]:
+        world_sdf = self._resolve_world_sdf_path()
+        cached_world = str(getattr(self, "_pick_demo_recover_world_sdf", "") or "").strip()
+        cached_sdf = str(getattr(self, "_pick_demo_recover_sdf", "") or "")
+        if world_sdf and cached_sdf and world_sdf == cached_world:
+            return cached_sdf
+        if not world_sdf or not os.path.exists(world_sdf):
+            self._emit_log("[PICK_DEMO][RECOVER] world_sdf_missing")
+            return None
+        try:
+            tree = ET.parse(world_sdf)
+            root = tree.getroot()
+            world_elem = root.find("world")
+            if world_elem is None:
+                self._emit_log("[PICK_DEMO][RECOVER] world_tag_missing")
+                return None
+            model_elem = None
+            for model in world_elem.findall("model"):
+                if (model.get("name") or "").strip() == PICK_DEMO_OBJECT_NAME:
+                    model_elem = model
+                    break
+            if model_elem is None:
+                self._emit_log("[PICK_DEMO][RECOVER] model_pick_demo_missing_in_world")
+                return None
+            model_copy = copy.deepcopy(model_elem)
+            pose_elem = model_copy.find("pose")
+            if pose_elem is not None:
+                model_copy.remove(pose_elem)
+            static_elem = model_copy.find("static")
+            if static_elem is None:
+                static_elem = ET.SubElement(model_copy, "static")
+            static_elem.text = "false"
+            for link in model_copy.findall("link"):
+                gravity = link.find("gravity")
+                if gravity is None:
+                    gravity = ET.SubElement(link, "gravity")
+                gravity.text = "true"
+                kinematic = link.find("kinematic")
+                if kinematic is None:
+                    kinematic = ET.SubElement(link, "kinematic")
+                kinematic.text = "false"
+            sdf_root = ET.Element("sdf", {"version": root.get("version") or "1.10"})
+            sdf_root.append(model_copy)
+            sdf_text = ET.tostring(sdf_root, encoding="unicode")
+        except Exception as exc:
+            self._emit_log(f"[PICK_DEMO][RECOVER] world_parse_error={exc}")
+            return None
+        self._pick_demo_recover_world_sdf = world_sdf
+        self._pick_demo_recover_sdf = sdf_text
+        return sdf_text
+
+    def _run_gz_service_cli(
+        self,
+        service_name: str,
+        req_type: str,
+        rep_type: str,
+        req_text: str,
+        *,
+        timeout_ms: int,
+        cmd_timeout_sec: float,
+    ) -> Tuple[bool, str]:
+        gz_cli = self._resolve_gz_cli()
+        if not gz_cli:
+            return False, "gz_cli_missing"
+        env_prefix = build_gz_env(resolve_gz_partition(self.gz_partition))
+        cmd = (
+            f"{env_prefix}{shlex.quote(gz_cli)} service -s {service_name} "
+            f"--reqtype {req_type} --reptype {rep_type} "
+            f"--timeout {int(timeout_ms)} --req '{req_text}'"
+        )
+        try:
+            result = subprocess.run(
+                ["bash", "-lc", cmd],
+                text=True,
+                capture_output=True,
+                timeout=max(0.8, float(cmd_timeout_sec)),
+            )
+        except Exception as exc:
+            return False, f"service_exception:{exc}"
+        stdout = str(result.stdout or "").strip()
+        stderr = str(result.stderr or "").strip()
+        detail = stderr or stdout or f"rc={result.returncode}"
+        if result.returncode != 0:
+            return False, detail
+        return ("data: true" in stdout), detail
+
+    def _recover_pick_demo_to_table_gz(self, reason: str, world_name: str) -> bool:
+        sdf_text = self._load_pick_demo_recover_sdf()
+        if not sdf_text:
+            self._emit_log("[PICK_DEMO][RECOVER] gz_respawn_missing_sdf")
+            return False
+        delete_services = [
+            f"/world/{world_name}/remove/blocking",
+            f"/world/{world_name}/remove",
+            f"/world/{world_name}/remove_entity/blocking",
+            f"/world/{world_name}/remove_entity",
+            f"/world/{world_name}/delete",
+        ]
+        spawn_services = [
+            f"/world/{world_name}/create/blocking",
+            f"/world/{world_name}/create",
+            f"/world/{world_name}/spawn/blocking",
+            f"/world/{world_name}/spawn",
+        ]
+        delete_req = f'name: "{PICK_DEMO_OBJECT_NAME}" type: MODEL'
+        tx, ty, tz = self._pick_demo_spawn_pose
+        sdf_escaped = sdf_text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "")
+        spawn_req = (
+            f'name: "{PICK_DEMO_OBJECT_NAME}" '
+            "allow_renaming: false "
+            f'sdf: "{sdf_escaped}" '
+            "pose {"
+            f"position {{x: {float(tx)} y: {float(ty)} z: {float(tz)}}} "
+            "orientation {w: 1}"
+            "}"
+        )
+        delete_detail = "delete_not_attempted"
+        for service_name in delete_services:
+            ok, detail = self._run_gz_service_cli(
+                service_name,
+                "gz.msgs.Entity",
+                "gz.msgs.Boolean",
+                delete_req,
+                timeout_ms=700,
+                cmd_timeout_sec=1.6,
+            )
+            delete_detail = f"{service_name}:{detail}"
+            if ok or "false" in str(detail).lower() or "not found" in str(detail).lower():
+                break
+        time.sleep(0.08)
+        spawn_detail = "spawn_not_attempted"
+        spawn_ok = False
+        for service_name in spawn_services:
+            ok, detail = self._run_gz_service_cli(
+                service_name,
+                "gz.msgs.EntityFactory",
+                "gz.msgs.Boolean",
+                spawn_req,
+                timeout_ms=1200,
+                cmd_timeout_sec=2.8,
+            )
+            spawn_detail = f"{service_name}:{detail}"
+            if ok:
+                spawn_ok = True
+                break
+        if not spawn_ok:
+            self._emit_log(
+                "[PICK_DEMO][RECOVER] "
+                f"gz_respawn_failed reason={reason} delete={delete_detail} spawn={spawn_detail}"
+            )
+            return False
+        time.sleep(0.2)
+        self._emit_log(
+            "[PICK_DEMO][RECOVER] "
+            f"gz_respawn_ok reason={reason} delete={delete_detail} spawn={spawn_detail}"
+        )
+        return True
+
     def _maybe_hold_drop_objects(self, reason: str) -> None:
         if not self._drop_hold_enabled:
             return
@@ -6613,6 +6829,81 @@ class ControlPanelV2(QMainWindow):
                 self._drop_hold_inflight = False
 
         self._run_async(worker)
+
+    def _maybe_recover_pick_demo(self, reason: str) -> None:
+        if self._pick_demo_executed:
+            return
+        if self._pick_demo_recover_inflight:
+            return
+        if getattr(self, "_pick_target_lock_active", False) or getattr(self, "_script_motion_active", False):
+            return
+        pos = get_object_position(PICK_DEMO_OBJECT_NAME)
+        if pos is None or is_on_table(pos):
+            return
+        state = get_object_state(PICK_DEMO_OBJECT_NAME)
+        if state is not None:
+            if state.owner != ObjectOwner.NONE or state.attached:
+                return
+            if state.logical_state in (
+                ObjectLogicalState.GRASPED,
+                ObjectLogicalState.CARRIED,
+                ObjectLogicalState.RELEASED,
+            ):
+                return
+        now = time.monotonic()
+        if (now - self._pick_demo_recover_last_ts) < 1.5:
+            return
+        self._pick_demo_recover_last_ts = now
+        self._pick_demo_recover_inflight = True
+
+        def worker() -> None:
+            try:
+                self._recover_pick_demo_to_table(reason)
+            finally:
+                self._pick_demo_recover_inflight = False
+
+        self._run_async(worker, name="pick_demo_recover")
+
+    def _recover_pick_demo_to_table(self, reason: str) -> None:
+        world_name = self._gz_world_name or read_world_name(self.world_combo.currentText().strip()) or GZ_WORLD
+        tx, ty, tz = self._pick_demo_spawn_pose
+        pose_reset_ok = False
+        if ROS_AVAILABLE and SetEntityPose is not None:
+            self._ensure_moveit_node()
+            if self._moveit_node is not None:
+                service_name = self._set_pose_service_name or self._resolve_set_pose_service(world_name)
+                if service_name:
+                    self._set_pose_service_name = service_name
+                    client = self._moveit_node.create_client(SetEntityPose, service_name)
+                    if client.wait_for_service(timeout_sec=0.4):
+                        req = SetEntityPose.Request()
+                        req.entity.name = PICK_DEMO_OBJECT_NAME
+                        req.entity.type = GzEntity.MODEL if GzEntity else 2
+                        req.pose.position.x = float(tx)
+                        req.pose.position.y = float(ty)
+                        req.pose.position.z = float(tz)
+                        req.pose.orientation.w = 1.0
+                        future = client.call_async(req)
+                        rclpy.spin_until_future_complete(self._moveit_node, future, timeout_sec=0.8)
+                        result = future.result() if future.done() else None
+                        pose_reset_ok = bool(result and bool(getattr(result, "success", False)))
+        if not pose_reset_ok:
+            pose_reset_ok = self._recover_pick_demo_to_table_gz(reason, world_name)
+        if not pose_reset_ok:
+            self._emit_log("[PICK_DEMO][RECOVER] pose_reset_failed")
+            return
+        bulk_update_object_positions(
+            {PICK_DEMO_OBJECT_NAME: (float(tx), float(ty), float(tz))},
+            source=f"pick_demo_recover:{reason}",
+            objects_stable=True,
+        )
+        recalc_object_states("pick_demo_recover")
+        self._emit_log(
+            "[PICK_DEMO][RECOVER] "
+            f"pose_reset_ok reason={reason} target=({float(tx):.3f},{float(ty):.3f},{float(tz):.3f})"
+        )
+        self.signal_update_objects.emit()
+        self.signal_refresh_controls.emit()
 
     def _hold_drop_objects(self, reason: str) -> None:
         if not ROS_AVAILABLE or SetEntityPose is None:
@@ -7831,6 +8122,17 @@ class ControlPanelV2(QMainWindow):
             except Exception:
                 pass
 
+    def _complete_pending_pick_demo_request(self, success: bool, message: str) -> None:
+        request_id = str(getattr(self, "_pick_demo_pending_request_id", "") or "").strip()
+        if not request_id:
+            return
+        self._pick_demo_pending_request_id = ""
+        if getattr(self, "_ros_worker_started", False) and getattr(self, "ros_worker", None) is not None:
+            try:
+                self.ros_worker.complete_pick_demo_request(request_id, success, message)
+            except Exception:
+                pass
+
     def _build_tfm_pick_object_override(
         self,
         *,
@@ -8060,7 +8362,7 @@ class ControlPanelV2(QMainWindow):
         }
         self._last_grasp_source = "infer_model"
         self._last_grasp_frame = self.camera_topic or "image"
-        self._last_grasp_update_ts = time.time()
+        self._last_grasp_update_ts = _runtime_time()
         selection_snapshot = result.get("selection_snapshot")
         self._last_infer_selection_snapshot = dict(selection_snapshot) if isinstance(selection_snapshot, dict) else {}
         self._restore_infer_selection_snapshot(selection_snapshot)
@@ -8083,24 +8385,7 @@ class ControlPanelV2(QMainWindow):
         frame_w = int(result.get("frame_w", 0))
         frame_h = int(result.get("frame_h", 0))
         self._last_grasp_world = self._compute_world_grasp(frame_w, frame_h)
-        self._last_grasp_base = None
-        if self._last_grasp_world:
-            base_coords = self._ensure_base_coords(
-                (
-                    float(self._last_grasp_world.get("x", 0.0)),
-                    float(self._last_grasp_world.get("y", 0.0)),
-                    float(self._last_grasp_world.get("z", 0.0)),
-                ),
-                self._world_frame_config_first(),
-                timeout_sec=0.35,
-            )
-            if base_coords is not None:
-                self._last_grasp_base = {
-                    "x": float(base_coords[0]),
-                    "y": float(base_coords[1]),
-                    "z": float(base_coords[2]),
-                    "yaw_deg": float(self._last_grasp_world.get("yaw_deg", 0.0) or 0.0),
-                }
+        self._last_grasp_base = self._world_grasp_to_base(self._last_grasp_world)
         self._refresh_cornell_metrics(frame_w, frame_h)
         self._sync_tfm_module_grasp_state()
         grasp_rect_publish_ok = self._publish_current_grasp_rect()
@@ -8362,22 +8647,7 @@ class ControlPanelV2(QMainWindow):
             if frame_w > 0 and frame_h > 0:
                 self._last_grasp_world = self._compute_world_grasp(frame_w, frame_h)
         if self._last_grasp_base is None and self._last_grasp_world is not None:
-            base_coords = self._ensure_base_coords(
-                (
-                    float(self._last_grasp_world.get("x", 0.0)),
-                    float(self._last_grasp_world.get("y", 0.0)),
-                    float(self._last_grasp_world.get("z", 0.0)),
-                ),
-                self._world_frame_config_first(),
-                timeout_sec=0.35,
-            )
-            if base_coords is not None:
-                self._last_grasp_base = {
-                    "x": float(base_coords[0]),
-                    "y": float(base_coords[1]),
-                    "z": float(base_coords[2]),
-                    "yaw_deg": float(self._last_grasp_world.get("yaw_deg", 0.0) or 0.0),
-                }
+            self._last_grasp_base = self._world_grasp_to_base(self._last_grasp_world)
         if not self._last_grasp_base:
             self._set_status("TFM: grasp base_link no disponible (cámara/calibración)", error=True)
             self._audit_append(
@@ -8433,7 +8703,7 @@ class ControlPanelV2(QMainWindow):
             self._tfm_canonical_phase_update("OBJECT_SELECTED", detail=f"name={selected_name}")
             self._tfm_canonical_phase_update(
                 "GRASP_FRESH",
-                detail=f"source={source} age_sec={max(0.0, time.time() - float(self._last_grasp_update_ts or 0.0)):.2f}",
+                detail=f"source={source} age_sec={max(0.0, _runtime_time() - float(self._last_grasp_update_ts or 0.0)):.2f}",
             )
             self._tfm_canonical_phase_update(
                 "VISUAL_GRASP_OK",
@@ -8543,6 +8813,10 @@ class ControlPanelV2(QMainWindow):
                 y = float(grasp_base.get("y", 0.0))
                 z_raw = float(grasp_base.get("z", 0.0))
                 yaw_deg = float(grasp_base.get("yaw_deg", 0.0) or 0.0)
+                proj_z_source = str(grasp_base.get("proj_z_source", "unknown") or "unknown")
+                grasp_semantics = str(
+                    grasp_base.get("grasp_semantics", "projection_surface") or "projection_surface"
+                )
                 table_top_world = float(self._resolve_table_top_z())
                 table_top_base = z_raw
                 table_base = self._ensure_base_coords(
@@ -8572,6 +8846,12 @@ class ControlPanelV2(QMainWindow):
                 z_grasp = max(table_top_base + min_margin, z_raw + z_grasp_offset)
                 z_pre = max(z_grasp + z_approach, table_top_base + min_margin + 0.02)
                 z_retreat = z_pre
+                self._emit_log(
+                    "[TFM][GRASP_SEMANTICS] "
+                    f"source={source} visual_topic={self._grasp_rect_topic or '/grasp_rect'} "
+                    f"semantics={grasp_semantics} proj_z_source={proj_z_source} "
+                    f"exec_seed_z={z_raw:.3f} table_top_base={table_top_base:.3f} exec_z={z_grasp:.3f}"
+                )
                 yaw_rad = math.radians(yaw_deg)
                 orientation = (0.0, 0.0, math.sin(yaw_rad / 2.0), math.cos(yaw_rad / 2.0))
                 frame = self._business_base_frame()
@@ -8600,6 +8880,8 @@ class ControlPanelV2(QMainWindow):
                     "logs/execute.log",
                     f"[TFM] execute START source={source} base=({x:.3f},{y:.3f},{z_grasp:.3f}) "
                     f"pre_z={z_pre:.3f} yaw={yaw_deg:.1f} frame={frame} wait_result={str(has_results).lower()} "
+                    f"semantics={grasp_semantics} proj_z_source={proj_z_source} z_seed={z_raw:.3f} "
+                    f"table_top_base={table_top_base:.3f} "
                     f"z_approach={z_approach:.3f} z_grasp_offset={z_grasp_offset:+.3f} "
                     f"speed_scale={speed_scale:.2f} accel_scale={accel_scale:.2f} "
                     f"result_timeout={result_timeout:.1f} grasp_mode={grasp_mode}",
@@ -11078,7 +11360,90 @@ class ControlPanelV2(QMainWindow):
     def _on_remote_pick_demo_request(self, source: str) -> None:
         src = (source or "unknown").strip()
         self._emit_log(f"[PICK][REMOTE][DIRECT] trigger={src}")
+        request_id = ""
+        if src.startswith("service:") and "#" in src:
+            request_id = src.rsplit("#", 1)[-1].strip()
+
+        def _ack(success: bool, message: str) -> None:
+            if not request_id:
+                return
+            self._emit_log(
+                f"[PICK][REMOTE][DIRECT_ACK] request_id={request_id} success={str(bool(success)).lower()} message={message or 'n/a'}"
+            )
+            if getattr(self, "_ros_worker_started", False) and getattr(self, "ros_worker", None) is not None:
+                try:
+                    self.ros_worker.complete_pick_demo_request(request_id, success, message)
+                except Exception:
+                    pass
+
+        ready, reason, waitable = self._pick_demo_remote_ready_status()
+        if request_id and not ready and waitable:
+            wait_sec = max(
+                2.0,
+                float(os.environ.get("PANEL_PICK_DEMO_REMOTE_READY_WAIT_SEC", "90.0") or 90.0),
+            )
+            poll_sec = max(
+                0.1,
+                float(os.environ.get("PANEL_PICK_DEMO_REMOTE_READY_POLL_SEC", "0.5") or 0.5),
+            )
+            self._pick_demo_pending_request_id = request_id
+            self._emit_log(
+                "[PICK][REMOTE][DIRECT_ACK] "
+                f"request_id={request_id} deferred=true waiting_ready=true "
+                f"reason={reason or 'n/a'} wait_sec={wait_sec:.1f}"
+            )
+
+            def _resume_pick_demo_when_ready() -> None:
+                deadline = time.time() + wait_sec
+                last_reason = reason
+                while time.time() < deadline:
+                    ready_now, reason_now, waitable_now = self._pick_demo_remote_ready_status()
+                    last_reason = reason_now
+                    if ready_now:
+                        break
+                    if not waitable_now:
+                        self.signal_run_ui.emit(
+                            lambda reason=reason_now: self._complete_pending_pick_demo_request(
+                                False, str(reason or "n/a")
+                            )
+                        )
+                        return
+                    time.sleep(poll_sec)
+
+                def _run_pick_demo_now() -> None:
+                    ready_now, reason_now, _waitable_now = self._pick_demo_remote_ready_status()
+                    if not ready_now:
+                        self._complete_pending_pick_demo_request(
+                            False,
+                            str(reason_now or last_reason or "n/a"),
+                        )
+                        return
+                    self._run_pick_demo()
+                    if bool(getattr(self, "_script_motion_active", False)):
+                        self._complete_pending_pick_demo_request(True, "pick_demo_started")
+                        return
+                    _ready_after, reason_after, _waitable_after = self._pick_demo_remote_ready_status()
+                    self._complete_pending_pick_demo_request(
+                        False,
+                        str(reason_after or "pick_demo_no_iniciado"),
+                    )
+
+                self.signal_run_ui.emit(_run_pick_demo_now)
+
+            self._run_async(_resume_pick_demo_when_ready, name="remote_pick_demo_wait")
+            return
+
+        if request_id and not ready:
+            _ack(False, str(reason or "n/a"))
+            return
+
         self._run_pick_demo()
+        if request_id:
+            if bool(getattr(self, "_script_motion_active", False)):
+                _ack(True, "pick_demo_started")
+            else:
+                _ready_after, reason_after, _waitable_after = self._pick_demo_remote_ready_status()
+                _ack(False, str(reason_after or "pick_demo_no_iniciado"))
 
     @pyqtSlot(str)
     def _on_remote_pick_object_request(self, source: str) -> None:
@@ -11980,6 +12345,7 @@ class ControlPanelV2(QMainWindow):
         """Build object updates from pose/info with robust name mapping."""
         updates: Dict[str, Tuple[float, float, float]] = {}
         sources: Dict[str, str] = {}
+        score_map: Dict[str, Tuple[int, int, float, float]] = {}
         for pose in poses:
             if not isinstance(pose, dict):
                 continue
@@ -11994,12 +12360,27 @@ class ControlPanelV2(QMainWindow):
                 z = float(pos.get("z"))
             except (TypeError, ValueError):
                 continue
-            prev = updates.get(key_name)
-            # If pose/info has multiple entries for the same object (model/link),
-            # prefer the lower Z candidate to avoid stale elevated proxy frames.
-            if prev is None or z < prev[2]:
+            raw_name_str = str(raw_name or "").strip()
+            exact_match = 1 if raw_name_str == key_name else 0
+            hierarchy_depth = raw_name_str.count("::") + raw_name_str.count("/")
+            prev_known = known.get(key_name)
+            continuity_score = float("-inf")
+            if prev_known is not None:
+                dx = float(x) - float(prev_known[0])
+                dy = float(y) - float(prev_known[1])
+                dz = float(z) - float(prev_known[2])
+                continuity_score = -((dx * dx + dy * dy + dz * dz) ** 0.5)
+            candidate_score = (
+                exact_match,
+                -hierarchy_depth,
+                continuity_score,
+                float(z),
+            )
+            prev_score = score_map.get(key_name)
+            if prev_score is None or candidate_score > prev_score:
+                score_map[key_name] = candidate_score
                 updates[key_name] = (x, y, z)
-                sources[key_name] = str(raw_name)
+                sources[key_name] = raw_name_str
         return updates, sources
 
     def _refresh_objects_from_gz(self):
@@ -12152,10 +12533,12 @@ class ControlPanelV2(QMainWindow):
             self._post_calibration_pipeline()
             self.signal_update_objects.emit()
             self._log(f"[PICK] Objetos sincronizados desde Gazebo ({updated}).")
+            self._maybe_recover_pick_demo("pose_sync")
         elif objects_read_only:
             self._log("[PICK] Objetos: TEST activo, sync bloqueado (read-only).")
         else:
             self._log("[PICK] Objetos: sin cambios desde Gazebo.")
+            self._maybe_recover_pick_demo("pose_sync_nochange")
 
     def _settle_targets(self) -> Set[str]:
         targets = set()
@@ -12177,7 +12560,7 @@ class ControlPanelV2(QMainWindow):
             for name, (x, y, z) in fallback.items():
                 out.append({"name": name, "position": {"x": x, "y": y, "z": z}})
             return out
-        age = time.time() - ts if ts else float("inf")
+        age = _runtime_time() - ts if ts else float("inf")
         if age > POSE_INFO_MAX_AGE_SEC and not POSE_INFO_ALLOW_STALE:
             return None
         out: List[Dict[str, object]] = []
@@ -12204,7 +12587,7 @@ class ControlPanelV2(QMainWindow):
             self._log("[CALIB] Imagen no disponible para captura")
             return
         _qimg, w, h, ts = self._last_camera_frame
-        self._log(f"[CALIB] Imagen capturada {w}x{h} age={time.time() - ts:.2f}s")
+        self._log(f"[CALIB] Imagen capturada {w}x{h} age={_runtime_time() - ts:.2f}s")
 
     def _auto_calibrate_from_camera(self) -> bool:
         """Auto-calibrar usando la cámara overhead y la geometría de la mesa."""
@@ -14401,10 +14784,37 @@ class ControlPanelV2(QMainWindow):
         return {
             "x": float(wx),
             "y": float(wy),
-            "z": float(table_top),
+            "z": float(proj_z_target),
             "yaw_deg": yaw_deg,
             "proj_z_target": float(proj_z_target),
             "proj_z_source": proj_z_source,
+            "table_top_z": float(table_top),
+            "grasp_semantics": "projection_surface",
+        }
+
+    def _world_grasp_to_base(self, world_grasp: Optional[Dict[str, float]]) -> Optional[Dict[str, float]]:
+        if not world_grasp:
+            return None
+        base_coords = self._ensure_base_coords(
+            (
+                float(world_grasp.get("x", 0.0)),
+                float(world_grasp.get("y", 0.0)),
+                float(world_grasp.get("z", 0.0)),
+            ),
+            self._world_frame_config_first(),
+            timeout_sec=0.35,
+        )
+        if base_coords is None:
+            return None
+        return {
+            "x": float(base_coords[0]),
+            "y": float(base_coords[1]),
+            "z": float(base_coords[2]),
+            "yaw_deg": float(world_grasp.get("yaw_deg", 0.0) or 0.0),
+            "proj_z_target": float(world_grasp.get("proj_z_target", world_grasp.get("z", 0.0)) or 0.0),
+            "proj_z_source": str(world_grasp.get("proj_z_source", "unknown") or "unknown"),
+            "table_top_z_world": float(world_grasp.get("table_top_z", 0.0) or 0.0),
+            "grasp_semantics": str(world_grasp.get("grasp_semantics", "projection_surface") or "projection_surface"),
         }
 
     def _update_cornell_metrics(self, pred: Dict[str, float], ref: Dict[str, float]) -> None:
@@ -14764,7 +15174,7 @@ class ControlPanelV2(QMainWindow):
                     float(base_pose.pose.position.z),
                     base_frame,
                 )
-                object_source = f"pose_info+tf2:ok age={max(0.0, time.time() - float(pose_wall or 0.0)):.2f}s"
+                object_source = f"pose_info+tf2:ok age={max(0.0, _runtime_time() - float(pose_wall or 0.0)):.2f}s"
             else:
                 object_source = f"pose_info+tf2:tf_failed:{base_reason}"
         else:
@@ -14911,7 +15321,7 @@ class ControlPanelV2(QMainWindow):
         if self._tf_not_ready_logged:
             return
         now = time.monotonic()
-        if self._bridge_start_ts and (time.time() - self._bridge_start_ts) < TF_INIT_GRACE_SEC:
+        if self._bridge_start_ts and (now - self._bridge_start_ts) < TF_INIT_GRACE_SEC:
             return
         if now - self._tf_ready_last_notice >= 1.0:
             self._log("[TRACE] TF not ready yet (waiting for transforms)")
@@ -14985,7 +15395,7 @@ class ControlPanelV2(QMainWindow):
         tf_ok, tf_reason = self._tf_sanity_check()
         camera_ok, camera_reason = camera_ready_status(self)
         controllers_ok, controllers_reason = self._controllers_ready()
-        now = time.time()
+        now = _runtime_time()
         rgb_age = now - self._last_camera_frame_ts if self._last_camera_frame_ts else float("inf")
         depth_required, depth_topic = self._camera_depth_expectation()
         depth_age = now - self._last_camera_depth_frame_ts if self._last_camera_depth_frame_ts else float("inf")

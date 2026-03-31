@@ -608,10 +608,10 @@
         </link>
         <joint name="pick_demo_anchor_joint" type="fixed">
             <!-- Align the detachable-joint origin with the demo grasp center.
-                 tool0 -> rg2_tcp is +0.23 m and the direct demo grasps pick_demo
-                 with a 0.10 m tcp_z_offset, so the object center sits at +0.13 m
+                 tool0 -> rg2_tcp is +0.175 m and the direct demo grasps pick_demo
+                 with a 0.05 m tcp_z_offset, so the object center sits at +0.125 m
                  in tool0 coordinates when the attach gate is correct. -->
-            <pose relative_to="tool0">0 0 0.13 0 0 0</pose>
+            <pose relative_to="tool0">0 0 0.125 0 0 0</pose>
             <parent>tool0</parent>
             <child>pick_demo_anchor</child>
         </joint>

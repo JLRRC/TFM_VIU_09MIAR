@@ -297,6 +297,7 @@ export PANEL_SETTINGS_YAML="${PANEL_SETTINGS_YAML:-$WS_DIR/src/ur5_qt_panel/conf
 export INFER_ROI_SIZE="${INFER_ROI_SIZE:-96}"
 export PANEL_CRITICAL_POSE_TIMEOUT_SEC="${PANEL_CRITICAL_POSE_TIMEOUT_SEC:-60.0}"
 export PANEL_CRITICAL_CLOCK_TIMEOUT_SEC="${PANEL_CRITICAL_CLOCK_TIMEOUT_SEC:-5.0}"
+export PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M="${PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M:-0.175}"
 export PANEL_PICK_OBJECT_EXTRA_DOWN_Z="${PANEL_PICK_OBJECT_EXTRA_DOWN_Z:-0.020}"
 export PANEL_PICK_OBJECT_CONTACT_DOWN_Z_M="${PANEL_PICK_OBJECT_CONTACT_DOWN_Z_M:-0.020}"
 export PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M="${PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M:-0.18}"
@@ -422,8 +423,12 @@ PY
 if [[ -n "$controllers_yaml" && -f "$runtime_ur5_model/model.sdf" ]]; then
   python3 - <<PY
 import re
+import os
 path = r"$runtime_ur5_model/model.sdf"
 params = r"$controllers_yaml"
+ws_dir = r"$WS_DIR"
+panel_settings_yaml = os.environ.get("PANEL_SETTINGS_YAML", r"$WS_DIR/src/ur5_qt_panel/config/panel_settings.yaml")
+urdf_xacro = os.path.join(ws_dir, "src", "ur5_description", "urdf", "ur5.urdf.xacro")
 with open(path, "r", encoding="utf-8") as f:
     text = f.read()
 pat = re.compile(r'(<plugin filename="gz_ros2_control-system"[^>]*>)(.*?)(</plugin>)', re.DOTALL)
@@ -435,8 +440,48 @@ if m:
     else:
         body = body + f"\n            <parameters>{params}</parameters>\n"
     text = text[:m.start()] + header + body + footer + text[m.end():]
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(text)
+rg2_tcp_z = None
+if os.path.isfile(urdf_xacro):
+    with open(urdf_xacro, "r", encoding="utf-8") as f:
+        urdf_text = f.read()
+    m = re.search(
+        r'<joint name="rg2_tcp_joint"[^>]*>.*?<origin xyz="([^"]+)" rpy="[^"]*"/>',
+        urdf_text,
+        re.DOTALL,
+    )
+    if m:
+        xyz = [token for token in m.group(1).strip().split() if token]
+        if len(xyz) >= 3:
+            rg2_tcp_z = float(xyz[2])
+gripper_tcp_z_offset = 0.05
+if panel_settings_yaml and os.path.isfile(panel_settings_yaml):
+    with open(panel_settings_yaml, "r", encoding="utf-8") as f:
+        settings_text = f.read()
+    m = re.search(
+        r'^\s*gripper_tcp_z_offset\s*:\s*([-+0-9.eE]+)\s*$',
+        settings_text,
+        re.MULTILINE,
+    )
+    if m:
+        gripper_tcp_z_offset = float(m.group(1))
+if rg2_tcp_z is not None:
+    pick_demo_anchor_z = max(0.0, rg2_tcp_z - gripper_tcp_z_offset)
+    joint_pat = re.compile(
+        r'(<joint name="pick_demo_anchor_joint" type="fixed">)(.*?)(</joint>)',
+        re.DOTALL,
+    )
+    m = joint_pat.search(text)
+    if m:
+        header, body, footer = m.groups()
+        body = re.sub(
+            r'<pose relative_to="tool0">.*?</pose>',
+            f'<pose relative_to="tool0">0 0 {pick_demo_anchor_z:.3f} 0 0 0</pose>',
+            body,
+            count=1,
+        )
+        text = text[:m.start()] + header + body + footer + text[m.end():]
+with open(path, "w", encoding="utf-8") as f:
+    f.write(text)
 PY
   export GZ_SIM_RESOURCE_PATH="$runtime_models_root:$GZ_SIM_RESOURCE_PATH"
 fi

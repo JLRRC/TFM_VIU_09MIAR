@@ -56,6 +56,12 @@ from .panel_utils import (
 )
 from .ur5_kinematics import fk_ur5, ik_ur5
 
+DIRECT_ROUTE_MODE = "direct_rg2_tcp"
+DIRECT_SOURCE_FRAME = "rg2_tcp"
+DIRECT_EXECUTION_FRAME = "tool0"
+DIRECT_EXECUTION_IK_MODE = "formal_rg2_tcp_source_to_tool0_numeric"
+DIRECT_TOOL0_TO_RG2_TCP_Z_M = 0.175
+
 
 def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
     """Confirma por posicion que el objeto demo esta en la cesta."""
@@ -1326,7 +1332,44 @@ def run_pick_demo(panel) -> None:
                     f"{code} phase={phase} note={note or 'none'} analysis={analysis_path}"
                 )
 
-            def _move_tcp_direct(*, label: str, target_tcp_runtime, timeout_sec: float) -> None:
+            def _move_tcp_direct(*, label: str, target_tcp_runtime, timeout_sec: float) -> dict:
+                def _resolve_direct_execution_target(
+                    tcp_target_base,
+                    tool_rot,
+                ) -> dict:
+                    # DIRECT keeps rg2_tcp as the operational grasp semantics.
+                    # Numeric UR5 IK still solves in tool0, so the only allowed
+                    # conversion lives here as a fixed, traceable transform.
+                    env_value = os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "")
+                    tcp_offset_m = max(
+                        0.0,
+                        float(env_value or DIRECT_TOOL0_TO_RG2_TCP_Z_M),
+                    )
+                    offset_vector = (
+                        float(tool_rot[0, 2]) * tcp_offset_m,
+                        float(tool_rot[1, 2]) * tcp_offset_m,
+                        float(tool_rot[2, 2]) * tcp_offset_m,
+                    )
+                    execution_target_tool0 = (
+                        float(tcp_target_base[0]) - float(offset_vector[0]),
+                        float(tcp_target_base[1]) - float(offset_vector[1]),
+                        float(tcp_target_base[2]) - float(offset_vector[2]),
+                    )
+                    return {
+                        "source_frame": DIRECT_SOURCE_FRAME,
+                        "source_pose": _tuple3(tcp_target_base),
+                        "execution_frame": DIRECT_EXECUTION_FRAME,
+                        "execution_pose": _tuple3(execution_target_tool0),
+                        "offset_vector": _tuple3(offset_vector),
+                        "offset_m": float(tcp_offset_m),
+                        "offset_source": (
+                            "env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M"
+                            if str(env_value).strip()
+                            else "default:ur5.urdf.xacro/rg2_tcp_joint"
+                        ),
+                        "ik_mode": DIRECT_EXECUTION_IK_MODE,
+                    }
+
                 tcp_base = _live_tcp_base()
                 if tcp_base is None:
                     raise RuntimeError(f"{label.lower()}_tcp_pose_unavailable")
@@ -1337,29 +1380,24 @@ def run_pick_demo(panel) -> None:
                     float(target_tcp_runtime[1]) - float(tcp_base[1]),
                     float(target_tcp_runtime[2]) - float(tcp_base[2]),
                 )
-                # La FK/IK numerica trabaja en tool0 y en un frame numerico donde X/Y van
-                # invertidos respecto al tcp_base(=rg2_tcp) del panel. Convertimos primero
-                # el target real de rg2_tcp al frame numerico y luego restamos el offset
-                # fijo tool0->rg2_tcp sobre el eje Z local del efector.
-                tcp_offset_m = max(
-                    0.0,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M",
-                            "0.230",
-                        )
-                        or 0.230
-                    ),
+                execution_semantics = _resolve_direct_execution_target(
+                    target_tcp_runtime,
+                    target_rot,
                 )
-                target_numeric_tcp = (
-                    -float(target_tcp_runtime[0]),
-                    -float(target_tcp_runtime[1]),
-                    float(target_tcp_runtime[2]),
-                )
-                target_ik = (
-                    float(target_numeric_tcp[0]) - float(target_rot[0, 2]) * tcp_offset_m,
-                    float(target_numeric_tcp[1]) - float(target_rot[1, 2]) * tcp_offset_m,
-                    float(target_numeric_tcp[2]) - float(target_rot[2, 2]) * tcp_offset_m,
+                target_ik = execution_semantics["execution_pose"]
+                offset_vector = execution_semantics["offset_vector"]
+                tcp_offset_m = float(execution_semantics["offset_m"])
+                panel._emit_log(
+                    "[PICK][DIRECT][FRAME] "
+                    f"label={label} route={DIRECT_ROUTE_MODE} "
+                    f"source_frame={execution_semantics['source_frame']} "
+                    f"execution_frame={execution_semantics['execution_frame']} "
+                    f"ik_mode={execution_semantics['ik_mode']} "
+                    f"source_pose={_fmt_vec(execution_semantics['source_pose'])} "
+                    f"offset_vector={_fmt_vec(offset_vector)} "
+                    f"offset_m={tcp_offset_m:.3f} "
+                    f"offset_source={execution_semantics['offset_source']} "
+                    f"execution_pose={_fmt_vec(target_ik)}"
                 )
                 solved_q, err_norm, ik_ok = ik_ur5(
                     target_ik,
@@ -1375,7 +1413,8 @@ def run_pick_demo(panel) -> None:
                     f"tcp_now=({tcp_base[0]:.3f},{tcp_base[1]:.3f},{tcp_base[2]:.3f}) "
                     f"target_tcp=({target_tcp_runtime[0]:.3f},{target_tcp_runtime[1]:.3f},{target_tcp_runtime[2]:.3f}) "
                     f"delta_runtime=({delta_runtime[0]:.3f},{delta_runtime[1]:.3f},{delta_runtime[2]:.3f}) "
-                    f"target_numeric_tcp=({target_numeric_tcp[0]:.3f},{target_numeric_tcp[1]:.3f},{target_numeric_tcp[2]:.3f}) "
+                    f"source_frame={DIRECT_SOURCE_FRAME} execution_frame={DIRECT_EXECUTION_FRAME} "
+                    f"offset_vector=({offset_vector[0]:.3f},{offset_vector[1]:.3f},{offset_vector[2]:.3f}) "
                     f"target_ik=({target_ik[0]:.3f},{target_ik[1]:.3f},{target_ik[2]:.3f}) "
                     f"tcp_offset_m={tcp_offset_m:.3f} "
                     f"err_norm={float(err_norm):.4f} success={str(bool(ik_ok)).lower()}"
@@ -1477,8 +1516,10 @@ def run_pick_demo(panel) -> None:
                     "label": label,
                     "seed": [float(v) for v in seed],
                     "target_tcp_runtime": _tuple3(target_tcp_runtime),
-                    "target_numeric_tcp": _tuple3(target_numeric_tcp),
+                    "target_source_frame": DIRECT_SOURCE_FRAME,
+                    "target_execution_frame": DIRECT_EXECUTION_FRAME,
                     "target_ik": _tuple3(target_ik),
+                    "offset_vector": _tuple3(offset_vector),
                     "tcp_offset_m": float(tcp_offset_m),
                     "ik_solution": solved_q_list,
                     "err_norm": float(err_norm),
@@ -2547,7 +2588,9 @@ def run_pick_demo(panel) -> None:
                     frame_used="base_link",
                     offsets={
                         "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
-                        "ik_mode": "direct_rg2_tcp_to_tool0_numeric",
+                        "source_frame": DIRECT_SOURCE_FRAME,
+                        "execution_frame": DIRECT_EXECUTION_FRAME,
+                        "ik_mode": DIRECT_EXECUTION_IK_MODE,
                     },
                     note="skip align: tcp already within pre-close tolerance",
                 )
@@ -2556,8 +2599,13 @@ def run_pick_demo(panel) -> None:
                     event="target_set",
                     target_base=target_base_align,
                     frame_used="base_link",
-                    offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "ik_mode": "direct_rg2_tcp_to_tool0_numeric"},
-                    preset_used="direct_rg2_tcp_to_tool0_numeric",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "source_frame": DIRECT_SOURCE_FRAME,
+                        "execution_frame": DIRECT_EXECUTION_FRAME,
+                        "ik_mode": DIRECT_EXECUTION_IK_MODE,
+                    },
+                    preset_used=DIRECT_EXECUTION_IK_MODE,
                     decision="phase_enter_skip",
                 )
                 _debug_pause_grasp_align_if_enabled(trigger="phase_enter_skip")
@@ -2571,8 +2619,13 @@ def run_pick_demo(panel) -> None:
                     event="phase_end",
                     target_base=target_base_align,
                     frame_used="base_link",
-                    offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "ik_mode": "direct_rg2_tcp_to_tool0_numeric"},
-                    preset_used="direct_rg2_tcp_to_tool0_numeric",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "source_frame": DIRECT_SOURCE_FRAME,
+                        "execution_frame": DIRECT_EXECUTION_FRAME,
+                        "ik_mode": DIRECT_EXECUTION_IK_MODE,
+                    },
+                    preset_used=DIRECT_EXECUTION_IK_MODE,
                     decision="skip_align_preclose_ok",
                 )
                 panel._emit_log(
@@ -2588,7 +2641,9 @@ def run_pick_demo(panel) -> None:
                     frame_used="base_link",
                     offsets={
                         "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
-                        "ik_mode": "direct_rg2_tcp_to_tool0_numeric",
+                        "source_frame": DIRECT_SOURCE_FRAME,
+                        "execution_frame": DIRECT_EXECUTION_FRAME,
+                        "ik_mode": DIRECT_EXECUTION_IK_MODE,
                     },
                     note="fine alignment IK over live object pose",
                 )
@@ -2597,8 +2652,13 @@ def run_pick_demo(panel) -> None:
                     event="target_set",
                     target_base=target_base_align,
                     frame_used="base_link",
-                    offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "ik_mode": "direct_rg2_tcp_to_tool0_numeric"},
-                    preset_used="direct_rg2_tcp_to_tool0_numeric",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "source_frame": DIRECT_SOURCE_FRAME,
+                        "execution_frame": DIRECT_EXECUTION_FRAME,
+                        "ik_mode": DIRECT_EXECUTION_IK_MODE,
+                    },
+                    preset_used=DIRECT_EXECUTION_IK_MODE,
                     decision="phase_enter",
                 )
                 _debug_pause_grasp_align_if_enabled(trigger="phase_enter")
@@ -2626,11 +2686,13 @@ def run_pick_demo(panel) -> None:
                         frame_used="base_link",
                         offsets={
                             "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
-                            "ik_mode": "direct_rg2_tcp_to_tool0_numeric",
+                            "source_frame": DIRECT_SOURCE_FRAME,
+                            "execution_frame": DIRECT_EXECUTION_FRAME,
+                            "ik_mode": DIRECT_EXECUTION_IK_MODE,
                             "attempt": int(align_attempt),
                             "max_attempts": int(align_retries),
                         },
-                        preset_used="direct_rg2_tcp_to_tool0_numeric",
+                        preset_used=DIRECT_EXECUTION_IK_MODE,
                         decision="align_retry",
                     )
                     if bool(align_metrics.get("ok")):
@@ -2653,8 +2715,13 @@ def run_pick_demo(panel) -> None:
                     event="phase_end",
                     target_base=target_base_align,
                     frame_used="base_link",
-                    offsets={"tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET), "ik_mode": "direct_rg2_tcp_to_tool0_numeric"},
-                    preset_used="direct_rg2_tcp_to_tool0_numeric",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "source_frame": DIRECT_SOURCE_FRAME,
+                        "execution_frame": DIRECT_EXECUTION_FRAME,
+                        "ik_mode": DIRECT_EXECUTION_IK_MODE,
+                    },
+                    preset_used=DIRECT_EXECUTION_IK_MODE,
                     decision="phase_exit",
                 )
             post_align_metrics = _pre_close_alignment_metrics()
@@ -3292,7 +3359,7 @@ def run_pick_demo(panel) -> None:
                 offsets={
                     "min_obj_move_m": 0.030,
                     "min_lift_delta_m": 0.025,
-                    "max_tcp_dist_m": 0.160,
+                    "max_tcp_dist_m": 0.080,  # FIX-CARRY-VALIDATION: was 0.160
                 },
                 note="carry validation after lift",
             )
@@ -3306,13 +3373,17 @@ def run_pick_demo(panel) -> None:
                 request_state="carry_validation",
             )
             try:
+                # FIX-CARRY-VALIDATION: max_tcp_dist_m tightened from 0.160 to 0.080 m.
+                # 16 cm allowed the gripper to be far from the object during carry,
+                # permitting false-positive "carry confirmed" even without real contact.
+                # 8 cm still tolerates small offsets during lift while requiring proximity.
                 _validate_demo_carry(
                     initial_obj_world=initial_obj_world,
                     phase="post_grasp_lift",
                     timeout_sec=1.6,
                     min_obj_move_m=0.030,
                     min_lift_delta_m=0.025,
-                    max_tcp_dist_m=0.160,
+                    max_tcp_dist_m=0.080,
                 )
                 _phase_end("CARRY", attach_state=_read_attach_state(), result="ok")
                 _final_phase_trace(

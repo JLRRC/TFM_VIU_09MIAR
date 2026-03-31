@@ -195,6 +195,31 @@ def _prepare_runtime(context, *_args) -> List[object]:
     )
     try:
         model_sdf = os.path.join(runtime_ur5_model, "model.sdf")
+        urdf_xacro = os.path.join(ws_dir, "src", "ur5_description", "urdf", "ur5.urdf.xacro")
+        rg2_tcp_z = None
+        if os.path.isfile(urdf_xacro):
+            with open(urdf_xacro, "r", encoding="utf-8") as f:
+                urdf_text = f.read()
+            rg2_match = re.search(
+                r'<joint name="rg2_tcp_joint"[^>]*>.*?<origin xyz="([^"]+)" rpy="[^"]*"/>',
+                urdf_text,
+                re.DOTALL,
+            )
+            if rg2_match:
+                xyz = [token for token in rg2_match.group(1).strip().split() if token]
+                if len(xyz) >= 3:
+                    rg2_tcp_z = float(xyz[2])
+        gripper_tcp_z_offset = 0.05
+        if os.path.isfile(panel_settings_yaml):
+            with open(panel_settings_yaml, "r", encoding="utf-8") as f:
+                settings_text = f.read()
+            offset_match = re.search(
+                r'^\s*gripper_tcp_z_offset\s*:\s*([-+0-9.eE]+)\s*$',
+                settings_text,
+                re.MULTILINE,
+            )
+            if offset_match:
+                gripper_tcp_z_offset = float(offset_match.group(1))
         if os.path.isfile(model_sdf):
             with open(model_sdf, "r", encoding="utf-8") as f:
                 sdf_text = f.read()
@@ -224,8 +249,30 @@ def _prepare_runtime(context, *_args) -> List[object]:
                     + footer
                     + sdf_text[match.end() :]
                 )
-                with open(model_sdf, "w", encoding="utf-8") as f:
-                    f.write(sdf_text)
+            if rg2_tcp_z is not None:
+                pick_demo_anchor_z = max(0.0, rg2_tcp_z - gripper_tcp_z_offset)
+                anchor_re = re.compile(
+                    r'(<joint name="pick_demo_anchor_joint" type="fixed">)(.*?)(</joint>)',
+                    re.DOTALL,
+                )
+                match = anchor_re.search(sdf_text)
+                if match:
+                    header, body, footer = match.groups()
+                    body = re.sub(
+                        r"<pose relative_to=\"tool0\">.*?</pose>",
+                        f"<pose relative_to=\"tool0\">0 0 {pick_demo_anchor_z:.3f} 0 0 0</pose>",
+                        body,
+                        count=1,
+                    )
+                    sdf_text = (
+                        sdf_text[: match.start()]
+                        + header
+                        + body
+                        + footer
+                        + sdf_text[match.end() :]
+                    )
+            with open(model_sdf, "w", encoding="utf-8") as f:
+                f.write(sdf_text)
     except Exception as exc:
         logger.warning("No se pudo ajustar plugin gz_ros2_control: %s", exc)
 
@@ -289,6 +336,31 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetEnvironmentVariable("PANEL_MANAGED", managed_str),
         SetEnvironmentVariable("PANEL_CAMERA_REQUIRED", camera_required_env),
+        SetEnvironmentVariable("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "0.175"),
+        # FIX-ATTACH-GATE: tighten panel-side ATTACH_GATE tolerances so the gripper
+        # must be within 5 cm XY and Z of the object before declaring attach success.
+        # Previously 0.080 m in each axis allowed the gripper to be 11+ cm away.
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_ATTACH_XY_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.050"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_ATTACH_Z_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.050"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M",
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M", "0.080"),
+        ),
+        # FIX-IK-FRAME: disable X/Y negation in DIRECT IK route.
+        # The numeric FK/IK works in DH base frame which is co-aligned with base_link,
+        # so no sign inversion is needed. Old code negated X and Y, sending the IK
+        # to a mirrored position. Default "0" = no negate (correct).
+        # Set to "1" to revert to old behaviour if system regresses.
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_DIRECT_IK_NEGATE_XY",
+            os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_NEGATE_XY", "0"),
+        ),
         SetEnvironmentVariable(
             "PANEL_MOVEIT_REQUIRED", launch_moveit_eff
         ),
@@ -615,6 +687,18 @@ def generate_launch_description():
                     "attach_backend_follow_break_dist_m"
                 )
             },
+            # FIX-ATTACH-THRESHOLD: tighten from 0.15 m to 0.05 m so that the backend
+            # only attaches when the TCP is geometrically close to the object (~contact).
+            # 0.15 m allowed false grasps; 0.05 m requires the gripper to be within ~5 cm.
+            {
+                "attach_max_dist_m": LaunchConfiguration(
+                    "attach_backend_max_dist_m"
+                )
+            },
+            # FIX-LAUNCH-RUNTIME: keep attach route defaults in the node itself.
+            # Passing empty lists here breaks launch_ros parameter normalization in
+            # this runtime path ("Expected value ... got tuple"), while the node
+            # defaults in gripper_attach_backend.py are already empty.
         ],
         condition=IfCondition(launch_attach_backend),
     )
@@ -632,6 +716,27 @@ def generate_launch_description():
             {"ee_frame": "rg2_tcp"},
         ],
         condition=IfCondition(launch_scene_sync),
+    )
+
+    # FIX-DESIRED-GRASP: launch ur5_moveit_bridge as a standalone node so that
+    # /desired_grasp always has a real subscriber in the normal boot.
+    # Previously Subscription count was 0 because the bridge was only started
+    # on-demand via the panel button; this makes it part of the managed launch.
+    # When MoveIt (move_group) is not running the bridge will subscribe but will
+    # fall back to a no-op, ensuring the topic is live without crashing the stack.
+    moveit_bridge = Node(
+        package="ur5_tools",
+        executable="ur5_moveit_bridge",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"backend": "auto"},
+            {"base_frame": "base_link"},
+            {"ee_frame": "rg2_tcp"},
+            {"result_topic": "/desired_grasp/result"},
+            {"controller_manager": LaunchConfiguration("controller_manager")},
+        ],
+        condition=IfCondition(LaunchConfiguration("launch_moveit_bridge")),
     )
 
     panel_python = os.environ.get("PANEL_PYTHON", "")
@@ -679,6 +784,16 @@ def generate_launch_description():
                 "attach_backend_follow_break_dist_m",
                 default_value=os.environ.get("ATTACH_BACKEND_FOLLOW_BREAK_DIST_M", "0.18"),
             ),
+            # FIX-ATTACH-THRESHOLD: max 3D distance (m) for backend to accept attach.
+            # Was 0.15 (default in gripper_attach_backend.py). Reduced to 0.05 to require
+            # near-contact between gripper TCP and object before locking attachment.
+            # Override with env ATTACH_BACKEND_MAX_DIST_M if a larger value is needed.
+            DeclareLaunchArgument(
+                "attach_backend_max_dist_m",
+                default_value=os.environ.get("ATTACH_BACKEND_MAX_DIST_M", "0.05"),
+            ),
+            # FIX-MOVEIT-BRIDGE: launch ur5_moveit_bridge so /desired_grasp has a real subscriber.
+            DeclareLaunchArgument("launch_moveit_bridge", default_value="true"),
             DeclareLaunchArgument("launch_scene_sync", default_value="true"),
             DeclareLaunchArgument("launch_system_state", default_value="true"),
             DeclareLaunchArgument("launch_moveit", default_value="false"),
@@ -720,6 +835,7 @@ def generate_launch_description():
             release_service,
             gripper_attach_backend,
             planning_scene_sync,
+            moveit_bridge,
             panel,
         ]
     )

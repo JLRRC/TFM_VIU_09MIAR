@@ -67,7 +67,7 @@
   <joint name="rg2_tcp_joint" type="fixed">
     <parent link="tool0"/>
     <child link="rg2_tcp"/>
-    <origin xyz="0 0 0.23" rpy="0 0 0"/>
+    <origin xyz="0 0 0.175" rpy="0 0 0"/>
   </joint>
 
   <link name="rg2_finger_link1">

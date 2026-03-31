@@ -28,7 +28,7 @@ run_cycle() {
   fi
 
   for _ in $(seq 1 50); do
-    if ros2 service list 2>/dev/null | grep -q '^/panel/pick_object$' && ros2 service list 2>/dev/null | grep -q '^/panel/select_object$'; then
+    if ros2 service list 2>/dev/null | grep -q '^/panel/pick_demo$' && ros2 service list 2>/dev/null | grep -q '^/panel/select_object$'; then
       break
     fi
     sleep 1
@@ -44,9 +44,29 @@ run_cycle() {
     sleep 1
   done
 
-  ros2 service call /panel/select_object ur5_panel_interfaces/srv/SelectObject "{name: pick_demo}" >/dev/null 2>&1
+  local select_reply=""
+  select_reply="$(ros2 service call /panel/select_object ur5_panel_interfaces/srv/SelectObject "{name: pick_demo}" 2>&1)" || {
+    echo "CYCLE_${cycle}_SELECT_CALL=ERROR" | tee -a "$SUMMARY_FILE"
+    echo "$select_reply" | tee -a "$SUMMARY_FILE"
+    return 1
+  }
+  if ! grep -q 'success: true' <<<"$select_reply"; then
+    echo "CYCLE_${cycle}_SELECT_CALL=REJECTED" | tee -a "$SUMMARY_FILE"
+    echo "$select_reply" | tee -a "$SUMMARY_FILE"
+    return 1
+  fi
   sleep 1
-  ros2 service call /panel/pick_object std_srvs/srv/Trigger "{}" >/dev/null 2>&1
+  local pick_reply=""
+  pick_reply="$(ros2 service call /panel/pick_demo std_srvs/srv/Trigger "{}" 2>&1)" || {
+    echo "CYCLE_${cycle}_PICK_CALL=ERROR" | tee -a "$SUMMARY_FILE"
+    echo "$pick_reply" | tee -a "$SUMMARY_FILE"
+    return 1
+  }
+  if ! grep -q 'success: true' <<<"$pick_reply"; then
+    echo "CYCLE_${cycle}_PICK_CALL=REJECTED" | tee -a "$SUMMARY_FILE"
+    echo "$pick_reply" | tee -a "$SUMMARY_FILE"
+    return 1
+  fi
 
   local result="TIMEOUT"
   for _ in $(seq 1 "$WAIT_LOOPS"); do
@@ -54,7 +74,7 @@ run_cycle() {
       result="PASS"
       break
     fi
-    if tail -n "+${start_line}" "$log_file" | grep -Eq 'carry_coherence_failed|\[PICK_OBJ\]\[ABORT\]|Error en pick objeto|\[PICK_OBJ\]\[FAIL_CLASS\]'; then
+    if tail -n "+${start_line}" "$log_file" | grep -Eq 'carry_coherence_failed|\[PICK_OBJ\]\[ABORT\]|\[PICK\]\[DIRECT\]\[ABORT\]|Error en pick objeto|\[PICK_OBJ\]\[FAIL_CLASS\]'; then
       result="FAIL"
       break
     fi
@@ -62,7 +82,7 @@ run_cycle() {
   done
 
   echo "CYCLE_${cycle}=${result}" | tee -a "$SUMMARY_FILE"
-  tail -n "+${start_line}" "$log_file" | grep -nE 'SECUENCIA COMPLETADA EXITOSAMENTE|carry_coherence_failed|\[PICK_OBJ\]\[ABORT\]|Error en pick objeto|\[PICK_OBJ\]\[FAIL_CLASS\]' | tail -n 20 | tee -a "$SUMMARY_FILE" || true
+  tail -n "+${start_line}" "$log_file" | grep -nE 'SECUENCIA COMPLETADA EXITOSAMENTE|carry_coherence_failed|\[PICK_OBJ\]\[ABORT\]|\[PICK\]\[DIRECT\]\[ABORT\]|Error en pick objeto|\[PICK_OBJ\]\[FAIL_CLASS\]' | tail -n 20 | tee -a "$SUMMARY_FILE" || true
   if [[ "$result" == "TIMEOUT" ]]; then
     tail -n "+${start_line}" "$log_file" | tail -n 40 | tee -a "$SUMMARY_FILE" || true
   fi

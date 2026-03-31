@@ -56,8 +56,9 @@ UR5_BASE_Z = SETTINGS.ur5_base_z
 UR5_REACH_RADIUS = SETTINGS.ur5_reach_radius
 
 # Pick demo objects: objetos de demostracion (definidos solo por nombre).
+PICK_DEMO_SPAWN_POSE = (-0.42, 0.00, 0.875)
 _PICK_DEMO_OBJECTS = {
-    "pick_demo": (-0.42, 0.00, 0.800),
+    "pick_demo": PICK_DEMO_SPAWN_POSE,
 }
 ATTACHABLE_OBJECTS = ("pick_demo",)
 PICK_DEMO_NAME_SET = set(ATTACHABLE_OBJECTS)

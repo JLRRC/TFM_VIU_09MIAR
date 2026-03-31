@@ -209,7 +209,7 @@ class PanelSettings:
     pick_demo_grasp_z_offset: float = 0.02
     pick_demo_transport_z_offset: float = 0.28
     pick_demo_drop_z_offset: float = 0.05
-    gripper_tcp_z_offset: float = 0.0
+    gripper_tcp_z_offset: float = 0.05
     auto_calib_from_camera: bool = True
     reach_overlay_z: float = 0.850
     reach_overlay_points: int = 72
@@ -384,7 +384,7 @@ class PanelSettings:
             pick_demo_grasp_z_offset=_env_float("PANEL_PICK_DEMO_GRASP_Z", 0.02),
             pick_demo_transport_z_offset=_env_float("PANEL_PICK_DEMO_TRANSPORT_Z", 0.28),
             pick_demo_drop_z_offset=_env_float("PANEL_PICK_DEMO_DROP_Z", 0.05),
-            gripper_tcp_z_offset=_env_float("PANEL_GRIPPER_TCP_Z_OFFSET", 0.0),
+            gripper_tcp_z_offset=_env_float("PANEL_GRIPPER_TCP_Z_OFFSET", 0.05),
             auto_calib_from_camera=_env_bool("PANEL_CALIB_AUTO", True),
             reach_overlay_z=_env_float("PANEL_REACH_OVERLAY_Z", 0.850),
             reach_overlay_points=_env_int("PANEL_REACH_OVERLAY_POINTS", 72),

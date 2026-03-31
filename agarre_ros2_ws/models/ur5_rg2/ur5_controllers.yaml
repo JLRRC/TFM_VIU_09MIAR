@@ -43,7 +43,7 @@ joint_trajectory_controller:
       command_interface: ""
     constraints:
       stopped_velocity_tolerance: 0.01
-      goal_time: 35.0
+      goal_time: 0.0
       shoulder_pan_joint:
         trajectory: 3.4
         goal: 0.1
