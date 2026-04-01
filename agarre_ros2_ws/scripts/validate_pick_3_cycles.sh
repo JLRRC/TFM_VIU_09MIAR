@@ -50,7 +50,7 @@ run_cycle() {
     echo "$select_reply" | tee -a "$SUMMARY_FILE"
     return 1
   }
-  if ! grep -q 'success: true' <<<"$select_reply"; then
+  if ! grep -Eiq 'success:\s*true|success\s*=\s*True' <<<"$select_reply"; then
     echo "CYCLE_${cycle}_SELECT_CALL=REJECTED" | tee -a "$SUMMARY_FILE"
     echo "$select_reply" | tee -a "$SUMMARY_FILE"
     return 1
@@ -62,7 +62,7 @@ run_cycle() {
     echo "$pick_reply" | tee -a "$SUMMARY_FILE"
     return 1
   }
-  if ! grep -q 'success: true' <<<"$pick_reply"; then
+  if ! grep -Eiq 'success:\s*true|success\s*=\s*True' <<<"$pick_reply"; then
     echo "CYCLE_${cycle}_PICK_CALL=REJECTED" | tee -a "$SUMMARY_FILE"
     echo "$pick_reply" | tee -a "$SUMMARY_FILE"
     return 1

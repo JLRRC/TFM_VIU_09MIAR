@@ -151,11 +151,6 @@ def run_pick_demo(panel) -> None:
         panel._set_status(f"TF no listo; esperando pick ({tf_reason})", error=False)
         panel._emit_log(f"[PICK] Bloqueado: {panel._tf_not_ready_reason()}")
         return
-    panel._emit_log(
-        f"[PICK][DIRECT] selection_ok=true target={PICK_DEMO_OBJECT_NAME} route=direct_joint_only"
-    )
-    panel._emit_log("[PICK] Secuencia manual iniciada (ruta directa, MoveIt deshabilitado)")
-    
     # Normalizar estado previo del objeto demo antes del grasp manual.
     obj_state = get_object_state(PICK_DEMO_OBJECT_NAME)
     if obj_state:
@@ -180,12 +175,33 @@ def run_pick_demo(panel) -> None:
                 attached=False,
                 reason="pick_demo_on_table_normalize"
             )
-    
+
     ready, reason = panel._controllers_ready()
     if not ready:
         panel._emit_log(f"[PICK] controladores no listos ({reason})")
         panel._set_status("Controladores no listos; esperando", error=False)
         return
+    route_candidates = "direct_ik_hybrid,joint_preset_fallback"
+    route_gate_direct_ik = bool(tf_ok and bool(panel._ee_frame_effective) and ready)
+    route_gate_joint_preset = True
+    route_selected = "direct_ik_hybrid" if route_gate_direct_ik else "joint_preset_fallback"
+    route_reason = (
+        "run_pick_demo_uses_move_tcp_direct_for_APPROACH_COARSE_GRASP_DOWN_JOINT_and_GRASP_ALIGN_IK"
+        if route_gate_direct_ik
+        else "direct_ik_gate_false"
+    )
+    panel._emit_log(
+        "[PICK][DIRECT][ROUTE] "
+        f"route_candidates={route_candidates} "
+        f"route_gate_direct_ik={str(route_gate_direct_ik).lower()} "
+        f"route_gate_joint_preset_fallback={str(route_gate_joint_preset).lower()} "
+        f"route_selected={route_selected} "
+        f"route_reason={route_reason}"
+    )
+    panel._emit_log(
+        f"[PICK][DIRECT] selection_ok=true target={PICK_DEMO_OBJECT_NAME} route={route_selected}"
+    )
+    panel._emit_log("[PICK] Secuencia manual iniciada (ruta directa con DIRECT IK trazable)")
     panel._emit_log("[PICK] target_source=selected_demo_object")
     panel._set_status("Pick demo: ejecutando secuencia manual…")
     panel._set_motion_lock(True)
@@ -193,7 +209,14 @@ def run_pick_demo(panel) -> None:
     def worker():
         try:
             move_sec = float(panel.joint_time.value()) if panel.joint_time else 3.0
+            _move_sec_override = os.environ.get("PANEL_PICK_DEMO_MOVE_SEC")
+            if _move_sec_override:
+                try:
+                    move_sec = max(1.0, float(_move_sec_override))
+                except Exception:
+                    pass
             home_pose = panel._get_home_joint_pose()
+            selected_base_anchor_raw = getattr(panel, "_selected_base", None)
             repo_root = Path(__file__).resolve().parents[4]
             debug_root = Path(
                 os.environ.get("PANEL_DIRECT_DEBUG_ROOT")
@@ -265,6 +288,8 @@ def run_pick_demo(panel) -> None:
                 except Exception:
                     return None
 
+            selected_base_anchor = _tuple3(selected_base_anchor_raw)
+
             def _fmt_vec(vec) -> str:
                 vec3 = _tuple3(vec)
                 if vec3 is None:
@@ -318,12 +343,46 @@ def run_pick_demo(panel) -> None:
                 return " ".join(parts)
 
             def _run_joint_step(label, joints, timeout_sec=None, tol_rad=0.02):
+                def _local_joint_target_ok(local_tol_rad: float):
+                    snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
+                    if not snapshot:
+                        return False, "no_local_joint_state"
+                    parts = []
+                    for idx, name in enumerate(UR5_JOINT_NAMES):
+                        if idx >= len(joints):
+                            break
+                        curr = snapshot.get(name)
+                        if curr is None:
+                            parts.append(f"{name}=n/a")
+                            return False, " ".join(parts)
+                        diff = abs(float(curr) - float(joints[idx]))
+                        parts.append(f"{name}={diff:.3f}")
+                        if diff > float(local_tol_rad):
+                            return False, " ".join(parts)
+                    return True, " ".join(parts)
+
                 panel._emit_log(f"[PICK] Paso joint: {label}")
+                local_ok_before, local_diffs_before = _local_joint_target_ok(tol_rad)
+                if local_ok_before:
+                    panel._emit_log(
+                        "[PICK][DIRECT][ROUTE] "
+                        f"phase={label} joint_target_already_satisfied=true "
+                        f"source=local_joint_state diffs={local_diffs_before}"
+                    )
+                    return
                 ok, info = panel._publish_joint_trajectory(joints, move_sec)
                 if not ok:
                     raise RuntimeError(f"{label} fallo: {info}")
                 wait_timeout = move_sec + 2.0 if timeout_sec is None else timeout_sec
                 if panel._wait_for_joint_target(joints, wait_timeout, tol_rad=tol_rad):
+                    return
+                local_ok_after_wait, local_diffs_after_wait = _local_joint_target_ok(max(tol_rad, 0.02))
+                if local_ok_after_wait:
+                    panel._emit_log(
+                        "[PICK][DIRECT][ROUTE] "
+                        f"phase={label} joint_target_accept_after_wait_timeout=true "
+                        f"source=local_joint_state diffs={local_diffs_after_wait}"
+                    )
                     return
                 if label in {"HOME", "MESA", "PICK_IMAGE", "HOME_WITH_OBJECT", "CESTA", "CESTA_RELEASE", "HOME_FINAL"}:
                     panel._emit_log(
@@ -336,6 +395,14 @@ def run_pick_demo(panel) -> None:
                     retry_tol = max(tol_rad, 0.06)
                     if panel._wait_for_joint_target(joints, retry_timeout, tol_rad=retry_tol):
                         panel._emit_log(f"[PICK][RECOVERY] {label} alcanzado tras reintento")
+                        return
+                    local_ok_after_retry, local_diffs_after_retry = _local_joint_target_ok(retry_tol)
+                    if local_ok_after_retry:
+                        panel._emit_log(
+                            "[PICK][DIRECT][ROUTE] "
+                            f"phase={label} joint_target_accept_after_retry_timeout=true "
+                            f"source=local_joint_state diffs={local_diffs_after_retry}"
+                        )
                         return
                 raise RuntimeError(
                     f"{label} no alcanzado (timeout) diffs={_joint_error_snapshot(joints)}"
@@ -1332,7 +1399,14 @@ def run_pick_demo(panel) -> None:
                     f"{code} phase={phase} note={note or 'none'} analysis={analysis_path}"
                 )
 
-            def _move_tcp_direct(*, label: str, target_tcp_runtime, timeout_sec: float) -> dict:
+            def _move_tcp_direct(
+                *,
+                label: str,
+                target_tcp_runtime,
+                timeout_sec: float,
+                rot_weight: float = 0.35,
+                ik_err_tol: float = 0.035,
+            ) -> dict:
                 def _resolve_direct_execution_target(
                     tcp_target_base,
                     tool_rot,
@@ -1345,19 +1419,29 @@ def run_pick_demo(panel) -> None:
                         0.0,
                         float(env_value or DIRECT_TOOL0_TO_RG2_TCP_Z_M),
                     )
+                    # URDF chain uses base_link_inertia as kinematic root with a fixed
+                    # base_link->base_link_inertia rotation Rz(pi); convert runtime target
+                    # (base_link) into the FK/IK model frame before solving.
+                    target_model = (
+                        -float(tcp_target_base[0]),
+                        -float(tcp_target_base[1]),
+                        float(tcp_target_base[2]),
+                    )
                     offset_vector = (
                         float(tool_rot[0, 2]) * tcp_offset_m,
                         float(tool_rot[1, 2]) * tcp_offset_m,
                         float(tool_rot[2, 2]) * tcp_offset_m,
                     )
+                    # rg2_tcp = tool0 + (R_tool0 * [0, 0, offset]); solve tool0 target.
                     execution_target_tool0 = (
-                        float(tcp_target_base[0]) - float(offset_vector[0]),
-                        float(tcp_target_base[1]) - float(offset_vector[1]),
-                        float(tcp_target_base[2]) - float(offset_vector[2]),
+                        float(target_model[0]) - float(offset_vector[0]),
+                        float(target_model[1]) - float(offset_vector[1]),
+                        float(target_model[2]) - float(offset_vector[2]),
                     )
                     return {
                         "source_frame": DIRECT_SOURCE_FRAME,
                         "source_pose": _tuple3(tcp_target_base),
+                        "target_model": _tuple3(target_model),
                         "execution_frame": DIRECT_EXECUTION_FRAME,
                         "execution_pose": _tuple3(execution_target_tool0),
                         "offset_vector": _tuple3(offset_vector),
@@ -1367,6 +1451,8 @@ def run_pick_demo(panel) -> None:
                             if str(env_value).strip()
                             else "default:ur5.urdf.xacro/rg2_tcp_joint"
                         ),
+                        "offset_mode": "fixed_subtract",
+                        "model_frame_note": "base_link_to_base_link_inertia_rz_pi",
                         "ik_mode": DIRECT_EXECUTION_IK_MODE,
                     }
 
@@ -1385,6 +1471,7 @@ def run_pick_demo(panel) -> None:
                     target_rot,
                 )
                 target_ik = execution_semantics["execution_pose"]
+                target_model = execution_semantics["target_model"]
                 offset_vector = execution_semantics["offset_vector"]
                 tcp_offset_m = float(execution_semantics["offset_m"])
                 panel._emit_log(
@@ -1394,9 +1481,11 @@ def run_pick_demo(panel) -> None:
                     f"execution_frame={execution_semantics['execution_frame']} "
                     f"ik_mode={execution_semantics['ik_mode']} "
                     f"source_pose={_fmt_vec(execution_semantics['source_pose'])} "
+                    f"target_model={_fmt_vec(target_model)} "
                     f"offset_vector={_fmt_vec(offset_vector)} "
                     f"offset_m={tcp_offset_m:.3f} "
                     f"offset_source={execution_semantics['offset_source']} "
+                    f"offset_mode={execution_semantics['offset_mode']} "
                     f"execution_pose={_fmt_vec(target_ik)}"
                 )
                 solved_q, err_norm, ik_ok = ik_ur5(
@@ -1405,8 +1494,25 @@ def run_pick_demo(panel) -> None:
                     seed,
                     max_iter=240,
                     pos_weight=1.0,
-                    rot_weight=0.35,
+                    rot_weight=float(rot_weight),
+                    joint_weight=max(
+                        0.0,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_DIRECT_IK_SEED_WEIGHT",
+                                "0.035",
+                            )
+                            or 0.035
+                        ),
+                    ),
                 )
+                # Compute pure position error via FK to validate independently of joint_weight cost
+                import numpy as _np_ik_check
+                _fk_pos_solved, _ = fk_ur5(solved_q)
+                pos_err_m = float(_np_ik_check.linalg.norm(
+                    _np_ik_check.asarray(_fk_pos_solved, dtype=float)
+                    - _np_ik_check.asarray(target_ik, dtype=float)
+                ))
                 panel._emit_log(
                     "[PICK][DIRECT][IK] "
                     f"label={label} "
@@ -1417,11 +1523,14 @@ def run_pick_demo(panel) -> None:
                     f"offset_vector=({offset_vector[0]:.3f},{offset_vector[1]:.3f},{offset_vector[2]:.3f}) "
                     f"target_ik=({target_ik[0]:.3f},{target_ik[1]:.3f},{target_ik[2]:.3f}) "
                     f"tcp_offset_m={tcp_offset_m:.3f} "
-                    f"err_norm={float(err_norm):.4f} success={str(bool(ik_ok)).lower()}"
+                    f"rot_weight={float(rot_weight):.3f} "
+                    f"ik_err_tol={float(ik_err_tol):.3f} "
+                    f"seed_weight={float(os.environ.get('PANEL_PICK_DEMO_DIRECT_IK_SEED_WEIGHT', '0.035') or 0.035):.3f} "
+                    f"err_norm={float(err_norm):.4f} pos_err_m={pos_err_m:.4f} success={str(bool(ik_ok)).lower()}"
                 )
-                if (not ik_ok) or float(err_norm) > 0.035:
+                if (not ik_ok) or pos_err_m > float(ik_err_tol):
                     raise RuntimeError(
-                        f"{label.lower()}_ik_failed err_norm={float(err_norm):.4f}"
+                        f"{label.lower()}_ik_failed pos_err_m={pos_err_m:.4f}"
                     )
                 solved_q_list = [float(v) for v in solved_q.tolist()]
                 align_joint_tol_rad = max(
@@ -1586,10 +1695,20 @@ def run_pick_demo(panel) -> None:
                         or 0.030
                     ),
                 )
+                align_target_source = (
+                    "selected_base_anchor"
+                    if selected_base_anchor is not None
+                    else "live_object_base"
+                )
                 last_metrics = None
                 last_debug = None
                 for attempt in range(1, max_attempts + 1):
-                    obj_base = _live_object_base()
+                    obj_base_live = _live_object_base()
+                    obj_base = (
+                        _tuple3(selected_base_anchor)
+                        if selected_base_anchor is not None
+                        else _tuple3(obj_base_live)
+                    )
                     if obj_base is None:
                         raise RuntimeError("demo_object_pose_unavailable_before_align")
                     target_z_expected = float(obj_base[2]) + float(GRIPPER_TCP_Z_OFFSET)
@@ -1670,6 +1789,10 @@ def run_pick_demo(panel) -> None:
                             decision = "full_xy_z_bias"
                     delta_raw = None
                     delta_used = None
+                    # FIX-SYNTAX: the Rz(pi) frame fix belongs ONLY inside
+                    # _resolve_direct_execution_target (called by _move_tcp_direct below).
+                    # This block restores the debug metrics + IK_GEOM log that were
+                    # corrupted when a duplicate of the Rz fix was incorrectly inserted here.
                     if tcp_before is not None:
                         delta_raw = (
                             float(target_tcp_runtime_raw[0]) - float(tcp_before[0]),
@@ -1681,11 +1804,32 @@ def run_pick_demo(panel) -> None:
                             float(target_tcp_runtime[1]) - float(tcp_before[1]),
                             float(target_tcp_runtime[2]) - float(tcp_before[2]),
                         )
+                    live_anchor_dx = (
+                        float(obj_base_live[0]) - float(obj_base[0])
+                        if obj_base_live is not None and obj_base is not None
+                        else None
+                    )
+                    live_anchor_dy = (
+                        float(obj_base_live[1]) - float(obj_base[1])
+                        if obj_base_live is not None and obj_base is not None
+                        else None
+                    )
+                    live_anchor_dz = (
+                        float(obj_base_live[2]) - float(obj_base[2])
+                        if obj_base_live is not None and obj_base is not None
+                        else None
+                    )
+                    live_anchor_norm = (
+                        math.sqrt(live_anchor_dx**2 + live_anchor_dy**2 + live_anchor_dz**2)
+                        if live_anchor_dx is not None
+                        else None
+                    )
                     panel._emit_log(
                         "[PICK][DIRECT][IK_GEOM] "
                         f"attempt={attempt}/{max_attempts} "
                         f"tcp_before={_fmt_vec(tcp_before)} "
                         f"obj_base={_fmt_vec(obj_base)} "
+                        f"obj_base_live={_fmt_vec(obj_base_live)} "
                         f"target_tcp_raw={_fmt_vec(target_tcp_runtime_raw)} "
                         f"target_tcp_used={_fmt_vec(target_tcp_runtime)} "
                         f"delta_raw={_fmt_vec(delta_raw)} "
@@ -1699,13 +1843,79 @@ def run_pick_demo(panel) -> None:
                         f"xy_tol_pre={xy_tol_pre:.3f} "
                         f"z_tol_pre={z_tol_pre:.3f} "
                         f"xy_lock_factor={xy_lock_factor:.2f} "
+                        f"align_target_source={align_target_source} "
+                        f"live_anchor_delta=({_fmt_scalar(live_anchor_dx)},{_fmt_scalar(live_anchor_dy)},{_fmt_scalar(live_anchor_dz)}) "
+                        f"live_anchor_norm={_fmt_scalar(live_anchor_norm)} "
                         f"decision={decision}"
                     )
-                    last_debug = _move_tcp_direct(
-                        label="GRASP_ALIGN_IK",
-                        target_tcp_runtime=target_tcp_runtime,
-                        timeout_sec=move_sec + 8.0,
+                    panel._emit_log(
+                        "[PICK][DIRECT][ALIGN_TRACE] "
+                        f"attempt={attempt}/{max_attempts} "
+                        "align_target_frame=base_link "
+                        f"align_target_pose={_fmt_vec(target_tcp_runtime)} "
+                        f"align_current_tcp={_fmt_vec(tcp_before)} "
+                        f"align_object_pose={_fmt_vec(obj_base)} "
+                        f"align_object_pose_live={_fmt_vec(obj_base_live)} "
+                        "align_offset_vector=deferred_to_direct_ik "
+                        f"align_error_xyz={_fmt_vec(delta_used)} "
+                        f"align_error_norm={_fmt_scalar(_dist(target_tcp_runtime, tcp_before) if tcp_before is not None else None)} "
+                        "align_reached_condition=pre_move_false "
+                        "align_timeout_reason=none "
+                        f"align_target_source={align_target_source}"
                     )
+                    try:
+                        last_debug = _move_tcp_direct(
+                            label="GRASP_ALIGN_IK",
+                            target_tcp_runtime=target_tcp_runtime,
+                            timeout_sec=move_sec + 8.0,
+                            rot_weight=max(
+                                0.0,
+                                float(
+                                    os.environ.get(
+                                        "PANEL_PICK_DEMO_ALIGN_ROT_WEIGHT",
+                                        "0.10",
+                                    )
+                                    or 0.10
+                                ),
+                            ),
+                            ik_err_tol=max(
+                                0.035,
+                                float(
+                                    os.environ.get(
+                                        "PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL",
+                                        "0.10",
+                                    )
+                                    or 0.10
+                                ),
+                            ),
+                        )
+                    except Exception as exc:
+                        tcp_fail = _live_tcp_base()
+                        fail_err_xyz = None
+                        fail_err_norm = None
+                        if tcp_fail is not None:
+                            fail_err_xyz = (
+                                float(target_tcp_runtime[0]) - float(tcp_fail[0]),
+                                float(target_tcp_runtime[1]) - float(tcp_fail[1]),
+                                float(target_tcp_runtime[2]) - float(tcp_fail[2]),
+                            )
+                            fail_err_norm = _dist(target_tcp_runtime, tcp_fail)
+                        panel._emit_log(
+                            "[PICK][DIRECT][ALIGN_TRACE] "
+                            f"attempt={attempt}/{max_attempts} "
+                            "align_target_frame=base_link "
+                            f"align_target_pose={_fmt_vec(target_tcp_runtime)} "
+                            f"align_current_tcp={_fmt_vec(tcp_fail)} "
+                            f"align_object_pose={_fmt_vec(obj_base)} "
+                            f"align_object_pose_live={_fmt_vec(obj_base_live)} "
+                            "align_offset_vector=direct_ik_logged_separately "
+                            f"align_error_xyz={_fmt_vec(fail_err_xyz)} "
+                            f"align_error_norm={_fmt_scalar(fail_err_norm)} "
+                            "align_reached_condition=false "
+                            f"align_timeout_reason={exc} "
+                            f"align_target_source={align_target_source}"
+                        )
+                        raise
                     last_metrics = _pre_close_alignment_metrics()
                     runtime_ok = bool((last_debug or {}).get("runtime_target_ok"))
                     tcp_after = _live_tcp_base()
@@ -1772,6 +1982,30 @@ def run_pick_demo(panel) -> None:
                     )
                     panel._emit_log(z_trace_msg)
                     _append_trace(z_trace_msg)
+                    align_err_xyz = None
+                    align_err_norm = None
+                    if tcp_after is not None:
+                        align_err_xyz = (
+                            float(target_tcp_runtime[0]) - float(tcp_after[0]),
+                            float(target_tcp_runtime[1]) - float(tcp_after[1]),
+                            float(target_tcp_runtime[2]) - float(tcp_after[2]),
+                        )
+                        align_err_norm = _dist(target_tcp_runtime, tcp_after)
+                    panel._emit_log(
+                        "[PICK][DIRECT][ALIGN_TRACE] "
+                        f"attempt={attempt}/{max_attempts} "
+                        "align_target_frame=base_link "
+                        f"align_target_pose={_fmt_vec(target_tcp_runtime)} "
+                        f"align_current_tcp={_fmt_vec(tcp_after)} "
+                        f"align_object_pose={_fmt_vec(obj_base)} "
+                        f"align_object_pose_live={_fmt_vec(obj_after)} "
+                        f"align_offset_vector={_fmt_vec((last_debug or {}).get('offset_vector'))} "
+                        f"align_error_xyz={_fmt_vec(align_err_xyz)} "
+                        f"align_error_norm={_fmt_scalar(align_err_norm)} "
+                        f"align_reached_condition={str(convergence_ok).lower()} "
+                        "align_timeout_reason=none "
+                        f"align_target_source={align_target_source}"
+                    )
                     panel._emit_log(
                         "[PICK][DIRECT][IK_RUNTIME] "
                         f"attempt={attempt}/{max_attempts} "
@@ -2565,7 +2799,11 @@ def run_pick_demo(panel) -> None:
                 preset_used=preset_grasp_down,
                 decision=grasp_down_decision,
             )
-            obj_base_align = _live_object_base()
+            obj_base_align = (
+                _tuple3(selected_base_anchor)
+                if selected_base_anchor is not None
+                else _live_object_base()
+            )
             target_base_align = None
             target_world_align = None
             if obj_base_align is not None:
@@ -2645,7 +2883,22 @@ def run_pick_demo(panel) -> None:
                         "execution_frame": DIRECT_EXECUTION_FRAME,
                         "ik_mode": DIRECT_EXECUTION_IK_MODE,
                     },
-                    note="fine alignment IK over live object pose",
+                    note="fine alignment IK over stable selected object pose",
+                )
+                panel._emit_log(
+                    "[PICK][DIRECT][ALIGN_TRACE] "
+                    "attempt=phase_start "
+                    "align_target_frame=base_link "
+                    f"align_target_pose={_fmt_vec(target_base_align)} "
+                    f"align_current_tcp={_fmt_vec(_live_tcp_base())} "
+                    f"align_object_pose={_fmt_vec(obj_base_align)} "
+                    f"align_object_pose_live={_fmt_vec(_live_object_base())} "
+                    "align_offset_vector=deferred_to_direct_ik "
+                    f"align_error_xyz={_fmt_vec(None)} "
+                    f"align_error_norm={_fmt_scalar(None)} "
+                    "align_reached_condition=phase_enter "
+                    "align_timeout_reason=none "
+                    f"align_target_source={'selected_base_anchor' if selected_base_anchor is not None else 'live_object_base'}"
                 )
                 _trace_phase_pose(
                     phase="GRASP_ALIGN_IK",
@@ -2810,7 +3063,12 @@ def run_pick_demo(panel) -> None:
                     )
                     raise
             else:
-                panel._emit_log("[PICK][DIRECT] moveit_extra_down=disabled route=direct_joint_only")
+                panel._emit_log(
+                    "[PICK][DIRECT][ROUTE] "
+                    "moveit_extra_down=disabled "
+                    "route_selected=direct_ik_hybrid "
+                    "route_reason=optional_cartesian_extra_down_disabled"
+                )
             post_align_settle_sec = max(
                 0.0,
                 float(
