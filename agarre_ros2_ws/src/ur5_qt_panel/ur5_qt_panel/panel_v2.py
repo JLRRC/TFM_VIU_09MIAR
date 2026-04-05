@@ -4407,6 +4407,8 @@ class ControlPanelV2(QMainWindow):
             return True
         if msg.startswith("[PICK_OBJ_DEBUG]"):
             return True
+        if msg.startswith("[MOVEIT2]"):
+            return True
         return False
 
     def _set_motion_lock(self, active: bool):

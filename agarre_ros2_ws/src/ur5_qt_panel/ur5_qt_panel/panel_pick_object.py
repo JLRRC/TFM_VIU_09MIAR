@@ -764,6 +764,19 @@ def run_pick_object(panel) -> None:
         bx = override_x
         by = override_y
         pose_source = "tfm_grasp_override"
+    # Referencia congelada de ciclo MoveIt2: equivalente explícito al patrón CYCLE_REF de Directo.
+    # bx/by ya incluyen el canonical override si estaba activo. Se asigna UNA SOLA VEZ.
+    _moveit_cycle_object_world = (float(obj_x), float(obj_y), float(obj_z))
+    _moveit_cycle_object_base = (float(bx), float(by), float(bz))
+    _moveit_cycle_object_source = str(pose_source)
+    panel._emit_log(
+        "[MOVEIT2][CYCLE_REF][SELECT] "
+        f"phase=BUTTON_PRESS object={obj_name} "
+        f"source={_moveit_cycle_object_source} "
+        f"world=({obj_x:.3f},{obj_y:.3f},{obj_z:.3f}) "
+        f"base=({bx:.3f},{by:.3f},{bz:.3f}) "
+        f"canonical_override={str(canonical_active).lower()}"
+    )
     basket_coords, _ = transform_point_to_frame(
         BASKET_DROP,
         base_frame,
@@ -3639,6 +3652,14 @@ def run_pick_object(panel) -> None:
 
             panel._emit_log("[PICK_OBJ] FASE 3: APPROACH sobre objeto (pinza abierta)")
             _moveit2_log("PHASE", "APPROACH start")
+            panel._emit_log(
+                "[MOVEIT2][CYCLE_REF][USE] "
+                f"phase=APPROACH consumer=_run_moveit_step "
+                f"source={_moveit_cycle_object_source} "
+                f"world=({_moveit_cycle_object_world[0]:.3f},{_moveit_cycle_object_world[1]:.3f},{_moveit_cycle_object_world[2]:.3f}) "
+                f"base=({_moveit_cycle_object_base[0]:.3f},{_moveit_cycle_object_base[1]:.3f},{_moveit_cycle_object_base[2]:.3f}) "
+                f"approach_target=({approach_pose[0]:.3f},{approach_pose[1]:.3f},{approach_pose[2]:.3f})"
+            )
             try:
                 _run_moveit_step(*sequence[0])
             except RuntimeError as exc:
@@ -3680,6 +3701,14 @@ def run_pick_object(panel) -> None:
 
             panel._emit_log("[PICK_OBJ] FASE 4: PRE_GRASP (pinza abierta)")
             _moveit2_log("PHASE", "PRE_GRASP start")
+            panel._emit_log(
+                "[MOVEIT2][CYCLE_REF][USE] "
+                f"phase=PRE_GRASP consumer=_run_moveit_step "
+                f"source={_moveit_cycle_object_source} "
+                f"world=({_moveit_cycle_object_world[0]:.3f},{_moveit_cycle_object_world[1]:.3f},{_moveit_cycle_object_world[2]:.3f}) "
+                f"base=({_moveit_cycle_object_base[0]:.3f},{_moveit_cycle_object_base[1]:.3f},{_moveit_cycle_object_base[2]:.3f}) "
+                f"pre_grasp_target=({pre_grasp_pose[0]:.3f},{pre_grasp_pose[1]:.3f},{pre_grasp_pose[2]:.3f})"
+            )
             try:
                 _run_moveit_step(*sequence[1])
             except RuntimeError as exc:
@@ -3712,6 +3741,14 @@ def run_pick_object(panel) -> None:
 
             panel._emit_log("[PICK_OBJ] FASE 5: GRASP_DOWN (pinza abierta)")
             _moveit2_log("PHASE", "GRASP_DOWN start")
+            panel._emit_log(
+                "[MOVEIT2][CYCLE_REF][USE] "
+                f"phase=GRASP_DOWN consumer=_run_moveit_step "
+                f"source={_moveit_cycle_object_source} "
+                f"world=({_moveit_cycle_object_world[0]:.3f},{_moveit_cycle_object_world[1]:.3f},{_moveit_cycle_object_world[2]:.3f}) "
+                f"base=({_moveit_cycle_object_base[0]:.3f},{_moveit_cycle_object_base[1]:.3f},{_moveit_cycle_object_base[2]:.3f}) "
+                f"grasp_target=({grasp_down_pose[0]:.3f},{grasp_down_pose[1]:.3f},{grasp_down_pose[2]:.3f})"
+            )
             grasp_label, grasp_pose_data, grasp_delay = sequence[2]
             grasp_pose_send = dict(grasp_pose_data)
             grasp_orig_pos = grasp_pose_send.get("position", (bx, by, bz))

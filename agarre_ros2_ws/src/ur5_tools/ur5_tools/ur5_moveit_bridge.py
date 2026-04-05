@@ -1891,6 +1891,21 @@ class UR5MoveItBridge(Node):
             self._active_exec_timeout_deadline_mono = float(exec_deadline_mono)
         try:
             result_future = goal_handle.get_result_async()
+            result_future_done_logged = False
+
+            def _on_result_future_done(_future):
+                try:
+                    self.get_logger().info(
+                        "[BRIDGE_EXEC] FollowJointTrajectory result_future done callback "
+                        f"action={action_name}"
+                    )
+                except Exception:
+                    pass
+
+            try:
+                result_future.add_done_callback(_on_result_future_done)
+            except Exception:
+                pass
             goal_check_tol_rad = max(
                 0.05,
                 self._env_float("PANEL_MOVEIT_BRIDGE_GOAL_CHECK_TOL_RAD", 0.12),
@@ -2105,10 +2120,29 @@ class UR5MoveItBridge(Node):
             last_goal_check_mono = 0.0
             last_ee_check_mono = 0.0
             last_feedback_check_mono = 0.0
+            next_pending_diag_mono = result_wait_started + 5.0
             while not result_future.done():
                 now_mono = time.monotonic()
                 if now_mono >= result_wait_deadline:
                     break
+                if now_mono >= next_pending_diag_mono:
+                    with feedback_lock:
+                        feedback_count = int(feedback_state.get("count", 0) or 0)
+                        feedback_last_detail = str(
+                            feedback_state.get("last_detail")
+                            or feedback_state.get("best_detail")
+                            or "feedback_never_received"
+                        )
+                    self.get_logger().info(
+                        "[BRIDGE_EXEC][WAIT_RESULT] pending "
+                        f"action={action_name} phase={phase_label or 'n/a'} "
+                        f"elapsed={now_mono - result_wait_started:.1f}s "
+                        f"feedback_count={feedback_count} "
+                        f"feedback_detail={feedback_last_detail} "
+                        f"goal_check_start_sec={float(goal_check_start_sec):.1f} "
+                        f"timeout_sec={float(timeout_sec):.1f}"
+                    )
+                    next_pending_diag_mono = now_mono + 5.0
                 if (
                     (now_mono - result_wait_started) >= max(3.0, goal_check_start_sec * 0.5)
                     and (now_mono - last_feedback_check_mono) >= goal_check_poll_sec
@@ -2411,6 +2445,12 @@ class UR5MoveItBridge(Node):
                             },
                         )
                 time.sleep(0.05)
+            if result_future.done() and not result_future_done_logged:
+                self.get_logger().info(
+                    "[BRIDGE_EXEC] FollowJointTrajectory result_future observed done in wait loop "
+                    f"action={action_name} elapsed={time.monotonic() - result_wait_started:.1f}s"
+                )
+                result_future_done_logged = True
             if not result_future.done():
                 try:
                     goal_handle.cancel_goal_async()
