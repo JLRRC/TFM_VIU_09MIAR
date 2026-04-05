@@ -153,7 +153,7 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         elif not camera_ready and camera_degraded_ok:
             basic_reason = "Cámara sin frames (modo degradado)"
         elif test_pending:
-            basic_reason = "Ejecuta TEST ROBOT para habilitar"
+            basic_reason = "Ejecuta AUTO TUNE para habilitar"
     panel._set_btn_state(
         panel.btn_send_joints,
         manual_enabled,
@@ -201,7 +201,7 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         panel._external_motion_block_reason = None
         panel._set_robot_test_blocked(None)
     test_locked = bool(panel._robot_test_disabled)
-    test_locked_tip = "TEST ROBOT ya ejecutado"
+    test_locked_tip = "AUTO TUNE ya ejecutado"
 
     if external_block and not moveit_only:
         block_tip = f"Bloqueado: {external_tip}"
@@ -212,7 +212,7 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         panel._set_btn_state(panel.btn_gripper, False, block_tip)
     elif moveit_only:
         panel._set_robot_test_blocked(None)
-        moveit_tip = "MoveIt bridge activo; se pausará antes del test"
+        moveit_tip = "MoveIt bridge activo; se pausará antes de AUTO TUNE"
         panel._set_btn_state(panel.btn_test_robot, False if test_locked else motion_enabled, test_locked_tip if test_locked else moveit_tip)
         # HOME/MESA/CESTA habilitados si test ya completado
         if panel._robot_test_done:
@@ -224,7 +224,7 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
             panel._set_btn_state(panel.btn_home, False, block_tip)
             panel._set_btn_state(panel.btn_table, False, block_tip)
             panel._set_btn_state(panel.btn_basket, False, block_tip)
-        panel._set_btn_state(panel.btn_gripper, False, "Bloqueado: MoveIt bridge activo")
+        panel._set_btn_state(panel.btn_gripper, gripper_motion_enabled, gripper_motion_tip)
     elif not camera_gate_ok:
         block_tip = "Cámara no lista"
         # Deshabilitar si ya se ejecutó
@@ -235,9 +235,9 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         panel._set_btn_state(panel.btn_home, False, block_tip)
         panel._set_btn_state(panel.btn_table, False, block_tip)
         panel._set_btn_state(panel.btn_basket, False, block_tip)
-        panel._set_btn_state(panel.btn_gripper, False, block_tip)
+        panel._set_btn_state(panel.btn_gripper, gripper_motion_enabled, gripper_motion_tip)
     elif test_pending:
-        block_tip = "Ejecuta TEST ROBOT para habilitar"
+        block_tip = "Ejecuta AUTO TUNE para habilitar"
         # Deshabilitar si ya se ejecutó
         if test_locked:
             panel._set_btn_state(panel.btn_test_robot, False, test_locked_tip)
@@ -246,7 +246,7 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         panel._set_btn_state(panel.btn_home, False, block_tip)
         panel._set_btn_state(panel.btn_table, False, block_tip)
         panel._set_btn_state(panel.btn_basket, False, block_tip)
-        panel._set_btn_state(panel.btn_gripper, False, block_tip)
+        panel._set_btn_state(panel.btn_gripper, gripper_motion_enabled, gripper_motion_tip)
     else:
         # Deshabilitar si ya se ejecutó
         if test_locked:
@@ -269,14 +269,16 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         and not panel._pick_demo_executed  # Deshabilitar si ya se ejecutó
     )
     demo_tip = "Demo (secuencia joints, sin MoveIt)"
-    if not test_pending:
-        if panel._pick_demo_executed:
-            panel._set_btn_state(panel.btn_pick_demo, False, "PICK DEMO ya ejecutado (una sola vez)")
-        else:
-            panel._set_btn_state(panel.btn_pick_demo, demo_ready, demo_tip if demo_ready else pick_tip)
+    if panel._pick_demo_executed:
+        panel._set_btn_state(panel.btn_pick_demo, False, "PICK DEMO ya ejecutado (una sola vez)")
     else:
-        block_tip = "Ejecuta TEST ROBOT para habilitar"
-        panel._set_btn_state(panel.btn_pick_demo, False, block_tip)
+        demo_block_tip = "Demo directa: espera controladores/TF"
+        panel._set_btn_state(
+            panel.btn_pick_demo,
+            demo_ready,
+            demo_tip if demo_ready else demo_block_tip,
+        )
+    block_tip = "Ejecuta AUTO TUNE para habilitar"
     pick_object_ready = pick_ok and panel._pose_info_ok and panel._tf_ready_state and bool(panel._selected_object)
     if camera_gate_ok and not test_pending:
         panel._set_btn_state(
@@ -297,7 +299,7 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     elif panel._tfm_execute_inflight:
         tfm_block_tip = "Ejecución en curso"
     elif test_pending:
-        tfm_block_tip = "Ejecuta TEST ROBOT para habilitar"
+        tfm_block_tip = "Ejecuta AUTO TUNE para habilitar"
     elif not panel._joint_limits_ok:
         tfm_block_tip = panel._joint_limits_err or "Limites articulares no cargados"
     elif not infer_ok:

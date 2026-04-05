@@ -89,6 +89,33 @@ JOINT_GRASP_DOWN_POSE_RAD = [
     math.radians(-88.8),
     math.radians(0.9),
 ]
+# Historical "golden" poses kept as a diagnostic reference for direct pick tuning.
+JOINT_PICK_DEMO_GOLDEN_GRASP_POSE_RAD = [
+    math.radians(-15.6),
+    math.radians(-10.4),
+    math.radians(133.9),
+    math.radians(-46.8),
+    math.radians(-90.7),
+    math.radians(-90.4),
+]
+JOINT_PICK_DEMO_GOLDEN_CARRY_POSE_RAD = [
+    math.radians(-2.7),
+    math.radians(-0.1),
+    math.radians(90.0),
+    math.radians(-5.5),
+    math.radians(-90.7),
+    math.radians(0.9),
+]
+# Manual successful pre-close reference captured on 2026-04-05 over pick_demo.
+# Joint order: shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3.
+JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD = [
+    -0.2548,
+    -0.1117,
+    2.1799,
+    -0.5829,
+    -1.5830,
+    -1.5813,
+]
 PRE_GRASP_POSE_DATA = _make_pose_data((0.28, -0.10, 0.35))
 GRASP_POSE_DATA = _make_pose_data((0.28, -0.10, 0.20))
 TRANSPORT_POSE_DATA = _make_pose_data((0.48, 0.10, 0.40))

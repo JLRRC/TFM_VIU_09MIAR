@@ -667,42 +667,56 @@ def generate_launch_description():
         condition=IfCondition(launch_release_service),
     )
 
+    demo_transport_objects_env = os.environ.get(
+        "ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS",
+        "pick_demo",
+    )
+    demo_transport_objects = [
+        value.strip()
+        for value in demo_transport_objects_env.split(",")
+        if value.strip()
+    ]
+
+    gripper_attach_backend_params = [
+        {"use_sim_time": use_sim_time},
+        {"attach_mode": LaunchConfiguration("attach_backend_mode")},
+        {"tool_anchor_prefix": "/gripper_anchor"},
+        {
+            "max_pose_age_sec": LaunchConfiguration(
+                "attach_backend_max_pose_age_sec"
+            )
+        },
+        {
+            "follow_rate_hz": LaunchConfiguration(
+                "attach_backend_follow_rate_hz"
+            )
+        },
+        {
+            "follow_break_dist_m": LaunchConfiguration(
+                "attach_backend_follow_break_dist_m"
+            )
+        },
+        # FIX-ATTACH-THRESHOLD: tighten from 0.15 m to 0.05 m so that the backend
+        # only attaches when the TCP is geometrically close to the object (~contact).
+        # 0.15 m allowed false grasps; 0.05 m requires the gripper to be within ~5 cm.
+        {
+            "attach_max_dist_m": LaunchConfiguration(
+                "attach_backend_max_dist_m"
+            )
+        },
+        # For the demo object we prefer deterministic transport once the grasp
+        # geometry gate has been passed. Leaving the list empty keeps the default
+        # follow_tcp behavior for the rest of the objects.
+        {"demo_transport_objects": demo_transport_objects},
+    ]
+    if not demo_transport_objects:
+        gripper_attach_backend_params = gripper_attach_backend_params[:-1]
+
     gripper_attach_backend = Node(
         package="ur5_tools",
         executable="gripper_attach_backend",
         output="screen",
-        parameters=[
-            {"use_sim_time": use_sim_time},
-            {"attach_mode": LaunchConfiguration("attach_backend_mode")},
-            {"tool_anchor_prefix": "/gripper_anchor"},
-            {
-                "max_pose_age_sec": LaunchConfiguration(
-                    "attach_backend_max_pose_age_sec"
-                )
-            },
-            {
-                "follow_rate_hz": LaunchConfiguration(
-                    "attach_backend_follow_rate_hz"
-                )
-            },
-            {
-                "follow_break_dist_m": LaunchConfiguration(
-                    "attach_backend_follow_break_dist_m"
-                )
-            },
-            # FIX-ATTACH-THRESHOLD: tighten from 0.15 m to 0.05 m so that the backend
-            # only attaches when the TCP is geometrically close to the object (~contact).
-            # 0.15 m allowed false grasps; 0.05 m requires the gripper to be within ~5 cm.
-            {
-                "attach_max_dist_m": LaunchConfiguration(
-                    "attach_backend_max_dist_m"
-                )
-            },
-            # FIX-LAUNCH-RUNTIME: keep attach route defaults in the node itself.
-            # Passing empty lists here breaks launch_ros parameter normalization in
-            # this runtime path ("Expected value ... got tuple"), while the node
-            # defaults in gripper_attach_backend.py are already empty.
-        ],
+        parameters=gripper_attach_backend_params,
         condition=IfCondition(launch_attach_backend),
     )
 

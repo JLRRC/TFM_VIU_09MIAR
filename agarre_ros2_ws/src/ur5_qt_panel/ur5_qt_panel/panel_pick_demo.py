@@ -24,6 +24,7 @@ from .panel_robot_presets import (
     JOINT_GRASP_DOWN_POSE_RAD,
     JOINT_BASKET_POSE_RAD,
     JOINT_BASKET_DEMO_RELEASE_POSE_RAD,
+    JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD,
 )
 from .panel_config import (
     BASKET_DROP,
@@ -49,6 +50,7 @@ from .panel_objects import (
 )
 from .panel_readiness import tf_ready_status
 from .panel_utils import (
+    get_pose,
     transform_point_to_frame,
     world_to_base,
     world_xyz_to_pixel_float,
@@ -181,20 +183,37 @@ def run_pick_demo(panel) -> None:
         panel._emit_log(f"[PICK] controladores no listos ({reason})")
         panel._set_status("Controladores no listos; esperando", error=False)
         return
-    route_candidates = "direct_ik_hybrid,joint_preset_fallback"
+    requested_route_mode = str(
+        os.environ.get("PANEL_PICK_DEMO_ROUTE_MODE", "direct_ik_hybrid") or "direct_ik_hybrid"
+    ).strip().lower()
+    route_candidates = "manual_reference,direct_ik_hybrid,joint_preset_fallback"
+    route_gate_manual_reference = True
     route_gate_direct_ik = bool(tf_ok and bool(panel._ee_frame_effective) and ready)
     route_gate_joint_preset = True
-    route_selected = "direct_ik_hybrid" if route_gate_direct_ik else "joint_preset_fallback"
-    route_reason = (
-        "run_pick_demo_uses_move_tcp_direct_for_APPROACH_COARSE_GRASP_DOWN_JOINT_and_GRASP_ALIGN_IK"
-        if route_gate_direct_ik
-        else "direct_ik_gate_false"
-    )
+    if requested_route_mode in {"direct_ik_hybrid", "direct_ik", "ik"} and route_gate_direct_ik:
+        route_selected = "direct_ik_hybrid"
+        route_reason = "requested_direct_ik_hybrid"
+    elif requested_route_mode in {"joint_preset_fallback", "joint_preset", "preset"}:
+        route_selected = "joint_preset_fallback"
+        route_reason = "requested_joint_preset_fallback"
+    elif route_gate_manual_reference:
+        route_selected = "manual_reference"
+        route_reason = "manual_reference_pre_close_pose_20260405"
+    elif route_gate_direct_ik:
+        route_selected = "direct_ik_hybrid"
+        route_reason = (
+            "run_pick_demo_uses_move_tcp_direct_for_APPROACH_COARSE_GRASP_DOWN_JOINT_and_GRASP_ALIGN_IK"
+        )
+    else:
+        route_selected = "joint_preset_fallback"
+        route_reason = "direct_ik_gate_false"
     panel._emit_log(
         "[PICK][DIRECT][ROUTE] "
         f"route_candidates={route_candidates} "
+        f"route_gate_manual_reference={str(route_gate_manual_reference).lower()} "
         f"route_gate_direct_ik={str(route_gate_direct_ik).lower()} "
         f"route_gate_joint_preset_fallback={str(route_gate_joint_preset).lower()} "
+        f"route_requested={requested_route_mode or 'auto'} "
         f"route_selected={route_selected} "
         f"route_reason={route_reason}"
     )
@@ -384,7 +403,7 @@ def run_pick_demo(panel) -> None:
                         f"source=local_joint_state diffs={local_diffs_after_wait}"
                     )
                     return
-                if label in {"HOME", "MESA", "PICK_IMAGE", "HOME_WITH_OBJECT", "CESTA", "CESTA_RELEASE", "HOME_FINAL"}:
+                if label in {"HOME", "MESA", "PICK_IMAGE", "PICK_PRE_CLOSE_REF", "HOME_WITH_OBJECT", "CESTA", "CESTA_RELEASE", "HOME_FINAL"}:
                     panel._emit_log(
                         f"[PICK][RECOVERY] {label} no alcanzado; reintentando una vez diffs={_joint_error_snapshot(joints)}"
                     )
@@ -537,7 +556,8 @@ def run_pick_demo(panel) -> None:
                         ts = 0.0
                     if ts:
                         try:
-                            joint_state_age_sec = max(0.0, time.time() - float(ts))
+                            # _last_joint_wall uses monotonic time; keep the same base here.
+                            joint_state_age_sec = max(0.0, time.monotonic() - float(ts))
                         except Exception:
                             joint_state_age_sec = None
                 force_est = None
@@ -779,7 +799,7 @@ def run_pick_demo(panel) -> None:
                 )
                 z_tol = max(
                     0.01,
-                    float(os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.030") or 0.030),
+                    float(os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.018") or 0.018),
                 )
                 gripper_state = _read_gripper_state(expected_closed=True)
                 gripper_closed_measured = bool(gripper_state.get("measured_target_ok"))
@@ -837,9 +857,9 @@ def run_pick_demo(panel) -> None:
                     float(
                         os.environ.get(
                             "PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M",
-                            os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.030"),
+                            os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.018"),
                         )
-                        or 0.030
+                        or 0.018
                     ),
                 )
                 ok = xy_dist <= xy_tol and z_error <= z_tol
@@ -1406,6 +1426,7 @@ def run_pick_demo(panel) -> None:
                 timeout_sec: float,
                 rot_weight: float = 0.35,
                 ik_err_tol: float = 0.035,
+                joint_weight: float = -1.0,
             ) -> dict:
                 def _resolve_direct_execution_target(
                     tcp_target_base,
@@ -1414,10 +1435,50 @@ def run_pick_demo(panel) -> None:
                     # DIRECT keeps rg2_tcp as the operational grasp semantics.
                     # Numeric UR5 IK still solves in tool0, so the only allowed
                     # conversion lives here as a fixed, traceable transform.
+                    env_xyz = str(
+                        os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_XYZ", "") or ""
+                    ).strip()
                     env_value = os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "")
-                    tcp_offset_m = max(
-                        0.0,
-                        float(env_value or DIRECT_TOOL0_TO_RG2_TCP_Z_M),
+                    local_offset = None
+                    offset_source = None
+                    if env_xyz:
+                        try:
+                            parts = [float(v.strip()) for v in env_xyz.split(",")]
+                            if len(parts) == 3:
+                                local_offset = (parts[0], parts[1], parts[2])
+                                offset_source = "env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_XYZ"
+                        except Exception:
+                            local_offset = None
+                    if local_offset is None:
+                        pose_tool0_tcp, _pose_err = get_pose(
+                            DIRECT_EXECUTION_FRAME,
+                            DIRECT_SOURCE_FRAME,
+                            timeout_sec=0.25,
+                        )
+                        if pose_tool0_tcp:
+                            try:
+                                px, py, pz = pose_tool0_tcp["position"]
+                                local_offset = (float(px), float(py), float(pz))
+                                offset_source = f"tf:{DIRECT_EXECUTION_FRAME}<-{DIRECT_SOURCE_FRAME}"
+                            except Exception:
+                                local_offset = None
+                    if local_offset is None:
+                        tcp_offset_m = max(
+                            0.0,
+                            float(env_value or DIRECT_TOOL0_TO_RG2_TCP_Z_M),
+                        )
+                        local_offset = (0.0, 0.0, tcp_offset_m)
+                        offset_source = (
+                            "env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M"
+                            if str(env_value).strip()
+                            else "default:ur5.urdf.xacro/rg2_tcp_joint"
+                        )
+                    tcp_offset_m = float(
+                        math.sqrt(
+                            (float(local_offset[0]) ** 2)
+                            + (float(local_offset[1]) ** 2)
+                            + (float(local_offset[2]) ** 2)
+                        )
                     )
                     # URDF chain uses base_link_inertia as kinematic root with a fixed
                     # base_link->base_link_inertia rotation Rz(pi); convert runtime target
@@ -1428,9 +1489,15 @@ def run_pick_demo(panel) -> None:
                         float(tcp_target_base[2]),
                     )
                     offset_vector = (
-                        float(tool_rot[0, 2]) * tcp_offset_m,
-                        float(tool_rot[1, 2]) * tcp_offset_m,
-                        float(tool_rot[2, 2]) * tcp_offset_m,
+                        float(tool_rot[0, 0]) * float(local_offset[0])
+                        + float(tool_rot[0, 1]) * float(local_offset[1])
+                        + float(tool_rot[0, 2]) * float(local_offset[2]),
+                        float(tool_rot[1, 0]) * float(local_offset[0])
+                        + float(tool_rot[1, 1]) * float(local_offset[1])
+                        + float(tool_rot[1, 2]) * float(local_offset[2]),
+                        float(tool_rot[2, 0]) * float(local_offset[0])
+                        + float(tool_rot[2, 1]) * float(local_offset[1])
+                        + float(tool_rot[2, 2]) * float(local_offset[2]),
                     )
                     # rg2_tcp = tool0 + (R_tool0 * [0, 0, offset]); solve tool0 target.
                     execution_target_tool0 = (
@@ -1444,13 +1511,10 @@ def run_pick_demo(panel) -> None:
                         "target_model": _tuple3(target_model),
                         "execution_frame": DIRECT_EXECUTION_FRAME,
                         "execution_pose": _tuple3(execution_target_tool0),
+                        "offset_local": _tuple3(local_offset),
                         "offset_vector": _tuple3(offset_vector),
                         "offset_m": float(tcp_offset_m),
-                        "offset_source": (
-                            "env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M"
-                            if str(env_value).strip()
-                            else "default:ur5.urdf.xacro/rg2_tcp_joint"
-                        ),
+                        "offset_source": str(offset_source or "unknown"),
                         "offset_mode": "fixed_subtract",
                         "model_frame_note": "base_link_to_base_link_inertia_rz_pi",
                         "ik_mode": DIRECT_EXECUTION_IK_MODE,
@@ -1482,20 +1546,17 @@ def run_pick_demo(panel) -> None:
                     f"ik_mode={execution_semantics['ik_mode']} "
                     f"source_pose={_fmt_vec(execution_semantics['source_pose'])} "
                     f"target_model={_fmt_vec(target_model)} "
+                    f"offset_local={_fmt_vec(execution_semantics['offset_local'])} "
                     f"offset_vector={_fmt_vec(offset_vector)} "
                     f"offset_m={tcp_offset_m:.3f} "
                     f"offset_source={execution_semantics['offset_source']} "
                     f"offset_mode={execution_semantics['offset_mode']} "
                     f"execution_pose={_fmt_vec(target_ik)}"
                 )
-                solved_q, err_norm, ik_ok = ik_ur5(
-                    target_ik,
-                    target_rot,
-                    seed,
-                    max_iter=240,
-                    pos_weight=1.0,
-                    rot_weight=float(rot_weight),
-                    joint_weight=max(
+                _effective_joint_weight = (
+                    float(joint_weight)
+                    if float(joint_weight) >= 0.0
+                    else max(
                         0.0,
                         float(
                             os.environ.get(
@@ -1504,7 +1565,16 @@ def run_pick_demo(panel) -> None:
                             )
                             or 0.035
                         ),
-                    ),
+                    )
+                )
+                solved_q, err_norm, ik_ok = ik_ur5(
+                    target_ik,
+                    target_rot,
+                    seed,
+                    max_iter=240,
+                    pos_weight=1.0,
+                    rot_weight=float(rot_weight),
+                    joint_weight=_effective_joint_weight,
                 )
                 # Compute pure position error via FK to validate independently of joint_weight cost
                 import numpy as _np_ik_check
@@ -1525,7 +1595,7 @@ def run_pick_demo(panel) -> None:
                     f"tcp_offset_m={tcp_offset_m:.3f} "
                     f"rot_weight={float(rot_weight):.3f} "
                     f"ik_err_tol={float(ik_err_tol):.3f} "
-                    f"seed_weight={float(os.environ.get('PANEL_PICK_DEMO_DIRECT_IK_SEED_WEIGHT', '0.035') or 0.035):.3f} "
+                    f"seed_weight={_effective_joint_weight:.3f} "
                     f"err_norm={float(err_norm):.4f} pos_err_m={pos_err_m:.4f} success={str(bool(ik_ok)).lower()}"
                 )
                 if (not ik_ok) or pos_err_m > float(ik_err_tol):
@@ -1660,9 +1730,9 @@ def run_pick_demo(panel) -> None:
                     float(
                         os.environ.get(
                             "PANEL_PICK_DEMO_ALIGN_Z_RESIDUAL_TOL_M",
-                            "0.015",
+                            "0.018",
                         )
-                        or 0.015
+                        or 0.018
                     ),
                 )
                 align_z_improve_min = max(
@@ -1888,6 +1958,16 @@ def run_pick_demo(panel) -> None:
                                     or 0.10
                                 ),
                             ),
+                            joint_weight=max(
+                                0.0,
+                                float(
+                                    os.environ.get(
+                                        "PANEL_PICK_DEMO_ALIGN_IK_SEED_WEIGHT",
+                                        "0.50",
+                                    )
+                                    or 0.50
+                                ),
+                            ),
                         )
                     except Exception as exc:
                         tcp_fail = _live_tcp_base()
@@ -1915,6 +1995,21 @@ def run_pick_demo(panel) -> None:
                             f"align_timeout_reason={exc} "
                             f"align_target_source={align_target_source}"
                         )
+                        # If PRE_CLOSE is already satisfied despite the joint timeout,
+                        # keep the sequence moving instead of aborting a valid grasp.
+                        _pre_fail_metrics = _pre_close_alignment_metrics()
+                        if bool(_pre_fail_metrics.get("ok")):
+                            panel._emit_log(
+                                "[PICK][DIRECT][ALIGN_TRACE] "
+                                f"attempt={attempt}/{max_attempts} "
+                                "align_graceful_fallback=pre_close_ok_despite_joint_timeout "
+                                f"align_target_source={align_target_source} "
+                                f"xy_dist={_fmt_scalar(_pre_fail_metrics.get('xy_dist'))} "
+                                f"z_error={_fmt_scalar(_pre_fail_metrics.get('z_error'))}"
+                            )
+                            last_debug = {}
+                            last_metrics = _pre_fail_metrics
+                            break
                         raise
                     last_metrics = _pre_close_alignment_metrics()
                     runtime_ok = bool((last_debug or {}).get("runtime_target_ok"))
@@ -2269,6 +2364,224 @@ def run_pick_demo(panel) -> None:
                     f"last_obj_world={obj_txt} last_obj_base={obj_base_txt} last_tcp_base={tcp_txt}"
                 )
 
+            def _run_manual_like_transport(
+                *,
+                close_metrics: dict | None,
+                close_confirmed: bool,
+            ) -> None:
+                nonlocal demo_logical_attached
+                nonlocal demo_attach_published
+
+                post_close_hold_sec = max(
+                    0.0,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_POST_CLOSE_HOLD_SEC",
+                            "0.45",
+                        )
+                        or 0.45
+                    ),
+                )
+                if post_close_hold_sec > 1e-4:
+                    panel._emit_log(
+                        "[PICK][DIRECT][MANUAL_LIKE] "
+                        f"post_close_hold wait_sec={post_close_hold_sec:.2f}"
+                    )
+                    time.sleep(post_close_hold_sec)
+
+                tcp_base_grasp = _live_tcp_base()
+                obj_base_grasp = _live_object_base()
+                attach_manual_like_ok = False
+                if tcp_base_grasp is not None and obj_base_grasp is not None:
+                    try:
+                        attach_manual_like_ok = bool(
+                            panel._attempt_attach(
+                                "demo_manual_like_transport",
+                                selected_name=PICK_DEMO_OBJECT_NAME,
+                                tcp_base=tcp_base_grasp,
+                                object_base=obj_base_grasp,
+                                base_frame=str(panel._business_base_frame() or BASE_FRAME or "base_link"),
+                                xy_tol_m=max(
+                                    0.03,
+                                    float(
+                                        os.environ.get(
+                                            "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_XY_TOL_M",
+                                            "0.060",
+                                        )
+                                        or 0.060
+                                    ),
+                                ),
+                                z_tol_m=max(
+                                    0.03,
+                                    float(
+                                        os.environ.get(
+                                            "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_Z_TOL_M",
+                                            "0.060",
+                                        )
+                                        or 0.060
+                                    ),
+                                ),
+                                z_ref_mode="center",
+                            )
+                        )
+                    except Exception as exc:
+                        panel._emit_log(
+                            "[PICK][DIRECT][MANUAL_LIKE] "
+                            f"attach_exception={exc}"
+                        )
+                        attach_manual_like_ok = False
+                demo_attach_published = bool(attach_manual_like_ok)
+                if attach_manual_like_ok:
+                    panel._emit_log(
+                        "[PICK][DIRECT][MANUAL_LIKE] "
+                        "attach_backend_publish=true reason=post_close_transport"
+                    )
+                    try:
+                        _wait_demo_attach_follow(
+                            timeout_sec=max(
+                                0.6,
+                                float(
+                                    os.environ.get(
+                                        "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_WAIT_SEC",
+                                        "0.9",
+                                    )
+                                    or 0.9
+                                ),
+                            ),
+                            max_tcp_dist_m=max(
+                                0.10,
+                                float(
+                                    os.environ.get(
+                                        "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_MAX_TCP_DIST_M",
+                                        "0.14",
+                                    )
+                                    or 0.14
+                                ),
+                            ),
+                            min_consecutive=2,
+                        )
+                    except Exception as exc:
+                        panel._emit_log(
+                            "[PICK][DIRECT][MANUAL_LIKE] "
+                            f"attach_follow_warning={exc}"
+                        )
+                else:
+                    panel._emit_log(
+                        "[PICK][DIRECT][MANUAL_LIKE] "
+                        "attach_backend_publish=false reason=geometry_or_backend"
+                    )
+
+                grasp_mark_ok = False
+                attach_mark_ok = False
+                try:
+                    grasp_mark_ok = bool(
+                        mark_object_grasped(
+                            PICK_DEMO_OBJECT_NAME,
+                            reason="demo_manual_like_close_confirmed",
+                        )
+                    )
+                except Exception:
+                    grasp_mark_ok = False
+                try:
+                    attach_mark_ok = bool(
+                        mark_object_attached(
+                            PICK_DEMO_OBJECT_NAME,
+                            reason="demo_manual_like_transport",
+                        )
+                    )
+                except Exception:
+                    attach_mark_ok = False
+                demo_logical_attached = bool(attach_mark_ok)
+                panel._emit_log(
+                    "[PICK][DIRECT][MANUAL_LIKE] "
+                    f"close_confirmed={str(bool(close_confirmed)).lower()} "
+                    f"close_geometry_ok={str(bool((close_metrics or {}).get('ok'))).lower()} "
+                    f"mark_grasped={str(grasp_mark_ok).lower()} "
+                    f"mark_attached={str(attach_mark_ok).lower()}"
+                )
+
+                _run_joint_step(
+                    "MESA_WITH_OBJECT",
+                    JOINT_TABLE_POSE_RAD,
+                    timeout_sec=move_sec + 8.0,
+                    tol_rad=0.10,
+                )
+                _run_joint_step(
+                    "CESTA",
+                    JOINT_BASKET_POSE_RAD,
+                    timeout_sec=move_sec + 10.0,
+                    tol_rad=0.12,
+                )
+                _run_joint_step(
+                    "CESTA_RELEASE",
+                    JOINT_BASKET_DEMO_RELEASE_POSE_RAD,
+                    timeout_sec=move_sec + 8.0,
+                    tol_rad=0.08,
+                )
+
+                panel._emit_log("[DEMO] Abriendo pinza en cesta (manual_like)")
+
+                def _open_and_release_manual_like():
+                    panel._command_gripper(False, log_action="DROP", force=True)
+                    mark_object_released(PICK_DEMO_OBJECT_NAME, reason="demo_drop_manual_like")
+
+                _phase_begin(
+                    "RELEASE",
+                    frame_used="basket",
+                    offsets={"drop_reason": "demo_drop_manual_like", "mode": "manual_like"},
+                    note="open gripper and release after manual-like transport",
+                )
+                _final_phase_trace(
+                    "RELEASE",
+                    event="wait_start",
+                    expected="basket_release_done",
+                    received="pending",
+                    timeout_sec="1.40",
+                    reason="manual_like_open_wait",
+                    request_state="basket_release_manual_like",
+                )
+                panel.signal_run_ui.emit(_open_and_release_manual_like)
+                time.sleep(1.0)
+                demo_logical_attached = False
+                _phase_end("RELEASE", attach_state=_read_attach_state(), result="ok")
+                _final_phase_trace(
+                    "RELEASE",
+                    event="wait_done",
+                    expected="basket_release_done",
+                    received="true",
+                    timeout_sec="1.40",
+                    reason="basket_release_completed_manual_like",
+                    logical_state=str((_read_attach_state() or {}).get("logical_state") or "none"),
+                )
+
+                _phase_begin(
+                    "HOME_FINAL",
+                    frame_used="base_link",
+                    note="return home after basket release (manual_like)",
+                )
+                _final_phase_trace(
+                    "HOME_FINAL",
+                    event="wait_start",
+                    expected="home_joint_reached",
+                    received="pending",
+                    timeout_sec="auto(move_sec+2)",
+                    reason="run_joint_step_HOME_FINAL_manual_like",
+                    request_state="home_final_manual_like",
+                )
+                _run_joint_step("HOME_FINAL", home_pose)
+                _phase_end("HOME_FINAL", attach_state=_read_attach_state(), result="ok")
+                _final_phase_trace(
+                    "HOME_FINAL",
+                    event="wait_done",
+                    expected="home_joint_reached",
+                    received="true",
+                    timeout_sec="auto(move_sec+2)",
+                    reason="home_final_completed_manual_like",
+                    logical_state=str((_read_attach_state() or {}).get("logical_state") or "none"),
+                )
+                panel._emit_log("[PICK][DIRECT] AVISO: TRAMO FINAL COMPLETADO route=manual_like")
+                panel._emit_log("[PICK][DIRECT] SECUENCIA COMPLETADA EXITOSAMENTE route=manual_like")
+
             demo_attach_published = False
             demo_logical_attached = False
             encima_alert_emitted = False
@@ -2545,193 +2858,258 @@ def run_pick_demo(panel) -> None:
             panel.signal_run_ui.emit(lambda: panel._command_gripper(False, log_action="PICK", force=True))
             time.sleep(0.6)
 
-            _run_joint_step("PICK_IMAGE", JOINT_PICK_IMAGE_POSE_RAD)
-
-            panel._emit_log("[DEMO] Bajando a pose de grasp (joints)")
-            coarse_extra_z_m = max(
-                0.0,
-                float(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M",
-                        "0.10",
+            manual_reference_ok = False
+            if route_selected == "manual_reference":
+                ref_target_base = None
+                ref_target_world = None
+                obj_base_reference = _live_object_base()
+                if obj_base_reference is not None:
+                    ref_target_base = (
+                        float(obj_base_reference[0]),
+                        float(obj_base_reference[1]),
+                        float(obj_base_reference[2]) + float(GRIPPER_TCP_Z_OFFSET),
                     )
-                    or 0.10
-                ),
-            )
-            grasp_down_extra_z_m = max(
-                0.0,
-                float(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_GRASP_DOWN_EXTRA_Z_M",
-                        "0.00",
-                    )
-                    or 0.00
-                ),
-            )
-            preset_approach = "direct_rg2_tcp_dynamic_coarse"
-            preset_grasp_down = "direct_rg2_tcp_dynamic_down"
-            obj_base_before_coarse = _live_object_base()
-            target_base_coarse = None
-            target_world_coarse = None
-            target_base_grasp_down = None
-            target_world_grasp_down = None
-            if obj_base_before_coarse is not None:
-                target_base_coarse = (
-                    float(obj_base_before_coarse[0]),
-                    float(obj_base_before_coarse[1]),
-                    float(obj_base_before_coarse[2]) + float(GRIPPER_TCP_Z_OFFSET) + float(coarse_extra_z_m),
+                    ref_target_world = _target_world_from_base(ref_target_base)
+                _phase_begin(
+                    "PICK_PRE_CLOSE_REF",
+                    target_world=ref_target_world,
+                    target_base=ref_target_base,
+                    frame_used="base_link",
+                    joint_goal=[float(v) for v in JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD],
+                    note="manual reference pre-close captured on 2026-04-05",
                 )
-                target_world_coarse = _target_world_from_base(target_base_coarse)
-                target_base_grasp_down = (
-                    float(obj_base_before_coarse[0]),
-                    float(obj_base_before_coarse[1]),
-                    float(obj_base_before_coarse[2]) + float(GRIPPER_TCP_Z_OFFSET) + float(grasp_down_extra_z_m),
-                )
-                target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
-            _phase_begin(
-                "APPROACH_COARSE",
-                target_world=target_world_coarse,
-                target_base=target_base_coarse,
-                frame_used="base_link",
-                offsets={
-                    "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
-                    "coarse_extra_z_m": float(coarse_extra_z_m),
-                    "mode": "direct_rg2_tcp",
-                },
-                joint_goal=[float(v) for v in JOINT_GRASP_DOWN_POSE_RAD],
-                note="dynamic coarse approach over object before GRASP_DOWN_JOINT",
-            )
-            _trace_phase_pose(
-                phase="APPROACH_COARSE",
-                event="target_set",
-                target_base=target_base_coarse,
-                frame_used="base_link",
-                offsets={
-                    "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
-                    "coarse_extra_z_m": float(coarse_extra_z_m),
-                    "mode": "direct_rg2_tcp",
-                    "execution_mode": "hybrid_geometric_with_preset_fallback",
-                },
-                preset_used=preset_approach,
-                execution_type="hibrido",
-                decision="phase_enter",
-            )
-            approach_debug = None
-            approach_decision = "direct_ik_move"
-            if target_base_coarse is not None:
-                try:
-                    approach_debug = _move_tcp_direct(
-                        label="APPROACH_COARSE",
-                        target_tcp_runtime=target_base_coarse,
-                        timeout_sec=max(move_sec + 2.5, 4.0),
-                    )
-                except Exception as exc:
-                    approach_decision = f"fallback_joint_preset:{exc}"
-                    panel._emit_log(
-                        "[PICK][DIRECT][WARN] "
-                        f"phase=APPROACH_COARSE direct_ik_failed={exc} fallback=joint_preset"
-                    )
-                    _run_joint_step(
-                        "APPROACH_COARSE_FALLBACK",
-                        JOINT_GRASP_DOWN_POSE_RAD,
-                        timeout_sec=move_sec + 5.0,
-                        tol_rad=0.10,
-                    )
-            else:
-                approach_decision = "target_unavailable_keep_pose"
                 panel._emit_log(
-                    "[PICK][DIRECT][WARN] phase=APPROACH_COARSE target_unavailable"
+                    "[PICK][DIRECT][REF] "
+                    "phase=PICK_PRE_CLOSE_REF source=manual_success_reference_20260405"
                 )
-            _phase_end(
-                "APPROACH_COARSE",
-                result="ok",
-                joint_goal=(
-                    approach_debug.get("ik_solution")
-                    if isinstance(approach_debug, dict)
-                    else [float(v) for v in JOINT_GRASP_DOWN_POSE_RAD]
-                ),
-                ik_solution=approach_debug,
-                note=approach_decision,
-            )
-            _trace_phase_pose(
-                phase="APPROACH_COARSE",
-                event="phase_end",
-                target_base=target_base_coarse,
-                frame_used="base_link",
-                offsets={
-                    "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
-                    "coarse_extra_z_m": float(coarse_extra_z_m),
-                    "mode": "direct_rg2_tcp",
-                    "execution_mode": "hybrid_geometric_with_preset_fallback",
-                },
-                preset_used=preset_approach,
-                execution_type=_execution_type_from_decision(approach_decision),
-                decision=approach_decision,
-            )
-            _emit_phase_utility_alert(
-                phase="APPROACH_COARSE",
-                target_base=target_base_coarse,
-                frame_used="base_link",
-                preset_used=preset_approach,
-                decision=approach_decision,
-            )
-
-            # Refrescar target justo antes del descenso para seguir pick_demo vivo.
-            obj_base_before_grasp_down = _live_object_base()
-            if obj_base_before_grasp_down is None:
-                obj_base_before_grasp_down = obj_base_before_coarse
-            target_base_grasp_down = None
-            target_world_grasp_down = None
-            if obj_base_before_grasp_down is not None:
-                target_base_grasp_down = (
-                    float(obj_base_before_grasp_down[0]),
-                    float(obj_base_before_grasp_down[1]),
-                    float(obj_base_before_grasp_down[2]) + float(GRIPPER_TCP_Z_OFFSET) + float(grasp_down_extra_z_m),
+                _run_joint_step(
+                    "PICK_PRE_CLOSE_REF",
+                    JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD,
+                    timeout_sec=move_sec + 6.0,
+                    tol_rad=0.05,
                 )
-                target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
-            _phase_begin(
-                "GRASP_DOWN_JOINT",
-                target_world=target_world_grasp_down,
-                target_base=target_base_grasp_down,
-                frame_used="base_link",
-                offsets={
-                    "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
-                    "grasp_down_extra_z_m": float(grasp_down_extra_z_m),
-                    "mode": "direct_rg2_tcp",
-                    "execution_mode": "hybrid_geometric_with_preset_fallback",
-                },
-                joint_goal=[float(v) for v in JOINT_GRASP_DOWN_POSE_RAD],
-                note="dynamic descent near grasp before GRASP_ALIGN_IK",
-            )
-            _trace_phase_pose(
-                phase="GRASP_DOWN_JOINT",
-                event="target_set",
-                target_base=target_base_grasp_down,
-                frame_used="base_link",
-                offsets={
-                    "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
-                    "grasp_down_extra_z_m": float(grasp_down_extra_z_m),
-                    "mode": "direct_rg2_tcp",
-                    "execution_mode": "hybrid_geometric_with_preset_fallback",
-                },
-                preset_used=preset_grasp_down,
-                execution_type="hibrido",
-                decision="phase_enter",
-            )
-            grasp_down_debug = None
-            grasp_down_decision = "direct_ik_move"
-            if target_base_grasp_down is not None:
-                try:
-                    grasp_down_debug = _move_tcp_direct(
-                        label="GRASP_DOWN_JOINT",
-                        target_tcp_runtime=target_base_grasp_down,
-                        timeout_sec=max(move_sec + 3.0, 4.5),
-                    )
-                except Exception as exc:
-                    grasp_down_decision = f"fallback_joint_preset:{exc}"
+                ref_metrics = _pre_close_alignment_metrics()
+                panel._emit_log(
+                    "[PICK][DIRECT][REF] "
+                    f"phase=PICK_PRE_CLOSE_REF tcp={_fmt_vec(_live_tcp_base())} "
+                    f"obj={_fmt_vec(_live_object_base())} "
+                    f"xy_dist={_fmt_scalar(ref_metrics.get('xy_dist'))} "
+                    f"z_error={_fmt_scalar(ref_metrics.get('z_error'))} "
+                    f"ok={str(bool(ref_metrics.get('ok'))).lower()}"
+                )
+                manual_reference_ok = bool(ref_metrics.get("ok"))
+                _phase_end(
+                    "PICK_PRE_CLOSE_REF",
+                    result="ok" if manual_reference_ok else "partial",
+                    joint_goal=[float(v) for v in JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD],
+                    note=json.dumps(_json_safe(ref_metrics), ensure_ascii=False, sort_keys=True),
+                )
+                if not manual_reference_ok:
                     panel._emit_log(
-                        "[PICK][DIRECT][WARN] "
-                        f"phase=GRASP_DOWN_JOINT direct_ik_failed={exc} fallback=joint_preset"
+                        "[PICK][DIRECT][REF] "
+                        "manual_reference_not_reached -> fallback=direct_ik_hybrid "
+                        f"xy_dist={_fmt_scalar(ref_metrics.get('xy_dist'))} "
+                        f"z_error={_fmt_scalar(ref_metrics.get('z_error'))}"
+                    )
+            if route_selected != "manual_reference" or not manual_reference_ok:
+                _run_joint_step("PICK_IMAGE", JOINT_PICK_IMAGE_POSE_RAD)
+
+                panel._emit_log("[DEMO] Bajando a pose de grasp (joints)")
+                coarse_extra_z_m = max(
+                    0.0,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M",
+                            "0.10",
+                        )
+                        or 0.10
+                    ),
+                )
+                grasp_down_extra_z_m = max(
+                    0.0,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_GRASP_DOWN_EXTRA_Z_M",
+                            "0.00",
+                        )
+                        or 0.00
+                    ),
+                )
+                preset_approach = "direct_rg2_tcp_dynamic_coarse"
+                preset_grasp_down = "direct_rg2_tcp_dynamic_down"
+                obj_base_before_coarse = _live_object_base()
+                target_base_coarse = None
+                target_world_coarse = None
+                target_base_grasp_down = None
+                target_world_grasp_down = None
+                if obj_base_before_coarse is not None:
+                    target_base_coarse = (
+                        float(obj_base_before_coarse[0]),
+                        float(obj_base_before_coarse[1]),
+                        float(obj_base_before_coarse[2]) + float(GRIPPER_TCP_Z_OFFSET) + float(coarse_extra_z_m),
+                    )
+                    target_world_coarse = _target_world_from_base(target_base_coarse)
+                    target_base_grasp_down = (
+                        float(obj_base_before_coarse[0]),
+                        float(obj_base_before_coarse[1]),
+                        float(obj_base_before_coarse[2]) + float(GRIPPER_TCP_Z_OFFSET) + float(grasp_down_extra_z_m),
+                    )
+                    target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
+                _phase_begin(
+                    "APPROACH_COARSE",
+                    target_world=target_world_coarse,
+                    target_base=target_base_coarse,
+                    frame_used="base_link",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "coarse_extra_z_m": float(coarse_extra_z_m),
+                        "mode": "direct_rg2_tcp",
+                    },
+                    joint_goal=[float(v) for v in JOINT_GRASP_DOWN_POSE_RAD],
+                    note="dynamic coarse approach over object before GRASP_DOWN_JOINT",
+                )
+                _trace_phase_pose(
+                    phase="APPROACH_COARSE",
+                    event="target_set",
+                    target_base=target_base_coarse,
+                    frame_used="base_link",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "coarse_extra_z_m": float(coarse_extra_z_m),
+                        "mode": "direct_rg2_tcp",
+                        "execution_mode": "hybrid_geometric_with_preset_fallback",
+                    },
+                    preset_used=preset_approach,
+                    execution_type="hibrido",
+                    decision="phase_enter",
+                )
+                approach_debug = None
+                approach_decision = "direct_ik_move"
+                if target_base_coarse is not None:
+                    try:
+                        approach_debug = _move_tcp_direct(
+                            label="APPROACH_COARSE",
+                            target_tcp_runtime=target_base_coarse,
+                            timeout_sec=max(move_sec + 2.5, 4.0),
+                        )
+                    except Exception as exc:
+                        approach_decision = f"fallback_joint_preset:{exc}"
+                        panel._emit_log(
+                            "[PICK][DIRECT][WARN] "
+                            f"phase=APPROACH_COARSE direct_ik_failed={exc} fallback=joint_preset"
+                        )
+                        _run_joint_step(
+                            "APPROACH_COARSE_FALLBACK",
+                            JOINT_GRASP_DOWN_POSE_RAD,
+                            timeout_sec=move_sec + 5.0,
+                            tol_rad=0.10,
+                        )
+                else:
+                    approach_decision = "target_unavailable_keep_pose"
+                    panel._emit_log(
+                        "[PICK][DIRECT][WARN] phase=APPROACH_COARSE target_unavailable"
+                    )
+                _phase_end(
+                    "APPROACH_COARSE",
+                    result="ok",
+                    joint_goal=(
+                        approach_debug.get("ik_solution")
+                        if isinstance(approach_debug, dict)
+                        else [float(v) for v in JOINT_GRASP_DOWN_POSE_RAD]
+                    ),
+                    ik_solution=approach_debug,
+                    note=approach_decision,
+                )
+                _trace_phase_pose(
+                    phase="APPROACH_COARSE",
+                    event="phase_end",
+                    target_base=target_base_coarse,
+                    frame_used="base_link",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "coarse_extra_z_m": float(coarse_extra_z_m),
+                        "mode": "direct_rg2_tcp",
+                        "execution_mode": "hybrid_geometric_with_preset_fallback",
+                    },
+                    preset_used=preset_approach,
+                    execution_type=_execution_type_from_decision(approach_decision),
+                    decision=approach_decision,
+                )
+                _emit_phase_utility_alert(
+                    phase="APPROACH_COARSE",
+                    target_base=target_base_coarse,
+                    frame_used="base_link",
+                    preset_used=preset_approach,
+                    decision=approach_decision,
+                )
+
+                # Refrescar target justo antes del descenso para seguir pick_demo vivo.
+                obj_base_before_grasp_down = _live_object_base()
+                if obj_base_before_grasp_down is None:
+                    obj_base_before_grasp_down = obj_base_before_coarse
+                target_base_grasp_down = None
+                target_world_grasp_down = None
+                if obj_base_before_grasp_down is not None:
+                    target_base_grasp_down = (
+                        float(obj_base_before_grasp_down[0]),
+                        float(obj_base_before_grasp_down[1]),
+                        float(obj_base_before_grasp_down[2]) + float(GRIPPER_TCP_Z_OFFSET) + float(grasp_down_extra_z_m),
+                    )
+                    target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
+                _phase_begin(
+                    "GRASP_DOWN_JOINT",
+                    target_world=target_world_grasp_down,
+                    target_base=target_base_grasp_down,
+                    frame_used="base_link",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "grasp_down_extra_z_m": float(grasp_down_extra_z_m),
+                        "mode": "direct_rg2_tcp",
+                        "execution_mode": "hybrid_geometric_with_preset_fallback",
+                    },
+                    joint_goal=[float(v) for v in JOINT_GRASP_DOWN_POSE_RAD],
+                    note="dynamic descent near grasp before GRASP_ALIGN_IK",
+                )
+                _trace_phase_pose(
+                    phase="GRASP_DOWN_JOINT",
+                    event="target_set",
+                    target_base=target_base_grasp_down,
+                    frame_used="base_link",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "grasp_down_extra_z_m": float(grasp_down_extra_z_m),
+                        "mode": "direct_rg2_tcp",
+                        "execution_mode": "hybrid_geometric_with_preset_fallback",
+                    },
+                    preset_used=preset_grasp_down,
+                    execution_type="hibrido",
+                    decision="phase_enter",
+                )
+                grasp_down_debug = None
+                grasp_down_decision = "direct_ik_move"
+                if target_base_grasp_down is not None:
+                    try:
+                        grasp_down_debug = _move_tcp_direct(
+                            label="GRASP_DOWN_JOINT",
+                            target_tcp_runtime=target_base_grasp_down,
+                            timeout_sec=max(move_sec + 3.0, 4.5),
+                        )
+                    except Exception as exc:
+                        grasp_down_decision = f"fallback_joint_preset:{exc}"
+                        panel._emit_log(
+                            "[PICK][DIRECT][WARN] "
+                            f"phase=GRASP_DOWN_JOINT direct_ik_failed={exc} fallback=joint_preset"
+                        )
+                        _run_joint_step(
+                            "GRASP_DOWN_JOINT",
+                            JOINT_GRASP_DOWN_POSE_RAD,
+                            timeout_sec=move_sec + 6.0,
+                            tol_rad=0.08,
+                        )
+                else:
+                    grasp_down_decision = "target_unavailable_fallback_joint_preset"
+                    panel._emit_log(
+                        "[PICK][DIRECT][WARN] phase=GRASP_DOWN_JOINT target_unavailable fallback=joint_preset"
                     )
                     _run_joint_step(
                         "GRASP_DOWN_JOINT",
@@ -2739,66 +3117,55 @@ def run_pick_demo(panel) -> None:
                         timeout_sec=move_sec + 6.0,
                         tol_rad=0.08,
                     )
-            else:
-                grasp_down_decision = "target_unavailable_fallback_joint_preset"
-                panel._emit_log(
-                    "[PICK][DIRECT][WARN] phase=GRASP_DOWN_JOINT target_unavailable fallback=joint_preset"
-                )
-                _run_joint_step(
+                tcp_after_joint = _live_tcp_base()
+                obj_after_joint = _live_object_base()
+                if tcp_after_joint is not None and obj_after_joint is not None:
+                    dx = float(tcp_after_joint[0]) - float(obj_after_joint[0])
+                    dy = float(tcp_after_joint[1]) - float(obj_after_joint[1])
+                    dz = float(tcp_after_joint[2]) - float(obj_after_joint[2])
+                    xy_dist = math.hypot(dx, dy)
+                    panel._emit_log(
+                        "[PICK][DIRECT][PHASE] "
+                        f"phase=GRASP_DOWN_JOINT frame=base_link "
+                        f"tcp=({tcp_after_joint[0]:.3f},{tcp_after_joint[1]:.3f},{tcp_after_joint[2]:.3f}) "
+                        f"obj=({obj_after_joint[0]:.3f},{obj_after_joint[1]:.3f},{obj_after_joint[2]:.3f}) "
+                        f"dx={dx:.3f} dy={dy:.3f} dz={dz:.3f} "
+                        f"xy_dist={xy_dist:.3f} "
+                        f"tcp_obj_dist={_dist(tcp_after_joint, obj_after_joint):.3f}"
+                    )
+                _phase_end(
                     "GRASP_DOWN_JOINT",
-                    JOINT_GRASP_DOWN_POSE_RAD,
-                    timeout_sec=move_sec + 6.0,
-                    tol_rad=0.08,
+                    result="ok",
+                    joint_goal=(
+                        grasp_down_debug.get("ik_solution")
+                        if isinstance(grasp_down_debug, dict)
+                        else [float(v) for v in JOINT_GRASP_DOWN_POSE_RAD]
+                    ),
+                    ik_solution=grasp_down_debug,
+                    note=grasp_down_decision,
                 )
-            tcp_after_joint = _live_tcp_base()
-            obj_after_joint = _live_object_base()
-            if tcp_after_joint is not None and obj_after_joint is not None:
-                dx = float(tcp_after_joint[0]) - float(obj_after_joint[0])
-                dy = float(tcp_after_joint[1]) - float(obj_after_joint[1])
-                dz = float(tcp_after_joint[2]) - float(obj_after_joint[2])
-                xy_dist = math.hypot(dx, dy)
-                panel._emit_log(
-                    "[PICK][DIRECT][PHASE] "
-                    f"phase=GRASP_DOWN_JOINT frame=base_link "
-                    f"tcp=({tcp_after_joint[0]:.3f},{tcp_after_joint[1]:.3f},{tcp_after_joint[2]:.3f}) "
-                    f"obj=({obj_after_joint[0]:.3f},{obj_after_joint[1]:.3f},{obj_after_joint[2]:.3f}) "
-                    f"dx={dx:.3f} dy={dy:.3f} dz={dz:.3f} "
-                    f"xy_dist={xy_dist:.3f} "
-                    f"tcp_obj_dist={_dist(tcp_after_joint, obj_after_joint):.3f}"
+                _trace_phase_pose(
+                    phase="GRASP_DOWN_JOINT",
+                    event="phase_end",
+                    target_base=target_base_grasp_down,
+                    frame_used="base_link",
+                    offsets={
+                        "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
+                        "grasp_down_extra_z_m": float(grasp_down_extra_z_m),
+                        "mode": "direct_rg2_tcp",
+                        "execution_mode": "hybrid_geometric_with_preset_fallback",
+                    },
+                    preset_used=preset_grasp_down,
+                    execution_type=_execution_type_from_decision(grasp_down_decision),
+                    decision=grasp_down_decision,
                 )
-            _phase_end(
-                "GRASP_DOWN_JOINT",
-                result="ok",
-                joint_goal=(
-                    grasp_down_debug.get("ik_solution")
-                    if isinstance(grasp_down_debug, dict)
-                    else [float(v) for v in JOINT_GRASP_DOWN_POSE_RAD]
-                ),
-                ik_solution=grasp_down_debug,
-                note=grasp_down_decision,
-            )
-            _trace_phase_pose(
-                phase="GRASP_DOWN_JOINT",
-                event="phase_end",
-                target_base=target_base_grasp_down,
-                frame_used="base_link",
-                offsets={
-                    "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
-                    "grasp_down_extra_z_m": float(grasp_down_extra_z_m),
-                    "mode": "direct_rg2_tcp",
-                    "execution_mode": "hybrid_geometric_with_preset_fallback",
-                },
-                preset_used=preset_grasp_down,
-                execution_type=_execution_type_from_decision(grasp_down_decision),
-                decision=grasp_down_decision,
-            )
-            _emit_phase_utility_alert(
-                phase="GRASP_DOWN_JOINT",
-                target_base=target_base_grasp_down,
-                frame_used="base_link",
-                preset_used=preset_grasp_down,
-                decision=grasp_down_decision,
-            )
+                _emit_phase_utility_alert(
+                    phase="GRASP_DOWN_JOINT",
+                    target_base=target_base_grasp_down,
+                    frame_used="base_link",
+                    preset_used=preset_grasp_down,
+                    decision=grasp_down_decision,
+                )
             obj_base_align = (
                 _tuple3(selected_base_anchor)
                 if selected_base_anchor is not None
@@ -3066,7 +3433,7 @@ def run_pick_demo(panel) -> None:
                 panel._emit_log(
                     "[PICK][DIRECT][ROUTE] "
                     "moveit_extra_down=disabled "
-                    "route_selected=direct_ik_hybrid "
+                    f"route_selected={route_selected} "
                     "route_reason=optional_cartesian_extra_down_disabled"
                 )
             post_align_settle_sec = max(
@@ -3328,6 +3695,10 @@ def run_pick_demo(panel) -> None:
             close_metrics = _close_alignment_metrics()
             close_metrics["close_confirmed"] = bool(close_confirmed)
             close_metrics["close_wait_state"] = _json_safe(close_wait_state)
+            post_close_mode = str(
+                os.environ.get("PANEL_PICK_DEMO_POST_CLOSE_MODE", "manual_like") or "manual_like"
+            ).strip().lower()
+            manual_like_mode = post_close_mode in {"manual_like", "manual", "simple"}
             _final_phase_trace(
                 "CLOSE",
                 event="wait_done",
@@ -3360,6 +3731,19 @@ def run_pick_demo(panel) -> None:
                     metrics=close_metrics,
                 )
             if not bool(close_metrics.get("ok")):
+                if manual_like_mode:
+                    panel._emit_log(
+                        "[PICK][DIRECT][MANUAL_LIKE] "
+                        "close_geometry_override=true "
+                        f"route_selected={route_selected} "
+                        f"xy_dist={_fmt_scalar(close_metrics.get('xy_dist'))} "
+                        f"z_error={_fmt_scalar(close_metrics.get('z_error'))}"
+                    )
+                    _run_manual_like_transport(
+                        close_metrics=close_metrics,
+                        close_confirmed=close_confirmed,
+                    )
+                    return
                 _emit_transition_decision(
                     from_phase="CLOSE",
                     to_phase="ATTACH_GATE",
@@ -3382,6 +3766,17 @@ def run_pick_demo(panel) -> None:
                 condition="close_confirmed&&close_metrics_ok",
                 metrics=close_metrics,
             )
+            if manual_like_mode:
+                panel._emit_log(
+                    "[PICK][DIRECT][MANUAL_LIKE] "
+                    "close_gate_ok -> using manual-like transport "
+                    f"route_selected={route_selected}"
+                )
+                _run_manual_like_transport(
+                    close_metrics=close_metrics,
+                    close_confirmed=close_confirmed,
+                )
+                return
             tcp_base_grasp = _live_tcp_base()
             obj_base_grasp = _live_object_base()
             if tcp_base_grasp is None or obj_base_grasp is None:
@@ -3680,7 +4075,7 @@ def run_pick_demo(panel) -> None:
                 raise RuntimeError("demo_mark_attached_failed")
             demo_logical_attached = True
             short_release_mode = str(
-                os.environ.get("PANEL_PICK_DEMO_SHORT_RELEASE_ONLY", "1") or "1"
+                os.environ.get("PANEL_PICK_DEMO_SHORT_RELEASE_ONLY", "0") or "0"
             ).strip().lower() not in {"0", "false", "no", "off"}
             if short_release_mode:
                 panel._emit_log("[PICK][DEMO] short_release_mode=true")

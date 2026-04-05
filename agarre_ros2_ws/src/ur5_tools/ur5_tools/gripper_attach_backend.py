@@ -15,6 +15,7 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 import rclpy
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -182,8 +183,9 @@ class GripperAttachBackend(Node):
         # which enforces attach_max_dist_m (set to 0.05 m via launch).
         # To re-enable either mechanism for a specific object, pass the parameter explicitly:
         #   ros2 launch ... prefer_tool_anchor_objects:=['box_blue']
-        self.declare_parameter("prefer_tool_anchor_objects", [])
-        self.declare_parameter("demo_transport_objects", [])
+        string_array_param = ParameterDescriptor(type=ParameterType.PARAMETER_STRING_ARRAY)
+        self.declare_parameter("prefer_tool_anchor_objects", [""], string_array_param)
+        self.declare_parameter("demo_transport_objects", [""], string_array_param)
         self.declare_parameter("demo_transport_rate_hz", 25.0)
         self.declare_parameter("demo_transport_min_step_m", 0.001)
         self.declare_parameter("demo_transport_respawn_sleep_sec", 0.08)

@@ -93,7 +93,7 @@ export WS_DIR
 : "${PANEL_STRICT_RUNTIME_SANITY:=1}" # 1 = bloquea arranque si detecta otro stack ROS activo
 : "${PANEL_MOVEIT_MODE:=auto}"        # auto|move_group|bridge
 : "${PANEL_ROS_EXECUTOR_THREADS:=3}"  # executor del RosWorker para no bloquear /clock durante servicios largos
-: "${PANEL_GRIPPER_CLOSED_RAD:=0.60}" # RG2 en este modelo suele cerrar alrededor de ~0.60 rad
+: "${PANEL_GRIPPER_CLOSED_RAD:=0.0}" # En esta maqueta RG2 el cierre completo corresponde a 0.0 rad
 : "${RMW_IMPLEMENTATION:=rmw_fastrtps_cpp}"
 if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]] && ! display_is_usable; then
   log "DISPLAY=${DISPLAY} no es usable; activando modo offscreen"
@@ -418,6 +418,9 @@ export ATTACH_BACKEND_MAX_POSE_AGE_SEC="${ATTACH_BACKEND_MAX_POSE_AGE_SEC:-2.5}"
 export ATTACH_BACKEND_FOLLOW_RATE_HZ="${ATTACH_BACKEND_FOLLOW_RATE_HZ:-10.0}"
 export ATTACH_BACKEND_FOLLOW_BREAK_DIST_M="${ATTACH_BACKEND_FOLLOW_BREAK_DIST_M:-0.45}"
 export ATTACH_BACKEND_MODE="${ATTACH_BACKEND_MODE:-follow_tcp}"
+# For `pick_demo` we prefer deterministic carry once the direct grasp reaches
+# close-range contact. Clear this env var to fall back to pure follow_tcp.
+export ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS="${ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS:-pick_demo}"
 PYQT_PLUGINS_DIR=""
 if [[ -n "${PANEL_VENV_DIR:-}" ]]; then
   for pyqt_candidate in \
