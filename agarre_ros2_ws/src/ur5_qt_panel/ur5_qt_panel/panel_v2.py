@@ -13626,6 +13626,53 @@ class ControlPanelV2(QMainWindow):
                         self._ui_set_status("Directo2: cerrando pinza…")
                         self._command_gripper(True, log_action="DIRECT2", force=True)
                         self._emit_log("[DIRECT2] step=POSE_BUENA action=gripper_close")
+                        # [COMPARE][DIRECT2][GOOD_REF] — emite distancia preset vs objeto live
+                        try:
+                            import math as _math
+                            from .ur5_kinematics import fk_ur5 as _fk_ur5
+                            from .panel_robot_presets import (
+                                JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD as _JREF,
+                            )
+                            _TCP_Z = 0.175  # tool0→rg2_tcp z-offset (DIRECT_TOOL0_TO_RG2_TCP_Z_M)
+                            _fk = _fk_ur5(list(_JREF))
+                            _t0 = (-float(_fk[0][0]), -float(_fk[0][1]), float(_fk[0][2]))
+                            _tcp = (_t0[0], _t0[1], _t0[2] + _TCP_Z)
+                            _obj = None
+                            # get live object base_link position
+                            try:
+                                from .panel_utils import get_pose as _gp
+                                _obj_pose = _gp(
+                                    self.ros_worker,
+                                    "base_link",
+                                    PICK_DEMO_OBJECT_NAME,
+                                    timeout_sec=0.2,
+                                ) if getattr(self, "ros_worker", None) else None
+                                if _obj_pose is not None:
+                                    _op = _obj_pose.position
+                                    _obj = (float(_op.x), float(_op.y), float(_op.z))
+                            except Exception:
+                                _obj = None
+                            _xy = None
+                            _d3 = None
+                            if _obj is not None:
+                                _dx = _tcp[0] - _obj[0]
+                                _dy = _tcp[1] - _obj[1]
+                                _dz = _tcp[2] - _obj[2]
+                                _xy = _math.sqrt(_dx ** 2 + _dy ** 2)
+                                _d3 = _math.sqrt(_dx ** 2 + _dy ** 2 + _dz ** 2)
+                            self._emit_log(
+                                "[COMPARE][DIRECT2][GOOD_REF] "
+                                f"step=POSE_BUENA "
+                                f"preset=JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD "
+                                f"tool0_base=({_t0[0]:.3f},{_t0[1]:.3f},{_t0[2]:.3f}) "
+                                f"rg2_tcp_base=({_tcp[0]:.3f},{_tcp[1]:.3f},{_tcp[2]:.3f}) "
+                                f"object_base={'({:.3f},{:.3f},{:.3f})'.format(*_obj) if _obj else 'N/A'} "
+                                f"xy_dist_rg2tcp_obj={'{:.4f}'.format(_xy) if _xy is not None else 'N/A'} "
+                                f"dist3d_rg2tcp_obj={'{:.4f}'.format(_d3) if _d3 is not None else 'N/A'} "
+                                f"verdict={'PRESET_VALID' if _xy is not None and _xy < 0.05 else 'PRESET_POSITION_MISMATCH'}"
+                            )
+                        except Exception as _ec:
+                            self._emit_log(f"[COMPARE][DIRECT2][GOOD_REF] error={_ec}")
                         _sleep_until_done(gripper_wait_sec)
                     elif step_name == "CESTA":
                         self._ui_set_status("Directo2: soltando en cesta…")

@@ -797,6 +797,60 @@ def run_pick_demo(panel) -> None:
                 },
             )
 
+            # ------------------------------------------------------------------
+            # [COMPARE] — referencia estática Directo2 vs objeto live en BUTTON_PRESS
+            # Emite FK del preset JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD contra
+            # la posición actual del objeto para detectar si el preset es válido aquí.
+            # ------------------------------------------------------------------
+            try:
+                _q_ref = list(JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD)
+                _fk_ref = fk_ur5(_q_ref)
+                # FK devuelve posición en base_link_inertia (modelo). Flip Rz(π): base_link = (-mx, -my, mz)
+                _ref_tool0_base = (-float(_fk_ref[0][0]), -float(_fk_ref[0][1]), float(_fk_ref[0][2]))
+                # rg2_tcp = tool0 + (0, 0, 0.175) en frame local del gripper.
+                # Aproximación: desplazamiento en Z de base_link asumiendo gripper apuntando hacia abajo
+                # (conservador, válido para comparación de magnitud).
+                _ref_rg2_tcp_base = (
+                    _ref_tool0_base[0],
+                    _ref_tool0_base[1],
+                    _ref_tool0_base[2] + DIRECT_TOOL0_TO_RG2_TCP_Z_M,
+                )
+                _obj_live_base = _live_object_base()
+                _xy_dist_ref = None
+                _dist3d_ref = None
+                _dz_ref = None
+                if _obj_live_base is not None:
+                    _dx = _ref_rg2_tcp_base[0] - float(_obj_live_base[0])
+                    _dy = _ref_rg2_tcp_base[1] - float(_obj_live_base[1])
+                    _dz_ref = _ref_rg2_tcp_base[2] - float(_obj_live_base[2])
+                    _xy_dist_ref = math.sqrt(_dx ** 2 + _dy ** 2)
+                    _dist3d_ref = math.sqrt(_dx ** 2 + _dy ** 2 + _dz_ref ** 2)
+                _s_xy = _fmt_scalar(_xy_dist_ref, digits=4)
+                _s_d3 = _fmt_scalar(_dist3d_ref, digits=4)
+                _s_dz = _fmt_scalar(_dz_ref, digits=4)
+                panel._emit_log(
+                    "[COMPARE][DIRECT2][GOOD_REF] "
+                    f"preset=JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD "
+                    f"tool0_base=({_ref_tool0_base[0]:.3f},{_ref_tool0_base[1]:.3f},{_ref_tool0_base[2]:.3f}) "
+                    f"rg2_tcp_base=({_ref_rg2_tcp_base[0]:.3f},{_ref_rg2_tcp_base[1]:.3f},{_ref_rg2_tcp_base[2]:.3f}) "
+                    f"object_base={_fmt_vec(_obj_live_base)} "
+                    f"xy_dist_rg2tcp_obj={_s_xy} "
+                    f"dist3d_rg2tcp_obj={_s_d3} "
+                    f"dz_rg2tcp_obj={_s_dz} "
+                    f"gripper_tcp_z_offset={float(GRIPPER_TCP_Z_OFFSET):.3f} "
+                    "note=FK_preset_vs_live_object_at_button_press"
+                )
+                _verdict_ref = "PRESET_VALID_FOR_CURRENT_OBJECT_POSITION" if (
+                    _xy_dist_ref is not None and _xy_dist_ref < 0.05
+                ) else "PRESET_POSITION_MISMATCH"
+                panel._emit_log(
+                    f"[COMPARE][DIRECT2][GOOD_REF] verdict={_verdict_ref} "
+                    f"xy_dist_threshold=0.050 "
+                    f"xy_dist_actual={_s_xy}"
+                )
+            except Exception as _exc_compare:
+                panel._emit_log(f"[COMPARE][DIRECT2][GOOD_REF] error={_exc_compare}")
+
             def _current_joint_seed():
                 seed = []
                 try:
@@ -2283,6 +2337,74 @@ def run_pick_demo(panel) -> None:
                         "align_timeout_reason=none "
                         f"align_target_source={align_target_source}"
                     )
+                    # ----------------------------------------------------------
+                    # [COMPARE] Directo live vs Directo2 preset — en cada intento de align
+                    # ----------------------------------------------------------
+                    try:
+                        _cmp_obj = obj_base  # base_link
+                        _cmp_tcp = tcp_before  # rg2_pinch_center en base_link (live)
+                        _cmp_target = target_tcp_runtime  # target computado en base_link
+                        _cmp_xy = None
+                        _cmp_dz = None
+                        _cmp_3d = None
+                        if _cmp_tcp is not None and _cmp_obj is not None:
+                            _dxx = float(_cmp_tcp[0]) - float(_cmp_obj[0])
+                            _dyy = float(_cmp_tcp[1]) - float(_cmp_obj[1])
+                            _dzz = float(_cmp_tcp[2]) - float(_cmp_obj[2])
+                            _cmp_xy = math.sqrt(_dxx ** 2 + _dyy ** 2)
+                            _cmp_dz = _dzz
+                            _cmp_3d = math.sqrt(_dxx ** 2 + _dyy ** 2 + _dzz ** 2)
+                        panel._emit_log(
+                            "[COMPARE][OBJECT] "
+                            f"attempt={attempt}/{max_attempts} "
+                            f"obj_base_link={_fmt_vec(_cmp_obj)} "
+                            f"obj_z_tgt={target_z_expected:.3f} "
+                            f"gripper_tcp_z_offset={float(GRIPPER_TCP_Z_OFFSET):.3f}"
+                        )
+                        panel._emit_log(
+                            "[COMPARE][PINCH] "
+                            f"attempt={attempt}/{max_attempts} "
+                            f"ee_frame={DIRECT_SOURCE_FRAME} "
+                            f"tcp_base_link={_fmt_vec(_cmp_tcp)} "
+                            f"xy_dist_to_obj={_cmp_xy:.4f if _cmp_xy is not None else 'N/A'} "
+                            f"dz_to_obj={_cmp_dz:.4f if _cmp_dz is not None else 'N/A'} "
+                            f"dist3d_to_obj={_cmp_3d:.4f if _cmp_3d is not None else 'N/A'}"
+                        )
+                        panel._emit_log(
+                            "[COMPARE][TARGET] "
+                            f"attempt={attempt}/{max_attempts} "
+                            f"target_base_link={_fmt_vec(_cmp_target)} "
+                            f"source_frame={DIRECT_SOURCE_FRAME} "
+                            f"ik_frame={DIRECT_EXECUTION_FRAME} "
+                            f"decision={decision}"
+                        )
+                        _div_xy = _cmp_xy
+                        _div_dz = (
+                            abs(_cmp_dz - float(GRIPPER_TCP_Z_OFFSET))
+                            if _cmp_dz is not None else None
+                        )
+                        panel._emit_log(
+                            "[COMPARE][DIVERGENCE] "
+                            f"attempt={attempt}/{max_attempts} "
+                            f"xy_dist_tcp_obj={_div_xy:.4f if _div_xy is not None else 'N/A'} "
+                            f"dz_error_vs_offset={_div_dz:.4f if _div_dz is not None else 'N/A'} "
+                            f"gripper_tcp_z_offset={float(GRIPPER_TCP_Z_OFFSET):.3f} "
+                            "note=xy_should_be_lt_0.020_dz_error_should_be_lt_0.015"
+                        )
+                        _rc = "OK_WITHIN_TOLERANCE" if (
+                            _div_xy is not None and _div_xy < 0.020
+                        ) else "XY_MISALIGNED_PRESET_OR_IK_DRIFT"
+                        panel._emit_log(
+                            f"[COMPARE][ROOT_CAUSE] "
+                            f"attempt={attempt}/{max_attempts} "
+                            f"verdict={_rc} "
+                            f"xy_tol=0.020 "
+                            f"route={DIRECT_ROUTE_MODE} "
+                            f"source_frame={DIRECT_SOURCE_FRAME}"
+                        )
+                    except Exception as _exc_cmp:
+                        panel._emit_log(f"[COMPARE][DIVERGENCE] error={_exc_cmp}")
+                    # ----------------------------------------------------------
                     try:
                         last_debug = _move_tcp_direct(
                             label="GRASP_ALIGN_IK",
