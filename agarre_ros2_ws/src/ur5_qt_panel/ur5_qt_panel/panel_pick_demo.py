@@ -63,6 +63,7 @@ DIRECT_SOURCE_FRAME = "rg2_tcp"
 DIRECT_EXECUTION_FRAME = "tool0"
 DIRECT_EXECUTION_IK_MODE = "formal_rg2_tcp_source_to_tool0_numeric"
 DIRECT_TOOL0_TO_RG2_TCP_Z_M = 0.175
+DIRECT_GRASP_AUDIT_PREFIX = "[PICK][DIRECT_GRASP_AUDIT]"
 
 
 def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
@@ -193,12 +194,12 @@ def run_pick_demo(panel) -> None:
     if requested_route_mode in {"direct_ik_hybrid", "direct_ik", "ik"} and route_gate_direct_ik:
         route_selected = "direct_ik_hybrid"
         route_reason = "requested_direct_ik_hybrid"
+    elif requested_route_mode in {"manual_reference", "manual_ref", "reference"} and route_gate_manual_reference:
+        route_selected = "manual_reference"
+        route_reason = "requested_manual_reference"
     elif requested_route_mode in {"joint_preset_fallback", "joint_preset", "preset"}:
         route_selected = "joint_preset_fallback"
         route_reason = "requested_joint_preset_fallback"
-    elif route_gate_manual_reference:
-        route_selected = "manual_reference"
-        route_reason = "manual_reference_pre_close_pose_20260405"
     elif route_gate_direct_ik:
         route_selected = "direct_ik_hybrid"
         route_reason = (
@@ -337,6 +338,53 @@ def run_pick_demo(panel) -> None:
                 if v is None:
                     return None
                 return math.sqrt((v[0] * v[0]) + (v[1] * v[1]) + (v[2] * v[2]))
+
+            def _resolved_align_object_base() -> tuple[tuple[float, float, float] | None, str, dict]:
+                obj_base_live = _tuple3(_live_object_base())
+                anchor_delta = _vector_minus(selected_base_anchor, obj_base_live)
+                anchor_norm = _vec_norm(anchor_delta)
+                stale_tol_m = max(
+                    0.01,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_SELECTED_BASE_STALE_TOL_M",
+                            "0.080",
+                        )
+                        or 0.080
+                    ),
+                )
+                extra = {
+                    "selected_base_anchor": selected_base_anchor,
+                    "live_object_base": obj_base_live,
+                    "anchor_live_delta": anchor_delta,
+                    "anchor_live_norm_m": anchor_norm,
+                    "stale_tol_m": stale_tol_m,
+                }
+                if selected_base_anchor is not None and obj_base_live is not None:
+                    if anchor_norm is not None and anchor_norm > stale_tol_m:
+                        _append_trace(
+                            "[PICK][DIRECT][ANCHOR] "
+                            "selected_base_anchor_stale=true "
+                            f"anchor={_fmt_vec(selected_base_anchor)} "
+                            f"live={_fmt_vec(obj_base_live)} "
+                            f"delta={_fmt_vec(anchor_delta)} "
+                            f"norm_m={_fmt_scalar(anchor_norm)} "
+                            f"stale_tol_m={_fmt_scalar(stale_tol_m)} "
+                            "fallback=live_object_base"
+                        )
+                        return obj_base_live, "live_object_base_stale_fallback", extra
+                    return selected_base_anchor, "selected_base_anchor", extra
+                if obj_base_live is not None:
+                    return obj_base_live, "live_object_base", extra
+                if selected_base_anchor is not None:
+                    return selected_base_anchor, "selected_base_anchor_no_live_confirm", extra
+                return None, "target_unavailable", extra
+
+            def _pose_position(target_frame: str, source_frame: str, *, timeout_sec: float = 0.20):
+                pose, _pose_err = get_pose(target_frame, source_frame, timeout_sec=timeout_sec)
+                if pose is None:
+                    return None
+                return _tuple3(pose.get("position"))
 
             def _joint_error_snapshot(joints):
                 names = list(getattr(panel, "UR5_JOINT_NAMES", []) or [])
@@ -503,6 +551,114 @@ def run_pick_demo(panel) -> None:
                         return (float(world[0]), float(world[1]), float(world[2]))
                 tcp_world = getattr(panel, "_last_tcp_world", None)
                 return _tuple3(tcp_world)
+
+            def _camera_audit_meta() -> dict:
+                topic = str(getattr(panel, "camera_topic", "") or "none").strip() or "none"
+                image_ts = None
+                frame_data = getattr(panel, "_last_camera_frame", None)
+                if frame_data:
+                    try:
+                        image_ts = float(frame_data[3])
+                    except Exception:
+                        image_ts = None
+                return {
+                    "topic": topic,
+                    "frame": "unknown",
+                    "image_timestamp": image_ts,
+                }
+
+            def _audit_emit(
+                stage: str,
+                *,
+                target_source: str,
+                target_frame_original: str | None,
+                target_pose_original=None,
+                target_pose_world=None,
+                target_pose_base_link=None,
+                command_pose_sent=None,
+                command_frame: str | None,
+                command_joint_goal=None,
+                extra: dict | None = None,
+            ) -> None:
+                world_frame = str(
+                    getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
+                        WORLD_FRAME or "world"
+                    )
+                ).strip() or "world"
+                try:
+                    base_frame = str(panel._business_base_frame() or BASE_FRAME or "base_link")
+                except Exception:
+                    base_frame = str(BASE_FRAME or "base_link")
+                object_world = _tuple3(_live_object_world())
+                object_base = _tuple3(_live_object_base())
+                tcp_world = _tuple3(_live_tcp_world())
+                tcp_base = _tuple3(_live_tcp_base())
+                tool0_world = _pose_position(world_frame, DIRECT_EXECUTION_FRAME, timeout_sec=0.12)
+                tool0_base = _pose_position(base_frame, DIRECT_EXECUTION_FRAME, timeout_sec=0.12)
+                rg2_tcp_world = _pose_position(world_frame, DIRECT_SOURCE_FRAME, timeout_sec=0.12)
+                rg2_tcp_base = _pose_position(base_frame, DIRECT_SOURCE_FRAME, timeout_sec=0.12) or tcp_base
+                camera_meta = _camera_audit_meta()
+                selection_ts = float(getattr(panel, "_selection_timestamp", 0.0) or 0.0)
+                selection_age = max(0.0, time.time() - selection_ts) if selection_ts > 0.0 else None
+                selected_world = _tuple3(getattr(panel, "_selected_world", None))
+                selected_base = _tuple3(getattr(panel, "_selected_base", None))
+                delta_world = _vector_minus(tcp_world, object_world)
+                delta_base = _vector_minus(tcp_base, object_base)
+                extra_payload = _json_safe(extra) or {}
+                _append_trace(
+                    f"{DIRECT_GRASP_AUDIT_PREFIX} "
+                    f"stage={stage} "
+                    f"timestamp={_iso_now()} "
+                    f"request_id={run_id} "
+                    f"grasp_mode=direct_object "
+                    f"selected_object_name={selected_name or 'none'} "
+                    f"selected_object_id=n/a "
+                    f"user_selected_name={user_selected or 'none'} "
+                    f"selection_age_sec={_fmt_scalar(selection_age)} "
+                    f"target_source={target_source or 'none'} "
+                    f"target_frame_original={target_frame_original or 'none'} "
+                    f"target_pose_original={_fmt_vec(target_pose_original)} "
+                    f"target_pose_world={_fmt_vec(target_pose_world)} "
+                    f"target_pose_base_link={_fmt_vec(target_pose_base_link)} "
+                    f"selected_pose_world={_fmt_vec(selected_world)} "
+                    f"selected_pose_base_link={_fmt_vec(selected_base)} "
+                    f"object_pose_world={_fmt_vec(object_world)} "
+                    f"object_pose_base_link={_fmt_vec(object_base)} "
+                    f"tcp_pose_world={_fmt_vec(tcp_world)} "
+                    f"tcp_pose_base_link={_fmt_vec(tcp_base)} "
+                    f"tool0_pose_world={_fmt_vec(tool0_world)} "
+                    f"tool0_pose_base_link={_fmt_vec(tool0_base)} "
+                    f"rg2_tcp_pose_world={_fmt_vec(rg2_tcp_world)} "
+                    f"rg2_tcp_pose_base_link={_fmt_vec(rg2_tcp_base)} "
+                    f"delta_object_tcp_world={_fmt_vec(delta_world)} "
+                    f"delta_object_tcp_base={_fmt_vec(delta_base)} "
+                    f"command_pose_sent={_fmt_vec(command_pose_sent)} "
+                    f"command_frame={command_frame or 'none'} "
+                    f"command_joint_goal={json.dumps(_json_safe(command_joint_goal), ensure_ascii=True)} "
+                    f"camera_topic={camera_meta['topic']} "
+                    f"camera_frame={camera_meta['frame']} "
+                    f"image_timestamp={_fmt_scalar(camera_meta['image_timestamp'])} "
+                    f"pose_from_image=false "
+                    f"world_frame={world_frame} "
+                    f"base_frame={base_frame} "
+                    f"extra={json.dumps(extra_payload, ensure_ascii=True, sort_keys=True)}"
+                )
+
+            _audit_emit(
+                "BUTTON_PRESS",
+                target_source="selected_demo_object",
+                target_frame_original=str(getattr(panel, "_selected_base_frame", "") or "base_link"),
+                target_pose_original=selected_base_anchor or _tuple3(getattr(panel, "_selected_world", None)),
+                target_pose_world=_tuple3(_live_object_world()),
+                target_pose_base_link=_tuple3(_live_object_base()),
+                command_pose_sent=None,
+                command_frame=None,
+                extra={
+                    "route_requested": requested_route_mode,
+                    "route_selected": route_selected,
+                    "selected_base_anchor": selected_base_anchor,
+                },
+            )
 
             def _current_joint_seed():
                 seed = []
@@ -1424,6 +1580,9 @@ def run_pick_demo(panel) -> None:
                 label: str,
                 target_tcp_runtime,
                 timeout_sec: float,
+                audit_target_source: str = "runtime_target",
+                target_pose_original=None,
+                target_frame_original: str = "base_link",
                 rot_weight: float = 0.35,
                 ik_err_tol: float = 0.035,
                 joint_weight: float = -1.0,
@@ -1598,6 +1757,26 @@ def run_pick_demo(panel) -> None:
                     f"seed_weight={_effective_joint_weight:.3f} "
                     f"err_norm={float(err_norm):.4f} pos_err_m={pos_err_m:.4f} success={str(bool(ik_ok)).lower()}"
                 )
+                _audit_emit(
+                    "BEFORE_EXECUTION",
+                    target_source=audit_target_source,
+                    target_frame_original=target_frame_original,
+                    target_pose_original=target_pose_original,
+                    target_pose_world=_target_world_from_base(target_tcp_runtime),
+                    target_pose_base_link=target_tcp_runtime,
+                    command_pose_sent=target_ik,
+                    command_frame=DIRECT_EXECUTION_FRAME,
+                    command_joint_goal=solved_q.tolist(),
+                    extra={
+                        "label": label,
+                        "ik_mode": DIRECT_EXECUTION_IK_MODE,
+                        "offset_source": execution_semantics.get("offset_source"),
+                        "offset_local": execution_semantics.get("offset_local"),
+                        "offset_vector": execution_semantics.get("offset_vector"),
+                        "target_model": execution_semantics.get("target_model"),
+                        "runtime_delta": delta_runtime,
+                    },
+                )
                 if (not ik_ok) or pos_err_m > float(ik_err_tol):
                     raise RuntimeError(
                         f"{label.lower()}_ik_failed pos_err_m={pos_err_m:.4f}"
@@ -1765,20 +1944,11 @@ def run_pick_demo(panel) -> None:
                         or 0.030
                     ),
                 )
-                align_target_source = (
-                    "selected_base_anchor"
-                    if selected_base_anchor is not None
-                    else "live_object_base"
-                )
                 last_metrics = None
                 last_debug = None
                 for attempt in range(1, max_attempts + 1):
                     obj_base_live = _live_object_base()
-                    obj_base = (
-                        _tuple3(selected_base_anchor)
-                        if selected_base_anchor is not None
-                        else _tuple3(obj_base_live)
-                    )
+                    obj_base, align_target_source, _align_target_extra = _resolved_align_object_base()
                     if obj_base is None:
                         raise RuntimeError("demo_object_pose_unavailable_before_align")
                     target_z_expected = float(obj_base[2]) + float(GRIPPER_TCP_Z_OFFSET)
@@ -1938,6 +2108,9 @@ def run_pick_demo(panel) -> None:
                             label="GRASP_ALIGN_IK",
                             target_tcp_runtime=target_tcp_runtime,
                             timeout_sec=move_sec + 8.0,
+                            audit_target_source=align_target_source,
+                            target_pose_original=obj_base,
+                            target_frame_original="base_link",
                             rot_weight=max(
                                 0.0,
                                 float(
@@ -2991,6 +3164,9 @@ def run_pick_demo(panel) -> None:
                             label="APPROACH_COARSE",
                             target_tcp_runtime=target_base_coarse,
                             timeout_sec=max(move_sec + 2.5, 4.0),
+                            audit_target_source="live_object_base",
+                            target_pose_original=obj_base_before_coarse,
+                            target_frame_original="base_link",
                         )
                     except Exception as exc:
                         approach_decision = f"fallback_joint_preset:{exc}"
@@ -3093,6 +3269,9 @@ def run_pick_demo(panel) -> None:
                             label="GRASP_DOWN_JOINT",
                             target_tcp_runtime=target_base_grasp_down,
                             timeout_sec=max(move_sec + 3.0, 4.5),
+                            audit_target_source="live_object_base",
+                            target_pose_original=obj_base_before_grasp_down,
+                            target_frame_original="base_link",
                         )
                     except Exception as exc:
                         grasp_down_decision = f"fallback_joint_preset:{exc}"
@@ -3166,11 +3345,7 @@ def run_pick_demo(panel) -> None:
                     preset_used=preset_grasp_down,
                     decision=grasp_down_decision,
                 )
-            obj_base_align = (
-                _tuple3(selected_base_anchor)
-                if selected_base_anchor is not None
-                else _live_object_base()
-            )
+            obj_base_align, obj_base_align_source, _align_base_extra = _resolved_align_object_base()
             target_base_align = None
             target_world_align = None
             if obj_base_align is not None:
@@ -3265,7 +3440,7 @@ def run_pick_demo(panel) -> None:
                     f"align_error_norm={_fmt_scalar(None)} "
                     "align_reached_condition=phase_enter "
                     "align_timeout_reason=none "
-                    f"align_target_source={'selected_base_anchor' if selected_base_anchor is not None else 'live_object_base'}"
+                    f"align_target_source={obj_base_align_source}"
                 )
                 _trace_phase_pose(
                     phase="GRASP_ALIGN_IK",

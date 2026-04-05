@@ -418,6 +418,7 @@ export ATTACH_BACKEND_MAX_POSE_AGE_SEC="${ATTACH_BACKEND_MAX_POSE_AGE_SEC:-2.5}"
 export ATTACH_BACKEND_FOLLOW_RATE_HZ="${ATTACH_BACKEND_FOLLOW_RATE_HZ:-10.0}"
 export ATTACH_BACKEND_FOLLOW_BREAK_DIST_M="${ATTACH_BACKEND_FOLLOW_BREAK_DIST_M:-0.45}"
 export ATTACH_BACKEND_MODE="${ATTACH_BACKEND_MODE:-follow_tcp}"
+export ATTACH_BACKEND_MAX_DIST_M="${ATTACH_BACKEND_MAX_DIST_M:-0.06}"
 # For `pick_demo` we prefer deterministic carry once the direct grasp reaches
 # close-range contact. Clear this env var to fall back to pure follow_tcp.
 export ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS="${ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS:-pick_demo}"

@@ -72,12 +72,12 @@
         
         
         <collision name="wall_far_x_pos_c">
-          <pose>0.374 0 0.875 0 0 0</pose>
-          <geometry><box><size>0.02 0.76 0.20</size></box></geometry>
+          <pose>0.374 0 0.785 0 0 0</pose>
+          <geometry><box><size>0.02 0.76 0.02</size></box></geometry>
         </collision>
         <visual name="wall_far_x_pos_v">
-          <pose>0.374 0 0.875 0 0 0</pose>
-          <geometry><box><size>0.02 0.76 0.20</size></box></geometry>
+          <pose>0.374 0 0.785 0 0 0</pose>
+          <geometry><box><size>0.02 0.76 0.02</size></box></geometry>
           <material><diffuse>0.35 0.35 0.35 1</diffuse></material>
         </visual>
 
