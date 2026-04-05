@@ -57,6 +57,21 @@ runtime_sanity_check() {
   fi
 }
 
+display_is_usable() {
+  if [[ -z "${DISPLAY:-}" ]]; then
+    return 1
+  fi
+  if command -v xdpyinfo >/dev/null 2>&1; then
+    xdpyinfo >/dev/null 2>&1
+    return $?
+  fi
+  if command -v xset >/dev/null 2>&1; then
+    xset -q >/dev/null 2>&1
+    return $?
+  fi
+  return 0
+}
+
 # Detectar WS_DIR (raíz del repo)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -80,12 +95,20 @@ export WS_DIR
 : "${PANEL_ROS_EXECUTOR_THREADS:=3}"  # executor del RosWorker para no bloquear /clock durante servicios largos
 : "${PANEL_GRIPPER_CLOSED_RAD:=0.60}" # RG2 en este modelo suele cerrar alrededor de ~0.60 rad
 : "${RMW_IMPLEMENTATION:=rmw_fastrtps_cpp}"
+if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]] && ! display_is_usable; then
+  log "DISPLAY=${DISPLAY} no es usable; activando modo offscreen"
+  export PANEL_FORCE_OFFSCREEN=1
+fi
 if [[ -z "${PANEL_GZ_GUI+x}" ]]; then
-  if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" && "${QT_QPA_PLATFORM:-}" != "offscreen" ]]; then
+  if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]]; then
     PANEL_GZ_GUI="1"
   else
     PANEL_GZ_GUI="0"
   fi
+fi
+if [[ "${PANEL_GZ_GUI:-0}" == "1" && -z "${PANEL_QT_PLATFORM:-}" && "${QT_QPA_PLATFORM:-}" == "offscreen" ]]; then
+  log "Detectado QT_QPA_PLATFORM=offscreen en terminal grafica; limpiando para permitir GUI local"
+  unset QT_QPA_PLATFORM
 fi
 export RMW_IMPLEMENTATION
 export PANEL_CONTROLLER_MANAGER
@@ -254,28 +277,41 @@ export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_DEFAULT_PROFILES_FILE:-$WS_DIR
 export USE_SIM_TIME="${USE_SIM_TIME:-1}"
 log "GZ_SIM_RESOURCE_PATH set to: $GZ_SIM_RESOURCE_PATH"
 
-if [[ -z "${LIBGL_ALWAYS_SOFTWARE:-}" ]]; then
-  # En GUI priorizamos estabilidad de gz-gui (evitar segfaults OpenGL/QtQuick).
-  if [[ "${PANEL_GZ_GUI:-0}" == "1" ]]; then
-    export LIBGL_ALWAYS_SOFTWARE=1
-  else
-    export LIBGL_ALWAYS_SOFTWARE=0
-  fi
-fi
-export QT_XCB_GL_INTEGRATION=none
-if [[ "${PANEL_GZ_GUI:-0}" == "1" ]]; then
+if [[ "${PANEL_FORCE_SOFTWARE_GL:-0}" == "1" ]]; then
+  log "PANEL_FORCE_SOFTWARE_GL=1: forzando backend software OpenGL/Qt para Gazebo GUI"
+  export LIBGL_ALWAYS_SOFTWARE=1
+  export QT_XCB_GL_INTEGRATION=none
+  export QT_OPENGL="${QT_OPENGL:-software}"
+  export QT_XCB_FORCE_SOFTWARE_OPENGL="${QT_XCB_FORCE_SOFTWARE_OPENGL:-1}"
   export QT_QUICK_BACKEND="${QT_QUICK_BACKEND:-software}"
   export QSG_RENDER_LOOP="${QSG_RENDER_LOOP:-basic}"
+  export MESA_LOADER_DRIVER_OVERRIDE="${MESA_LOADER_DRIVER_OVERRIDE:-llvmpipe}"
+  export GALLIUM_DRIVER="${GALLIUM_DRIVER:-llvmpipe}"
+elif [[ "${PANEL_GZ_GUI:-0}" == "1" ]]; then
+  # En esta máquina la GUI estable usa el driver OpenGL real.
+  export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-0}"
+  unset QT_XCB_GL_INTEGRATION
+  unset QT_OPENGL
+  unset QT_XCB_FORCE_SOFTWARE_OPENGL
+  unset QT_QUICK_BACKEND
+  unset QSG_RENDER_LOOP
+  unset MESA_LOADER_DRIVER_OVERRIDE
+  unset GALLIUM_DRIVER
+elif [[ -z "${LIBGL_ALWAYS_SOFTWARE:-}" ]]; then
+  export LIBGL_ALWAYS_SOFTWARE=0
 fi
 export PANEL_SKIP_CLEANUP="${PANEL_SKIP_CLEANUP:-0}"
 export PANEL_KILL_STALE="${PANEL_KILL_STALE:-1}"
 
-# Configurar rendering para Gazebo cameras (EGL offscreen)
-# Esto permite que las cámaras virtuales se rendericen incluso sin display
-export LIBGL_INDIRECT_RENDERING=1
+# Configurar rendering para Gazebo cameras.
+# En GUI local, GL indirecto deja la ventana viva pero con el viewport roto.
+# Se reserva para headless/offscreen.
 if [[ -z "${DISPLAY:-}" || "${PANEL_FORCE_OFFSCREEN:-0}" == "1" ]]; then
+  export LIBGL_INDIRECT_RENDERING=1
   export MESA_GL_VERSION_OVERRIDE=4.5
   export LIBGLVND_DRIVERS_PATH="/usr/lib/x86_64-linux-gnu/GL"
+else
+  unset LIBGL_INDIRECT_RENDERING
 fi
 
 if [[ -n "${PANEL_QT_PLATFORM:-}" ]]; then
@@ -513,12 +549,8 @@ if [[ "${PANEL_GZ_GUI:-0}" == "1" ]]; then
 fi
 
 if [[ -z "${GZ_RENDER_ENGINE:-}" ]]; then
-  if [[ "$HEADLESS" == "true" ]]; then
-    # En headless priorizamos estabilidad del simulador para evitar caidas durante pick.
-    export GZ_RENDER_ENGINE="ogre"
-  else
-    export GZ_RENDER_ENGINE="ogre"
-  fi
+  # ogre2 mantiene coherentes el servidor, la GUI y la escena 3D en este equipo.
+  export GZ_RENDER_ENGINE="ogre2"
 fi
 log "PANEL_GZ_GUI=${PANEL_GZ_GUI} HEADLESS=${HEADLESS}"
 
@@ -609,7 +641,8 @@ if [[ "${DEBUG_LOGS_TO_STDOUT}" == "1" ]]; then
     panel_managed:="$PANEL_MANAGED" \
     camera_required:="$PANEL_CAMERA_REQUIRED" \
     panel_auto_bridge:="${PANEL_AUTO_BRIDGE:-0}" \
-    panel_auto_bridge_delay_ms:="${PANEL_AUTO_BRIDGE_DELAY_MS:-1200}"
+    panel_auto_bridge_delay_ms:="${PANEL_AUTO_BRIDGE_DELAY_MS:-1200}" \
+    render_engine:="${GZ_RENDER_ENGINE}"
   exit 0
 fi
 
@@ -655,6 +688,7 @@ if [[ "${PANEL_WRITE_PID}" == "1" ]]; then
     camera_required:="$PANEL_CAMERA_REQUIRED" \
     panel_auto_bridge:="${PANEL_AUTO_BRIDGE:-0}" \
     panel_auto_bridge_delay_ms:="${PANEL_AUTO_BRIDGE_DELAY_MS:-1200}" \
+    render_engine:="${GZ_RENDER_ENGINE}" \
     > "$launch_log" 2>&1 < /dev/null &
   launch_pid=$!
   disown "$launch_pid" 2>/dev/null || true
@@ -684,6 +718,7 @@ if [[ "${PANEL_AUTO_EXIT_ON_PANEL}" == "1" ]]; then
     camera_required:="$PANEL_CAMERA_REQUIRED" \
     panel_auto_bridge:="${PANEL_AUTO_BRIDGE:-0}" \
     panel_auto_bridge_delay_ms:="${PANEL_AUTO_BRIDGE_DELAY_MS:-1200}" \
+    render_engine:="${GZ_RENDER_ENGINE}" \
     > >(tee "$launch_log") 2> >(tee -a "$launch_log" >&2) &
   launch_pid=$!
   panel_seen=0
@@ -725,6 +760,7 @@ if [[ "$PANEL_LOG_FILTER" == "1" ]]; then
     camera_required:="$PANEL_CAMERA_REQUIRED" \
     panel_auto_bridge:="${PANEL_AUTO_BRIDGE:-0}" \
     panel_auto_bridge_delay_ms:="${PANEL_AUTO_BRIDGE_DELAY_MS:-1200}" \
+    render_engine:="${GZ_RENDER_ENGINE}" \
     2>&1 \
     | tee "$launch_log" \
     | awk '

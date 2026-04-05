@@ -433,6 +433,9 @@ def _maybe_moveit(context, *_args) -> List[object]:
 def generate_launch_description():
     ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
     world_default = os.path.join(ws_dir, "worlds", "ur5_mesa_objetos.sdf")
+    gui_config_default = (
+        "/opt/ros/jazzy/opt/gz_sim_vendor/share/gz/gz-sim8/gui/gui.config"
+    )
 
     headless = LaunchConfiguration("headless")
     launch_panel = LaunchConfiguration("launch_panel")
@@ -813,7 +816,7 @@ def generate_launch_description():
             DeclareLaunchArgument("render_engine", default_value="ogre2"),
             DeclareLaunchArgument(
                 "gui_config_file",
-                default_value="/opt/ros/jazzy/opt/gz_sim_vendor/share/gz/gz-sim8/gui/gui.config",
+                default_value=gui_config_default,
             ),
             OpaqueFunction(function=_prepare_runtime),
             OpaqueFunction(function=_maybe_moveit),
