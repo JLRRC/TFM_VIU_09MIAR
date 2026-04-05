@@ -68,6 +68,632 @@ DIRECT_TOOL0_TO_RG2_TCP_Z_M = 0.175
 DIRECT_GRASP_AUDIT_PREFIX = "[PICK][DIRECT_GRASP_AUDIT]"
 
 
+def _pick_demo_tuple3(data):
+    if data is None:
+        return None
+    try:
+        return (
+            float(data[0]),
+            float(data[1]),
+            float(data[2]),
+        )
+    except Exception:
+        return None
+
+
+def _pick_demo_fmt_vec(vec) -> str:
+    vec3 = _pick_demo_tuple3(vec)
+    if vec3 is None:
+        return "none"
+    return f"({vec3[0]:.3f},{vec3[1]:.3f},{vec3[2]:.3f})"
+
+
+def _pick_demo_fmt_scalar(value, *, digits: int = 3) -> str:
+    try:
+        return f"{float(value):.{digits}f}"
+    except Exception:
+        return "none"
+
+
+def _pick_demo_env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)) or default)
+    except Exception:
+        value = float(default)
+    return max(float(minimum), float(value))
+
+
+def _pick_demo_env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def _resolve_live_object_world(
+    panel,
+    object_name: str,
+    *,
+    trace_fn=None,
+    now_fn=None,
+    get_positions_fn=get_object_positions,
+    get_state_fn=get_object_state,
+):
+    if trace_fn is None:
+        trace_fn = lambda _line: None
+    if now_fn is None:
+        now_fn = time.time
+
+    max_snapshot_age_sec = _pick_demo_env_float(
+        "PANEL_PICK_DEMO_MAX_SNAPSHOT_AGE_SEC",
+        0.10,
+    )
+    max_stable_cache_age_sec = _pick_demo_env_float(
+        "PANEL_PICK_DEMO_MAX_STABLE_CACHE_AGE_SEC",
+        0.20,
+    )
+    divergence_tol_m = _pick_demo_env_float(
+        "PANEL_PICK_DEMO_OBJECT_SOURCE_DIVERGENCE_TOL_M",
+        0.150,
+        minimum=0.05,
+    )
+    allow_correlated_stable_fallback = _pick_demo_env_flag(
+        "PANEL_PICK_DEMO_ALLOW_CORRELATED_STABLE_FALLBACK",
+        True,
+    )
+
+    snapshot_world = None
+    snapshot_age_sec = None
+    snapshot_fresh = False
+    snapshot_reason = "snapshot_unavailable"
+    if (
+        getattr(panel, "_ros_worker_started", False)
+        and getattr(panel, "ros_worker", None) is not None
+    ):
+        try:
+            ros_worker = panel.ros_worker
+            if ros_worker.node_ready():
+                pose_map, pose_ts = ros_worker.pose_snapshot()
+                pose = (pose_map or {}).get(object_name)
+                if pose is not None and len(pose) >= 3:
+                    snapshot_world = _pick_demo_tuple3(pose)
+                if pose_ts is not None:
+                    snapshot_age_sec = max(0.0, float(now_fn()) - float(pose_ts))
+        except Exception as exc:
+            snapshot_reason = f"snapshot_error:{exc}"
+        else:
+            if snapshot_world is None:
+                snapshot_reason = "snapshot_missing_object"
+            elif snapshot_age_sec is None:
+                snapshot_reason = "snapshot_age_unknown"
+            elif snapshot_age_sec <= max_snapshot_age_sec:
+                snapshot_fresh = True
+                snapshot_reason = "snapshot_fresh"
+            else:
+                snapshot_reason = "snapshot_stale"
+
+    trace_fn(
+        "[LIVE_OBJ][SOURCE] "
+        f"source=snapshot object={object_name} world={_pick_demo_fmt_vec(snapshot_world)} "
+        f"age_sec={_pick_demo_fmt_scalar(snapshot_age_sec)} fresh={str(bool(snapshot_fresh)).lower()} "
+        f"max_age_sec={_pick_demo_fmt_scalar(max_snapshot_age_sec)} reason={snapshot_reason}"
+    )
+    if snapshot_world is not None and not snapshot_fresh:
+        trace_fn(
+            "[LIVE_OBJ][AGE] "
+            f"source=snapshot object={object_name} age_sec={_pick_demo_fmt_scalar(snapshot_age_sec)} "
+            f"max_age_sec={_pick_demo_fmt_scalar(max_snapshot_age_sec)} reason={snapshot_reason}"
+        )
+        trace_fn(
+            "[LIVE_OBJ][REJECT] "
+            f"source=snapshot object={object_name} reason={snapshot_reason}"
+        )
+
+    state = None
+    stable_world = None
+    stable_age_sec = None
+    stable_fresh = False
+    stable_reason = "stable_unavailable"
+    try:
+        state = get_state_fn(object_name)
+    except Exception as exc:
+        stable_reason = f"stable_state_error:{exc}"
+    if state is not None:
+        stable_world = _pick_demo_tuple3(getattr(state, "position", None))
+        last_update_ts = getattr(state, "last_update_ts", None)
+        if last_update_ts is not None:
+            try:
+                stable_age_sec = max(0.0, float(now_fn()) - float(last_update_ts))
+            except Exception:
+                stable_age_sec = None
+    if stable_world is None:
+        try:
+            stable_world = _pick_demo_tuple3((get_positions_fn() or {}).get(object_name))
+        except Exception as exc:
+            stable_reason = f"stable_positions_error:{exc}"
+
+    if stable_world is None:
+        stable_reason = "stable_missing_object"
+    elif stable_age_sec is None:
+        stable_reason = "stable_age_unknown"
+    elif stable_age_sec <= max_stable_cache_age_sec:
+        stable_fresh = True
+        stable_reason = "stable_fresh"
+    else:
+        stable_reason = "stable_stale"
+
+    trace_fn(
+        "[LIVE_OBJ][SOURCE] "
+        f"source=stable_cache object={object_name} world={_pick_demo_fmt_vec(stable_world)} "
+        f"age_sec={_pick_demo_fmt_scalar(stable_age_sec)} fresh={str(bool(stable_fresh)).lower()} "
+        f"max_age_sec={_pick_demo_fmt_scalar(max_stable_cache_age_sec)} reason={stable_reason}"
+    )
+    if stable_world is not None:
+        trace_fn(
+            "[LIVE_OBJ][CORRELATED] "
+            f"source=stable_cache object={object_name} correlated_with_snapshot=true "
+            f"allow_fallback={str(bool(allow_correlated_stable_fallback)).lower()}"
+        )
+    if stable_world is not None and not stable_fresh:
+        trace_fn(
+            "[LIVE_OBJ][AGE] "
+            f"source=stable_cache object={object_name} age_sec={_pick_demo_fmt_scalar(stable_age_sec)} "
+            f"max_age_sec={_pick_demo_fmt_scalar(max_stable_cache_age_sec)} reason={stable_reason}"
+        )
+        trace_fn(
+            "[LIVE_OBJ][REJECT] "
+            f"source=stable_cache object={object_name} reason={stable_reason}"
+        )
+
+    divergence_m = None
+    if snapshot_fresh and stable_fresh and snapshot_world is not None and stable_world is not None:
+        dx = float(snapshot_world[0]) - float(stable_world[0])
+        dy = float(snapshot_world[1]) - float(stable_world[1])
+        dz = float(snapshot_world[2]) - float(stable_world[2])
+        divergence_m = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if divergence_m > divergence_tol_m:
+            trace_fn(
+                "[LIVE_OBJ][REJECT] "
+                f"source=snapshot object={object_name} reason=source_divergence "
+                f"divergence_m={_pick_demo_fmt_scalar(divergence_m)} "
+                f"tol_m={_pick_demo_fmt_scalar(divergence_tol_m)}"
+            )
+            if allow_correlated_stable_fallback:
+                trace_fn(
+                    "[LIVE_OBJ][FALLBACK] "
+                    f"object={object_name} selected=stable_cache_correlated "
+                    "reason=source_divergence_with_fresh_correlated_cache"
+                )
+                result = {
+                    "world": stable_world,
+                    "source": "stable_cache_correlated",
+                    "reason": "source_divergence_with_correlated_fallback",
+                    "snapshot_world": snapshot_world,
+                    "snapshot_age_sec": snapshot_age_sec,
+                    "stable_world": stable_world,
+                    "stable_age_sec": stable_age_sec,
+                    "divergence_m": divergence_m,
+                }
+                trace_fn(
+                    "[LIVE_OBJ][FINAL] "
+                    f"object={object_name} source={result['source']} world={_pick_demo_fmt_vec(result['world'])} "
+                    f"reason={result['reason']}"
+                )
+                return result
+            result = {
+                "world": None,
+                "source": "none",
+                "reason": "source_divergence_correlated_fallback_disabled",
+                "snapshot_world": snapshot_world,
+                "snapshot_age_sec": snapshot_age_sec,
+                "stable_world": stable_world,
+                "stable_age_sec": stable_age_sec,
+                "divergence_m": divergence_m,
+            }
+            trace_fn(
+                "[LIVE_OBJ][FINAL] "
+                f"object={object_name} source=none world=none reason={result['reason']}"
+            )
+            return result
+
+    if snapshot_fresh and snapshot_world is not None:
+        result = {
+            "world": snapshot_world,
+            "source": "snapshot_pose_info",
+            "reason": "snapshot_fresh",
+            "snapshot_world": snapshot_world,
+            "snapshot_age_sec": snapshot_age_sec,
+            "stable_world": stable_world,
+            "stable_age_sec": stable_age_sec,
+            "divergence_m": divergence_m,
+        }
+        trace_fn(
+            "[LIVE_OBJ][FINAL] "
+            f"object={object_name} source={result['source']} world={_pick_demo_fmt_vec(result['world'])} "
+            f"reason={result['reason']}"
+        )
+        return result
+
+    if stable_fresh and stable_world is not None:
+        if allow_correlated_stable_fallback:
+            trace_fn(
+                "[LIVE_OBJ][FALLBACK] "
+                f"object={object_name} selected=stable_cache_correlated reason=snapshot_not_usable"
+            )
+            result = {
+                "world": stable_world,
+                "source": "stable_cache_correlated",
+                "reason": "snapshot_not_usable_correlated_fallback",
+                "snapshot_world": snapshot_world,
+                "snapshot_age_sec": snapshot_age_sec,
+                "stable_world": stable_world,
+                "stable_age_sec": stable_age_sec,
+                "divergence_m": divergence_m,
+            }
+            trace_fn(
+                "[LIVE_OBJ][FINAL] "
+                f"object={object_name} source={result['source']} world={_pick_demo_fmt_vec(result['world'])} "
+                f"reason={result['reason']}"
+            )
+            return result
+        trace_fn(
+            "[LIVE_OBJ][REJECT] "
+            f"source=stable_cache object={object_name} reason=correlated_fallback_disabled"
+        )
+        result = {
+            "world": None,
+            "source": "none",
+            "reason": "correlated_fallback_disabled",
+            "snapshot_world": snapshot_world,
+            "snapshot_age_sec": snapshot_age_sec,
+            "stable_world": stable_world,
+            "stable_age_sec": stable_age_sec,
+            "divergence_m": divergence_m,
+        }
+        trace_fn(
+            "[LIVE_OBJ][FINAL] "
+            f"object={object_name} source=none world=none reason={result['reason']}"
+        )
+        return result
+
+    result = {
+        "world": None,
+        "source": "none",
+        "reason": "no_fresh_live_object_pose",
+        "snapshot_world": snapshot_world,
+        "snapshot_age_sec": snapshot_age_sec,
+        "stable_world": stable_world,
+        "stable_age_sec": stable_age_sec,
+        "divergence_m": divergence_m,
+    }
+    trace_fn(
+        "[LIVE_OBJ][FINAL] "
+        f"object={object_name} source=none world=none reason={result['reason']}"
+    )
+    return result
+
+
+def _resolve_live_object_base(
+    panel,
+    object_name: str,
+    *,
+    world_result=None,
+    trace_fn=None,
+    transform_fn=transform_point_to_frame,
+    static_world_to_base_fn=world_to_base,
+):
+    if trace_fn is None:
+        trace_fn = lambda _line: None
+    if world_result is None:
+        world_result = _resolve_live_object_world(
+            panel,
+            object_name,
+            trace_fn=trace_fn,
+        )
+    world_pos = _pick_demo_tuple3((world_result or {}).get("world"))
+    if world_pos is None:
+        result = dict(world_result or {})
+        result["base"] = None
+        result["base_source"] = "none"
+        result["base_reason"] = "world_pose_unavailable"
+        trace_fn(
+            "[LIVE_OBJ][FINAL] "
+            f"object={object_name} base=none reason={result['base_reason']}"
+        )
+        return result
+
+    world_frame = str(
+        getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
+            WORLD_FRAME or "world"
+        )
+    ).strip() or "world"
+    try:
+        base_frame = str(panel._business_base_frame() or BASE_FRAME or "base_link")
+    except Exception:
+        base_frame = str(BASE_FRAME or "base_link")
+
+    obj_base = None
+    try:
+        obj_base, _ = transform_fn(
+            world_pos,
+            base_frame,
+            source_frame=world_frame,
+        )
+    except Exception as exc:
+        trace_fn(
+            "[LIVE_OBJ][REJECT] "
+            f"source=tf_transform object={object_name} reason=tf_exception:{exc}"
+        )
+        obj_base = None
+
+    if obj_base:
+        base_pos = _pick_demo_tuple3(obj_base)
+        result = dict(world_result or {})
+        result["base"] = base_pos
+        result["base_source"] = "tf_transform"
+        result["base_reason"] = "tf_transform_ok"
+        trace_fn(
+            "[LIVE_OBJ][FINAL] "
+            f"object={object_name} base_source={result['base_source']} base={_pick_demo_fmt_vec(base_pos)} "
+            f"reason={result['base_reason']}"
+        )
+        return result
+
+    allow_static_world_to_base_fallback = _pick_demo_env_flag(
+        "PANEL_PICK_DEMO_ALLOW_STATIC_WORLD_TO_BASE_FALLBACK",
+        False,
+    )
+    if allow_static_world_to_base_fallback:
+        try:
+            static_base = _pick_demo_tuple3(static_world_to_base_fn(*world_pos))
+        except Exception as exc:
+            static_base = None
+            trace_fn(
+                "[LIVE_OBJ][REJECT] "
+                f"source=static_world_to_base object={object_name} reason=static_fallback_error:{exc}"
+            )
+        else:
+            trace_fn(
+                "[LIVE_OBJ][STATIC_FALLBACK] "
+                f"object={object_name} enabled=true base={_pick_demo_fmt_vec(static_base)}"
+            )
+        result = dict(world_result or {})
+        result["base"] = static_base
+        result["base_source"] = "static_world_to_base" if static_base is not None else "none"
+        result["base_reason"] = (
+            "static_world_to_base_fallback"
+            if static_base is not None
+            else "static_world_to_base_fallback_failed"
+        )
+        trace_fn(
+            "[LIVE_OBJ][FINAL] "
+            f"object={object_name} base_source={result['base_source']} base={_pick_demo_fmt_vec(static_base)} "
+            f"reason={result['base_reason']}"
+        )
+        return result
+
+    trace_fn(
+        "[LIVE_OBJ][STATIC_FALLBACK] "
+        f"object={object_name} enabled=false reason=tf_transform_unavailable"
+    )
+    result = dict(world_result or {})
+    result["base"] = None
+    result["base_source"] = "none"
+    result["base_reason"] = "tf_transform_unavailable_static_fallback_disabled"
+    trace_fn(
+        "[LIVE_OBJ][FINAL] "
+        f"object={object_name} base_source=none base=none reason={result['base_reason']}"
+    )
+    return result
+
+
+def _select_pick_demo_cycle_object_reference(
+    panel,
+    object_name: str,
+    *,
+    selected_base_anchor=None,
+    trace_fn=None,
+    resolve_world_fn=_resolve_live_object_world,
+    resolve_base_fn=_resolve_live_object_base,
+    get_state_fn=get_object_state,
+    is_on_table_fn=is_on_table,
+):
+    if trace_fn is None:
+        trace_fn = lambda _line: None
+
+    selected_base = _pick_demo_tuple3(selected_base_anchor)
+    max_promoted_stable_age_sec = _pick_demo_env_float(
+        "PANEL_PICK_DEMO_MAX_PROMOTED_STABLE_AGE_SEC",
+        2.00,
+    )
+    max_selected_stable_divergence_m = _pick_demo_env_float(
+        "PANEL_PICK_DEMO_MAX_SELECTED_STABLE_DIVERGENCE_M",
+        0.080,
+        minimum=0.01,
+    )
+    require_object_on_table = _pick_demo_env_flag(
+        "PANEL_PICK_DEMO_REQUIRE_OBJECT_ON_TABLE_FOR_PROMOTION",
+        True,
+    )
+
+    def _dist3(a, b):
+        aa = _pick_demo_tuple3(a)
+        bb = _pick_demo_tuple3(b)
+        if aa is None or bb is None:
+            return None
+        dx = float(aa[0]) - float(bb[0])
+        dy = float(aa[1]) - float(bb[1])
+        dz = float(aa[2]) - float(bb[2])
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    trace_fn(
+        "[PICK][DIRECT][CYCLE_REF][SELECT] tag=[DIRECT][CYCLE_REF][SELECT] "
+        f"phase=BUTTON_PRESS selected_pose_base_link={_pick_demo_fmt_vec(selected_base)} "
+        f"max_promoted_stable_age_sec={_pick_demo_fmt_scalar(max_promoted_stable_age_sec)} "
+        f"max_selected_stable_divergence_m={_pick_demo_fmt_scalar(max_selected_stable_divergence_m)} "
+        f"require_object_on_table={str(bool(require_object_on_table)).lower()}"
+    )
+
+    world_result = resolve_world_fn(panel, object_name, trace_fn=trace_fn)
+    base_result = resolve_base_fn(panel, object_name, world_result=world_result, trace_fn=trace_fn)
+    snapshot_world = _pick_demo_tuple3((world_result or {}).get("world"))
+    snapshot_base = _pick_demo_tuple3((base_result or {}).get("base"))
+    snapshot_source = str((world_result or {}).get("source") or "none")
+    snapshot_reason = str((world_result or {}).get("reason") or "none")
+    snapshot_age_sec = (world_result or {}).get("snapshot_age_sec")
+
+    if snapshot_source == "snapshot_pose_info" and snapshot_world is not None and snapshot_base is not None:
+        selected = {
+            "ok": True,
+            "world": snapshot_world,
+            "base": snapshot_base,
+            "source": "snapshot_pose_info",
+            "reason": "snapshot_fresh_cycle_ref",
+            "promoted_stable": False,
+            "snapshot_age_sec": snapshot_age_sec,
+            "stable_age_sec": (world_result or {}).get("stable_age_sec"),
+            "selected_stable_divergence_m": None,
+        }
+        trace_fn(
+            "[PICK][DIRECT][CYCLE_REF][SELECT] tag=[DIRECT][CYCLE_REF][SELECT] "
+            f"phase=BUTTON_PRESS source={selected['source']} promoted_stable=false "
+            f"snapshot_age_sec={_pick_demo_fmt_scalar(snapshot_age_sec)} "
+            f"cycle_object_world={_pick_demo_fmt_vec(selected['world'])} "
+            f"cycle_object_base={_pick_demo_fmt_vec(selected['base'])}"
+        )
+        return selected
+
+    stable_world = _pick_demo_tuple3((world_result or {}).get("stable_world"))
+    stable_age_sec = (world_result or {}).get("stable_age_sec")
+    if stable_age_sec is None:
+        try:
+            panel_age = getattr(panel, "_last_trace_object_age_sec", None)
+            if panel_age is not None:
+                stable_age_sec = float(panel_age)
+        except Exception:
+            stable_age_sec = None
+    stable_base = None
+    stable_state = None
+    stable_logical_state = "none"
+    promoted_reject_reasons = []
+
+    if stable_world is None:
+        promoted_reject_reasons.append("stable_world_unavailable")
+    if stable_age_sec is None:
+        promoted_reject_reasons.append("stable_age_unknown")
+    else:
+        try:
+            if float(stable_age_sec) > float(max_promoted_stable_age_sec):
+                promoted_reject_reasons.append("stable_age_exceeded")
+        except Exception:
+            promoted_reject_reasons.append("stable_age_invalid")
+
+    try:
+        stable_state = get_state_fn(object_name)
+    except Exception:
+        stable_state = None
+    if stable_state is not None:
+        logical_state = getattr(stable_state, "logical_state", None)
+        stable_logical_state = str(getattr(logical_state, "value", "none") or "none")
+        if logical_state in (ObjectLogicalState.SPAWNED, ObjectLogicalState.RELEASED):
+            promoted_reject_reasons.append("state_not_stable_for_promotion")
+
+    on_table_ok = True
+    if require_object_on_table:
+        try:
+            on_table_ok = bool(is_on_table_fn(object_name))
+        except Exception:
+            on_table_ok = False
+        if not on_table_ok and stable_logical_state == "ON_TABLE":
+            on_table_ok = True
+        if not on_table_ok:
+            promoted_reject_reasons.append("object_not_on_table")
+
+    if stable_world is not None:
+        stable_candidate_world_result = {
+            "world": stable_world,
+            "source": "stable_cache_promoted_candidate",
+            "reason": "stable_candidate",
+            "snapshot_world": (world_result or {}).get("snapshot_world"),
+            "snapshot_age_sec": (world_result or {}).get("snapshot_age_sec"),
+            "stable_world": stable_world,
+            "stable_age_sec": stable_age_sec,
+            "divergence_m": (world_result or {}).get("divergence_m"),
+        }
+        stable_base_result = resolve_base_fn(
+            panel,
+            object_name,
+            world_result=stable_candidate_world_result,
+            trace_fn=trace_fn,
+        )
+        stable_base = _pick_demo_tuple3((stable_base_result or {}).get("base"))
+        if stable_base is None:
+            promoted_reject_reasons.append("stable_base_transform_unavailable")
+
+    selected_stable_divergence_m = _dist3(selected_base, stable_base)
+    if (
+        selected_stable_divergence_m is not None
+        and selected_stable_divergence_m > max_selected_stable_divergence_m
+    ):
+        promoted_reject_reasons.append("selected_stable_divergence_exceeded")
+
+    if promoted_reject_reasons:
+        for reject_reason in promoted_reject_reasons:
+            trace_fn(
+                "[PICK][DIRECT][CYCLE_REF][REJECT] tag=[DIRECT][CYCLE_REF][REJECT] "
+                f"phase=BUTTON_PRESS source=stable_cache reject_reason={reject_reason} "
+                f"stable_age_sec={_pick_demo_fmt_scalar(stable_age_sec)} "
+                f"selected_stable_divergence_m={_pick_demo_fmt_scalar(selected_stable_divergence_m)} "
+                f"max_promoted_stable_age_sec={_pick_demo_fmt_scalar(max_promoted_stable_age_sec)} "
+                f"max_selected_stable_divergence_m={_pick_demo_fmt_scalar(max_selected_stable_divergence_m)} "
+                f"object_on_table={str(bool(on_table_ok)).lower()} "
+                f"object_logical_state={stable_logical_state} "
+                f"stable_world={_pick_demo_fmt_vec(stable_world)} stable_base={_pick_demo_fmt_vec(stable_base)}"
+            )
+        if snapshot_base is None:
+            trace_fn(
+                "[PICK][DIRECT][CYCLE_REF][REJECT] tag=[DIRECT][CYCLE_REF][REJECT] "
+                f"phase=BUTTON_PRESS source=snapshot reject_reason=snapshot_base_unavailable "
+                f"snapshot_source={snapshot_source} snapshot_reason={snapshot_reason} "
+                f"snapshot_world={_pick_demo_fmt_vec(snapshot_world)} snapshot_base={_pick_demo_fmt_vec(snapshot_base)}"
+            )
+        return {
+            "ok": False,
+            "world": None,
+            "base": None,
+            "source": "none",
+            "reason": "cycle_reference_unavailable",
+            "promoted_stable": False,
+            "snapshot_age_sec": snapshot_age_sec,
+            "stable_age_sec": stable_age_sec,
+            "selected_stable_divergence_m": selected_stable_divergence_m,
+            "reject_reasons": promoted_reject_reasons,
+        }
+
+    selected = {
+        "ok": True,
+        "world": stable_world,
+        "base": stable_base,
+        "source": "stable_cache_promoted_cycle",
+        "reason": "stable_cache_promoted_cycle_reference",
+        "promoted_stable": True,
+        "snapshot_age_sec": snapshot_age_sec,
+        "stable_age_sec": stable_age_sec,
+        "selected_stable_divergence_m": selected_stable_divergence_m,
+    }
+    trace_fn(
+        "[PICK][DIRECT][CYCLE_REF][PROMOTE_STABLE] tag=[DIRECT][CYCLE_REF][PROMOTE_STABLE] "
+        "phase=BUTTON_PRESS source=stable_cache "
+        f"stable_age_sec={_pick_demo_fmt_scalar(stable_age_sec)} "
+        f"selected_stable_divergence_m={_pick_demo_fmt_scalar(selected_stable_divergence_m)} "
+        f"object_on_table={str(bool(on_table_ok)).lower()} "
+        f"object_logical_state={stable_logical_state} "
+        f"cycle_object_world={_pick_demo_fmt_vec(selected['world'])} "
+        f"cycle_object_base={_pick_demo_fmt_vec(selected['base'])}"
+    )
+    return selected
+
+
 def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
     """Confirma por posicion que el objeto demo esta en la cesta."""
     start = time.monotonic()
@@ -299,30 +925,23 @@ def run_pick_demo(panel) -> None:
                 panel._emit_log(line)
 
             def _tuple3(data):
-                if data is None:
-                    return None
-                try:
-                    return (
-                        float(data[0]),
-                        float(data[1]),
-                        float(data[2]),
-                    )
-                except Exception:
-                    return None
+                return _pick_demo_tuple3(data)
 
             selected_base_anchor = _tuple3(selected_base_anchor_raw)
+            _pick_demo_cycle_object_world = None
+            _pick_demo_cycle_object_base = None
+            _pick_demo_cycle_object_source = "none"
+            _pick_demo_cycle_object_reason = "not_selected"
+            _pick_demo_cycle_object_promoted_stable = False
+            _pick_demo_cycle_object_snapshot_age_sec = None
+            _pick_demo_cycle_object_stable_age_sec = None
+            _pick_demo_cycle_object_selected_divergence_m = None
 
             def _fmt_vec(vec) -> str:
-                vec3 = _tuple3(vec)
-                if vec3 is None:
-                    return "none"
-                return f"({vec3[0]:.3f},{vec3[1]:.3f},{vec3[2]:.3f})"
+                return _pick_demo_fmt_vec(vec)
 
             def _fmt_scalar(value, *, digits: int = 3) -> str:
-                try:
-                    return f"{float(value):.{digits}f}"
-                except Exception:
-                    return "none"
+                return _pick_demo_fmt_scalar(value, digits=digits)
 
             def _vector_minus(a, b):
                 av = _tuple3(a)
@@ -484,79 +1103,38 @@ def run_pick_demo(panel) -> None:
                 return math.sqrt(dx * dx + dy * dy + dz * dz)
 
             def _live_object_world():
-                pose_snapshot_world = None
-                pose_snapshot_age = None
-                if panel._ros_worker_started and panel.ros_worker and panel.ros_worker.node_ready():
-                    try:
-                        pose_map, _pose_ts = panel.ros_worker.pose_snapshot()
-                        pose = (pose_map or {}).get(PICK_DEMO_OBJECT_NAME)
-                        if pose is not None and len(pose) >= 3:
-                            pose_snapshot_world = (float(pose[0]), float(pose[1]), float(pose[2]))
-                            try:
-                                pose_snapshot_age = max(0.0, _runtime_time() - float(_pose_ts or 0.0))
-                            except Exception:
-                                pose_snapshot_age = None
-                    except Exception:
-                        pass
-                stable_world = _tuple3((get_object_positions() or {}).get(PICK_DEMO_OBJECT_NAME))
-                st = get_object_state(PICK_DEMO_OBJECT_NAME)
-                state_world = None if st is None else _tuple3(st.position)
-                stable_world = stable_world or state_world
-                divergence_tol_m = max(
-                    0.05,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_OBJECT_SOURCE_DIVERGENCE_TOL_M",
-                            "0.150",
-                        )
-                        or 0.150
-                    ),
+                if _pick_demo_cycle_object_world is not None:
+                    _append_trace(
+                        "[PICK][DIRECT][CYCLE_REF][USE] tag=[DIRECT][CYCLE_REF][USE] "
+                        "phase=RUNTIME consumer=_live_object_world "
+                        f"source={_pick_demo_cycle_object_source or 'none'} "
+                        f"cycle_object_world={_fmt_vec(_pick_demo_cycle_object_world)} "
+                        f"cycle_object_base={_fmt_vec(_pick_demo_cycle_object_base)}"
+                    )
+                    return _tuple3(_pick_demo_cycle_object_world)
+                result = _resolve_live_object_world(
+                    panel,
+                    PICK_DEMO_OBJECT_NAME,
+                    trace_fn=_append_trace,
                 )
-                if pose_snapshot_world is not None and stable_world is not None:
-                    dx = float(pose_snapshot_world[0]) - float(stable_world[0])
-                    dy = float(pose_snapshot_world[1]) - float(stable_world[1])
-                    dz = float(pose_snapshot_world[2]) - float(stable_world[2])
-                    div_m = math.sqrt(dx * dx + dy * dy + dz * dz)
-                    if div_m > divergence_tol_m:
-                        _append_trace(
-                            "[PICK][DIRECT][LIVE_OBJECT] "
-                            "source_divergence=true "
-                            f"snapshot_world={_fmt_vec(pose_snapshot_world)} "
-                            f"stable_world={_fmt_vec(stable_world)} "
-                            f"dist_m={_fmt_scalar(div_m)} "
-                            f"tol_m={_fmt_scalar(divergence_tol_m)} "
-                            f"snapshot_age_sec={_fmt_scalar(pose_snapshot_age)} "
-                            "fallback=stable_object_cache"
-                        )
-                        return stable_world
-                if pose_snapshot_world is not None:
-                    return pose_snapshot_world
-                return stable_world
+                return _tuple3(result.get("world"))
 
             def _live_object_base():
-                world_pos = _live_object_world()
-                if world_pos is None:
-                    return None
-                world_frame = str(
-                    getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
-                        WORLD_FRAME or "world"
+                if _pick_demo_cycle_object_base is not None:
+                    _append_trace(
+                        "[PICK][DIRECT][CYCLE_REF][USE] tag=[DIRECT][CYCLE_REF][USE] "
+                        "phase=RUNTIME consumer=_live_object_base "
+                        f"source={_pick_demo_cycle_object_source or 'none'} "
+                        f"cycle_object_world={_fmt_vec(_pick_demo_cycle_object_world)} "
+                        f"cycle_object_base={_fmt_vec(_pick_demo_cycle_object_base)}"
                     )
-                ).strip() or "world"
-                try:
-                    base_frame = str(panel._business_base_frame() or BASE_FRAME or "base_link")
-                except Exception:
-                    base_frame = str(BASE_FRAME or "base_link")
-                obj_base, _ = transform_point_to_frame(
-                    world_pos,
-                    base_frame,
-                    source_frame=world_frame,
+                    return _tuple3(_pick_demo_cycle_object_base)
+                result = _resolve_live_object_base(
+                    panel,
+                    PICK_DEMO_OBJECT_NAME,
+                    trace_fn=_append_trace,
                 )
-                if not obj_base:
-                    try:
-                        return tuple(float(v) for v in world_to_base(*world_pos))
-                    except Exception:
-                        return None
-                return (float(obj_base[0]), float(obj_base[1]), float(obj_base[2]))
+                return _tuple3(result.get("base"))
 
             def _live_tcp_base():
                 try:
@@ -796,6 +1374,64 @@ def run_pick_demo(panel) -> None:
                     "selected_base_anchor": selected_base_anchor,
                 },
             )
+
+            cycle_ref = _select_pick_demo_cycle_object_reference(
+                panel,
+                PICK_DEMO_OBJECT_NAME,
+                selected_base_anchor=selected_base_anchor,
+                trace_fn=_append_trace,
+            )
+            if bool(cycle_ref.get("ok")):
+                _pick_demo_cycle_object_world = _tuple3(cycle_ref.get("world"))
+                _pick_demo_cycle_object_base = _tuple3(cycle_ref.get("base"))
+                _pick_demo_cycle_object_source = str(cycle_ref.get("source") or "none")
+                _pick_demo_cycle_object_reason = str(cycle_ref.get("reason") or "none")
+                _pick_demo_cycle_object_promoted_stable = bool(cycle_ref.get("promoted_stable"))
+                _pick_demo_cycle_object_snapshot_age_sec = cycle_ref.get("snapshot_age_sec")
+                _pick_demo_cycle_object_stable_age_sec = cycle_ref.get("stable_age_sec")
+                _pick_demo_cycle_object_selected_divergence_m = cycle_ref.get("selected_stable_divergence_m")
+                _append_trace(
+                    "[PICK][DIRECT][CYCLE_REF][USE] tag=[DIRECT][CYCLE_REF][USE] "
+                    "phase=BUTTON_PRESS consumer=cycle_ref_init "
+                    f"source={_pick_demo_cycle_object_source} promoted_stable={str(_pick_demo_cycle_object_promoted_stable).lower()} "
+                    f"snapshot_age_sec={_fmt_scalar(_pick_demo_cycle_object_snapshot_age_sec)} "
+                    f"stable_age_sec={_fmt_scalar(_pick_demo_cycle_object_stable_age_sec)} "
+                    f"selected_stable_divergence_m={_fmt_scalar(_pick_demo_cycle_object_selected_divergence_m)} "
+                    f"cycle_object_world={_fmt_vec(_pick_demo_cycle_object_world)} "
+                    f"cycle_object_base={_fmt_vec(_pick_demo_cycle_object_base)}"
+                )
+                panel._emit_log(
+                    "[PICK][DIRECT][SELECT] "
+                    "cycle_tag=[DIRECT][CYCLE_REF][SELECT] "
+                    f"cycle_source={_pick_demo_cycle_object_source} "
+                    f"promoted_stable={str(_pick_demo_cycle_object_promoted_stable).lower()} "
+                    f"cycle_object_base={_fmt_vec(_pick_demo_cycle_object_base)} "
+                    f"cycle_object_world={_fmt_vec(_pick_demo_cycle_object_world)}"
+                )
+                if _pick_demo_cycle_object_promoted_stable:
+                    panel._emit_log(
+                        "[PICK][DIRECT][SELECT] "
+                        "cycle_tag=[DIRECT][CYCLE_REF][PROMOTE_STABLE] "
+                        f"stable_age_sec={_fmt_scalar(_pick_demo_cycle_object_stable_age_sec)} "
+                        f"selected_stable_divergence_m={_fmt_scalar(_pick_demo_cycle_object_selected_divergence_m)}"
+                    )
+            else:
+                _pick_demo_cycle_object_reason = str(cycle_ref.get("reason") or "cycle_reference_unavailable")
+                reject_reasons = ",".join(cycle_ref.get("reject_reasons") or []) or "none"
+                _append_trace(
+                    "[PICK][DIRECT][CYCLE_REF][ABORT] tag=[DIRECT][CYCLE_REF][ABORT] "
+                    "phase=BUTTON_PRESS reason=cycle_reference_unavailable "
+                    f"cycle_reason={_pick_demo_cycle_object_reason} reject_reasons={reject_reasons}"
+                )
+                panel._emit_log(
+                    "[PICK][DIRECT][ABORT] phase=BUTTON_PRESS reason=cycle_reference_unavailable"
+                )
+                panel._emit_log(
+                    "[PICK][DIRECT][ABORT] "
+                    "cycle_tag=[DIRECT][CYCLE_REF][ABORT] "
+                    f"cycle_reason={_pick_demo_cycle_object_reason} reject_reasons={reject_reasons}"
+                )
+                raise RuntimeError("demo_cycle_reference_unavailable_before_approach_coarse")
 
             # ------------------------------------------------------------------
             # [COMPARE] — referencia estática Directo2 vs objeto live en BUTTON_PRESS
@@ -3414,6 +4050,15 @@ def run_pick_demo(panel) -> None:
                 preset_approach = "direct_rg2_tcp_dynamic_coarse"
                 preset_grasp_down = "direct_rg2_tcp_dynamic_down"
                 obj_base_before_coarse = _live_object_base()
+                if obj_base_before_coarse is None:
+                    _append_trace(
+                        "[PICK][DIRECT][CYCLE_REF][ABORT] tag=[DIRECT][CYCLE_REF][ABORT] "
+                        "phase=APPROACH_COARSE reason=cycle_object_base_unavailable"
+                    )
+                    panel._emit_log(
+                        "[PICK][DIRECT][ABORT] phase=APPROACH_COARSE reason=live_object_base_unavailable"
+                    )
+                    raise RuntimeError("demo_live_object_pose_unavailable_before_approach_coarse")
                 target_base_coarse = None
                 target_world_coarse = None
                 target_base_grasp_down = None
@@ -3483,11 +4128,6 @@ def run_pick_demo(panel) -> None:
                             timeout_sec=move_sec + 5.0,
                             tol_rad=0.10,
                         )
-                else:
-                    approach_decision = "target_unavailable_keep_pose"
-                    panel._emit_log(
-                        "[PICK][DIRECT][WARN] phase=APPROACH_COARSE target_unavailable"
-                    )
                 _phase_end(
                     "APPROACH_COARSE",
                     result="ok",
@@ -3525,7 +4165,14 @@ def run_pick_demo(panel) -> None:
                 # Refrescar target justo antes del descenso para seguir pick_demo vivo.
                 obj_base_before_grasp_down = _live_object_base()
                 if obj_base_before_grasp_down is None:
-                    obj_base_before_grasp_down = obj_base_before_coarse
+                    _append_trace(
+                        "[PICK][DIRECT][CYCLE_REF][ABORT] tag=[DIRECT][CYCLE_REF][ABORT] "
+                        "phase=GRASP_DOWN_JOINT reason=cycle_object_base_unavailable"
+                    )
+                    panel._emit_log(
+                        "[PICK][DIRECT][ABORT] phase=GRASP_DOWN_JOINT reason=live_object_base_unavailable"
+                    )
+                    raise RuntimeError("demo_live_object_pose_unavailable_before_grasp_down")
                 target_base_grasp_down = None
                 target_world_grasp_down = None
                 if obj_base_before_grasp_down is not None:
@@ -3588,17 +4235,6 @@ def run_pick_demo(panel) -> None:
                             timeout_sec=move_sec + 6.0,
                             tol_rad=0.08,
                         )
-                else:
-                    grasp_down_decision = "target_unavailable_fallback_joint_preset"
-                    panel._emit_log(
-                        "[PICK][DIRECT][WARN] phase=GRASP_DOWN_JOINT target_unavailable fallback=joint_preset"
-                    )
-                    _run_joint_step(
-                        "GRASP_DOWN_JOINT",
-                        JOINT_GRASP_DOWN_POSE_RAD,
-                        timeout_sec=move_sec + 6.0,
-                        tol_rad=0.08,
-                    )
                 tcp_after_joint = _live_tcp_base()
                 obj_after_joint = _live_object_base()
                 if tcp_after_joint is not None and obj_after_joint is not None:
@@ -3933,34 +4569,22 @@ def run_pick_demo(panel) -> None:
                 time.sleep(post_align_settle_sec)
             initial_obj_world = _live_object_world()
             if initial_obj_world is None:
-                fallback_initial_obj_world = (
-                    _tuple3(target_world_align)
-                    or _tuple3(last_target.get("target_world"))
+                _append_trace(
+                    "[PICK][DIRECT][CYCLE_REF][ABORT] tag=[DIRECT][CYCLE_REF][ABORT] "
+                    "phase=PRE_CLOSE reason=cycle_object_world_unavailable"
                 )
-                if fallback_initial_obj_world is not None:
-                    initial_obj_world = fallback_initial_obj_world
-                    panel._emit_log(
-                        "[PICK][DIRECT][WARN] "
-                        f"initial_obj_world unavailable; using fallback={_fmt_vec(initial_obj_world)}"
-                    )
-                    _emit_transition_decision(
-                        from_phase="GRASP_ALIGN_IK",
-                        to_phase="PRE_CLOSE",
-                        decision="enter",
-                        reason="object_pose_unavailable_using_fallback",
-                        condition="initial_obj_world_available",
-                        metrics=_pre_close_alignment_metrics(),
-                    )
-                else:
-                    _emit_transition_decision(
-                        from_phase="GRASP_ALIGN_IK",
-                        to_phase="PRE_CLOSE",
-                        decision="blocked",
-                        reason="object_pose_unavailable_before_pre_close",
-                        condition="initial_obj_world_available",
-                        metrics=_pre_close_alignment_metrics(),
-                    )
-                    raise RuntimeError("demo_object_pose_unavailable_before_close")
+                _emit_transition_decision(
+                    from_phase="GRASP_ALIGN_IK",
+                    to_phase="PRE_CLOSE",
+                    decision="blocked",
+                    reason="object_pose_unavailable_before_pre_close",
+                    condition="initial_obj_world_available",
+                    metrics=_pre_close_alignment_metrics(),
+                )
+                panel._emit_log(
+                    "[PICK][DIRECT][ABORT] phase=PRE_CLOSE reason=live_object_world_unavailable"
+                )
+                raise RuntimeError("demo_object_pose_unavailable_before_close")
             else:
                 _emit_transition_decision(
                     from_phase="GRASP_ALIGN_IK",

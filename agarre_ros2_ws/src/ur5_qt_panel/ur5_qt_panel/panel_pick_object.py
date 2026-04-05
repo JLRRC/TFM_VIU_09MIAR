@@ -93,6 +93,9 @@ def run_pick_object(panel) -> None:
         except Exception:
             return "n/a"
 
+    def _moveit2_log(scope: str, msg: str) -> None:
+        panel._emit_log(f"[MOVEIT2][{scope}] {msg}")
+
     def _quat_multiply(
         q1: tuple[float, float, float, float],
         q2: tuple[float, float, float, float],
@@ -153,6 +156,11 @@ def run_pick_object(panel) -> None:
             f"controllers={ctrl_ok}:{ctrl_reason} moveit={moveit_state}:{moveit_reason} "
             f"safety={safety_reason} lock_active={lock_active} lock_name={lock_name} lock_id={lock_id}"
         )
+        _moveit2_log(
+            "BLOCK",
+            f"reason={reason} state={state} moveit={moveit_state}:{moveit_reason} "
+            f"controllers={ctrl_ok}:{ctrl_reason} lock={lock_active}:{lock_name}:{lock_id}",
+        )
         if status_text:
             panel._ui_set_status(status_text, error=error)
 
@@ -203,6 +211,11 @@ def run_pick_object(panel) -> None:
         f"selected_ui={str(getattr(panel, '_selected_object', '') or 'none')} "
         f"selection_ts={float(getattr(panel, '_selection_timestamp', 0.0) or 0.0):.3f} "
         "grasp_mode=moveit_pick_object"
+    )
+    _moveit2_log(
+        "BUTTON",
+        f"trigger=pick_object selected_ui={str(getattr(panel, '_selected_object', '') or 'none')} "
+        f"selection_ts={float(getattr(panel, '_selection_timestamp', 0.0) or 0.0):.3f}",
     )
     if not panel._require_ready_basic("PICK Objeto"):
         _block("ready_basic=false")
@@ -532,6 +545,11 @@ def run_pick_object(panel) -> None:
         f"ui_selected={ui_selected or 'none'} store_selected={latest_store_name or 'none'} "
         f"user_selected={user_selected or 'none'} "
         f"ui_ts={ui_selected_ts:.3f} store_ts={latest_store_ts:.3f} user_ts={user_selected_ts:.3f}"
+    )
+    _moveit2_log(
+        "SELECT",
+        f"object={snapshot_name or 'none'} ui={ui_selected or 'none'} store={latest_store_name or 'none'} "
+        f"user={user_selected or 'none'} ui_ts={ui_selected_ts:.3f} store_ts={latest_store_ts:.3f}",
     )
     obj_name = snapshot_name
     selected_ts = max(
@@ -952,6 +970,11 @@ def run_pick_object(panel) -> None:
         f"[PICK_OBJ][TARGET_LOCK] activate lock_id={target_lock_id} "
         f"name={obj_name} ts={selected_ts:.3f} source={pose_source} "
         f"base=({bx:.3f},{by:.3f},{bz:.3f}) frame={base_frame}"
+    )
+    _moveit2_log(
+        "TARGET_LOCK",
+        f"activate lock_id={target_lock_id} name={obj_name} source={pose_source} "
+        f"base=({bx:.3f},{by:.3f},{bz:.3f}) frame={base_frame}",
     )
 
     panel._emit_log("[PICK_OBJ] === SECUENCIA INICIADA ===")
@@ -2915,6 +2938,7 @@ def run_pick_object(panel) -> None:
             def _run_moveit_step(label: str, pose_data: dict, delay: float) -> None:
                 nonlocal moveit_monitor_total, moveit_monitor_manual
                 label_up = str(label).upper()
+                _moveit2_log("STEP", f"label={label_up} state=start")
                 if deterministic_joint_after_approach and label_up != "APPROACH":
                     panel._emit_log(
                         f"[PICK_OBJ][MODE] deterministic_joint_path active; skip_moveit label={label_up}"
@@ -3300,6 +3324,10 @@ def run_pick_object(panel) -> None:
                         panel._emit_log(
                             f"[PICK_OBJ][ABORT] ee_link mismatch moveit={ee_link_moveit} tf={measured_ee_frame}"
                         )
+                        _moveit2_log(
+                            "STEP",
+                            f"label={label_up} state=abort reason=ee_link_mismatch moveit={ee_link_moveit} tf={measured_ee_frame}",
+                        )
                         raise RuntimeError(
                             f"ee_link mismatch (moveit={ee_link_moveit} tf={measured_ee_frame})"
                         )
@@ -3367,6 +3395,10 @@ def run_pick_object(panel) -> None:
                                 panel._emit_log(
                                     f"[PICK_OBJ][ABORT] execute failed label={label} reason={message}"
                                 )
+                                _moveit2_log(
+                                    "STEP",
+                                    f"label={label_up} state=abort reason=execute_failed detail={message}",
+                                )
                                 raise RuntimeError(f"execute failed ({label}): {message}")
                     tol = _phase_tf_tol_m(label)
                     panel._emit_log(
@@ -3417,6 +3449,10 @@ def run_pick_object(panel) -> None:
                                 f"dist_m={dist:.3f} tol_m={tol:.3f} "
                                 f"reason={fail_reason}"
                             )
+                            _moveit2_log(
+                                "STEP",
+                                f"label={label_up} state=abort reason=tf_mismatch dist={dist:.3f} tol={tol:.3f}",
+                            )
                             raise RuntimeError(msg)
                     panel._emit_log(
                         "[PICK][MOVEIT][EXEC_RESULT] "
@@ -3424,6 +3460,10 @@ def run_pick_object(panel) -> None:
                         f"success=true tf_reached={str(bool(tf_diag.get('ok', False))).lower()} "
                         f"dist_m={dist:.3f} tol_m={tol:.3f} "
                         f"ee_link_moveit={ee_link_moveit or 'n/a'} ee_link_tf={measured_ee_frame}"
+                    )
+                    _moveit2_log(
+                        "STEP",
+                        f"label={label_up} state=ok request_id={panel_request_id} dist={dist:.3f} tol={tol:.3f}",
                     )
                     panel._emit_log(
                         f"[PICK_OBJ][MOVEIT][EXEC] {label} traj_msgs={moveit_monitor_total} "
@@ -3598,6 +3638,7 @@ def run_pick_object(panel) -> None:
             _ensure_gripper_open_for_moveit()
 
             panel._emit_log("[PICK_OBJ] FASE 3: APPROACH sobre objeto (pinza abierta)")
+            _moveit2_log("PHASE", "APPROACH start")
             try:
                 _run_moveit_step(*sequence[0])
             except RuntimeError as exc:
@@ -3638,6 +3679,7 @@ def run_pick_object(panel) -> None:
             )
 
             panel._emit_log("[PICK_OBJ] FASE 4: PRE_GRASP (pinza abierta)")
+            _moveit2_log("PHASE", "PRE_GRASP start")
             try:
                 _run_moveit_step(*sequence[1])
             except RuntimeError as exc:
@@ -3669,6 +3711,7 @@ def run_pick_object(panel) -> None:
             )
 
             panel._emit_log("[PICK_OBJ] FASE 5: GRASP_DOWN (pinza abierta)")
+            _moveit2_log("PHASE", "GRASP_DOWN start")
             grasp_label, grasp_pose_data, grasp_delay = sequence[2]
             grasp_pose_send = dict(grasp_pose_data)
             grasp_orig_pos = grasp_pose_send.get("position", (bx, by, bz))
@@ -4118,6 +4161,7 @@ def run_pick_object(panel) -> None:
             )
 
             panel._emit_log("[PICK_OBJ] FASE 7: Levantar objeto 20cm (MoveIt)")
+            _moveit2_log("PHASE", "LIFT start")
             if attach_result.get("strict_physical_pending"):
                 _run_strict_staged_lift(grasp_pose_send)
                 mark_object_grasped(obj_name, reason="pick_object_strict_probe")
@@ -4253,6 +4297,10 @@ def run_pick_object(panel) -> None:
                 "[PICK_OBJ] FASE 9: Ir a CESTA con objeto "
                 + ("(joint)" if transport_joint_only else "(MoveIt)")
             )
+            _moveit2_log(
+                "PHASE",
+                "TRANSPORT start mode=" + ("joint" if transport_joint_only else "moveit"),
+            )
             transport_fallback_used = False
             if transport_joint_only:
                 _run_joint_step(
@@ -4342,9 +4390,11 @@ def run_pick_object(panel) -> None:
                 )
             else:
                 panel._emit_log("[PICK_OBJ] FASE 10: Descenso de drop en cesta (MoveIt)")
+                _moveit2_log("PHASE", "DROP start")
                 _run_moveit_step(*sequence[5])  # DROP
 
             panel._emit_log("[PICK_OBJ] FASE 11: Soltar objeto en cesta")
+            _moveit2_log("PHASE", "RELEASE start")
 
             # Post-check - Validar posición antes de soltar
             basket_z_pos = drop_pose[2]
@@ -4424,10 +4474,12 @@ def run_pick_object(panel) -> None:
             time.sleep(0.5)
 
             panel._emit_log("[PICK_OBJ] FASE 12: Regresar a HOME")
+            _moveit2_log("PHASE", "HOME_FINAL start")
             _run_joint_step("HOME_FINAL", home_pose)
 
             panel._ui_set_status("Pick objeto: COMPLETADO ✓")
             panel._emit_log("[PICK_OBJ] === SECUENCIA COMPLETADA EXITOSAMENTE ===")
+            _moveit2_log("VERDICT", "completed=true")
             _canonical_phase("HOME_DONE", detail="pick_object_sequence_completed")
             _canonical_finish(True, "tfm_moveit_sequence_completed", "HOME_DONE")
         except Exception as exc:
@@ -4449,6 +4501,7 @@ def run_pick_object(panel) -> None:
             panel._emit_log(
                 f"[PICK_OBJ][FAIL_CLASS] type={fail_kind} detail={err_txt}"
             )
+            _moveit2_log("FAIL", f"type={fail_kind} detail={err_txt}")
             try:
                 panel._emit_log("[PICK_OBJ][RECOVERY] Error detectado; intentando HOME_SAFE")
                 _run_joint_step("HOME_SAFE", home_pose, timeout_sec=move_sec + 3.0, tol_rad=0.08)

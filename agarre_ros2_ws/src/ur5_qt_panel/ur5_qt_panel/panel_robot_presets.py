@@ -8,7 +8,10 @@ from __future__ import annotations
 import math
 from typing import Dict, Tuple
 
-from geometry_msgs.msg import PoseStamped
+try:
+    from geometry_msgs.msg import PoseStamped
+except Exception:  # pragma: no cover - ROS not available in unit contexts
+    PoseStamped = None  # type: ignore
 
 
 def _make_pose_data(
@@ -20,6 +23,8 @@ def _make_pose_data(
 
 
 def _build_pose_stamped(data: Dict[str, object]) -> PoseStamped:
+    if PoseStamped is None:
+        raise RuntimeError("PoseStamped no disponible sin geometry_msgs")
     pose = PoseStamped()
     pose.header.frame_id = data.get("frame", "base_link")
     stamp_ns = int(data.get("stamp_ns", 0) or 0)
