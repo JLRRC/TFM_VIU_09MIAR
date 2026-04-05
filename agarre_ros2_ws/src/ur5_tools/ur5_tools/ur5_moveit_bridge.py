@@ -93,7 +93,7 @@ class UR5MoveItBridge(Node):
         self.declare_parameter("backend", "auto")
         self.declare_parameter("move_group", "manipulator")
         self.declare_parameter("base_frame", "base_link")
-        self.declare_parameter("ee_frame", "rg2_tcp")
+        self.declare_parameter("ee_frame", "rg2_pinch_center")
         self.declare_parameter("result_topic", "/desired_grasp/result")
         self.declare_parameter("heartbeat_topic", "/ur5_moveit_bridge/heartbeat")
         self.declare_parameter("heartbeat_rate_hz", 2.0)
@@ -138,7 +138,7 @@ class UR5MoveItBridge(Node):
         self._backend_pref = read_str_param(self, "backend", "auto").strip().lower()
         self._group_name = read_str_param(self, "move_group", "manipulator")
         self._base_frame = read_str_param(self, "base_frame", "base_link")
-        self._ee_frame = read_str_param(self, "ee_frame", "rg2_tcp")
+        self._ee_frame = read_str_param(self, "ee_frame", "rg2_pinch_center")
         self._result_topic = read_str_param(
             self, "result_topic", "/desired_grasp/result"
         )
@@ -707,6 +707,12 @@ class UR5MoveItBridge(Node):
                 "[BRIDGE_CONSTRAINT] skip constraints for tagged request_uuid="
                 f"{request_uuid or 'n/a'}"
             )
+            self.get_logger().info(
+                "[PICK][MOVEIT][CONSTRAINTS] "
+                f"phase={str(phase_label or '').strip().upper() or 'n/a'} "
+                f"request_uuid={request_uuid or 'n/a'} applied=false "
+                "reason=tagged_skip_constraints"
+            )
             return None
         phase_upper = str(phase_label or "").strip().upper()
         if phase_upper == "APPROACH":
@@ -720,6 +726,11 @@ class UR5MoveItBridge(Node):
                 self.get_logger().info(
                     "[BRIDGE_CONSTRAINT] skip constraints for APPROACH "
                     f"phase={phase_upper} env={skip_approach_raw or '1'}"
+                )
+                self.get_logger().info(
+                    "[PICK][MOVEIT][CONSTRAINTS] "
+                    f"phase={phase_upper} request_uuid={request_uuid or 'n/a'} "
+                    f"applied=false reason=approach_skip_env env={skip_approach_raw or '1'}"
                 )
                 return None
         tol = self._path_constraint_joint_tol
@@ -750,6 +761,11 @@ class UR5MoveItBridge(Node):
             f"[BRIDGE_CONSTRAINT] joints={[n for n, _ in constrained]} "
             f"positions={[f'{p:.3f}' for _, p in constrained]} "
             f"tol={tol:.3f}"
+        )
+        self.get_logger().info(
+            "[PICK][MOVEIT][CONSTRAINTS] "
+            f"phase={phase_upper or 'n/a'} request_uuid={request_uuid or 'n/a'} "
+            f"applied=true joints={[n for n, _ in constrained]} tol_rad={tol:.3f}"
         )
         return constraints
 
@@ -2337,6 +2353,38 @@ class UR5MoveItBridge(Node):
                         )
                         if phase_label_upper == "APPROACH" and retry_timeout > approach_max_total_timeout_sec:
                             retry_timeout = float(approach_max_total_timeout_sec)
+                        approach_internal_replan_enabled = str(
+                            os.environ.get(
+                                "PANEL_MOVEIT_BRIDGE_APPROACH_INTERNAL_REPLAN",
+                                "1",
+                            )
+                        ).strip().lower() not in ("0", "false", "no", "off")
+                        if not (phase_label_upper == "APPROACH" and approach_internal_replan_enabled):
+                            self.get_logger().warning(
+                                "[BRIDGE_EXEC] approach long-wait terminal failure "
+                                f"action={action_name} elapsed={now_mono - result_wait_started:.1f}s "
+                                f"joint_detail={joint_near_detail} ee_detail={ee_near_detail} "
+                                f"{motion_detail} feedback_count={feedback_count} "
+                                f"feedback_detail={feedback_last_detail} "
+                                f"scale={approach_long_retry_scale:.2f} "
+                                f"retry_timeout_sec={retry_timeout:.1f} "
+                                f"retry_goal_time_tol={retry_goal_time:.1f}"
+                            )
+                            return (
+                                False,
+                                "fjt_approach_long_wait_terminal:"
+                                f"{joint_near_detail};{ee_near_detail};{motion_detail}",
+                                {
+                                    "action": action_name,
+                                    "status_text": "APPROACH_LONG_WAIT_TERMINAL",
+                                    "joint_goal_check": joint_near_detail,
+                                    "ee_goal_check": ee_near_detail,
+                                    "joint_motion": motion_detail,
+                                    "feedback_goal_check": feedback_last_detail,
+                                    "retry_timeout_sec": round(float(retry_timeout), 3),
+                                    "retry_goal_time_tol_sec": round(float(retry_goal_time), 3),
+                                },
+                            )
                         self.get_logger().warning(
                             "[BRIDGE_EXEC] approach long-wait requires replan from current state "
                             f"action={action_name} elapsed={now_mono - result_wait_started:.1f}s "
@@ -2496,6 +2544,30 @@ class UR5MoveItBridge(Node):
                     phase_label_upper == "APPROACH"
                     and int(approach_replan_attempt) < int(approach_replan_max_attempts)
                 ):
+                    approach_internal_replan_enabled = str(
+                        os.environ.get(
+                            "PANEL_MOVEIT_BRIDGE_APPROACH_INTERNAL_REPLAN",
+                            "0",
+                        )
+                        or "0"
+                    ).strip().lower() not in ("0", "false", "no", "off")
+                    if not approach_internal_replan_enabled:
+                        meta["status_text"] = "APPROACH_PATH_TOL_TERMINAL"
+                        meta["joint_goal_check"] = reached_after_abort_detail
+                        meta["ee_goal_check"] = ee_reached_after_abort_detail
+                        self.get_logger().warning(
+                            "[BRIDGE_EXEC] APPROACH abort por path tolerance; "
+                            "replan interno deshabilitado, devolviendo fallo terminal "
+                            f"attempt={int(approach_replan_attempt) + 1}/{int(approach_replan_max_attempts)} "
+                            f"joint_check={reached_after_abort_detail} "
+                            f"ee_check={ee_reached_after_abort_detail}"
+                        )
+                        return (
+                            False,
+                            "fjt_approach_path_tolerance_terminal:"
+                            f"{reached_after_abort_detail};{ee_reached_after_abort_detail}",
+                            meta,
+                        )
                     self.get_logger().warning(
                         "[BRIDGE_EXEC] APPROACH abort por path tolerance; "
                         "replanificando desde el estado actual "
@@ -2597,6 +2669,31 @@ class UR5MoveItBridge(Node):
                     phase_label_upper == "APPROACH"
                     and int(approach_replan_attempt) < int(approach_replan_max_attempts)
                 ):
+                    approach_internal_replan_enabled = str(
+                        os.environ.get(
+                            "PANEL_MOVEIT_BRIDGE_APPROACH_INTERNAL_REPLAN",
+                            "0",
+                        )
+                        or "0"
+                    ).strip().lower() not in ("0", "false", "no", "off")
+                    if not approach_internal_replan_enabled:
+                        meta["status_text"] = "APPROACH_GOAL_TIME_TERMINAL"
+                        meta["joint_goal_check"] = reached_after_goal_time_detail
+                        meta["ee_goal_check"] = ee_reached_after_goal_time_detail
+                        self.get_logger().warning(
+                            "[BRIDGE_EXEC] APPROACH goal_time_tolerance; "
+                            "replan interno deshabilitado, devolviendo fallo terminal "
+                            f"attempt={int(approach_replan_attempt) + 1}/{int(approach_replan_max_attempts)} "
+                            f"joint_check={reached_after_goal_time_detail} "
+                            f"ee_check={ee_reached_after_goal_time_detail}"
+                        )
+                        return (
+                            False,
+                            "fjt_approach_goal_time_terminal:"
+                            f"{reached_after_goal_time_detail};"
+                            f"{ee_reached_after_goal_time_detail}",
+                            meta,
+                        )
                     self.get_logger().warning(
                         "[BRIDGE_EXEC] APPROACH goal_time_tolerance; "
                         "replanificando desde el estado actual "
@@ -3285,6 +3382,15 @@ class UR5MoveItBridge(Node):
                 f"pose=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f}) "
                 "accepted=true"
             )
+            self.get_logger().info(
+                "[PICK][MOVEIT][REQUEST] "
+                f"ts_us={rx_ts_us} request_id={request_id} request_uuid={req_uuid or 'n/a'} "
+                f"frame={msg.header.frame_id or 'n/a'} "
+                f"pose=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f}) "
+                f"cartesian={str(bool(cartesian)).lower()} phase={phase_label or 'n/a'} "
+                f"ee_target_tol_m={ee_target_tol_m if ee_target_tol_m is not None else 'n/a'} "
+                "accepted=true"
+            )
             self._plan_event.set()
             pos = msg.pose.position
             if dropped_pending > 0:
@@ -3649,6 +3755,13 @@ class UR5MoveItBridge(Node):
                         f"Planificando id={request_id} frame={target.header.frame_id} "
                         f"(cartesian={cartesian}, ee_link={self._ee_frame})"
                     )
+                    self.get_logger().info(
+                        "[PICK][MOVEIT][TARGET] "
+                        f"request_id={request_id} request_uuid={request_uuid or 'n/a'} "
+                        f"phase={phase_label or 'n/a'} frame={target.header.frame_id or 'n/a'} "
+                        f"pose=({target.pose.position.x:.3f},{target.pose.position.y:.3f},{target.pose.position.z:.3f}) "
+                        f"cartesian={str(bool(cartesian)).lower()} ee_frame={self._ee_frame or 'n/a'}"
+                    )
                     success = False
                     plan_ok = False
                     exec_ok = False
@@ -3771,6 +3884,13 @@ class UR5MoveItBridge(Node):
             f"exec_ok={str(bool(exec_ok)).lower()} msg={message or 'n/a'} topic={self._result_topic}"
         )
         self.get_logger().info(
+            "[PICK][MOVEIT][EXEC_RESULT] "
+            f"request_id={request_id} request_uuid={request_uuid or 'n/a'} "
+            f"frame={str(target.header.frame_id or 'n/a')} ee_frame={self._ee_frame or 'n/a'} "
+            f"success={str(bool(success)).lower()} plan_ok={str(bool(plan_ok)).lower()} "
+            f"exec_ok={str(bool(exec_ok)).lower()} msg={message or 'n/a'}"
+        )
+        self.get_logger().info(
             "[BRIDGE_RESULT] "
             f"request_id={request_id} success={str(bool(success)).lower()} "
             f"request_uuid={request_uuid or 'n/a'} "
@@ -3846,6 +3966,12 @@ class UR5MoveItBridge(Node):
                         f"retrying WITHOUT constraints (fallback) "
                         f"success_ok={_pc_ok} traj={_pc_traj} error_code={_pc_ec}"
                     )
+                    self.get_logger().warning(
+                        "[PICK][MOVEIT][DIVERGENCE] "
+                        f"phase={phase_label or 'n/a'} request_uuid={request_uuid or 'n/a'} "
+                        "kind=constraints_fallback_disabled_for_replan "
+                        f"success_ok={_pc_ok} traj={_pc_traj} error_code={_pc_ec if _pc_ec is not None else 'n/a'}"
+                    )
                     start_state_ok, start_state_reason = (
                         self._set_planning_start_state_from_joint_state()
                     )
@@ -3885,6 +4011,13 @@ class UR5MoveItBridge(Node):
             success_ok = False
         if (not success_ok) or trajectory is None:
             fail_reason = "invalid_plan_status" if not success_ok else "no_trajectory"
+            self.get_logger().warning(
+                "[PICK][MOVEIT][PLAN_RESULT] "
+                f"phase={phase_label or 'n/a'} request_uuid={request_uuid or 'n/a'} "
+                f"backend=moveit_py success=false reason={fail_reason} "
+                f"success_code={success_code} error_code={ec_val if ec_val is not None else 'n/a'} "
+                f"constraints_applied={str(path_constraints is not None).lower()}"
+            )
             self._log_bridge_status(
                 f"[BRIDGE_STATUS] plan_fail backend=moveit_py reason={fail_reason}",
                 level="warn",
@@ -3899,6 +4032,12 @@ class UR5MoveItBridge(Node):
             return False, "plan_no_trajectory", False, False
         self._log_bridge_status("[BRIDGE_STATUS] plan_ok backend=moveit_py")
         self.get_logger().info("Planificación MoveItPy OK.")
+        self.get_logger().info(
+            "[PICK][MOVEIT][PLAN_RESULT] "
+            f"phase={phase_label or 'n/a'} request_uuid={request_uuid or 'n/a'} "
+            f"backend=moveit_py success=true constraints_applied={str(path_constraints is not None).lower()} "
+            f"trajectory_type={type(trajectory).__name__ if trajectory is not None else 'none'}"
+        )
         if self._dry_run_plan_only:
             self._log_bridge_status(
                 "[BRIDGE_STATUS] exec_skip backend=moveit_py reason=dry_run_plan_only"

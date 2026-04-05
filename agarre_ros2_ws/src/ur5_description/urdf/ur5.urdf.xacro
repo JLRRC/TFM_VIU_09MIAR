@@ -70,6 +70,23 @@
     <origin xyz="0 0 0.175" rpy="0 0 0"/>
   </joint>
 
+  <!-- Operational pinch-center: midpoint between the two RG2 fingers in this
+       simplified kinematic model. The prismatic fingers are symmetric about
+       rg2_base_link/tool0, so their functional midpoint lives at tool0. -->
+  <link name="rg2_pinch_center">
+    <inertial>
+      <mass value="0.01"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-5" ixy="0.0" ixz="0.0" iyy="1e-5" iyz="0.0" izz="1e-5"/>
+    </inertial>
+  </link>
+
+  <joint name="rg2_pinch_center_joint" type="fixed">
+    <parent link="tool0"/>
+    <child link="rg2_pinch_center"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
   <link name="rg2_finger_link1">
     <inertial>
       <mass value="0.05"/>

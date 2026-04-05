@@ -285,6 +285,7 @@ from .panel_robot_presets import (
     JOINT_BASKET_POSE_RAD,
     JOINT_HOME_POSE_RAD,
     JOINT_PICK_IMAGE_POSE_RAD,
+    JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD,
     PRE_GRASP_POSE_DATA,
     GRASP_POSE_DATA,
     TRANSPORT_POSE_DATA,
@@ -1634,11 +1635,15 @@ class ControlPanelV2(QMainWindow):
         self._last_tcp_world_tf = None
         self._last_tcp_base_z = None
         self._last_tcp_rpy_deg = None
+        self._last_tcp_fk_ts: float = 0.0
+        self._last_trace_tcp_rpy_deg: Optional[Tuple[float, float, float]] = None
+        self._last_trace_object_age_sec: Optional[float] = None
         self._last_tcp_mismatch_warn_ts = 0.0
         self._last_debug_tcp_base: Optional[Tuple[float, float, float]] = None
         self._last_debug_tcp_ts: float = 0.0
         self._last_trace_tcp_base: Optional[Tuple[float, float, float]] = None
         self._last_trace_tcp_ts: float = 0.0
+        self._last_panel_trace_audit_ts: float = 0.0
         self._tf_chain_logged: bool = False
         self._debug_joints_to_stdout = bool(DEBUG_JOINTS_TO_STDOUT)
         self.joint_topic = PANEL_JOINT_STATES_TOPIC
@@ -1655,6 +1660,8 @@ class ControlPanelV2(QMainWindow):
         self.gripper_total_lbl: Optional[QLabel] = None
         self.tcp_xyz_lbl: Optional[QLabel] = None
         self.tcp_rpy_lbl: Optional[QLabel] = None
+        self.tcp_live_xyz_lbl: Optional[QLabel] = None
+        self.tcp_live_rpy_lbl: Optional[QLabel] = None
         self.vel_norm_lbl: Optional[QLabel] = None
         self.vel_max_lbl: Optional[QLabel] = None
         self.eff_max_lbl: Optional[QLabel] = None
@@ -1694,8 +1701,11 @@ class ControlPanelV2(QMainWindow):
         )
         self._camera_ready_frames = max(1, CAMERA_READY_FRAMES)
         self._required_ee_frame = (
-            str(os.environ.get("PANEL_REQUIRED_EE_FRAME", "rg2_tcp") or "rg2_tcp").strip()
-            or "rg2_tcp"
+            str(
+                os.environ.get("PANEL_REQUIRED_EE_FRAME", "rg2_pinch_center")
+                or "rg2_pinch_center"
+            ).strip()
+            or "rg2_pinch_center"
         )
         self._auto_calib_from_camera = bool(AUTO_CALIB_FROM_CAMERA)
         self._calibrating = False
@@ -2074,7 +2084,7 @@ class ControlPanelV2(QMainWindow):
     def get_tcp_base(self) -> Optional[PoseStamped]:
         """Return TCP pose expressed in base_link for diagnostics and tests."""
         base_frame = self._business_base_frame()
-        ee_frame = "rg2_tcp"
+        ee_frame = str(getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center").strip() or "rg2_pinch_center"
         tcp_pose, _rpy_deg, reason = tf_get_tcp_in_base(
             base_frame=base_frame,
             ee_frame=ee_frame,
@@ -2997,7 +3007,7 @@ class ControlPanelV2(QMainWindow):
                 f"label={label} frame={frame_clean} needs_tf={str(frame_clean != base_frame).lower()} "
                 f"cartesian={str(bool(cartesian)).lower()} "
                 f"pos=({float(px):.3f},{float(py):.3f},{float(pz):.3f}) "
-                f"ee={self._ee_frame_effective or 'rg2_tcp'}"
+                f"ee={self._ee_frame_effective or 'rg2_pinch_center'}"
             )
         except Exception:
             pass
@@ -3464,6 +3474,8 @@ class ControlPanelV2(QMainWindow):
         self.gripper_total_lbl: Optional[QLabel] = None
         self.tcp_xyz_lbl: Optional[QLabel] = None
         self.tcp_rpy_lbl: Optional[QLabel] = None
+        self.tcp_live_xyz_lbl: Optional[QLabel] = None
+        self.tcp_live_rpy_lbl: Optional[QLabel] = None
         self.vel_norm_lbl: Optional[QLabel] = None
         self.vel_max_lbl: Optional[QLabel] = None
         self.eff_max_lbl: Optional[QLabel] = None
@@ -3513,7 +3525,7 @@ class ControlPanelV2(QMainWindow):
         gripper_group.setLayout(gripper_layout)
         info_grid.addWidget(gripper_group, 0, 1, 2, 1)
 
-        kin_group = QGroupBox("Cinemática (FK)")
+        kin_group = QGroupBox("TCP Panel")
         kin_group.setFlat(True)
         kin_group.setStyleSheet(info_font_css)
         kin_layout = QGridLayout()
@@ -3521,10 +3533,16 @@ class ControlPanelV2(QMainWindow):
         kin_layout.setSpacing(1)
         self.tcp_xyz_lbl = QLabel("--")
         self.tcp_rpy_lbl = QLabel("--")
-        kin_layout.addWidget(QLabel("<b>TCP xyz [m]</b>"), 0, 0)
+        self.tcp_live_xyz_lbl = QLabel("--")
+        self.tcp_live_rpy_lbl = QLabel("--")
+        kin_layout.addWidget(QLabel("<b>FK modelo xyz [m]</b>"), 0, 0)
         kin_layout.addWidget(self.tcp_xyz_lbl, 0, 1)
-        kin_layout.addWidget(QLabel("<b>RPY [deg]</b>"), 1, 0)
+        kin_layout.addWidget(QLabel("<b>FK modelo RPY [deg]</b>"), 1, 0)
         kin_layout.addWidget(self.tcp_rpy_lbl, 1, 1)
+        kin_layout.addWidget(QLabel("<b>TF vivo ee operativo xyz [m]</b>"), 2, 0)
+        kin_layout.addWidget(self.tcp_live_xyz_lbl, 2, 1)
+        kin_layout.addWidget(QLabel("<b>TF vivo ee operativo RPY [deg]</b>"), 3, 0)
+        kin_layout.addWidget(self.tcp_live_rpy_lbl, 3, 1)
         kin_group.setLayout(kin_layout)
         info_grid.addWidget(kin_group, 0, 2)
 
@@ -3601,6 +3619,12 @@ class ControlPanelV2(QMainWindow):
             "Demo pick & place con objeto de posicion conocida (fuera del TFM)"
         )
         self.btn_pick_demo.clicked.connect(self._run_pick_demo)
+        self.btn_pick_demo2 = QPushButton("Agarre Objeto (Directo2)")
+        self.btn_pick_demo2.setMinimumHeight(32)
+        self.btn_pick_demo2.setToolTip(
+            "Secuencia fija: Mesa -> abrir -> Pose Buena -> cerrar -> Mesa -> Cesta -> abrir"
+        )
+        self.btn_pick_demo2.clicked.connect(self._run_pick_demo2)
         self.btn_pick_object = QPushButton("Agarre Objeto (MoveIT)")
         self.btn_pick_object.setMinimumHeight(32)
         self.btn_pick_object.setToolTip("Coger objeto seleccionado y llevarlo a la cesta")
@@ -3661,6 +3685,7 @@ class ControlPanelV2(QMainWindow):
         baseline_col.addWidget(self.btn_table)
         baseline_col.addWidget(self.btn_basket)
         baseline_col.addWidget(self.btn_pick_demo)
+        baseline_col.addWidget(self.btn_pick_demo2)
         baseline_col.addWidget(self.btn_pick_object)
         baseline_col.addWidget(baseline_info)
         baseline_col.addStretch(1)
@@ -4733,7 +4758,7 @@ class ControlPanelV2(QMainWindow):
         if helper is None:
             return False, "tf_helper_off"
         base_frame = self._business_base_frame()
-        ee_frame = str(getattr(self, "_required_ee_frame", "") or "rg2_tcp").strip() or "rg2_tcp"
+        ee_frame = str(getattr(self, "_required_ee_frame", "") or "rg2_pinch_center").strip() or "rg2_pinch_center"
         if not _can_transform_between(helper, base_frame, ee_frame, timeout_sec=0.2):
             return False, f"{base_frame}<->{ee_frame} missing"
         return True, f"{base_frame}->{ee_frame}"
@@ -5911,6 +5936,7 @@ class ControlPanelV2(QMainWindow):
             wx, wy, wz = base_to_world(bx, by, bz)
             self._last_tcp_base = (bx, by, bz)
             self._last_tcp_world = (wx, wy, wz)
+            self._last_tcp_fk_ts = time.monotonic()
             if self.tcp_xyz_lbl is not None:
                 self.tcp_xyz_lbl.setText(f"{bx:.3f}, {by:.3f}, {bz:.3f}")
             if self.tcp_rpy_lbl is not None:
@@ -5921,6 +5947,7 @@ class ControlPanelV2(QMainWindow):
                 self.tcp_rpy_lbl.setText(f"{r_deg:.1f}, {p_deg:.1f}, {y_deg:.1f}")
         else:
             self._last_tcp_base = None
+            self._last_tcp_fk_ts = time.monotonic()
             if self.tcp_xyz_lbl is not None:
                 self.tcp_xyz_lbl.setText("--")
             if self.tcp_rpy_lbl is not None:
@@ -6357,7 +6384,7 @@ class ControlPanelV2(QMainWindow):
         obj_txt = "objs: " + (" ".join(obj_parts) if obj_parts else "-" )
 
         base_frame = self._business_base_frame()
-        ee_frame = "rg2_tcp"
+        ee_frame = str(getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center").strip() or "rg2_pinch_center"
         tcp_txt = "tcp_base=UNAVAILABLE tcp_source=tf2"
         tcp_pose, rpy_deg, tcp_reason = tf_get_tcp_in_base(
             base_frame=base_frame,
@@ -6831,8 +6858,6 @@ class ControlPanelV2(QMainWindow):
         self._run_async(worker)
 
     def _maybe_recover_pick_demo(self, reason: str) -> None:
-        if self._pick_demo_executed:
-            return
         if self._pick_demo_recover_inflight:
             return
         if getattr(self, "_pick_target_lock_active", False) or getattr(self, "_script_motion_active", False):
@@ -6841,14 +6866,16 @@ class ControlPanelV2(QMainWindow):
         if pos is None or is_on_table(pos):
             return
         state = get_object_state(PICK_DEMO_OBJECT_NAME)
+        allow_rearm_after_success = bool(getattr(self, "_pick_demo_executed", False))
         if state is not None:
             if state.owner != ObjectOwner.NONE or state.attached:
                 return
             if state.logical_state in (
                 ObjectLogicalState.GRASPED,
                 ObjectLogicalState.CARRIED,
-                ObjectLogicalState.RELEASED,
             ):
+                return
+            if state.logical_state == ObjectLogicalState.RELEASED and not allow_rearm_after_success:
                 return
         now = time.monotonic()
         if (now - self._pick_demo_recover_last_ts) < 1.5:
@@ -6902,6 +6929,15 @@ class ControlPanelV2(QMainWindow):
             "[PICK_DEMO][RECOVER] "
             f"pose_reset_ok reason={reason} target=({float(tx):.3f},{float(ty):.3f},{float(tz):.3f})"
         )
+        if getattr(self, "_pick_demo_executed", False):
+            def _rearm_demo_button() -> None:
+                self._pick_demo_executed = False
+                if getattr(self, "btn_pick_demo", None) is not None:
+                    self.btn_pick_demo.setToolTip("Demo (secuencia joints, sin MoveIt)")
+                self._emit_log("[PICK_DEMO][RECOVER] rearmed=true")
+                self._refresh_controls()
+
+            self.signal_run_ui.emit(_rearm_demo_button)
         self.signal_update_objects.emit()
         self.signal_refresh_controls.emit()
 
@@ -7472,7 +7508,7 @@ class ControlPanelV2(QMainWindow):
         )
         frame_norm = str(frame or "").split("|", 1)[0].strip() or "world"
         base_frame = str(self._business_base_frame() or "base_link").strip() or "base_link"
-        if frame_norm in {base_frame, "base", "tool0", "rg2_tcp"}:
+        if frame_norm in {base_frame, "base", "tool0", "rg2_tcp", "rg2_pinch_center"}:
             # Guardrail: las poses de pose/info llegan en world, no en base_link.
             # Si este valor se contamina, los cálculos geométricos se desalinean.
             frame_norm = str(WORLD_FRAME or "world").strip() or "world"
@@ -9416,8 +9452,8 @@ class ControlPanelV2(QMainWindow):
 
                 def _select_test_ee_frame(local_base_frame: str) -> str:
                     preferred = str(
-                        os.environ.get("PANEL_TEST_TOUCH_TIP_FRAME", "rg2_tcp") or "rg2_tcp"
-                ).strip() or "rg2_tcp"
+                        os.environ.get("PANEL_TEST_TOUCH_TIP_FRAME", "rg2_pinch_center") or "rg2_pinch_center"
+                ).strip() or "rg2_pinch_center"
                     helper = get_tf_helper()
                     # FASE 1: timeout 0.5s (antes 0.08s) para reducir spam TF
                     if helper and _can_transform_between(
@@ -10011,7 +10047,7 @@ class ControlPanelV2(QMainWindow):
                 tf_strict = _test_cfg_bool("PANEL_TEST_CORNER_STRICT_TF", False)
 
                 base_frame = self._business_base_frame()
-                ee_frame = "rg2_tcp"
+                ee_frame = "rg2_pinch_center"
                 helper = get_tf_helper()
                 # FASE 1: timeout 0.5s (antes 0.08s) para reducir spam TF
                 if helper and not _can_transform_between(
@@ -10024,7 +10060,7 @@ class ControlPanelV2(QMainWindow):
                         ee_frame = fallback_ee
                         self._emit_log(
                             "[TEST][CORNER] WARN "
-                            f"ee_preferred=rg2_tcp unavailable; using {fallback_ee}"
+                            f"ee_preferred=rg2_pinch_center unavailable; using {fallback_ee}"
                         )
                 corners = self._compute_test_corner_base_points()
                 if len(corners) < 2:
@@ -10246,7 +10282,7 @@ class ControlPanelV2(QMainWindow):
                 return True, "ok"
 
             def _select_test_ee_frame(local_base_frame: str) -> str:
-                preferred = "rg2_tcp"
+                preferred = "rg2_pinch_center"
                 helper = get_tf_helper()
                 # FASE 1: timeout 0.5s (antes 0.08s) para reducir spam TF
                 if helper and _can_transform_between(
@@ -10939,7 +10975,7 @@ class ControlPanelV2(QMainWindow):
                     table_check_frames_raw = str(
                         _test_cfg_value(
                             "PANEL_TEST_TABLE_FRAMES",
-                            "rg2_tcp,tool0,ee_link,flange,gripper_link,wrist_3_link",
+                            "rg2_pinch_center,rg2_tcp,tool0,ee_link,flange,gripper_link,wrist_3_link",
                         )
                         or ""
                 )
@@ -11548,6 +11584,28 @@ class ControlPanelV2(QMainWindow):
             self._run_async(_wait_and_select, name="remote_select_wait")
             return True
 
+        def _trigger_pick_demo_recover(reason: str) -> None:
+            if target != PICK_DEMO_OBJECT_NAME:
+                return
+            if self._pick_demo_recover_inflight:
+                return
+            state = get_object_state(PICK_DEMO_OBJECT_NAME)
+            if state is not None and (state.owner != ObjectOwner.NONE or state.attached):
+                return
+            self._emit_log(
+                "[PICK_DEMO][RECOVER] "
+                f"trigger=remote_select reason={reason or 'n/a'}"
+            )
+            self._pick_demo_recover_inflight = True
+
+            def _worker() -> None:
+                try:
+                    self._recover_pick_demo_to_table(reason or "remote_select")
+                finally:
+                    self._pick_demo_recover_inflight = False
+
+            self._run_async(_worker, name="pick_demo_recover_remote")
+
         if target.lower() in ("", "clear", "none", "null"):
             if self._selected_object:
                 prev_state = get_object_state(self._selected_object)
@@ -11585,10 +11643,11 @@ class ControlPanelV2(QMainWindow):
             live_pose = poses.get(target)
         if live_pose is not None and len(live_pose) >= 3:
             x, y, z = float(live_pose[0]), float(live_pose[1]), float(live_pose[2])
-            if not (self._objects_settled or is_on_table((x, y, z))):
+            if not is_on_table((x, y, z)):
+                _trigger_pick_demo_recover("remote_select_live_not_on_table")
                 if _defer_select_until_on_table("remote_pose_not_on_table_yet"):
                     return
-            if self._objects_settled or is_on_table((x, y, z)):
+            if is_on_table((x, y, z)):
                 bulk_update_object_positions(
                     {target: (x, y, z)},
                     source="remote_pose_select",
@@ -11615,6 +11674,7 @@ class ControlPanelV2(QMainWindow):
         if obj_pose is not None and len(obj_pose) >= 3:
             x, y, z = float(obj_pose[0]), float(obj_pose[1]), float(obj_pose[2])
             if not is_on_table((x, y, z)):
+                _trigger_pick_demo_recover("remote_select_store_not_on_table")
                 if _defer_select_until_on_table("remote_store_not_on_table"):
                     return
             px, py = -1, -1
@@ -13152,9 +13212,10 @@ class ControlPanelV2(QMainWindow):
             tcp_base = None
             tcp_source = "none"
             base_frame = self._business_base_frame()
+            ee_frame = str(getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center").strip() or "rg2_pinch_center"
             tcp_pose_base, rpy, tcp_reason = tf_get_tcp_in_base(
                 base_frame=base_frame,
-                ee_frame="rg2_tcp",
+                ee_frame=ee_frame,
                 timeout=0.03,
                 logger=None,
             )
@@ -13164,7 +13225,7 @@ class ControlPanelV2(QMainWindow):
                     float(tcp_pose_base.pose.position.y),
                     float(tcp_pose_base.pose.position.z),
                 )
-                tcp_source = "tf2:rg2_tcp@base_link"
+                tcp_source = f"tf2:{ee_frame}@{base_frame}"
             else:
                 trace_age = float("inf")
                 if self._last_trace_tcp_ts > 0.0:
@@ -13179,9 +13240,9 @@ class ControlPanelV2(QMainWindow):
                         float(self._last_trace_tcp_base[1]),
                         float(self._last_trace_tcp_base[2]),
                     )
-                    tcp_source = f"trace_cache:rg2_tcp age={trace_age:.2f}s"
+                    tcp_source = f"trace_cache:{ee_frame} age={trace_age:.2f}s"
                 else:
-                    tcp_source = f"tf2:rg2_tcp_unavailable:{tcp_reason}"
+                    tcp_source = f"tf2:{ee_frame}_unavailable:{tcp_reason}"
             line1 = "TCP(base): --"
             line2 = "TCP source: --"
             line3 = "RPY[deg]: --"
@@ -13390,10 +13451,10 @@ class ControlPanelV2(QMainWindow):
                     min_interval=4.0,
                 )
 
-            self._emit_log_throttled(
-                "VISUAL:tcp_obj_line",
-                "[PICK][VISUAL][TCP_OBJ_LINE] "
-                f"origin=rg2_tcp@base_link obj={obj_name or 'none'} "
+                self._emit_log_throttled(
+                    "VISUAL:tcp_obj_line",
+                    "[PICK][VISUAL][TCP_OBJ_LINE] "
+                f"origin={ee_frame}@{base_frame} obj={obj_name or 'none'} "
                 f"tcp_base={_fmt_vec_any(tcp_base)} tcp_world={_fmt_vec_any(tcp_world)} obj_base={_fmt_vec_any(obj_base)} "
                 f"tcp_px={_fmt_vec_any(tcp_px)} ghost_px={_fmt_vec_any(tcp_ghost_px)} obj_px={_fmt_vec_any(obj_px)} "
                 f"dist_m={dist_m if dist_m is not None else float('nan'):.4f} "
@@ -13500,6 +13561,86 @@ class ControlPanelV2(QMainWindow):
     def _run_pick_demo(self):
         """Ejecuta la ruta directa del demo sobre el objeto seleccionado."""
         run_pick_demo(self)
+
+    def _run_pick_demo2(self):
+        """Ejecuta una secuencia fija basada en la Pose Buena de pick_demo."""
+        self._log_button("Agarre Objeto (Directo2)")
+        if getattr(self, "_pick_moveit_phase_active", False):
+            self._set_status("Directo2 bloqueado: PICK_OBJ MoveIt en ejecución", error=True)
+            self._emit_log("[DIRECT2] BLOCKED: MoveIt pick object en ejecución")
+            return
+        if not self._require_manual_ready("Directo2"):
+            return
+        if getattr(self, "_script_motion_active", False):
+            self._set_status("Directo2 en curso…", error=False)
+            return
+
+        move_sec = float(self.joint_time.value()) if self.joint_time else 2.0
+        settle_sec = 0.35
+        gripper_wait_sec = 1.0
+        sequence = (
+            ("MESA_1", JOINT_TABLE_POSE_RAD),
+            ("POSE_BUENA", JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD),
+            ("MESA_2", JOINT_TABLE_POSE_RAD),
+            ("CESTA", JOINT_BASKET_POSE_RAD),
+        )
+
+        def _sleep_until_done(delay_sec: float) -> None:
+            end = time.monotonic() + max(0.0, delay_sec)
+            while time.monotonic() < end:
+                if self._closing:
+                    break
+                time.sleep(0.05)
+
+        def worker():
+            self._set_motion_lock(True)
+            try:
+                self._emit_log(
+                    "[DIRECT2] start "
+                    f"object={PICK_DEMO_OBJECT_NAME} move_sec={move_sec:.2f} "
+                    f"gripper_wait_sec={gripper_wait_sec:.2f}"
+                )
+                for step_name, joints in sequence:
+                    status_label = {
+                        "MESA_1": "Directo2: yendo a Mesa…",
+                        "POSE_BUENA": "Directo2: yendo a Pose Buena…",
+                        "MESA_2": "Directo2: volviendo a Mesa…",
+                        "CESTA": "Directo2: yendo a Cesta…",
+                    }.get(step_name, "Directo2 ejecutando…")
+                    self._ui_set_status(status_label)
+                    ok, info = self._publish_joint_trajectory(list(joints), move_sec)
+                    if not ok:
+                        self._ui_set_status(f"Directo2 falló en {step_name}: {info}", error=True)
+                        self._emit_log(f"[DIRECT2] fail step={step_name} reason={info}")
+                        return
+                    self._emit_log(
+                        f"[DIRECT2] step={step_name} action=joint_trajectory topic={info}"
+                    )
+                    _sleep_until_done(move_sec + settle_sec)
+                    if step_name == "MESA_1":
+                        self._ui_set_status("Directo2: abriendo pinza…")
+                        self._command_gripper(False, log_action="DIRECT2", force=True)
+                        self._emit_log("[DIRECT2] step=MESA_1 action=gripper_open")
+                        _sleep_until_done(gripper_wait_sec)
+                    elif step_name == "POSE_BUENA":
+                        self._ui_set_status("Directo2: cerrando pinza…")
+                        self._command_gripper(True, log_action="DIRECT2", force=True)
+                        self._emit_log("[DIRECT2] step=POSE_BUENA action=gripper_close")
+                        _sleep_until_done(gripper_wait_sec)
+                    elif step_name == "CESTA":
+                        self._ui_set_status("Directo2: soltando en cesta…")
+                        self._command_gripper(False, log_action="DIRECT2", force=True)
+                        self._emit_log("[DIRECT2] step=CESTA action=gripper_open")
+                        _sleep_until_done(gripper_wait_sec)
+                self._ui_set_status("Directo2 completado")
+                self._emit_log(
+                    "[DIRECT2] completed route=mesa_open_pose_buena_close_mesa_cesta_open"
+                )
+            finally:
+                self._set_motion_lock(False)
+                recalc_object_states("direct2_sequence")
+
+        self._run_async(worker, name="pick_demo_direct2")
 
     def _run_pick_object(self):
         """Ejecuta pick & place del objeto seleccionado hacia la cesta."""
@@ -15102,7 +15243,7 @@ class ControlPanelV2(QMainWindow):
         effective_ee = detected_ee or self._ee_frame_effective
         if not effective_ee:
             helper = get_tf_helper()
-            for candidate in ("tool0", "flange"):
+            for candidate in ("rg2_pinch_center", "tool0", "flange"):
                 if helper and _can_transform_between(helper, effective_base, candidate, timeout_sec=0.05):
                     effective_ee = candidate
                     self._ee_frame_effective = candidate
@@ -15129,6 +15270,13 @@ class ControlPanelV2(QMainWindow):
         object_name = str(self._selected_object or PICK_DEMO_OBJECT_NAME)
         pose_cache = {}
         pose_wall = 0.0
+        stable_positions = get_object_positions() or {}
+        stable_world = None
+        if object_name:
+            try:
+                stable_world = tuple(float(v) for v in stable_positions.get(object_name, ())[:3]) if object_name in stable_positions else None
+            except Exception:
+                stable_world = None
         if self._ros_worker_started and self.ros_worker.node_ready():
             try:
                 pose_cache, pose_wall = self.ros_worker.pose_snapshot()
@@ -15138,6 +15286,34 @@ class ControlPanelV2(QMainWindow):
                 pose_wall = 0.0
         if object_name and object_name in pose_cache:
             wx, wy, wz = pose_cache[object_name]
+            divergence_tol_m = max(
+                0.05,
+                float(
+                    os.environ.get(
+                        "PANEL_PICK_DEMO_OBJECT_SOURCE_DIVERGENCE_TOL_M",
+                        "0.150",
+                    )
+                    or 0.150
+                ),
+            )
+            if stable_world is not None:
+                dx = float(wx) - float(stable_world[0])
+                dy = float(wy) - float(stable_world[1])
+                dz = float(wz) - float(stable_world[2])
+                div_m = math.sqrt(dx * dx + dy * dy + dz * dz)
+                if div_m > divergence_tol_m:
+                    self._emit_log_throttled(
+                        "TRACE:object_pose_divergence",
+                        "[PICK][DIRECT][DIVERGENCE] "
+                        "kind=object_pose_snapshot_vs_cache "
+                        f"object={object_name} "
+                        f"snapshot_world=({float(wx):.3f},{float(wy):.3f},{float(wz):.3f}) "
+                        f"stable_world=({float(stable_world[0]):.3f},{float(stable_world[1]):.3f},{float(stable_world[2]):.3f}) "
+                        f"delta_m={div_m:.3f} tol_m={divergence_tol_m:.3f} "
+                        "fallback=stable_object_cache",
+                        min_interval=1.5,
+                    )
+                    wx, wy, wz = stable_world
             object_world_data = self._pose_dict((float(wx), float(wy), float(wz)), (0.0, 0.0, 0.0, 1.0), world_frame)
             world_pose = PoseStamped()
             world_pose.header.frame_id = world_frame
@@ -15174,19 +15350,67 @@ class ControlPanelV2(QMainWindow):
                     float(base_pose.pose.position.z),
                     base_frame,
                 )
-                object_source = f"pose_info+tf2:ok age={max(0.0, _runtime_time() - float(pose_wall or 0.0)):.2f}s"
+                self._last_trace_object_age_sec = max(0.0, _runtime_time() - float(pose_wall or 0.0))
+                if stable_world is not None and (
+                    abs(float(wx) - float(stable_world[0])) > 1e-9
+                    or abs(float(wy) - float(stable_world[1])) > 1e-9
+                    or abs(float(wz) - float(stable_world[2])) > 1e-9
+                ):
+                    object_source = f"stable_object_cache:fallback age={float(self._last_trace_object_age_sec):.2f}s"
+                else:
+                    object_source = f"pose_info+tf2:ok age={float(self._last_trace_object_age_sec):.2f}s"
             else:
+                self._last_trace_object_age_sec = None
                 object_source = f"pose_info+tf2:tf_failed:{base_reason}"
+        elif object_name and stable_world is not None:
+            wx, wy, wz = stable_world
+            object_world_data = self._pose_dict((float(wx), float(wy), float(wz)), (0.0, 0.0, 0.0, 1.0), world_frame)
+            world_pose = PoseStamped()
+            world_pose.header.frame_id = world_frame
+            world_pose.pose.position.x = float(wx)
+            world_pose.pose.position.y = float(wy)
+            world_pose.pose.position.z = float(wz)
+            world_pose.pose.orientation.w = 1.0
+            base_pose, base_reason = tf_world_pose_to_base(
+                world_pose,
+                world_frame=world_frame,
+                base_frame=base_frame,
+                timeout=0.08,
+                logger=self._log_trace,
+            )
+            if base_pose is not None:
+                object_base_data = self._pose_dict(
+                    (
+                        float(base_pose.pose.position.x),
+                        float(base_pose.pose.position.y),
+                        float(base_pose.pose.position.z),
+                    ),
+                    (
+                        float(base_pose.pose.orientation.x),
+                        float(base_pose.pose.orientation.y),
+                        float(base_pose.pose.orientation.z),
+                        float(base_pose.pose.orientation.w),
+                    ),
+                    base_frame,
+                )
+                object_source = "stable_object_cache:no_pose_snapshot"
+            else:
+                object_source = f"stable_object_cache:tf_failed:{base_reason}"
         else:
+            self._last_trace_object_age_sec = None
             object_source = f"pose_info+tf2:not_found:{object_name}"
 
         tcp_world_data = None
         tcp_base_data = None
         tcp_source = "tf2:UNAVAILABLE"
+        legacy_tcp_base_data = None
+        pinch_tcp_base_data = None
+        legacy_tcp_world_data = None
+        pinch_tcp_world_data = None
         if ee_frame:
             tcp_pose_base, _tcp_rpy, tcp_reason = tf_get_tcp_in_base(
                 base_frame=base_frame,
-                ee_frame="rg2_tcp",
+                ee_frame=ee_frame,
                 timeout=0.08,
                 logger=self._log_trace,
             )
@@ -15212,6 +15436,27 @@ class ControlPanelV2(QMainWindow):
                 )
                 self._last_trace_tcp_ts = time.monotonic()
                 self._last_tcp_base_z = float(tcp_pose_base.pose.position.z)
+                self._last_trace_tcp_rpy_deg = (
+                    float(_tcp_rpy[0]),
+                    float(_tcp_rpy[1]),
+                    float(_tcp_rpy[2]),
+                ) if _tcp_rpy is not None and len(_tcp_rpy) >= 3 else None
+                if self.tcp_live_xyz_lbl is not None:
+                    self.tcp_live_xyz_lbl.setText(
+                        f"{float(tcp_pose_base.pose.position.x):.3f}, "
+                        f"{float(tcp_pose_base.pose.position.y):.3f}, "
+                        f"{float(tcp_pose_base.pose.position.z):.3f}"
+                    )
+                if self.tcp_live_rpy_lbl is not None:
+                    if self._last_trace_tcp_rpy_deg is not None:
+                        self.tcp_live_rpy_lbl.setText(
+                            f"{float(self._last_trace_tcp_rpy_deg[0]):.1f}, "
+                            f"{float(self._last_trace_tcp_rpy_deg[1]):.1f}, "
+                            f"{float(self._last_trace_tcp_rpy_deg[2]):.1f}"
+                        )
+                    else:
+                        self.tcp_live_rpy_lbl.setText("--")
+                pinch_tcp_base_data = tcp_base_data
                 # FASE 1: tcp_source=ok en cuanto base->ee funciona.
                 # La transformación a world es OPCIONAL (solo diagnóstico).
                 tcp_source = "tf2:ok"
@@ -15244,10 +15489,59 @@ class ControlPanelV2(QMainWindow):
                             world_frame,
                         )
                         self._last_tcp_world_tf = tcp_world_data
+                        pinch_tcp_world_data = tcp_world_data
             else:
                 self._last_trace_tcp_base = None
                 self._last_trace_tcp_ts = time.monotonic()
+                self._last_trace_tcp_rpy_deg = None
+                if self.tcp_live_xyz_lbl is not None:
+                    self.tcp_live_xyz_lbl.setText("--")
+                if self.tcp_live_rpy_lbl is not None:
+                    self.tcp_live_rpy_lbl.setText("--")
                 tcp_source = f"tf2:base_lookup_failed:{tcp_reason}"
+            legacy_pose_base, _legacy_rpy, _legacy_reason = tf_get_tcp_in_base(
+                base_frame=base_frame,
+                ee_frame="rg2_tcp",
+                timeout=0.05,
+                logger=None,
+            )
+            if legacy_pose_base is not None:
+                legacy_tcp_base_data = self._pose_dict(
+                    (
+                        float(legacy_pose_base.pose.position.x),
+                        float(legacy_pose_base.pose.position.y),
+                        float(legacy_pose_base.pose.position.z),
+                    ),
+                    (
+                        float(legacy_pose_base.pose.orientation.x),
+                        float(legacy_pose_base.pose.orientation.y),
+                        float(legacy_pose_base.pose.orientation.z),
+                        float(legacy_pose_base.pose.orientation.w),
+                    ),
+                    base_frame,
+                )
+                helper = get_tf_helper()
+                if helper and _can_transform_between(helper, base_frame, world_frame, timeout_sec=0.05):
+                    legacy_world_pose, _legacy_world_reason = tf_transform_pose(
+                        legacy_pose_base,
+                        target_frame=world_frame,
+                        timeout=0.08,
+                    )
+                    if legacy_world_pose is not None:
+                        legacy_tcp_world_data = self._pose_dict(
+                            (
+                                float(legacy_world_pose.pose.position.x),
+                                float(legacy_world_pose.pose.position.y),
+                                float(legacy_world_pose.pose.position.z),
+                            ),
+                            (
+                                float(legacy_world_pose.pose.orientation.x),
+                                float(legacy_world_pose.pose.orientation.y),
+                                float(legacy_world_pose.pose.orientation.z),
+                                float(legacy_world_pose.pose.orientation.w),
+                            ),
+                            world_frame,
+                        )
         else:
             if now - self._last_ee_warn_ts >= self._ee_warn_period:
                 self._log("[TRACE] EE frame unavailable (retrying)")
@@ -15262,8 +15556,13 @@ class ControlPanelV2(QMainWindow):
                 sample = ", ".join(candidates[:8]) if candidates else "-"
                 self._log(f"[TF] TF OK pero no hay EE transformable desde base_link. Candidatos={sample}. Bloqueando PICK.")
                 self._last_ee_diag_ts = now
+            self._last_trace_tcp_rpy_deg = None
+            if self.tcp_live_xyz_lbl is not None:
+                self.tcp_live_xyz_lbl.setText("--")
+            if self.tcp_live_rpy_lbl is not None:
+                self.tcp_live_rpy_lbl.setText("--")
 
-            self._check_tcp_source_mismatch(now)
+        self._check_tcp_source_mismatch(now)
 
         self._set_trace_row(0, object_world_data, object_base_data, world_frame, base_frame)
         self._set_trace_row(1, tcp_world_data, tcp_base_data, world_frame, base_frame)
@@ -15303,6 +15602,93 @@ class ControlPanelV2(QMainWindow):
             object_source=object_source,
             tcp_source=tcp_source,
         )
+        if (now - float(self._last_panel_trace_audit_ts or 0.0)) >= 1.0:
+            self._last_panel_trace_audit_ts = now
+            fk_tcp = self._last_tcp_base
+            live_tcp = self._last_trace_tcp_base
+            def _fmt_tuple(vec: Optional[Tuple[float, ...]]) -> str:
+                if not isinstance(vec, (list, tuple)) or len(vec) < 3:
+                    return "--"
+                try:
+                    return (
+                        f"({float(vec[0]):.3f},{float(vec[1]):.3f},{float(vec[2]):.3f})"
+                    )
+                except Exception:
+                    return "--"
+            def _fmt_scalar(value: Optional[float]) -> str:
+                if value is None:
+                    return "--"
+                try:
+                    return f"{float(value):.3f}"
+                except Exception:
+                    return "--"
+            delta_txt = "--"
+            dist_txt = "--"
+            if fk_tcp is not None and live_tcp is not None:
+                ddx = float(fk_tcp[0]) - float(live_tcp[0])
+                ddy = float(fk_tcp[1]) - float(live_tcp[1])
+                ddz = float(fk_tcp[2]) - float(live_tcp[2])
+                dist = math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz)
+                delta_txt = f"({ddx:.3f},{ddy:.3f},{ddz:.3f})"
+                dist_txt = f"{dist:.3f}"
+            self._emit_log(
+                "[PICK][DIRECT][PANEL_TRACE] "
+                f"world_frame={world_frame} base_frame={base_frame} ee_frame={ee_frame or 'none'} "
+                f"selected_object={object_name or 'none'} "
+                f"object_source={object_source} object_pose_base={self._format_pose_summary('obj', object_base_data)} "
+                f"tcp_live_source={tcp_source} tcp_live_base={self._format_pose_summary('tcp_live', tcp_base_data)} "
+                f"tcp_panel_fk_base={_fmt_tuple(self._last_tcp_base)} "
+                f"tcp_panel_fk_rpy_deg={_fmt_tuple(self._last_tcp_rpy_deg)} "
+                f"tcp_live_rpy_deg={_fmt_tuple(self._last_trace_tcp_rpy_deg)} "
+                f"panel_live_delta={delta_txt} panel_live_dist_m={dist_txt} "
+                f"panel_fk_age_sec={max(0.0, now - float(self._last_tcp_fk_ts or now)):.3f} "
+                f"tcp_live_age_sec={max(0.0, now - float(self._last_trace_tcp_ts or now)):.3f} "
+                f"object_age_sec={_fmt_scalar(self._last_trace_object_age_sec)}"
+            )
+            def _pose_xyz(data: Optional[Dict[str, object]]) -> Optional[Tuple[float, float, float]]:
+                if not isinstance(data, dict):
+                    return None
+                pos = data.get("position")
+                if not isinstance(pos, (list, tuple)) or len(pos) < 3:
+                    return None
+                try:
+                    return (float(pos[0]), float(pos[1]), float(pos[2]))
+                except Exception:
+                    return None
+            obj_base_xyz = _pose_xyz(object_base_data)
+            legacy_base_xyz = _pose_xyz(legacy_tcp_base_data)
+            pinch_base_xyz = _pose_xyz(pinch_tcp_base_data)
+            obj_world_xyz = _pose_xyz(object_world_data)
+            legacy_world_xyz = _pose_xyz(legacy_tcp_world_data)
+            pinch_world_xyz = _pose_xyz(pinch_tcp_world_data)
+            def _dist(a: Optional[Tuple[float, float, float]], b: Optional[Tuple[float, float, float]]) -> Optional[float]:
+                if a is None or b is None:
+                    return None
+                dx = float(a[0]) - float(b[0])
+                dy = float(a[1]) - float(b[1])
+                dz = float(a[2]) - float(b[2])
+                return math.sqrt(dx * dx + dy * dy + dz * dz)
+            legacy_vs_obj = _dist(legacy_base_xyz, obj_base_xyz)
+            pinch_vs_obj = _dist(pinch_base_xyz, obj_base_xyz)
+            legacy_vs_pinch = _dist(legacy_base_xyz, pinch_base_xyz)
+            self._emit_log(
+                "[RG2][AUDIT][TCP] "
+                f"base_frame={base_frame} world_frame={world_frame} ee_effective={ee_frame or 'none'} "
+                f"panel_fk_tool0_base={_fmt_tuple(self._last_tcp_base)} "
+                f"rg2_pinch_center_base={_fmt_tuple(pinch_base_xyz)} "
+                f"rg2_tcp_base={_fmt_tuple(legacy_base_xyz)} "
+                f"rg2_pinch_center_world={_fmt_tuple(pinch_world_xyz)} "
+                f"rg2_tcp_world={_fmt_tuple(legacy_world_xyz)}"
+            )
+            self._emit_log(
+                "[RG2][AUDIT][COMPARE] "
+                f"selected_object={object_name or 'none'} "
+                f"object_base={_fmt_tuple(obj_base_xyz)} object_world={_fmt_tuple(obj_world_xyz)} "
+                f"rg2_pinch_center_base={_fmt_tuple(pinch_base_xyz)} rg2_tcp_base={_fmt_tuple(legacy_base_xyz)} "
+                f"dist_object_to_rg2_pinch_center_m={_fmt_scalar(pinch_vs_obj)} "
+                f"dist_object_to_rg2_tcp_m={_fmt_scalar(legacy_vs_obj)} "
+                f"dist_rg2_tcp_to_rg2_pinch_center_m={_fmt_scalar(legacy_vs_pinch)}"
+            )
         self._maybe_log_trace(now)
 
     def _log_trace_transform_warning(self, message: str) -> None:
@@ -15363,7 +15749,7 @@ class ControlPanelV2(QMainWindow):
         if helper is None:
             return False, "tf_helper_off"
         base_frame = self._business_base_frame()
-        ee_frame = str(getattr(self, "_required_ee_frame", "") or "rg2_tcp").strip() or "rg2_tcp"
+        ee_frame = str(getattr(self, "_required_ee_frame", "") or "rg2_pinch_center").strip() or "rg2_pinch_center"
         # FASE 1: timeout aumentado a 0.5s (antes 0.2s) para evitar falsos negativos
         if not _can_transform_between(helper, base_frame, ee_frame, timeout_sec=0.5):
             return False, f"{base_frame}<->{ee_frame} missing"
@@ -15580,7 +15966,7 @@ class ControlPanelV2(QMainWindow):
         else:
             self._log_trace(f"[TRACE][TF_CHAIN] world->{base_frame} unavailable reason={reason_wb}")
 
-        ee = str(ee_frame or "rg2_tcp").strip() or "rg2_tcp"
+        ee = str(ee_frame or "rg2_pinch_center").strip() or "rg2_pinch_center"
         tf_be, reason_be = tf_get_transform(
             base_frame,
             ee,
@@ -15602,12 +15988,12 @@ class ControlPanelV2(QMainWindow):
         self._tf_chain_logged = True
 
     def _check_tcp_source_mismatch(self, now_mono: float) -> None:
-        if self._last_trace_tcp_base is None or self._last_debug_tcp_base is None:
+        if self._last_trace_tcp_base is None or self._last_tcp_base is None:
             return
-        if abs(float(self._last_trace_tcp_ts) - float(self._last_debug_tcp_ts)) > 2.0:
+        if abs(float(self._last_trace_tcp_ts) - float(self._last_tcp_fk_ts)) > 2.0:
             return
         tx, ty, tz = self._last_trace_tcp_base
-        dx, dy, dz = self._last_debug_tcp_base
+        dx, dy, dz = self._last_tcp_base
         ddx = float(tx) - float(dx)
         ddy = float(ty) - float(dy)
         ddz = float(tz) - float(dz)
@@ -15615,9 +16001,15 @@ class ControlPanelV2(QMainWindow):
         if dist > 0.02 and (now_mono - float(self._last_tcp_mismatch_warn_ts or 0.0)) >= 1.0:
             self._last_tcp_mismatch_warn_ts = now_mono
             self._emit_log(
-                "[WARNING] TCP SOURCE MISMATCH (frame/transform inversion suspected) "
-                f"delta={dist:.3f}m trace_tcp=({float(tx):.3f},{float(ty):.3f},{float(tz):.3f}) "
-                f"debug_tcp=({float(dx):.3f},{float(dy):.3f},{float(dz):.3f})"
+                "[PICK][DIRECT][DIVERGENCE] "
+                "kind=panel_fk_vs_tf_live "
+                f"delta_m={dist:.3f} "
+                f"panel_fk_tcp=({float(dx):.3f},{float(dy):.3f},{float(dz):.3f}) "
+                f"tf_live_tcp=({float(tx):.3f},{float(ty):.3f},{float(tz):.3f}) "
+                f"delta_vec=({ddx:.3f},{ddy:.3f},{ddz:.3f}) "
+                f"panel_fk_age_sec={max(0.0, now_mono - float(self._last_tcp_fk_ts or now_mono)):.3f} "
+                f"tf_live_age_sec={max(0.0, now_mono - float(self._last_trace_tcp_ts or now_mono)):.3f} "
+                "note=panel_fk_model_pose_not_same_as_live_rg2_tcp"
             )
 
     def _build_trace_text(

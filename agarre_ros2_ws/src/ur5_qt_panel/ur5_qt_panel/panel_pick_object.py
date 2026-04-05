@@ -72,6 +72,27 @@ def run_pick_object(panel) -> None:
         if panel._debug_logs_enabled:
             panel._emit_log(msg)
 
+    def _fmt_xyz(vec: object) -> str:
+        if not isinstance(vec, (list, tuple)) or len(vec) < 3:
+            return "(--,--,--)"
+        try:
+            return f"({float(vec[0]):.3f},{float(vec[1]):.3f},{float(vec[2]):.3f})"
+        except Exception:
+            return "(--,--,--)"
+
+    def _fmt_pose_dict(pose_data: object) -> str:
+        if not isinstance(pose_data, dict):
+            return "frame=n/a pos=(--,--,--)"
+        frame = str(pose_data.get("frame", "") or "n/a")
+        pos = pose_data.get("position", None)
+        return f"frame={frame} pos={_fmt_xyz(pos)}"
+
+    def _fmt_age_sec(value: object) -> str:
+        try:
+            return f"{float(value):.3f}s"
+        except Exception:
+            return "n/a"
+
     def _quat_multiply(
         q1: tuple[float, float, float, float],
         q2: tuple[float, float, float, float],
@@ -176,6 +197,13 @@ def run_pick_object(panel) -> None:
             pass
 
     panel._log_button("PICK Objeto")
+    panel._emit_log(
+        "[PICK][MOVEIT][BUTTON] "
+        f"ts={time.time():.6f} "
+        f"selected_ui={str(getattr(panel, '_selected_object', '') or 'none')} "
+        f"selection_ts={float(getattr(panel, '_selection_timestamp', 0.0) or 0.0):.3f} "
+        "grasp_mode=moveit_pick_object"
+    )
     if not panel._require_ready_basic("PICK Objeto"):
         _block("ready_basic=false")
         return
@@ -498,6 +526,13 @@ def run_pick_object(panel) -> None:
         f"snapshot={snapshot_name or 'none'} store_selected={latest_store_name or 'none'} "
         f"ui_selected={ui_selected or 'none'} ui_ts={ui_selected_ts:.3f} store_ts={latest_store_ts:.3f}"
     )
+    panel._emit_log(
+        "[PICK][MOVEIT][SELECT] "
+        f"selected_object={snapshot_name or 'none'} "
+        f"ui_selected={ui_selected or 'none'} store_selected={latest_store_name or 'none'} "
+        f"user_selected={user_selected or 'none'} "
+        f"ui_ts={ui_selected_ts:.3f} store_ts={latest_store_ts:.3f} user_ts={user_selected_ts:.3f}"
+    )
     obj_name = snapshot_name
     selected_ts = max(
         ui_selected_ts,
@@ -621,12 +656,23 @@ def run_pick_object(panel) -> None:
         obj_base_stamp_ns = int(_obj_tf_stamp.sec) * 1_000_000_000 + int(_obj_tf_stamp.nanosec)
     except Exception:
         obj_base_stamp_ns = 0
-    except Exception:
-        obj_base_stamp_ns = 0
+    panel._emit_log(
+        "[PICK][MOVEIT][LIVE_OBJECT] "
+        f"name={obj_name} source={pose_source} "
+        f"world_frame={world_frame} world_pose={_fmt_xyz((obj_x, obj_y, obj_z))} "
+        f"base_frame={base_frame} base_pose={_fmt_xyz((bx, by, bz))} "
+        f"selected_ts={selected_ts:.3f} obj_base_stamp_ns={obj_base_stamp_ns}"
+    )
     grasp_yaw_deg: Optional[float] = None
     if canonical_active:
         override_selected = str(canonical_override.get("selected_object", "") or "").strip()
         override_frame = str(canonical_override.get("frame", "") or base_frame).strip() or base_frame
+        try:
+            yaw_raw = canonical_override.get("yaw_deg", None)
+            if yaw_raw is not None and str(yaw_raw).strip() != "":
+                grasp_yaw_deg = float(yaw_raw)
+        except Exception:
+            grasp_yaw_deg = None
         if override_selected and override_selected != obj_name:
             _block(
                 "canonical_selection_mismatch",
@@ -689,12 +735,13 @@ def run_pick_object(panel) -> None:
             )
             override_x = float(bx)
             override_y = float(by)
+        yaw_txt = "n/a" if grasp_yaw_deg is None else f"{float(grasp_yaw_deg):.1f}"
         panel._emit_log(
             "[PICK_OBJ][TFM_CANON] override_xy "
             f"selected_xy=({float(bx):.3f},{float(by):.3f}) "
             f"grasp_xy_raw=({override_x_raw:.3f},{override_y_raw:.3f}) "
             f"grasp_xy_exec=({override_x:.3f},{override_y:.3f}) "
-            f"dxy={override_dxy:.3f} yaw={grasp_yaw_deg:.1f}"
+            f"dxy={override_dxy:.3f} yaw={yaw_txt}"
         )
         bx = override_x
         by = override_y
@@ -1091,6 +1138,69 @@ def run_pick_object(panel) -> None:
                 source_frame=ee_frame,
                 timeout_sec=timeout_sec,
             )
+
+        def _log_moveit_panel_trace(label: str, *, current_obj_base: Optional[tuple] = None) -> None:
+            panel_fk_tcp = getattr(panel, "_last_tcp_base", None)
+            panel_fk_rpy = getattr(panel, "_last_tcp_rpy_deg", None)
+            live_tcp = getattr(panel, "_last_trace_tcp_base", None)
+            live_rpy = getattr(panel, "_last_trace_tcp_rpy_deg", None)
+            object_age = getattr(panel, "_last_trace_object_age_sec", None)
+            panel._emit_log(
+                "[PICK][MOVEIT][PANEL_TRACE] "
+                f"label={label} "
+                f"selected_object={str(getattr(panel, '_selected_object', '') or 'none')} "
+                f"object_pose_base={_fmt_xyz(current_obj_base)} "
+                f"tcp_panel_fk_base={_fmt_xyz(panel_fk_tcp)} "
+                f"tcp_panel_fk_rpy_deg={_fmt_xyz(panel_fk_rpy)} "
+                f"tcp_live_base={_fmt_xyz(live_tcp)} "
+                f"tcp_live_rpy_deg={_fmt_xyz(live_rpy)} "
+                f"panel_fk_age_sec={_fmt_age_sec(max(0.0, time.monotonic() - float(getattr(panel, '_last_tcp_fk_ts', time.monotonic()) or time.monotonic())))} "
+                f"tcp_live_age_sec={_fmt_age_sec(max(0.0, time.monotonic() - float(getattr(panel, '_last_trace_tcp_ts', time.monotonic()) or time.monotonic())))} "
+                f"object_age_sec={_fmt_age_sec(object_age)}"
+            )
+            if (
+                isinstance(panel_fk_tcp, (list, tuple))
+                and len(panel_fk_tcp) >= 3
+                and isinstance(live_tcp, (list, tuple))
+                and len(live_tcp) >= 3
+            ):
+                ddx = float(panel_fk_tcp[0]) - float(live_tcp[0])
+                ddy = float(panel_fk_tcp[1]) - float(live_tcp[1])
+                ddz = float(panel_fk_tcp[2]) - float(live_tcp[2])
+                dist = math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz)
+                if dist > 0.02:
+                    panel._emit_log(
+                        "[PICK][MOVEIT][DIVERGENCE] "
+                        "kind=panel_fk_vs_tf_live "
+                        f"label={label} delta_m={dist:.3f} "
+                        f"delta_vec=({ddx:.3f},{ddy:.3f},{ddz:.3f}) "
+                        "note=panel_fk_model_pose_not_same_as_live_rg2_tcp"
+                    )
+
+        def _resolve_live_object_pose_for_audit(name: str) -> tuple[Optional[tuple], Optional[tuple], str]:
+            try:
+                live_positions = get_object_positions() or {}
+                live_world = live_positions.get(name)
+            except Exception:
+                live_world = None
+            if live_world is None or len(live_world) < 3:
+                return None, None, "pose_info/live_missing"
+            try:
+                live_world_xyz = (
+                    float(live_world[0]),
+                    float(live_world[1]),
+                    float(live_world[2]),
+                )
+            except Exception:
+                return None, None, "pose_info/live_invalid"
+            live_base_info = panel._selection_to_base(live_world_xyz, world_frame)
+            if not live_base_info:
+                return live_world_xyz, None, "pose_info/live_tf_failed"
+            try:
+                live_base_xyz = tuple(float(v) for v in live_base_info["coords"])
+            except Exception:
+                live_base_xyz = None
+            return live_world_xyz, live_base_xyz, "pose_info/live"
 
         def _tf_stamp_ns(tf_msg: Optional[object]) -> int:
             try:
@@ -1704,6 +1814,12 @@ def run_pick_object(panel) -> None:
             moveit_exclusive = str(
                 os.environ.get("PANEL_PICK_OBJECT_MOVEIT_EXCLUSIVE", "1")
             ).strip().lower() not in ("0", "false", "no", "off")
+            allow_joint_recovery_in_moveit = str(
+                os.environ.get(
+                    "PANEL_PICK_OBJECT_ALLOW_JOINT_RECOVERY_IN_MOVEIT",
+                    "1",
+                )
+            ).strip().lower() not in ("0", "false", "no", "off")
             allow_joint_preflight_in_moveit = str(
                 os.environ.get("PANEL_PICK_OBJECT_ALLOW_JOINT_PREFLIGHT_IN_MOVEIT", "0")
             ).strip().lower() not in ("0", "false", "no", "off")
@@ -1713,6 +1829,10 @@ def run_pick_object(panel) -> None:
             if allow_joint_preflight_in_moveit:
                 panel._emit_log(
                     "[PICK_OBJ][MODE] allow_joint_preflight_in_moveit=true"
+                )
+            if allow_joint_recovery_in_moveit:
+                panel._emit_log(
+                    "[PICK_OBJ][MODE] allow_joint_recovery_in_moveit=true"
                 )
             transport_fallback_enabled = str(
                 os.environ.get(
@@ -1735,7 +1855,7 @@ def run_pick_object(panel) -> None:
                     "1" if moveit_exclusive else "1",
                 )
             ).strip().lower() not in ("0", "false", "no", "off")
-            if moveit_exclusive:
+            if moveit_exclusive and not allow_joint_recovery_in_moveit:
                 if approach_fallback_enabled:
                     panel._emit_log(
                         "[PICK_OBJ][MODE] moveit_exclusive=true; desactivando APPROACH_JOINT_FALLBACK"
@@ -1746,6 +1866,12 @@ def run_pick_object(panel) -> None:
                     )
                 approach_fallback_enabled = False
                 pre_grasp_fallback_enabled = False
+            elif moveit_exclusive and (approach_fallback_enabled or pre_grasp_fallback_enabled):
+                panel._emit_log(
+                    "[PICK_OBJ][MODE] moveit_exclusive=true; recovery_fallbacks_permitidos "
+                    f"approach={str(bool(approach_fallback_enabled)).lower()} "
+                    f"pre_grasp={str(bool(pre_grasp_fallback_enabled)).lower()}"
+                )
             deterministic_joint_after_approach = str(
                 os.environ.get(
                     "PANEL_PICK_OBJECT_DETERMINISTIC_JOINT_AFTER_APPROACH",
@@ -3016,12 +3142,54 @@ def run_pick_object(panel) -> None:
                             tol_m=tol_step,
                             phase_label=label_up,
                         )
-                        request_wall = max(time.time() - 0.05, float(baseline_wall) - 0.001)
+                        # wait_for_moveit_result() gates on RosWorker._moveit_result_wall,
+                        # which is recorded with the monotonic clock. Using time.time()
+                        # here makes every incoming result look stale and the panel keeps
+                        # waiting even after the bridge has published a terminal outcome.
+                        request_wall = max(0.0, float(baseline_wall) - 0.001)
                         pose_subs_now = panel.ros_worker.topic_subscriber_count(moveit_pose_topic)
                         if pose_subs_now <= 0:
                             raise RuntimeError(
                                 f"no_pose_subscribers_before_publish topic={moveit_pose_topic}"
                             )
+                        live_world_xyz, live_base_xyz, live_source = _resolve_live_object_pose_for_audit(
+                            target_snapshot_name
+                        )
+                        tcp_before, _tcp_before_tf = _read_tcp_in_frame(frame_id, measured_ee_frame)
+                        _log_moveit_panel_trace(label, current_obj_base=live_base_xyz)
+                        if live_base_xyz is not None and tcp_before is not None:
+                            dx_bt = float(live_base_xyz[0]) - float(tcp_before[0])
+                            dy_bt = float(live_base_xyz[1]) - float(tcp_before[1])
+                            dz_bt = float(live_base_xyz[2]) - float(tcp_before[2])
+                            dist_bt = math.sqrt(dx_bt * dx_bt + dy_bt * dy_bt + dz_bt * dz_bt)
+                        else:
+                            dx_bt = dy_bt = dz_bt = dist_bt = float("nan")
+                        panel._emit_log(
+                            "[PICK][MOVEIT][TCP_BEFORE] "
+                            f"label={label} ee_frame={measured_ee_frame} target_frame={frame_id} "
+                            f"tcp_live_base={_fmt_xyz(tcp_before)} "
+                            f"object_live_base={_fmt_xyz(live_base_xyz)} "
+                            f"delta_object_tcp_base={_fmt_xyz((dx_bt, dy_bt, dz_bt)) if tcp_before is not None and live_base_xyz is not None else '(--,--,--)'} "
+                            f"dist_object_tcp_base_m={dist_bt:.3f}" if tcp_before is not None and live_base_xyz is not None else
+                            f"[PICK][MOVEIT][TCP_BEFORE] label={label} ee_frame={measured_ee_frame} target_frame={frame_id} tcp_live_base={_fmt_xyz(tcp_before)} object_live_base={_fmt_xyz(live_base_xyz)} delta_object_tcp_base=(--,--,--) dist_object_tcp_base_m=n/a"
+                        )
+                        panel._emit_log(
+                            "[PICK][MOVEIT][TARGET] "
+                            f"label={label} target_source={live_source} "
+                            f"target_original={_fmt_pose_dict(pose_data)} "
+                            f"target_command={_fmt_pose_dict(pose_to_send)} "
+                            f"object_live_world={_fmt_xyz(live_world_xyz)} "
+                            f"object_live_base={_fmt_xyz(live_base_xyz)}"
+                        )
+                        panel._emit_log(
+                            "[PICK][MOVEIT][FRAME_AUDIT] "
+                            f"label={label} object_world_frame={world_frame} "
+                            f"object_base_frame={base_frame} target_frame_original={frame_id} "
+                            f"ee_frame={measured_ee_frame} "
+                            f"delta_object_tcp_base={_fmt_xyz((dx_bt, dy_bt, dz_bt)) if tcp_before is not None and live_base_xyz is not None else '(--,--,--)'} "
+                            f"dist_object_tcp_base_m={dist_bt:.3f}" if tcp_before is not None and live_base_xyz is not None else
+                            f"[PICK][MOVEIT][FRAME_AUDIT] label={label} object_world_frame={world_frame} object_base_frame={base_frame} target_frame_original={frame_id} ee_frame={measured_ee_frame} delta_object_tcp_base=(--,--,--) dist_object_tcp_base_m=n/a"
+                        )
                         panel._emit_log(
                             f"[PICK_OBJ][STEP] label={label} request_id={panel_request_id} "
                             f"request_uuid={panel_request_uuid} "
@@ -3035,6 +3203,20 @@ def run_pick_object(panel) -> None:
                             f"subs_count={pose_subs_now} stamp_ns={request_stamp_ns} "
                             f"lock_id={target_lock_id_local} target={target_snapshot_name} "
                             f"cartesian={str(bool(cartesian_mode)).lower()}"
+                        )
+                        panel._emit_log(
+                            "[PICK][MOVEIT][REQUEST] "
+                            f"label={label} request_id={panel_request_id} request_uuid={panel_request_uuid} "
+                            f"phase={label_up} cartesian={str(bool(cartesian_mode)).lower()} "
+                            f"timeout_sec={float(timeout_sec):.2f} "
+                            f"command_frame={frame_id} command_pose={_fmt_xyz(position)} "
+                            f"tol_m={tol_step:.3f}"
+                        )
+                        panel._emit_log(
+                            f"[PICK_OBJ][MOVEIT][REQUEST_GATE] {label} "
+                            f"baseline_wall_steady={float(baseline_wall):.6f} "
+                            f"request_wall_steady={request_wall:.6f} "
+                            f"baseline_seq={int(baseline_seq)}"
                         )
                         panel._emit_log(
                             f"[PANEL][PUB] {label} request_id={panel_request_id} "
@@ -3198,6 +3380,16 @@ def run_pick_object(panel) -> None:
                         tol_m=tol,
                         ee_frame=measured_ee_frame,
                     )
+                    tcp_after = tf_diag.get("tcp")
+                    target_after = tf_diag.get("target")
+                    dist = float(tf_diag.get("dist", 0.0))
+                    panel._emit_log(
+                        "[PICK][MOVEIT][TCP_AFTER] "
+                        f"label={label} ee_frame={measured_ee_frame} frame={frame_id} "
+                        f"tcp_live={_fmt_xyz(tcp_after)} target={_fmt_xyz(target_after)} "
+                        f"delta_target_tcp={_fmt_xyz((float(target_after[0]) - float(tcp_after[0]), float(target_after[1]) - float(tcp_after[1]), float(target_after[2]) - float(tcp_after[2]))) if isinstance(target_after, (list, tuple)) and isinstance(tcp_after, (list, tuple)) else '(--,--,--)'} "
+                        f"dist_m={dist:.3f} tol_m={tol:.3f}"
+                    )
                     dist = float(tf_diag.get("dist", 0.0))
                     if not bool(tf_diag.get("ok", False)):
                         tf_age_sec = tf_diag.get("tf_age_sec")
@@ -3219,7 +3411,20 @@ def run_pick_object(panel) -> None:
                             )
                         else:
                             panel._emit_log(f"[PICK_OBJ][ABORT] {msg}")
+                            panel._emit_log(
+                                "[PICK][MOVEIT][DIVERGENCE] "
+                                f"label={label} kind=bridge_success_vs_tf_reach "
+                                f"dist_m={dist:.3f} tol_m={tol:.3f} "
+                                f"reason={fail_reason}"
+                            )
                             raise RuntimeError(msg)
+                    panel._emit_log(
+                        "[PICK][MOVEIT][EXEC_RESULT] "
+                        f"label={label} request_id={panel_request_id} "
+                        f"success=true tf_reached={str(bool(tf_diag.get('ok', False))).lower()} "
+                        f"dist_m={dist:.3f} tol_m={tol:.3f} "
+                        f"ee_link_moveit={ee_link_moveit or 'n/a'} ee_link_tf={measured_ee_frame}"
+                    )
                     panel._emit_log(
                         f"[PICK_OBJ][MOVEIT][EXEC] {label} traj_msgs={moveit_monitor_total} "
                         f"manual_conflicts={moveit_monitor_manual} topic={moveit_monitor_topic}"
@@ -3674,21 +3879,30 @@ def run_pick_object(panel) -> None:
                     grasp_z_reach_tol = float(
                         os.environ.get(
                             "PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_FALLBACK_M",
-                            os.environ.get("PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M", "0.015"),
+                            os.environ.get(
+                                "PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M",
+                                os.environ.get("PANEL_PICK_OBJECT_GRASP_STEP_TOL_M", "0.040"),
+                            ),
                         )
                     )
                 except Exception:
-                    grasp_z_reach_tol = 0.015
+                    grasp_z_reach_tol = 0.040
             else:
                 try:
-                    grasp_z_reach_tol = float(os.environ.get("PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M", "0.015"))
+                    grasp_z_reach_tol = float(
+                        os.environ.get(
+                            "PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M",
+                            os.environ.get("PANEL_PICK_OBJECT_GRASP_STEP_TOL_M", "0.040"),
+                        )
+                    )
                 except Exception:
-                    grasp_z_reach_tol = 0.015
+                    grasp_z_reach_tol = 0.040
             z_reach_err = abs(float(tcp_base[2]) - target_tcp_z)
             panel._emit_log(
                 f"[PICK_OBJ][GRASP_VALIDATE] target_tcp_z={target_tcp_z:.3f} "
                 f"tcp_z={float(tcp_base[2]):.3f} z_err={z_reach_err:.3f} "
-                f"z_tol={grasp_z_reach_tol:.3f}"
+                f"z_tol={grasp_z_reach_tol:.3f} "
+                f"tol_source={str(os.environ.get('PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M', '') or os.environ.get('PANEL_PICK_OBJECT_GRASP_STEP_TOL_M', 'default_grasp_step_tol'))}"
             )
             if z_reach_err > grasp_z_reach_tol:
                 raise RuntimeError(

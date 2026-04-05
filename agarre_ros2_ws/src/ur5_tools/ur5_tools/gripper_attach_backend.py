@@ -156,7 +156,7 @@ class GripperAttachBackend(Node):
         self.declare_parameter("world_frame", "world")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("pose_topic", "")
-        self.declare_parameter("tcp_frame", "rg2_tcp")
+        self.declare_parameter("tcp_frame", "rg2_pinch_center")
         self.declare_parameter("set_pose_service", "")
         self.declare_parameter("follow_rate_hz", 20.0)
         self.declare_parameter("max_pose_age_sec", 1.5)
@@ -216,7 +216,7 @@ class GripperAttachBackend(Node):
         self._base_frame = str(
             self.get_parameter("base_frame").value or "base_link"
         ).strip() or "base_link"
-        self._tcp_frame = str(self.get_parameter("tcp_frame").value or "rg2_tcp").strip()
+        self._tcp_frame = str(self.get_parameter("tcp_frame").value or "rg2_pinch_center").strip()
         self._pose_topic = str(self.get_parameter("pose_topic").value or "").strip()
         if not self._pose_topic:
             self._pose_topic = f"/world/{self._world_name}/pose/info"

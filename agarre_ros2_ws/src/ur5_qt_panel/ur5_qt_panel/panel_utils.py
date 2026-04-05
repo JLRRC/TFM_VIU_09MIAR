@@ -1264,6 +1264,7 @@ _TF_YAML_HEAD_LOGGED = False
 _EE_UNAVAILABLE_LOGGED = False
 _TF_YAML_HEAD_LOGGED = False
 EE_FRAME_CANDIDATE_BASES = (
+    "rg2_pinch_center",
     "tool0",
     "rg2_tcp",
     "tcp",
@@ -1630,7 +1631,7 @@ def _select_ee_frame(
         add_candidate(preferred)
 
     # Align with tf_probe keepers priority.
-    for keeper in ("rg2_tcp", "tool0", "tcp", "ee_link", "flange", "wrist_3_link", "ft_frame", "rg2_hand"):
+    for keeper in ("rg2_pinch_center", "rg2_tcp", "tool0", "tcp", "ee_link", "flange", "wrist_3_link", "ft_frame", "rg2_hand"):
         add_candidate(keeper)
 
     prefixes = set()
@@ -1759,6 +1760,7 @@ BASE_FRAME_CANDIDATES = [
     "base_link",
 ]
 EE_FRAME_PREFERENCE = [
+    "rg2_pinch_center",
     "rg2_tcp",
     "tool0",
     "tcp",

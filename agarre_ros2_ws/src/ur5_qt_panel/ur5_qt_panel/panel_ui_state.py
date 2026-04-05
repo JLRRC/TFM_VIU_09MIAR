@@ -278,6 +278,13 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
             demo_ready,
             demo_tip if demo_ready else demo_block_tip,
         )
+    if getattr(panel, "btn_pick_demo2", None) is not None:
+        demo2_block_tip = "Directo2: espera controladores/TF"
+        panel._set_btn_state(
+            panel.btn_pick_demo2,
+            demo_ready,
+            "Secuencia fija con Pose Buena" if demo_ready else demo2_block_tip,
+        )
     block_tip = "Ejecuta AUTO TUNE para habilitar"
     pick_object_ready = pick_ok and panel._pose_info_ok and panel._tf_ready_state and bool(panel._selected_object)
     if camera_gate_ok and not test_pending:
@@ -340,6 +347,8 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         if not bool(getattr(panel, "_allow_gripper_while_script_motion", False)):
             panel._set_btn_state(panel.btn_gripper, False, busy_tip)
         panel._set_btn_state(panel.btn_pick_demo, False, busy_tip)
+        if getattr(panel, "btn_pick_demo2", None) is not None:
+            panel._set_btn_state(panel.btn_pick_demo2, False, busy_tip)
         panel._set_btn_state(panel.btn_pick_object, False, busy_tip)
         if panel.tfm_module:
             panel._set_btn_state(panel.btn_tfm_infer, False, busy_tip)

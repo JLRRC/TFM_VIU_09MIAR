@@ -167,7 +167,7 @@ class SystemStateManager(Node):
         self.declare_parameter("model_name", "ur5_rg2")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("world_frame", "world")
-        self.declare_parameter("ee_frame", "tool0")
+        self.declare_parameter("ee_frame", "rg2_pinch_center")
         self.declare_parameter("pose_topic", "")
         self.declare_parameter("camera_topic", "/camera_overhead/image")
         self.declare_parameter("camera_required", True)
@@ -203,7 +203,7 @@ class SystemStateManager(Node):
         self._model_name = read_str_param(self, "model_name", "ur5_rg2")
         self._base_frame = read_str_param(self, "base_frame", "base_link")
         self._world_frame = read_str_param(self, "world_frame", "world")
-        self._ee_frame = read_str_param(self, "ee_frame", "tool0")
+        self._ee_frame = read_str_param(self, "ee_frame", "rg2_pinch_center")
         pose_topic = read_str_param(self, "pose_topic", "")
         self._pose_topic = pose_topic or f"/world/{self._world_name}/pose/info"
         self._camera_topic = read_str_param(
