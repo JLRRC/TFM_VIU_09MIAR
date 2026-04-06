@@ -300,8 +300,15 @@ elif [[ "${PANEL_GZ_GUI:-0}" == "1" ]]; then
 elif [[ -z "${LIBGL_ALWAYS_SOFTWARE:-}" ]]; then
   export LIBGL_ALWAYS_SOFTWARE=0
 fi
-export PANEL_SKIP_CLEANUP="${PANEL_SKIP_CLEANUP:-0}"
-export PANEL_KILL_STALE="${PANEL_KILL_STALE:-1}"
+# Si el panel se engancha a un stack ya vivo, no debe intentar "limpiar"
+# procesos previos porque terminaría derribando precisamente el entorno a auditar.
+if [[ "${PANEL_START_STACK}" == "0" ]]; then
+  export PANEL_SKIP_CLEANUP="${PANEL_SKIP_CLEANUP:-1}"
+  export PANEL_KILL_STALE="${PANEL_KILL_STALE:-0}"
+else
+  export PANEL_SKIP_CLEANUP="${PANEL_SKIP_CLEANUP:-0}"
+  export PANEL_KILL_STALE="${PANEL_KILL_STALE:-1}"
+fi
 
 # Configurar rendering para Gazebo cameras.
 # En GUI local, GL indirecto deja la ventana viva pero con el viewport roto.

@@ -1,29 +1,29 @@
 {
-  "timestamp": "2026-04-05T17:00:20",
+  "timestamp": "2026-04-06T01:01:21",
   "source": "topic:/grasp_rect",
   "topic": "/grasp_rect",
   "msg_type": "std_msgs/msg/Float32MultiArray",
   "grasp_image": {
-    "cx": 119.73847961425781,
-    "cy": 123.77369689941406,
-    "w": 7.382162094116211,
-    "h": 5.728582859039307,
-    "angle_deg": -54.994490706219096
+    "cx": 158.38819885253906,
+    "cy": 175.8790283203125,
+    "w": 7.29893159866333,
+    "h": 5.531555652618408,
+    "angle_deg": -10.264252897891545
   },
   "grasp_base": {
-    "x": 0.5832815654498725,
-    "y": 0.11145813386214888,
-    "z": 0.054045139168991896,
-    "yaw_deg": -25.840152463487513,
-    "proj_z_target": 0.8790451391689919,
-    "proj_z_source": "selected_object:box_red",
+    "x": 0.42828098561657973,
+    "y": 0.005190719247731919,
+    "z": 0.050000000079480134,
+    "yaw_deg": -77.78283433312195,
+    "proj_z_target": 0.8750000000794801,
+    "proj_z_source": "selected_object:pick_demo",
     "table_top_z_world": 0.85,
     "grasp_semantics": "projection_surface"
   },
   "frame": "/camera_overhead/image",
   "cornell": {
-    "iou": 0.1070166095056603,
-    "dtheta": 54.994490706219096,
+    "iou": 0.12023350217932026,
+    "dtheta": 10.264252897891545,
     "success": false
   }
 }

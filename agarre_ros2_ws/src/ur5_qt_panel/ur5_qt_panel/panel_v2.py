@@ -1619,6 +1619,8 @@ class ControlPanelV2(QMainWindow):
         self._manual_inflight = False
         self._manual_pending = False
         self._script_motion_active = False
+        self._direct2_target_joints: Optional[list] = None  # visual only
+        self._direct2_target_label: str = ""
         self._allow_camera_while_script_motion = str(
             os.environ.get("PANEL_ALLOW_CAMERA_WHILE_MOTION", "1") or "1"
         ).strip().lower() not in {"0", "false", "no", "off"}
@@ -13229,26 +13231,11 @@ class ControlPanelV2(QMainWindow):
                 )
                 tcp_source = f"tf2:{ee_frame}@{base_frame}"
             else:
-                trace_age = float("inf")
-                if self._last_trace_tcp_ts > 0.0:
-                    trace_age = max(0.0, time.monotonic() - float(self._last_trace_tcp_ts))
-                if (
-                    isinstance(self._last_trace_tcp_base, (list, tuple))
-                    and len(self._last_trace_tcp_base) >= 3
-                    and trace_age <= 0.20
-                ):
-                    tcp_base = (
-                        float(self._last_trace_tcp_base[0]),
-                        float(self._last_trace_tcp_base[1]),
-                        float(self._last_trace_tcp_base[2]),
-                    )
-                    tcp_source = f"trace_cache:{ee_frame} age={trace_age:.2f}s"
-                else:
-                    tcp_source = f"tf2:{ee_frame}_unavailable:{tcp_reason}"
+                tcp_source = f"tf2:{ee_frame}_unavailable:{tcp_reason}"
             line1 = "TCP(base): --"
             line2 = "TCP source: --"
             line3 = "RPY[deg]: --"
-            line4 = "TCP↔OBJ(px): --"
+            line4 = "TCP↔NEXT(px): --"
             if tcp_base is not None:
                 bx, by, bz = tcp_base
                 line1 = f"TCP(base): x={bx:+.3f} y={by:+.3f} z={bz:+.3f}"
@@ -13265,27 +13252,6 @@ class ControlPanelV2(QMainWindow):
                 or PICK_DEMO_OBJECT_NAME
                 or ""
             ).strip()
-            obj_base: Optional[Tuple[float, float, float]] = None
-            obj_world: Optional[Tuple[float, float, float]] = None
-            if obj_name:
-                st = get_object_state(obj_name)
-                if st is not None and isinstance(st.position, (list, tuple)) and len(st.position) >= 3:
-                    world_pos = (
-                        float(st.position[0]),
-                        float(st.position[1]),
-                        float(st.position[2]),
-                    )
-                    obj_world = world_pos
-                    obj_base = self._ensure_base_coords(
-                        world_pos,
-                        self._world_frame_last_first(),
-                        timeout_sec=0.05,
-                    )
-                    if obj_base is None:
-                        try:
-                            obj_base = world_to_base(*world_pos)
-                        except Exception:
-                            obj_base = None
 
             def _project_base_to_px_canonical(base_xyz: Optional[Tuple[float, float, float]]) -> Tuple[Optional[Tuple[float, float]], Optional[Tuple[float, float, float]], str]:
                 if base_xyz is None:
@@ -13334,32 +13300,23 @@ class ControlPanelV2(QMainWindow):
                 return None, "legacy_projection_fail"
 
             tcp_px, tcp_world, tcp_px_src = _project_base_to_px_canonical(tcp_base)
-            tcp_ghost_px, tcp_ghost_src = _project_base_to_px_ghost(tcp_base)
-            obj_px = None
-            obj_px_src = "none"
-            if obj_world is not None:
-                obj_px_raw = world_xyz_to_pixel_float(
-                    float(obj_world[0]),
-                    float(obj_world[1]),
-                    float(obj_world[2]),
-                    w,
-                    h,
-                )
-                if obj_px_raw is not None:
-                    obj_px = (float(obj_px_raw[0]), float(obj_px_raw[1]))
-                    obj_px_src = "world_xyz_3d"
-                else:
-                    obj_px_raw = table_xy_to_pixel_float(
-                        float(obj_world[0]),
-                        float(obj_world[1]),
-                        w,
-                        h,
+            target_px = None
+            target_base = None
+            target_source = "none"
+            target_label = str(getattr(self, "_direct2_target_label", "") or "").strip()
+            _d2_joints = getattr(self, "_direct2_target_joints", None)
+            if _d2_joints is not None:
+                try:
+                    target_base, target_source = self._direct2_target_base_from_joints(
+                        list(_d2_joints),
+                        ee_frame=ee_frame,
+                        base_frame=base_frame,
                     )
-                    if obj_px_raw is not None:
-                        obj_px = (float(obj_px_raw[0]), float(obj_px_raw[1]))
-                        obj_px_src = "table_xy_fallback"
-                    else:
-                        obj_px_src = "projection_fail"
+                    target_px, _, _ = _project_base_to_px_canonical(target_base)
+                except Exception as exc:
+                    target_px = None
+                    target_base = None
+                    target_source = f"target_error:{exc}"
             def _fmt_vec_any(vec: Optional[Tuple[float, ...]]) -> str:
                 if vec is None:
                     return "none"
@@ -13372,13 +13329,12 @@ class ControlPanelV2(QMainWindow):
                     return "none"
                 return "none"
             px_dist = None
-            ghost_gap_px = None
             dist_m = None
-            if tcp_base is not None and obj_base is not None:
+            if tcp_base is not None and target_base is not None:
                 dist_m = math.sqrt(
-                    (float(tcp_base[0]) - float(obj_base[0])) ** 2
-                    + (float(tcp_base[1]) - float(obj_base[1])) ** 2
-                    + (float(tcp_base[2]) - float(obj_base[2])) ** 2
+                    (float(tcp_base[0]) - float(target_base[0])) ** 2
+                    + (float(tcp_base[1]) - float(target_base[1])) ** 2
+                    + (float(tcp_base[2]) - float(target_base[2])) ** 2
                 )
             if tcp_px is not None:
                 painter.setPen(QPen(QColor(34, 211, 238, 220), 2))
@@ -13392,77 +13348,43 @@ class ControlPanelV2(QMainWindow):
                     QPointF(float(tcp_px[0]), float(tcp_px[1]) - 8.0),
                     QPointF(float(tcp_px[0]), float(tcp_px[1]) + 8.0),
                 )
-            if tcp_ghost_px is not None:
-                gx = float(tcp_ghost_px[0])
-                gy = float(tcp_ghost_px[1])
-                painter.setPen(QPen(QColor(168, 85, 247, 220), 2, Qt.DashLine))
+            if target_px is not None:
+                painter.setPen(QPen(QColor(168, 85, 247, 220), 2))
+                painter.setBrush(QBrush(QColor(168, 85, 247, 180)))
+                painter.drawEllipse(QPointF(float(target_px[0]), float(target_px[1])), 4.0, 4.0)
                 painter.setBrush(Qt.NoBrush)
-                painter.drawEllipse(QPointF(gx, gy), 5.0, 5.0)
-                painter.drawLine(QPointF(gx - 6.0, gy - 6.0), QPointF(gx + 6.0, gy + 6.0))
-                painter.drawLine(QPointF(gx - 6.0, gy + 6.0), QPointF(gx + 6.0, gy - 6.0))
-            if tcp_px is not None and tcp_ghost_px is not None:
-                ghost_gap_px = math.hypot(
-                    float(tcp_px[0]) - float(tcp_ghost_px[0]),
-                    float(tcp_px[1]) - float(tcp_ghost_px[1]),
-                )
-                painter.setPen(QPen(QColor(168, 85, 247, 120), 1, Qt.DotLine))
-                painter.drawLine(
-                    QPointF(float(tcp_px[0]), float(tcp_px[1])),
-                    QPointF(float(tcp_ghost_px[0]), float(tcp_ghost_px[1])),
-                )
-            if tcp_px is not None and obj_px is not None:
-                px_dist = math.hypot(
-                    float(tcp_px[0]) - float(obj_px[0]),
-                    float(tcp_px[1]) - float(obj_px[1]),
-                )
-                painter.setPen(QPen(QColor(250, 204, 21, 220), 2))
-                painter.setBrush(Qt.NoBrush)
-                painter.drawEllipse(QPointF(float(obj_px[0]), float(obj_px[1])), 6.0, 6.0)
-                painter.setPen(QPen(QColor(125, 211, 252, 150), 1, Qt.DashLine))
-                painter.drawLine(
-                    QPointF(float(tcp_px[0]), float(tcp_px[1])),
-                    QPointF(float(obj_px[0]), float(obj_px[1])),
-                )
-                line4 = (
-                    f"TCP↔OBJ(px): {px_dist:.1f} src=({tcp_px_src},{obj_px_src}) "
-                    f"dist_m={dist_m:.3f}"
-                )
+                painter.setPen(QPen(QColor(168, 85, 247, 160), 1))
+                painter.drawEllipse(QPointF(float(target_px[0]), float(target_px[1])), 8.0, 8.0)
+                if tcp_px is not None:
+                    px_dist = math.hypot(
+                        float(tcp_px[0]) - float(target_px[0]),
+                        float(tcp_px[1]) - float(target_px[1]),
+                    )
+                    painter.setPen(QPen(QColor(168, 85, 247, 120), 1, Qt.DashLine))
+                    painter.drawLine(
+                        QPointF(float(tcp_px[0]), float(tcp_px[1])),
+                        QPointF(float(target_px[0]), float(target_px[1])),
+                    )
+                    next_tag = target_label or "D2"
+                    if dist_m is not None:
+                        line4 = f"TCP↔NEXT({next_tag}): {px_dist:.1f} dist_m={dist_m:.3f}"
+                    else:
+                        line4 = f"TCP↔NEXT({next_tag}): {px_dist:.1f}"
+                else:
+                    line4 = f"NEXT({target_label or 'D2'}): tcp n/a"
             elif tcp_px is not None:
-                line4 = f"TCP↔OBJ(px): obj n/a src=({tcp_px_src},{obj_px_src})"
-            elif obj_px is not None:
-                line4 = f"TCP↔OBJ(px): tcp n/a src=({tcp_px_src},{obj_px_src})"
-            if ghost_gap_px is not None:
-                line4 = f"{line4} ghost_gap_px={ghost_gap_px:.1f}"
-
-            aligned_gap_px = 14.0
-            ghost_warn_gap_px = 28.0
-            if ghost_gap_px is not None and ghost_gap_px <= aligned_gap_px:
-                self._emit_log_throttled(
-                    "VISUAL:tcp_overhead_aligned",
-                    "AVISO: TCP OVERHEAD ALINEADO "
-                    f"gap_px={ghost_gap_px:.2f} tcp_src={tcp_px_src} ghost_src={tcp_ghost_src} "
-                    f"tcp_world={_fmt_vec_any(tcp_world)}",
-                    min_interval=2.0,
-                )
-            if ghost_gap_px is not None:
-                self._emit_log_throttled(
-                    "VISUAL:ghost_solo_depuracion",
-                    "AVISO: GHOST SOLO DEPURACION "
-                    f"gap_px={ghost_gap_px:.2f} threshold_px={ghost_warn_gap_px:.1f} "
-                    f"tcp_src={tcp_px_src} ghost_src={tcp_ghost_src} canonical_only=true",
-                    min_interval=4.0,
-                )
-
-                self._emit_log_throttled(
-                    "VISUAL:tcp_obj_line",
-                    "[PICK][VISUAL][TCP_OBJ_LINE] "
+                line4 = "NEXT(D2): idle"
+            self._emit_log_throttled(
+                "VISUAL:tcp_target_line",
+                "[PICK][VISUAL][TCP_TARGET_LINE] "
                 f"origin={ee_frame}@{base_frame} obj={obj_name or 'none'} "
-                f"tcp_base={_fmt_vec_any(tcp_base)} tcp_world={_fmt_vec_any(tcp_world)} obj_base={_fmt_vec_any(obj_base)} "
-                f"tcp_px={_fmt_vec_any(tcp_px)} ghost_px={_fmt_vec_any(tcp_ghost_px)} obj_px={_fmt_vec_any(obj_px)} "
+                f"tcp_base={_fmt_vec_any(tcp_base)} tcp_world={_fmt_vec_any(tcp_world)} "
+                f"target_label={target_label or 'none'} target_source={target_source} "
+                f"target_base={_fmt_vec_any(target_base)} "
+                f"tcp_px={_fmt_vec_any(tcp_px)} target_px={_fmt_vec_any(target_px)} "
                 f"dist_m={dist_m if dist_m is not None else float('nan'):.4f} "
                 f"px_dist={px_dist if px_dist is not None else float('nan'):.2f} "
-                f"ghost_gap_px={ghost_gap_px if ghost_gap_px is not None else float('nan'):.2f} "
-                f"src=({tcp_px_src},{tcp_ghost_src},{obj_px_src}) "
+                f"src={tcp_px_src} "
                 f"tcp_source={tcp_source} topic={self.camera_topic or 'none'}",
             )
 
@@ -13564,6 +13486,100 @@ class ControlPanelV2(QMainWindow):
         """Ejecuta la ruta directa del demo sobre el objeto seleccionado."""
         run_pick_demo(self)
 
+    def _set_direct2_visual_target(self, joints: Optional[List[float]], label: str = "") -> None:
+        if joints is None:
+            self._direct2_target_joints = None
+            self._direct2_target_label = ""
+            return
+        self._direct2_target_joints = list(joints)
+        self._direct2_target_label = str(label or "").strip()
+
+    def _direct2_target_base_from_joints(
+        self,
+        joints: Optional[List[float]],
+        *,
+        ee_frame: str,
+        base_frame: str,
+    ) -> Tuple[Optional[Tuple[float, float, float]], str]:
+        if joints is None:
+            return None, "none"
+        try:
+            from .ur5_kinematics import fk_ur5 as _fk_vis
+
+            fk_pos, fk_rot = _fk_vis(list(joints))
+        except Exception as exc:
+            return None, f"fk_error:{exc}"
+
+        frame_fix = np.array(
+            [
+                [-1.0, 0.0, 0.0],
+                [0.0, -1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=float,
+        )
+        tool0_base_link = np.array(
+            [
+                -float(fk_pos[0]),
+                -float(fk_pos[1]),
+                float(fk_pos[2]),
+            ],
+            dtype=float,
+        )
+        tool0_rot_base_link = frame_fix @ np.asarray(fk_rot, dtype=float)
+
+        ee_norm = str(ee_frame or "tool0").strip() or "tool0"
+        target_base_link = tool0_base_link.copy()
+        target_source = "fk:tool0@base_link"
+        if ee_norm != "tool0":
+            tf_local, tf_reason = tf_get_transform(
+                "tool0",
+                ee_norm,
+                timeout=0.05,
+                logger=None,
+            )
+            if tf_local is not None:
+                tr = tf_local.transform.translation
+                local_offset = np.array(
+                    [float(tr.x), float(tr.y), float(tr.z)],
+                    dtype=float,
+                )
+                target_base_link = tool0_base_link + (tool0_rot_base_link @ local_offset)
+                target_source = f"fk:tool0_plus_tf:{ee_norm}@base_link"
+            else:
+                target_source = f"fk:tool0_fallback:{ee_norm}_unavailable:{tf_reason}"
+
+        if str(base_frame).strip() and str(base_frame).strip() != "base_link":
+            target_in_base_frame_raw, _ = transform_point_to_frame(
+                (
+                    float(target_base_link[0]),
+                    float(target_base_link[1]),
+                    float(target_base_link[2]),
+                ),
+                base_frame,
+                source_frame="base_link",
+                timeout_sec=0.10,
+            )
+            if target_in_base_frame_raw is None:
+                return None, f"{target_source}:base_link_to_{base_frame}_fail"
+            return (
+                (
+                    float(target_in_base_frame_raw[0]),
+                    float(target_in_base_frame_raw[1]),
+                    float(target_in_base_frame_raw[2]),
+                ),
+                f"{target_source}:{base_frame}",
+            )
+
+        return (
+            (
+                float(target_base_link[0]),
+                float(target_base_link[1]),
+                float(target_base_link[2]),
+            ),
+            target_source,
+        )
+
     def _run_pick_demo2(self):
         """Ejecuta una secuencia fija basada en la Pose Buena de pick_demo."""
         self._log_button("Agarre Objeto (Directo2)")
@@ -13602,7 +13618,7 @@ class ControlPanelV2(QMainWindow):
                     f"object={PICK_DEMO_OBJECT_NAME} move_sec={move_sec:.2f} "
                     f"gripper_wait_sec={gripper_wait_sec:.2f}"
                 )
-                for step_name, joints in sequence:
+                for step_idx, (step_name, joints) in enumerate(sequence):
                     status_label = {
                         "MESA_1": "Directo2: yendo a Mesa…",
                         "POSE_BUENA": "Directo2: yendo a Pose Buena…",
@@ -13610,6 +13626,7 @@ class ControlPanelV2(QMainWindow):
                         "CESTA": "Directo2: yendo a Cesta…",
                     }.get(step_name, "Directo2 ejecutando…")
                     self._ui_set_status(status_label)
+                    self._set_direct2_visual_target(list(joints), step_name)
                     ok, info = self._publish_joint_trajectory(list(joints), move_sec)
                     if not ok:
                         self._ui_set_status(f"Directo2 falló en {step_name}: {info}", error=True)
@@ -13619,6 +13636,12 @@ class ControlPanelV2(QMainWindow):
                         f"[DIRECT2] step={step_name} action=joint_trajectory topic={info}"
                     )
                     _sleep_until_done(move_sec + settle_sec)
+                    next_idx = step_idx + 1
+                    if next_idx < len(sequence):
+                        next_step_name, next_joints = sequence[next_idx]
+                        self._set_direct2_visual_target(list(next_joints), next_step_name)
+                    else:
+                        self._set_direct2_visual_target(None)
                     if step_name == "MESA_1":
                         self._ui_set_status("Directo2: abriendo pinza…")
                         self._command_gripper(False, log_action="DIRECT2", force=True)
@@ -13686,6 +13709,7 @@ class ControlPanelV2(QMainWindow):
                     "[DIRECT2] completed route=mesa_open_pose_buena_close_mesa_cesta_open"
                 )
             finally:
+                self._set_direct2_visual_target(None)
                 self._set_motion_lock(False)
                 recalc_object_states("direct2_sequence")
 

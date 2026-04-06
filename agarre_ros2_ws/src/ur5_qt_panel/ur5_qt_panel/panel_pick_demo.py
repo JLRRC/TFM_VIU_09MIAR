@@ -600,8 +600,9 @@ def _select_pick_demo_cycle_object_reference(
 
     on_table_ok = True
     if require_object_on_table:
+        on_table_pose = stable_world if stable_world is not None else snapshot_world
         try:
-            on_table_ok = bool(is_on_table_fn(object_name))
+            on_table_ok = bool(is_on_table_fn(on_table_pose)) if on_table_pose is not None else False
         except Exception:
             on_table_ok = False
         if not on_table_ok and stable_logical_state == "ON_TABLE":
@@ -636,6 +637,31 @@ def _select_pick_demo_cycle_object_reference(
         and selected_stable_divergence_m > max_selected_stable_divergence_m
     ):
         promoted_reject_reasons.append("selected_stable_divergence_exceeded")
+
+    # Si el snapshot fresco no está disponible pero la referencia seleccionada y la
+    # pose estable coinciden geométricamente sobre la mesa, permitimos seguir con
+    # la referencia estable aunque su timestamp sea viejo. Esto evita abortos
+    # espurios al reintentar DIRECTO con el demo quieto y ya seleccionado.
+    allow_selected_stable_cycle_ref = bool(
+        snapshot_base is None
+        and stable_world is not None
+        and stable_base is not None
+        and on_table_ok
+        and selected_stable_divergence_m is not None
+        and selected_stable_divergence_m <= max_selected_stable_divergence_m
+    )
+    if allow_selected_stable_cycle_ref and "stable_age_exceeded" in promoted_reject_reasons:
+        promoted_reject_reasons = [
+            reason for reason in promoted_reject_reasons if reason != "stable_age_exceeded"
+        ]
+        trace_fn(
+            "[PICK][DIRECT][CYCLE_REF][OVERRIDE] tag=[DIRECT][CYCLE_REF][OVERRIDE] "
+            "phase=BUTTON_PRESS reason=stable_age_exceeded "
+            f"selected_stable_divergence_m={_pick_demo_fmt_scalar(selected_stable_divergence_m)} "
+            f"max_selected_stable_divergence_m={_pick_demo_fmt_scalar(max_selected_stable_divergence_m)} "
+            f"object_on_table={str(bool(on_table_ok)).lower()} "
+            "note=stable_cycle_ref_reused_when_selected_pose_matches_and_snapshot_missing"
+        )
 
     if promoted_reject_reasons:
         for reject_reason in promoted_reject_reasons:
@@ -4797,8 +4823,11 @@ def run_pick_demo(panel) -> None:
             close_metrics = _close_alignment_metrics()
             close_metrics["close_confirmed"] = bool(close_confirmed)
             close_metrics["close_wait_state"] = _json_safe(close_wait_state)
+            # basket es el camino seguro por defecto para el demo: mantiene el
+            # transporte hasta la cesta y evita que la ruta manual_like deje el
+            # objeto restaurado en una pose vieja del backend.
             post_close_mode = str(
-                os.environ.get("PANEL_PICK_DEMO_POST_CLOSE_MODE", "manual_like") or "manual_like"
+                os.environ.get("PANEL_PICK_DEMO_POST_CLOSE_MODE", "basket") or "basket"
             ).strip().lower()
             manual_like_mode = post_close_mode in {"manual_like", "manual", "simple"}
             _final_phase_trace(
@@ -5385,6 +5414,7 @@ def run_pick_demo(panel) -> None:
             def _open_and_release():
                 panel._command_gripper(False, log_action="DROP", force=True)
                 mark_object_released(PICK_DEMO_OBJECT_NAME, reason="demo_drop")
+                _detach_demo_object("demo_drop")
 
             _phase_begin(
                 "RELEASE",
