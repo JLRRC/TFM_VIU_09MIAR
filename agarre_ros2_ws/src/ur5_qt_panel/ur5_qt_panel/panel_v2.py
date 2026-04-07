@@ -335,6 +335,7 @@ from .panel_watchdog import PanelWatchdog
 from . import panel_launch_control
 from .panel_fatal import abort_local_stack
 from .panel_external_state import external_state_active, resolve_external_state, apply_external_system_state
+from .panel_direct2 import Directo2Controller
 from .panel_pick_demo import run_pick_demo
 from .panel_pick_object import run_pick_object
 from .panel_env import (
@@ -1876,8 +1877,10 @@ class ControlPanelV2(QMainWindow):
         self.ros_worker.tfm_infer_request.connect(self._on_remote_tfm_infer_request)
         self.ros_worker.tfm_execute_request.connect(self._on_remote_tfm_execute_request)
         self.ros_worker.pick_demo_request.connect(self._on_remote_pick_demo_request)
+        self.ros_worker.direct2_request.connect(self._on_remote_direct2_request)
         self.ros_worker.pick_object_request.connect(self._on_remote_pick_object_request)
         self.ros_worker.object_select_request.connect(self._on_remote_object_select_request)
+        self._direct2_controller = Directo2Controller(self)
         self._ros_worker_started = False
         self._ensure_ros_worker_started()
         self._calibration_ready = False
@@ -11486,6 +11489,28 @@ class ControlPanelV2(QMainWindow):
                 _ack(False, str(reason_after or "pick_demo_no_iniciado"))
 
     @pyqtSlot(str)
+    def _on_remote_direct2_request(self, source: str) -> None:
+        src = (source or "unknown").strip()
+        self._emit_log(f"[DIRECT2][REMOTE] trigger={src}")
+        request_id = ""
+        if src.startswith("service:") and "#" in src:
+            request_id = src.rsplit("#", 1)[-1].strip()
+
+        def _ack(success: bool, message: str) -> None:
+            if not request_id:
+                return
+            self._emit_log(
+                f"[DIRECT2][REMOTE][ACK] request_id={request_id} success={str(bool(success)).lower()} message={message or 'n/a'}"
+            )
+            if getattr(self, "_ros_worker_started", False) and getattr(self, "ros_worker", None) is not None:
+                try:
+                    self.ros_worker.complete_direct2_request(request_id, success, message)
+                except Exception:
+                    pass
+
+        self._direct2_controller.request_run(source=src, on_done=_ack)
+
+    @pyqtSlot(str)
     def _on_remote_pick_object_request(self, source: str) -> None:
         src = (source or "unknown").strip()
         self._emit_log(f"[PICK][REMOTE] trigger={src}")
@@ -13583,137 +13608,7 @@ class ControlPanelV2(QMainWindow):
     def _run_pick_demo2(self):
         """Ejecuta una secuencia fija basada en la Pose Buena de pick_demo."""
         self._log_button("Agarre Objeto (Directo2)")
-        if getattr(self, "_pick_moveit_phase_active", False):
-            self._set_status("Directo2 bloqueado: PICK_OBJ MoveIt en ejecución", error=True)
-            self._emit_log("[DIRECT2] BLOCKED: MoveIt pick object en ejecución")
-            return
-        if not self._require_manual_ready("Directo2"):
-            return
-        if getattr(self, "_script_motion_active", False):
-            self._set_status("Directo2 en curso…", error=False)
-            return
-
-        move_sec = float(self.joint_time.value()) if self.joint_time else 2.0
-        settle_sec = 0.35
-        gripper_wait_sec = 1.0
-        sequence = (
-            ("MESA_1", JOINT_TABLE_POSE_RAD),
-            ("POSE_BUENA", JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD),
-            ("MESA_2", JOINT_TABLE_POSE_RAD),
-            ("CESTA", JOINT_BASKET_POSE_RAD),
-        )
-
-        def _sleep_until_done(delay_sec: float) -> None:
-            end = time.monotonic() + max(0.0, delay_sec)
-            while time.monotonic() < end:
-                if self._closing:
-                    break
-                time.sleep(0.05)
-
-        def worker():
-            self._set_motion_lock(True)
-            try:
-                self._emit_log(
-                    "[DIRECT2] start "
-                    f"object={PICK_DEMO_OBJECT_NAME} move_sec={move_sec:.2f} "
-                    f"gripper_wait_sec={gripper_wait_sec:.2f}"
-                )
-                for step_idx, (step_name, joints) in enumerate(sequence):
-                    status_label = {
-                        "MESA_1": "Directo2: yendo a Mesa…",
-                        "POSE_BUENA": "Directo2: yendo a Pose Buena…",
-                        "MESA_2": "Directo2: volviendo a Mesa…",
-                        "CESTA": "Directo2: yendo a Cesta…",
-                    }.get(step_name, "Directo2 ejecutando…")
-                    self._ui_set_status(status_label)
-                    self._set_direct2_visual_target(list(joints), step_name)
-                    ok, info = self._publish_joint_trajectory(list(joints), move_sec)
-                    if not ok:
-                        self._ui_set_status(f"Directo2 falló en {step_name}: {info}", error=True)
-                        self._emit_log(f"[DIRECT2] fail step={step_name} reason={info}")
-                        return
-                    self._emit_log(
-                        f"[DIRECT2] step={step_name} action=joint_trajectory topic={info}"
-                    )
-                    _sleep_until_done(move_sec + settle_sec)
-                    next_idx = step_idx + 1
-                    if next_idx < len(sequence):
-                        next_step_name, next_joints = sequence[next_idx]
-                        self._set_direct2_visual_target(list(next_joints), next_step_name)
-                    else:
-                        self._set_direct2_visual_target(None)
-                    if step_name == "MESA_1":
-                        self._ui_set_status("Directo2: abriendo pinza…")
-                        self._command_gripper(False, log_action="DIRECT2", force=True)
-                        self._emit_log("[DIRECT2] step=MESA_1 action=gripper_open")
-                        _sleep_until_done(gripper_wait_sec)
-                    elif step_name == "POSE_BUENA":
-                        self._ui_set_status("Directo2: cerrando pinza…")
-                        self._command_gripper(True, log_action="DIRECT2", force=True)
-                        self._emit_log("[DIRECT2] step=POSE_BUENA action=gripper_close")
-                        # [COMPARE][DIRECT2][GOOD_REF] — emite distancia preset vs objeto live
-                        try:
-                            import math as _math
-                            from .ur5_kinematics import fk_ur5 as _fk_ur5
-                            from .panel_robot_presets import (
-                                JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD as _JREF,
-                            )
-                            _TCP_Z = 0.175  # tool0→rg2_tcp z-offset (DIRECT_TOOL0_TO_RG2_TCP_Z_M)
-                            _fk = _fk_ur5(list(_JREF))
-                            _t0 = (-float(_fk[0][0]), -float(_fk[0][1]), float(_fk[0][2]))
-                            _tcp = (_t0[0], _t0[1], _t0[2] + _TCP_Z)
-                            _obj = None
-                            # get live object base_link position
-                            try:
-                                from .panel_utils import get_pose as _gp
-                                _obj_pose = _gp(
-                                    self.ros_worker,
-                                    "base_link",
-                                    PICK_DEMO_OBJECT_NAME,
-                                    timeout_sec=0.2,
-                                ) if getattr(self, "ros_worker", None) else None
-                                if _obj_pose is not None:
-                                    _op = _obj_pose.position
-                                    _obj = (float(_op.x), float(_op.y), float(_op.z))
-                            except Exception:
-                                _obj = None
-                            _xy = None
-                            _d3 = None
-                            if _obj is not None:
-                                _dx = _tcp[0] - _obj[0]
-                                _dy = _tcp[1] - _obj[1]
-                                _dz = _tcp[2] - _obj[2]
-                                _xy = _math.sqrt(_dx ** 2 + _dy ** 2)
-                                _d3 = _math.sqrt(_dx ** 2 + _dy ** 2 + _dz ** 2)
-                            self._emit_log(
-                                "[COMPARE][DIRECT2][GOOD_REF] "
-                                f"step=POSE_BUENA "
-                                f"preset=JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD "
-                                f"tool0_base=({_t0[0]:.3f},{_t0[1]:.3f},{_t0[2]:.3f}) "
-                                f"rg2_tcp_base=({_tcp[0]:.3f},{_tcp[1]:.3f},{_tcp[2]:.3f}) "
-                                f"object_base={'({:.3f},{:.3f},{:.3f})'.format(*_obj) if _obj else 'N/A'} "
-                                f"xy_dist_rg2tcp_obj={'{:.4f}'.format(_xy) if _xy is not None else 'N/A'} "
-                                f"dist3d_rg2tcp_obj={'{:.4f}'.format(_d3) if _d3 is not None else 'N/A'} "
-                                f"verdict={'PRESET_VALID' if _xy is not None and _xy < 0.05 else 'PRESET_POSITION_MISMATCH'}"
-                            )
-                        except Exception as _ec:
-                            self._emit_log(f"[COMPARE][DIRECT2][GOOD_REF] error={_ec}")
-                        _sleep_until_done(gripper_wait_sec)
-                    elif step_name == "CESTA":
-                        self._ui_set_status("Directo2: soltando en cesta…")
-                        self._command_gripper(False, log_action="DIRECT2", force=True)
-                        self._emit_log("[DIRECT2] step=CESTA action=gripper_open")
-                        _sleep_until_done(gripper_wait_sec)
-                self._ui_set_status("Directo2 completado")
-                self._emit_log(
-                    "[DIRECT2] completed route=mesa_open_pose_buena_close_mesa_cesta_open"
-                )
-            finally:
-                self._set_direct2_visual_target(None)
-                self._set_motion_lock(False)
-                recalc_object_states("direct2_sequence")
-
-        self._run_async(worker, name="pick_demo_direct2")
+        self._direct2_controller.request_run(source="gui_button")
 
     def _run_pick_object(self):
         """Ejecuta pick & place del objeto seleccionado hacia la cesta."""
