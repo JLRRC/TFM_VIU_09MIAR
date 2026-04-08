@@ -33,7 +33,7 @@ from rcl_interfaces.msg import Log
 from rclpy.duration import Duration
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool, Float64MultiArray
+from std_msgs.msg import Bool, Empty, Float64MultiArray
 from tf2_msgs.msg import TFMessage
 from tf2_ros import Buffer, TransformListener
 
@@ -119,6 +119,12 @@ class AuditCapture(Node):
         self._object_name = str(args.object_name)
         self._pose_topic = str(args.pose_topic or f"/world/{self._world_name}/pose/info")
         self._attach_topic = str(args.attach_topic or f"/gripper/{self._object_name}/state")
+        self._attach_request_topic = str(
+            args.attach_request_topic or f"/gripper/{self._object_name}/attach"
+        )
+        self._detach_request_topic = str(
+            args.detach_request_topic or f"/gripper/{self._object_name}/detach"
+        )
         self._frames = list(args.frames)
         self._tf_buffer = Buffer(cache_time=Duration(seconds=20.0))
         self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=True)
@@ -134,6 +140,8 @@ class AuditCapture(Node):
         self.create_subscription(JointState, "/joint_states", self._on_joint_states, 10)
         self.create_subscription(Float64MultiArray, "/gripper_controller/commands", self._on_gripper_cmd, 10)
         self.create_subscription(Bool, self._attach_topic, self._on_attach_state, 10)
+        self.create_subscription(Empty, self._attach_request_topic, self._on_attach_request, 10)
+        self.create_subscription(Empty, self._detach_request_topic, self._on_detach_request, 10)
         self.create_subscription(
             JointTrajectoryControllerState,
             "/joint_trajectory_controller/controller_state",
@@ -152,6 +160,8 @@ class AuditCapture(Node):
                 "wall_time": self._wall_now(),
                 "pose_topic": self._pose_topic,
                 "attach_topic": self._attach_topic,
+                "attach_request_topic": self._attach_request_topic,
+                "detach_request_topic": self._detach_request_topic,
                 "frames": self._frames,
             }
         )
@@ -247,6 +257,32 @@ class AuditCapture(Node):
         else:
             self._attach_state = new_state
 
+    def _on_attach_request(self, _msg: Empty) -> None:
+        self._write_event(
+            {
+                "event": "attach_request_topic",
+                "type": "event",
+                "label": self._args.label,
+                "sim_time": self._now_sec(),
+                "wall_time": self._wall_now(),
+                "object_name": self._object_name,
+                "topic": self._attach_request_topic,
+            }
+        )
+
+    def _on_detach_request(self, _msg: Empty) -> None:
+        self._write_event(
+            {
+                "event": "detach_request_topic",
+                "type": "event",
+                "label": self._args.label,
+                "sim_time": self._now_sec(),
+                "wall_time": self._wall_now(),
+                "object_name": self._object_name,
+                "topic": self._detach_request_topic,
+            }
+        )
+
     def _on_controller_state(self, msg: JointTrajectoryControllerState) -> None:
         def _float_list(values: Iterable[float]) -> list[float]:
             return [float(v) for v in list(values or [])]
@@ -261,8 +297,22 @@ class AuditCapture(Node):
     def _on_rosout(self, msg: Log) -> None:
         name = str(getattr(msg, "name", "") or "")
         text = str(getattr(msg, "msg", "") or "")
-        if "gripper_attach_backend" not in name and not any(p in text for p in BACKEND_PATTERNS):
+        is_backend_logger = "gripper_attach_backend" in name or "[ATTACH_BACKEND]" in text
+        if not is_backend_logger and not any(p in text for p in BACKEND_PATTERNS):
             return
+        if is_backend_logger:
+            self._write_event(
+                {
+                    "event": "backend_log_raw",
+                    "type": "event",
+                    "label": self._args.label,
+                    "sim_time": self._now_sec(),
+                    "wall_time": self._wall_now(),
+                    "logger": name,
+                    "level": int(getattr(msg, "level", 0) or 0),
+                    "message": text,
+                }
+            )
         if not any(p in text for p in BACKEND_PATTERNS):
             return
         self._backend_event_count += 1
@@ -324,6 +374,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--base-frame", default="base_link")
     parser.add_argument("--pose-topic", default="")
     parser.add_argument("--attach-topic", default="")
+    parser.add_argument("--attach-request-topic", default="")
+    parser.add_argument("--detach-request-topic", default="")
     parser.add_argument("--sample-hz", type=float, default=15.0)
     parser.add_argument(
         "--frames",

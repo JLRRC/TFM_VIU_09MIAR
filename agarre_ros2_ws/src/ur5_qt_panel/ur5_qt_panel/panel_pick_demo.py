@@ -963,6 +963,16 @@ def run_pick_demo(panel) -> None:
             _pick_demo_cycle_object_stable_age_sec = None
             _pick_demo_cycle_object_selected_divergence_m = None
 
+            # DIRECTO usa rg2_pinch_center como marco operacional de agarre.
+            # rg2_pinch_center ES el punto de contacto — ya está al nivel de las yemas.
+            # GRIPPER_TCP_Z_OFFSET=0.05 fue diseñado para rg2_tcp (base del gripper,
+            # 5 cm sobre las yemas); aplicarlo a rg2_pinch_center eleva el agarre 5 cm
+            # por encima del objeto, impidiendo el contacto físico.
+            # Para rg2_pinch_center el offset correcto contra el centro del objeto es 0.
+            _DIRECTO_GRASP_Z = float(
+                os.environ.get("PANEL_PICK_DEMO_GRASP_TCP_Z_OFFSET_M", "0.0") or "0.0"
+            )
+
             def _fmt_vec(vec) -> str:
                 return _pick_demo_fmt_vec(vec)
 
@@ -1177,6 +1187,29 @@ def run_pick_demo(panel) -> None:
                     return None
                 pos = tcp_pose.pose.position
                 return (float(pos.x), float(pos.y), float(pos.z))
+
+            def _fresh_gazebo_object_world():
+                """Lee la posición del objeto DIRECTAMENTE de Gazebo (/world/.../pose/info).
+
+                Ignora la referencia de ciclo congelada (_pick_demo_cycle_object_world) para
+                que la validación de transporte siempre mida el desplazamiento REAL observable,
+                no una estimación cacheada del panel.  Si el snapshot no está disponible cae
+                de vuelta a _live_object_world() (conservador).
+
+                Señal físicamente fiable: /world/{world}/pose/info ← fuente de verdad Gazebo.
+                """
+                try:
+                    if (
+                        getattr(panel, "_ros_worker_started", False)
+                        and getattr(panel, "ros_worker", None) is not None
+                    ):
+                        pose_map, _ = panel.ros_worker.pose_snapshot()
+                        live = (pose_map or {}).get(PICK_DEMO_OBJECT_NAME)
+                        if live is not None and len(live) >= 3:
+                            return (float(live[0]), float(live[1]), float(live[2]))
+                except Exception:
+                    pass
+                return _live_object_world()
 
             def _live_tcp_world():
                 tcp_base = _live_tcp_base()
@@ -1800,7 +1833,7 @@ def run_pick_demo(panel) -> None:
                     float(tcp_base[1]) - float(obj_base[1]),
                 )
                 z_gap = float(tcp_base[2]) - float(obj_base[2])
-                z_error = abs(z_gap - float(GRIPPER_TCP_Z_OFFSET))
+                z_error = abs(z_gap - _DIRECTO_GRASP_Z)
                 tcp_obj_dist = _dist(tcp_base, obj_base)
                 xy_tol = max(
                     0.01,
@@ -1849,7 +1882,7 @@ def run_pick_demo(panel) -> None:
                     float(tcp_base[1]) - float(obj_base[1]),
                 )
                 z_gap = float(tcp_base[2]) - float(obj_base[2])
-                z_error = abs(z_gap - float(GRIPPER_TCP_Z_OFFSET))
+                z_error = abs(z_gap - _DIRECTO_GRASP_Z)
                 tcp_obj_dist = _dist(tcp_base, obj_base)
                 xy_tol = max(
                     0.01,
@@ -2031,7 +2064,7 @@ def run_pick_demo(panel) -> None:
                 dz = float(tcp_base[2]) - float(obj_base[2])
                 dist = math.sqrt(dx * dx + dy * dy + dz * dz)
                 xy_dist = math.hypot(dx, dy)
-                z_error = abs(float(dz) - float(GRIPPER_TCP_Z_OFFSET))
+                z_error = abs(float(dz) - _DIRECTO_GRASP_Z)
                 return {
                     "ok": True,
                     "obj_base": obj_base,
@@ -2847,7 +2880,7 @@ def run_pick_demo(panel) -> None:
                     obj_base, align_target_source, _align_target_extra = _resolved_align_object_base()
                     if obj_base is None:
                         raise RuntimeError("demo_object_pose_unavailable_before_align")
-                    target_z_expected = float(obj_base[2]) + float(GRIPPER_TCP_Z_OFFSET)
+                    target_z_expected = float(obj_base[2]) + _DIRECTO_GRASP_Z
                     target_tcp_runtime_raw = (
                         float(obj_base[0]),
                         float(obj_base[1]),
@@ -3042,7 +3075,7 @@ def run_pick_demo(panel) -> None:
                         )
                         _div_xy = _cmp_xy
                         _div_dz = (
-                            abs(_cmp_dz - float(GRIPPER_TCP_Z_OFFSET))
+                            abs(_cmp_dz - _DIRECTO_GRASP_Z)
                             if _cmp_dz is not None else None
                         )
                         panel._emit_log(
@@ -3157,7 +3190,7 @@ def run_pick_demo(panel) -> None:
                     tcp_final_z = None
                     z_expected_after = None
                     if obj_after is not None:
-                        z_expected_after = float(obj_after[2]) + float(GRIPPER_TCP_Z_OFFSET)
+                        z_expected_after = float(obj_after[2]) + _DIRECTO_GRASP_Z
                     if tcp_after is not None:
                         tcp_final_z = float(tcp_after[2])
                     if z_expected_after is not None and tcp_final_z is not None:
@@ -3406,7 +3439,12 @@ def run_pick_demo(panel) -> None:
                 min_lift_delta_m: float,
                 max_tcp_dist_m: float,
                 min_consecutive: int = 2,
+                live_world_fn=None,
             ) -> None:
+                # PHYSICAL_GATE: live_world_fn permite inyectar una fuente de posición
+                # del objeto independiente de la referencia de ciclo congelada.
+                # Si no se proporciona, usa _live_object_world() (comportamiento previo).
+                _obj_world_source = live_world_fn if live_world_fn is not None else _live_object_world
                 deadline = time.time() + max(0.3, float(timeout_sec))
                 consecutive_ok = 0
                 best_obj_move = 0.0
@@ -3421,15 +3459,17 @@ def run_pick_demo(panel) -> None:
                     "tcp_dist_above_max": 0,
                 }
                 next_sample_log_ts = 0.0
+                using_fresh = live_world_fn is not None
                 panel._emit_log(
                     "[PICK][DIRECT][PHYSICS] "
                     f"phase={phase} start initial_obj_world=({initial_obj_world[0]:.3f},{initial_obj_world[1]:.3f},{initial_obj_world[2]:.3f}) "
                     f"min_obj_move={float(min_obj_move_m):.3f} min_lift_delta={float(min_lift_delta_m):.3f} "
                     f"max_tcp_dist={float(max_tcp_dist_m):.3f} "
-                    f"expected_tcp_obj_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f}"
+                    f"expected_tcp_obj_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f} "
+                    f"using_fresh_gazebo={str(using_fresh).lower()}"
                 )
                 while time.time() < deadline:
-                    obj_world = _live_object_world()
+                    obj_world = _obj_world_source()
                     obj_base = _live_object_base()
                     tcp_base = _live_tcp_base()
                     last_obj_world = obj_world
@@ -4005,7 +4045,7 @@ def run_pick_demo(panel) -> None:
                     ref_target_base = (
                         float(obj_base_reference[0]),
                         float(obj_base_reference[1]),
-                        float(obj_base_reference[2]) + float(GRIPPER_TCP_Z_OFFSET),
+                        float(obj_base_reference[2]) + _DIRECTO_GRASP_Z,
                     )
                     ref_target_world = _target_world_from_base(ref_target_base)
                 _phase_begin(
@@ -4093,13 +4133,13 @@ def run_pick_demo(panel) -> None:
                     target_base_coarse = (
                         float(obj_base_before_coarse[0]),
                         float(obj_base_before_coarse[1]),
-                        float(obj_base_before_coarse[2]) + float(GRIPPER_TCP_Z_OFFSET) + float(coarse_extra_z_m),
+                        float(obj_base_before_coarse[2]) + _DIRECTO_GRASP_Z + float(coarse_extra_z_m),
                     )
                     target_world_coarse = _target_world_from_base(target_base_coarse)
                     target_base_grasp_down = (
                         float(obj_base_before_coarse[0]),
                         float(obj_base_before_coarse[1]),
-                        float(obj_base_before_coarse[2]) + float(GRIPPER_TCP_Z_OFFSET) + float(grasp_down_extra_z_m),
+                        float(obj_base_before_coarse[2]) + _DIRECTO_GRASP_Z + float(grasp_down_extra_z_m),
                     )
                     target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
                 _phase_begin(
@@ -4205,7 +4245,7 @@ def run_pick_demo(panel) -> None:
                     target_base_grasp_down = (
                         float(obj_base_before_grasp_down[0]),
                         float(obj_base_before_grasp_down[1]),
-                        float(obj_base_before_grasp_down[2]) + float(GRIPPER_TCP_Z_OFFSET) + float(grasp_down_extra_z_m),
+                        float(obj_base_before_grasp_down[2]) + _DIRECTO_GRASP_Z + float(grasp_down_extra_z_m),
                     )
                     target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
                 _phase_begin(
@@ -4317,7 +4357,7 @@ def run_pick_demo(panel) -> None:
                 target_base_align = (
                     float(obj_base_align[0]),
                     float(obj_base_align[1]),
-                    float(obj_base_align[2]) + float(GRIPPER_TCP_Z_OFFSET),
+                    float(obj_base_align[2]) + _DIRECTO_GRASP_Z,
                 )
                 target_world_align = _target_world_from_base(target_base_align)
             skip_align_if_reachable = str(
@@ -4593,7 +4633,10 @@ def run_pick_demo(panel) -> None:
             )
             if post_align_settle_sec > 1e-4:
                 time.sleep(post_align_settle_sec)
-            initial_obj_world = _live_object_world()
+            # PHYSICAL_GATE: capturar posición inicial del objeto desde Gazebo real,
+            # no desde la referencia de ciclo congelada.  Esto garantiza que el gate
+            # de transporte mide desplazamiento físico observable, no un delta artificial.
+            initial_obj_world = _fresh_gazebo_object_world()
             if initial_obj_world is None:
                 _append_trace(
                     "[PICK][DIRECT][CYCLE_REF][ABORT] tag=[DIRECT][CYCLE_REF][ABORT] "
@@ -4627,7 +4670,7 @@ def run_pick_demo(panel) -> None:
                 target_base_pre = (
                     float(obj_base_pre[0]),
                     float(obj_base_pre[1]),
-                    float(obj_base_pre[2]) + float(GRIPPER_TCP_Z_OFFSET),
+                    float(obj_base_pre[2]) + _DIRECTO_GRASP_Z,
                 )
                 target_world_pre = _target_world_from_base(target_base_pre)
             _phase_begin(
@@ -4920,7 +4963,7 @@ def run_pick_demo(panel) -> None:
             target_base_attach = (
                 float(obj_base_grasp[0]),
                 float(obj_base_grasp[1]),
-                float(obj_base_grasp[2]) + float(GRIPPER_TCP_Z_OFFSET),
+                float(obj_base_grasp[2]) + _DIRECTO_GRASP_Z,
             )
             target_world_attach = _target_world_from_base(target_base_attach)
             _phase_begin(
@@ -5161,13 +5204,37 @@ def run_pick_demo(panel) -> None:
                 # 16 cm allowed the gripper to be far from the object during carry,
                 # permitting false-positive "carry confirmed" even without real contact.
                 # 8 cm still tolerates small offsets during lift while requiring proximity.
+                #
+                # PHYSICAL_GATE (attach lógico vs físico):
+                #   min_lift_delta_m subido de 0.025 → 0.060.
+                #   Razón: el backend Gazebo demo_transport/follow_tcp puede elevar el
+                #   objeto ~3-4 cm al crear el attach kinematic (respawn), INCLUSO cuando
+                #   el gripper falla el contacto físico.  Con 2.5 cm de umbral ese artefacto
+                #   bastaba para pasar el gate (falso positivo observado, delta ≈ 0.036 m).
+                #   6 cm distingue un lift real (≥ 12 cm con TCP) de un respawn espurio.
+                #
+                #   live_world_fn=_fresh_gazebo_object_world: usa pose Gazebo directa,
+                #   no la referencia de ciclo congelada del panel.  Sin esto, si la
+                #   referencia estaba activa, obj_move = 0 siempre → gate siempre fallaba
+                #   o era inconsistente con los datos físicos reales.
                 _validate_demo_carry(
                     initial_obj_world=initial_obj_world,
                     phase="post_grasp_lift",
                     timeout_sec=1.6,
                     min_obj_move_m=0.030,
-                    min_lift_delta_m=0.025,
+                    min_lift_delta_m=0.060,
                     max_tcp_dist_m=0.080,
+                    live_world_fn=_fresh_gazebo_object_world,
+                )
+                # PHYSICAL_GATE: separación explícita attach lógico / attach físico.
+                # Llegamos aquí SOLO si el objeto se elevó ≥6 cm medido desde Gazebo real.
+                # Esto es evidencia física observable de transporte, no solo un attach lógico.
+                panel._emit_log(
+                    "[PICK][DIRECT][PHYSICS] "
+                    "attach_fisico_confirmado=true "
+                    "evidencia=carry_validation_gazebo_observable "
+                    f"umbral_lift_m=0.060 object={PICK_DEMO_OBJECT_NAME} "
+                    "nota=objeto_elevado_por_encima_del_respawn_cinetico"
                 )
                 _phase_end("CARRY", attach_state=_read_attach_state(), result="ok")
                 _final_phase_trace(
