@@ -893,6 +893,12 @@ def object_out_of_reach(x: float, y: float) -> bool:
     return (dx * dx + dy * dy) > (UR5_REACH_RADIUS * UR5_REACH_RADIUS)
 
 
+def angle_shortest_diff_rad(current: float, target: float) -> float:
+    """Return the shortest signed angular distance between two angles."""
+    delta = float(current) - float(target)
+    return math.atan2(math.sin(delta), math.cos(delta))
+
+
 def world_to_base(x: float, y: float, z: float) -> Tuple[float, float, float]:
     return (x - UR5_BASE_X, y - UR5_BASE_Y, z - UR5_BASE_Z)
 

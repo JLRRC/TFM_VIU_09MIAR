@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-04-06T01:01:21",
-  "session": "20260406_005927",
+  "timestamp": "2026-04-09T12:50:26",
+  "session": "20260409_124702",
   "status": "OK",
   "source": "infer_model",
   "visual_grasp": {
@@ -14,19 +14,19 @@
     "result_topic": "/desired_grasp/result"
   },
   "grasp": {
-    "cx": 158.38820552825928,
-    "cy": 175.87903594970703,
-    "w": 7.29893159866333,
-    "h": 5.531555771827698,
-    "angle_deg": -10.264253318309784
+    "cx": 119.61184597015381,
+    "cy": 121.42547416687012,
+    "w": 7.109387397766113,
+    "h": 5.645539999008179,
+    "angle_deg": -48.4397828578949
   },
   "grasp_base": {
-    "x": 0.42828098561657973,
-    "y": 0.005190719247731919,
-    "z": 0.050000000079480134,
-    "yaw_deg": -77.78283433312195,
-    "proj_z_target": 0.8750000000794801,
-    "proj_z_source": "selected_object:pick_demo",
+    "x": 0.5927912696539392,
+    "y": 0.11190868745122759,
+    "z": 0.054512882553325315,
+    "yaw_deg": -34.21488902503181,
+    "proj_z_target": 0.8795128825533253,
+    "proj_z_source": "selected_object:box_red",
     "table_top_z_world": 0.85,
     "grasp_semantics": "projection_surface"
   },
@@ -34,23 +34,23 @@
   "grasp_rect_topic": "/grasp_rect",
   "frame": "/camera_overhead/image",
   "cornell": {
-    "iou": 0.12023350477044495,
-    "dtheta": 10.264253318309784,
+    "iou": 0.10156945862660527,
+    "dtheta": 48.4397828578949,
     "success": false
   },
-  "cornell_reason": "Ref pick_demo: pred 7.3x5.5px vs ref 17.6x19.1px",
+  "cornell_reason": "Ref box_red: pred 7.1x5.6px vs ref 18.4x21.5px",
   "perf": {
-    "infer_ms": 54.813385009765625,
-    "total_ms": 1775339931828.665
+    "infer_ms": 100.13628005981445,
+    "total_ms": 1775339931710.6501
   },
   "frame_info": {
     "w": 320,
     "h": 240,
-    "ts": 90149.319139872
+    "ts": 391894.006971646
   },
   "artifacts": {
-    "image_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/frame_20260406_010121.png",
-    "grasp_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/grasp_20260406_010121.json",
-    "overlay_path": "/home/laboratorio/TFM/auditoria/panel_audit/figures/overlay_infer_90149319.png"
+    "image_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/frame_20260409_125025.png",
+    "grasp_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/grasp_20260409_125025.json",
+    "overlay_path": "/home/laboratorio/TFM/auditoria/panel_audit/figures/overlay_infer_391894006.png"
   }
 }

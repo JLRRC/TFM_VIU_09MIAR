@@ -51,6 +51,7 @@ from .panel_objects import (
 )
 from .panel_readiness import tf_ready_status
 from .panel_utils import (
+    angle_shortest_diff_rad,
     get_pose,
     transform_point_to_frame,
     world_to_base,
@@ -66,6 +67,18 @@ DIRECT_EXECUTION_FRAME = "tool0"
 DIRECT_EXECUTION_IK_MODE = "formal_rg2_pinch_center_source_to_tool0_numeric"
 DIRECT_TOOL0_TO_RG2_TCP_Z_M = 0.175
 DIRECT_GRASP_AUDIT_PREFIX = "[PICK][DIRECT_GRASP_AUDIT]"
+
+
+def _effective_direct_grasp_z(source_frame: str, requested_offset_m: float) -> float:
+    """Return the runtime grasp Z offset for the active operational grasp frame.
+
+    `rg2_pinch_center` is already the functional contact frame in this project, so
+    carrying over the old `rg2_tcp` vertical offset would shift DIRECTO upward and
+    break physical contact.
+    """
+    if str(source_frame or "").strip() == "rg2_pinch_center":
+        return 0.0
+    return float(requested_offset_m)
 
 
 def _pick_demo_tuple3(data):
@@ -969,9 +982,27 @@ def run_pick_demo(panel) -> None:
             # 5 cm sobre las yemas); aplicarlo a rg2_pinch_center eleva el agarre 5 cm
             # por encima del objeto, impidiendo el contacto físico.
             # Para rg2_pinch_center el offset correcto contra el centro del objeto es 0.
-            _DIRECTO_GRASP_Z = float(
+            _DIRECTO_GRASP_Z_RAW = float(
                 os.environ.get("PANEL_PICK_DEMO_GRASP_TCP_Z_OFFSET_M", "0.0") or "0.0"
             )
+            _DIRECTO_GRASP_Z = _effective_direct_grasp_z(
+                DIRECT_SOURCE_FRAME,
+                _DIRECTO_GRASP_Z_RAW,
+            )
+            grasp_z_for_source_frame = (
+                0.0 if DIRECT_SOURCE_FRAME == "rg2_pinch_center" else _DIRECTO_GRASP_Z
+            )
+            if (
+                DIRECT_SOURCE_FRAME == "rg2_pinch_center"
+                and abs(_DIRECTO_GRASP_Z_RAW) > 1e-9
+            ):
+                panel._emit_log(
+                    "[PICK][DIRECT][TARGET_Z] "
+                    f"source_frame={DIRECT_SOURCE_FRAME} "
+                    f"requested_offset_m={_DIRECTO_GRASP_Z_RAW:.3f} "
+                    f"effective_offset_m={_DIRECTO_GRASP_Z:.3f} "
+                    "note=legacy_vertical_offset_suppressed_for_pinch_center"
+                )
 
             def _fmt_vec(vec) -> str:
                 return _pick_demo_fmt_vec(vec)
@@ -1079,7 +1110,7 @@ def run_pick_demo(panel) -> None:
                         if curr is None:
                             parts.append(f"{name}=n/a")
                             return False, " ".join(parts)
-                        diff = abs(float(curr) - float(joints[idx]))
+                        diff = abs(angle_shortest_diff_rad(curr, joints[idx]))
                         parts.append(f"{name}={diff:.3f}")
                         if diff > float(local_tol_rad):
                             return False, " ".join(parts)
@@ -1098,6 +1129,11 @@ def run_pick_demo(panel) -> None:
                 if not ok:
                     raise RuntimeError(f"{label} fallo: {info}")
                 wait_timeout = move_sec + 2.0 if timeout_sec is None else timeout_sec
+                try:
+                    _step_extra = float(os.environ.get("PANEL_PICK_DEMO_STEP_TIMEOUT_EXTRA_SEC", "0") or "0")
+                except Exception:
+                    _step_extra = 0.0
+                wait_timeout += _step_extra
                 if panel._wait_for_joint_target(joints, wait_timeout, tol_rad=tol_rad):
                     return
                 local_ok_after_wait, local_diffs_after_wait = _local_joint_target_ok(max(tol_rad, 0.02))
@@ -1547,6 +1583,20 @@ def run_pick_demo(panel) -> None:
                 panel._emit_log(f"[COMPARE][DIRECT2][GOOD_REF] error={_exc_compare}")
 
             def _current_joint_seed():
+                # Allow orchestrator to pin the IK seed to a known-good configuration
+                # via env var (comma-separated 6 joint values in radians).
+                # This does NOT change the IK target — it only tells the solver where
+                # to start searching.  Useful when the robot's current arm pose is far
+                # from the solution manifold (e.g. starting from HOME rather than
+                # joint-zero as in prior validation runs).
+                _seed_override_str = os.environ.get("PANEL_PICK_DEMO_IK_SEED_JOINTS", "").strip()
+                if _seed_override_str:
+                    try:
+                        _override = [float(v.strip()) for v in _seed_override_str.split(",")]
+                        if len(_override) == 6:
+                            return _override
+                    except Exception:
+                        pass
                 seed = []
                 try:
                     snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
@@ -2645,11 +2695,55 @@ def run_pick_demo(panel) -> None:
                 )
                 # Compute pure position error via FK to validate independently of joint_weight cost
                 import numpy as _np_ik_check
+                import math as _math_ik_retry
                 _fk_pos_solved, _ = fk_ur5(solved_q)
                 pos_err_m = float(_np_ik_check.linalg.norm(
                     _np_ik_check.asarray(_fk_pos_solved, dtype=float)
                     - _np_ik_check.asarray(target_ik, dtype=float)
                 ))
+                # If the solution deviates too far from the seed (any joint > 90° off
+                # after 2π-normalization), the solver landed in the wrong configuration
+                # branch.  Retry with escalating seed_weights to force it closer to the
+                # seed configuration.  Stop as soon as we get a valid solution that is
+                # nearer to the seed OR once we've exhausted the retry schedule.
+                _TWO_PI_R = 2.0 * _math_ik_retry.pi
+                def _seed_max_dev(q_arr, s_arr):
+                    devs = [
+                        abs(float(q) + _TWO_PI_R * round((float(s) - float(q)) / _TWO_PI_R) - float(s))
+                        for q, s in zip(q_arr, s_arr)
+                    ]
+                    return max(devs)
+                _IK_RETRY_SCHEDULE = [0.08, 0.15]  # escalating seed weights
+                _IK_DEV_THRESHOLD = _math_ik_retry.pi / 2  # 90° — flag a wrong-branch solution
+                if ik_ok and pos_err_m <= float(ik_err_tol) and _seed_max_dev(solved_q, seed) > _IK_DEV_THRESHOLD:
+                    _best_q, _best_err, _best_ok = solved_q, pos_err_m, ik_ok
+                    for _retry_sw in _IK_RETRY_SCHEDULE:
+                        _rq, _re_norm, _rok = ik_ur5(
+                            target_ik,
+                            target_rot,
+                            seed,
+                            max_iter=360,
+                            pos_weight=1.0,
+                            rot_weight=float(rot_weight),
+                            joint_weight=_retry_sw,
+                        )
+                        _rfk, _ = fk_ur5(_rq)
+                        _rpos_err = float(_np_ik_check.linalg.norm(
+                            _np_ik_check.asarray(_rfk, dtype=float)
+                            - _np_ik_check.asarray(target_ik, dtype=float)
+                        ))
+                        panel._emit_log(
+                            f"[PICK][DIRECT][IK_RETRY] label={label} retry_seed_weight={_retry_sw:.3f} "
+                            f"pos_err_m={_rpos_err:.4f} ok={str(bool(_rok)).lower()} "
+                            f"max_dev_rad={_seed_max_dev(_rq, seed):.3f}"
+                        )
+                        if _rok and _rpos_err <= float(ik_err_tol):
+                            # Accept this solution if it's closer to the seed
+                            if _seed_max_dev(_rq, seed) < _seed_max_dev(_best_q, seed):
+                                _best_q, _best_err, _best_ok = _rq, _rpos_err, _rok
+                            if _seed_max_dev(_best_q, seed) <= _IK_DEV_THRESHOLD:
+                                break  # Good enough — stop retrying
+                    solved_q, pos_err_m, ik_ok = _best_q, _best_err, _best_ok
                 panel._emit_log(
                     "[PICK][DIRECT][IK] "
                     f"label={label} "
@@ -2698,6 +2792,17 @@ def run_pick_demo(panel) -> None:
                         f"{label.lower()}_ik_failed pos_err_m={pos_err_m:.4f}"
                     )
                 solved_q_list = [float(v) for v in solved_q.tolist()]
+                # Normalize each joint angle to the equivalent value closest to the
+                # seed.  The IK solver is free to return any angle modulo 2π; without
+                # this step a solution like wrist_3=-3.28 rad (equivalent to +0.1 rad)
+                # makes the trajectory controller attempt a 187° rotation that it cannot
+                # follow within the allotted time.
+                import math as _math_norm
+                _TWO_PI = 2.0 * _math_norm.pi
+                solved_q_list = [
+                    float(q) + _TWO_PI * round((float(s) - float(q)) / _TWO_PI)
+                    for q, s in zip(solved_q_list, seed)
+                ]
                 panel._emit_log(
                     "[PICK][DIRECT][JOINT_GOAL] "
                     f"label={label} joints={json.dumps(_json_safe(solved_q_list), ensure_ascii=True)} "
@@ -4245,7 +4350,7 @@ def run_pick_demo(panel) -> None:
                     target_base_grasp_down = (
                         float(obj_base_before_grasp_down[0]),
                         float(obj_base_before_grasp_down[1]),
-                        float(obj_base_before_grasp_down[2]) + _DIRECTO_GRASP_Z + float(grasp_down_extra_z_m),
+                        float(obj_base_before_grasp_down[2]) + grasp_z_for_source_frame + float(grasp_down_extra_z_m),
                     )
                     target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
                 _phase_begin(
@@ -4357,7 +4462,7 @@ def run_pick_demo(panel) -> None:
                 target_base_align = (
                     float(obj_base_align[0]),
                     float(obj_base_align[1]),
-                    float(obj_base_align[2]) + _DIRECTO_GRASP_Z,
+                    float(obj_base_align[2]) + grasp_z_for_source_frame,
                 )
                 target_world_align = _target_world_from_base(target_base_align)
             skip_align_if_reachable = str(
@@ -4670,7 +4775,7 @@ def run_pick_demo(panel) -> None:
                 target_base_pre = (
                     float(obj_base_pre[0]),
                     float(obj_base_pre[1]),
-                    float(obj_base_pre[2]) + _DIRECTO_GRASP_Z,
+                    float(obj_base_pre[2]) + grasp_z_for_source_frame,
                 )
                 target_world_pre = _target_world_from_base(target_base_pre)
             _phase_begin(

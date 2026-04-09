@@ -2104,6 +2104,7 @@ class RosWorker(QObject):
             return
 
         now = _steady_time()
+        wall_now = time.time()  # wall-clock for freshness checks in _wait_for_joint_target
 
         # construir payload
         stamp = None
@@ -2126,7 +2127,13 @@ class RosWorker(QObject):
         # ✅ guardar SIEMPRE (para consumo interno del panel)
         with self._lock:
             self._last_joint_payload = payload
-            self._last_joint_wall = now
+            # Use wall-clock (time.time()) so that _wait_for_joint_target can correctly
+            # compute state_age_sec = time.time() - ts. Using time.monotonic() here would
+            # give a ~1.7e9 s offset against time.time(), making state_age_sec always huge
+            # and forcing _wait_for_joint_target to fall back to _last_joint_time (Qt-signal
+            # path) which becomes stale whenever the Qt main thread is blocked by camera
+            # reconnect — causing HOME/MESA steps to time out even when the robot is there.
+            self._last_joint_wall = wall_now
             should_emit = (now - self._last_joint_emit) >= self._joint_emit_interval
             if should_emit:
                 self._last_joint_emit = now

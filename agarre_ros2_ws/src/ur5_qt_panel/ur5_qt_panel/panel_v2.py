@@ -196,6 +196,7 @@ from .panel_config import (
     PICK_DEMO_SPAWN_POSE,
 )
 from .panel_utils import (
+    angle_shortest_diff_rad,
     bash_preamble,
     build_gz_env,
     CmdRunner,
@@ -1860,6 +1861,15 @@ class ControlPanelV2(QMainWindow):
         self._clean_cache_dirs()
         self._emit_log("[STARTUP] Creando CalibrationService")
         self.calib_service = CalibrationService(log_fn=self._log)
+        # Asegurar que rclpy está inicializado antes de crear el RosWorker y el TfHelper.
+        # Sin este bloque el error queda silenciado (debug_logs_enabled=False o bridge off).
+        if rclpy is not None:
+            try:
+                if not rclpy.ok():
+                    rclpy.init(args=None)
+                self._emit_log("[STARTUP] rclpy.init OK")
+            except Exception as exc:
+                self._emit_log(f"[STARTUP] WARN rclpy.init: {exc}")
         self._emit_log("[STARTUP] Creando RosWorker")
         # FIX-SIM-TIME: force_realtime=False allows use_sim_time to follow USE_SIM_TIME env.
         # Previously hardcoded True caused panel_superpro to run with use_sim_time=False
@@ -2652,7 +2662,7 @@ class ControlPanelV2(QMainWindow):
                 if curr is None:
                     ok = False
                     break
-                if abs(curr - target[idx]) > tol_rad:
+                if abs(angle_shortest_diff_rad(curr, target[idx])) > tol_rad:
                     ok = False
                     break
                 if name in vel_map:
@@ -4622,6 +4632,10 @@ class ControlPanelV2(QMainWindow):
 
     def _log_ros_message(self, msg: str):
         """Mostrar siempre los mensajes provenientes del RosWorker, pero solo cuando el bridge esté activo."""
+        # Los errores de inicialización ROS son siempre visibles (no esperar al bridge).
+        if "[ROS] ERROR rclpy" in msg:
+            self._emit_log(msg)
+            return
         if not self._bridge_running:
             return
         self._emit_log(msg)

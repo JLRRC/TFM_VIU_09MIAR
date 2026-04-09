@@ -1,0 +1,59 @@
+{
+  "timestamp": "2026-04-07T21:57:44",
+  "experiment": {
+    "id": "EXP3_RESNET18_RGB_AUGMENT",
+    "base": "EXP3_RESNET18_RGB_AUGMENT",
+    "model": "ResNet18Grasp",
+    "modality": "RGB",
+    "seed": "2",
+    "epoch": "43",
+    "weights": "best.pth",
+    "weights_path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/seed_2/checkpoints/best.pth",
+    "config_path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/seed_2/config_snapshot.yaml"
+  },
+  "grasp": {
+    "image": {
+      "cx": 119.76850891113281,
+      "cy": 123.48638916015625,
+      "w": 7.362024307250977,
+      "h": 5.718139171600342,
+      "angle_deg": -54.984979667799855
+    },
+    "base": {
+      "x": 0.5863942891014453,
+      "y": 0.11159865445607993,
+      "z": 0.05428118339024224,
+      "yaw_deg": -30.560803805750766,
+      "proj_z_target": 0.8792811833902422,
+      "proj_z_source": "selected_object:box_red",
+      "table_top_z_world": 0.85,
+      "grasp_semantics": "projection_surface"
+    },
+    "frame": "/camera_overhead/image",
+    "source": "topic:/grasp_rect"
+  },
+  "evaluation": {
+    "iou": 0.10653271219778915,
+    "delta_theta_deg": 54.984979667799855,
+    "success": false,
+    "note": "Evaluaci\u00f3n geom\u00e9trica en simulaci\u00f3n. No validaci\u00f3n f\u00edsica."
+  },
+  "latency": {
+    "inference_ms": 34.45720672607422,
+    "perception_ms": 1775339931623.1538,
+    "fps": 21.613894150001045,
+    "fps_avg": 21.857312263900518
+  },
+  "frames": {
+    "image_topic": "/camera_overhead/image",
+    "image_size": [
+      320,
+      240
+    ],
+    "image_timestamp": 251932.486898131
+  },
+  "artifacts": {
+    "image_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/frame_20260407_215735.png",
+    "grasp_path": "/home/laboratorio/TFM/agarre_ros2_ws/log/panel_infer/grasp_20260407_215735.json"
+  }
+}
