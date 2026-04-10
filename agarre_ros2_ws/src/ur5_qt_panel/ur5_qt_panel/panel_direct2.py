@@ -90,6 +90,15 @@ class Directo2Controller:
                         "MESA_2": "Directo2: volviendo a Mesa…",
                         "CESTA": "Directo2: yendo a Cesta…",
                     }.get(step_name, "Directo2 ejecutando…")
+                    step_gate_fn = getattr(panel, "_step_wait_for_phase", None)
+                    if callable(step_gate_fn):
+                        step_gate_fn(
+                            f"DIRECT2.{step_name}",
+                            flow="DIRECT2",
+                            position=None,
+                            decision=status_label,
+                            object_position=None,
+                        )
                     panel._ui_set_status(status_label)
                     panel._set_direct2_visual_target(list(joints), step_name)
                     ok, info = panel._publish_joint_trajectory(list(joints), move_sec)

@@ -96,6 +96,34 @@ def run_pick_object(panel) -> None:
     def _moveit2_log(scope: str, msg: str) -> None:
         panel._emit_log(f"[MOVEIT2][{scope}] {msg}")
 
+    _step_last_phase = {"value": ""}
+
+    def _step_phase_gate(phase: str, *, position=None, decision: str = "", object_position=None) -> None:
+        gate_fn = getattr(panel, "_step_wait_for_phase", None)
+        if not callable(gate_fn):
+            return
+        label = str(phase or "").strip().upper()
+        if not label:
+            return
+        if label.startswith("GRASP_DOWN_MICRO_"):
+            label = "GRASP_DOWN"
+        elif label.startswith("STRICT_LIFT_STAGE_"):
+            label = "LIFT"
+        elif label.startswith("TRANSPORT_STAGE_"):
+            label = "TRANSPORT"
+        elif label == "PRE_GRASP_RECENTER":
+            label = "PRE_GRASP"
+        if _step_last_phase["value"] == label:
+            return
+        _step_last_phase["value"] = label
+        gate_fn(
+            f"PICK_OBJ.{label}",
+            flow="PICK_OBJECT",
+            position=position,
+            decision=decision,
+            object_position=object_position,
+        )
+
     def _quat_multiply(
         q1: tuple[float, float, float, float],
         q2: tuple[float, float, float, float],
@@ -2951,6 +2979,12 @@ def run_pick_object(panel) -> None:
             def _run_moveit_step(label: str, pose_data: dict, delay: float) -> None:
                 nonlocal moveit_monitor_total, moveit_monitor_manual
                 label_up = str(label).upper()
+                _step_phase_gate(
+                    label_up,
+                    position=pose_data.get("position"),
+                    decision=f"moveit_step:{label_up}",
+                    object_position=(bx, by, bz) if 'bx' in locals() else None,
+                )
                 _moveit2_log("STEP", f"label={label_up} state=start")
                 if deterministic_joint_after_approach and label_up != "APPROACH":
                     panel._emit_log(
@@ -4163,6 +4197,12 @@ def run_pick_object(panel) -> None:
                 else:
                     panel._emit_log("[PICK_OBJ] ✗ Attach fallido (sin objeto en rango)")
             
+            _step_phase_gate(
+                "GRASP_ATTACH",
+                position=grasp_pose_send.get("position"),
+                decision="close_and_attach",
+                object_position=(bx, by, bz),
+            )
             panel.signal_run_ui.emit(_close_grasp_attach)
             time.sleep(1.0)  # Esperar más (como PICK_DEMO) para que attach se procese en Gazebo
             
@@ -4198,6 +4238,7 @@ def run_pick_object(panel) -> None:
             )
 
             panel._emit_log("[PICK_OBJ] FASE 7: Levantar objeto 20cm (MoveIt)")
+            _step_phase_gate("LIFT", position=lift_pose, decision="lift_object", object_position=(bx, by, bz))
             _moveit2_log("PHASE", "LIFT start")
             if attach_result.get("strict_physical_pending"):
                 _run_strict_staged_lift(grasp_pose_send)
@@ -4281,6 +4322,7 @@ def run_pick_object(panel) -> None:
             ).strip().lower() not in ("0", "false", "no", "off")
             if return_to_table_after_grasp:
                 panel._emit_log("[PICK_OBJ] FASE 8: Volver a MESA con objeto agarrado (joint)")
+                _step_phase_gate("MESA_WITH_OBJECT", position=None, decision="joint_return_to_table", object_position=(bx, by, bz))
                 _run_joint_step(
                     "MESA_WITH_OBJECT",
                     JOINT_TABLE_POSE_RAD,
@@ -4302,6 +4344,7 @@ def run_pick_object(panel) -> None:
             ).strip().lower() not in ("0", "false", "no", "off")
             if home_before_basket:
                 panel._emit_log("[PICK_OBJ] FASE 8.5: Volver a HOME con objeto (joint)")
+                _step_phase_gate("HOME_WITH_OBJECT", position=None, decision="joint_return_home", object_position=(bx, by, bz))
                 _run_joint_step(
                     "HOME_WITH_OBJECT",
                     home_pose,
@@ -4334,6 +4377,7 @@ def run_pick_object(panel) -> None:
                 "[PICK_OBJ] FASE 9: Ir a CESTA con objeto "
                 + ("(joint)" if transport_joint_only else "(MoveIt)")
             )
+            _step_phase_gate("TRANSPORT", position=transport_pose, decision="transport_to_basket", object_position=(bx, by, bz))
             _moveit2_log(
                 "PHASE",
                 "TRANSPORT start mode=" + ("joint" if transport_joint_only else "moveit"),
@@ -4425,12 +4469,15 @@ def run_pick_object(panel) -> None:
                 panel._emit_log(
                     "[PICK_OBJ] FASE 10: Drop MoveIt omitido (trayectoria articular a cesta)"
                 )
+                _step_phase_gate("DROP", position=drop_pose, decision="drop_phase", object_position=(bx, by, bz))
             else:
                 panel._emit_log("[PICK_OBJ] FASE 10: Descenso de drop en cesta (MoveIt)")
+                _step_phase_gate("DROP", position=drop_pose, decision="drop_phase", object_position=(bx, by, bz))
                 _moveit2_log("PHASE", "DROP start")
                 _run_moveit_step(*sequence[5])  # DROP
 
             panel._emit_log("[PICK_OBJ] FASE 11: Soltar objeto en cesta")
+            _step_phase_gate("RELEASE", position=drop_pose, decision="release_object", object_position=(bx, by, bz))
             _moveit2_log("PHASE", "RELEASE start")
 
             # Post-check - Validar posición antes de soltar
@@ -4511,6 +4558,7 @@ def run_pick_object(panel) -> None:
             time.sleep(0.5)
 
             panel._emit_log("[PICK_OBJ] FASE 12: Regresar a HOME")
+            _step_phase_gate("HOME_FINAL", position=None, decision="return_home", object_position=(bx, by, bz))
             _moveit2_log("PHASE", "HOME_FINAL start")
             _run_joint_step("HOME_FINAL", home_pose)
 

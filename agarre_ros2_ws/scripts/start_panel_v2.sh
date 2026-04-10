@@ -93,7 +93,8 @@ export WS_DIR
 : "${PANEL_STRICT_RUNTIME_SANITY:=1}" # 1 = bloquea arranque si detecta otro stack ROS activo
 : "${PANEL_MOVEIT_MODE:=auto}"        # auto|move_group|bridge
 : "${PANEL_ROS_EXECUTOR_THREADS:=3}"  # executor del RosWorker para no bloquear /clock durante servicios largos
-: "${PANEL_GRIPPER_CLOSED_RAD:=0.0}" # En esta maqueta RG2 el cierre completo corresponde a 0.0 rad
+: "${PANEL_GRIPPER_OPEN_RAD:=0.04}"   # RG2 prismático: apertura máxima 4 cm por dedo
+: "${PANEL_GRIPPER_CLOSED_RAD:=0.0}"  # RG2 prismático: cierre completo en 0.0 m
 : "${RMW_IMPLEMENTATION:=rmw_fastrtps_cpp}"
 if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]] && ! display_is_usable; then
   log "DISPLAY=${DISPLAY} no es usable; activando modo offscreen"
@@ -113,6 +114,7 @@ fi
 export RMW_IMPLEMENTATION
 export PANEL_CONTROLLER_MANAGER
 export PANEL_ROS_EXECUTOR_THREADS
+export PANEL_GRIPPER_OPEN_RAD
 export PANEL_GRIPPER_CLOSED_RAD
 export PANEL_GZ_GUI
 

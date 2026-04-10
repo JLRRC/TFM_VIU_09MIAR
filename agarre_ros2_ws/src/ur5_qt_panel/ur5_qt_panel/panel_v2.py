@@ -39,6 +39,7 @@ from PyQt5.QtWidgets import (
     QAbstractScrollArea,
     QCheckBox,
     QComboBox,
+    QDialog,
     QDoubleSpinBox,
     QFileDialog,
     QGridLayout,
@@ -516,6 +517,67 @@ def _load_cornell_metrics(vision_dir: str):
 from .cameras_tab import ObjectListPanel
 from .calibration_service import CalibrationService, CalibrationMode
 from .ur5_kinematics import fk_ur5
+
+
+FK_TOOL0_TO_GRIPPER_TIP_M = 0.175
+
+
+def _fk_model_to_base_link(
+    pos_model: tuple[float, float, float] | list[float] | np.ndarray,
+    rot_model: np.ndarray,
+) -> tuple[tuple[float, float, float], np.ndarray]:
+    """Convert UR5 FK output from base_link_inertia into runtime base_link."""
+    rz_pi = np.array(
+        [
+            [-1.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=float,
+    )
+    base_pos = (
+        -float(pos_model[0]),
+        -float(pos_model[1]),
+        float(pos_model[2]),
+    )
+    base_rot = rz_pi @ np.asarray(rot_model, dtype=float)
+    return base_pos, base_rot
+
+
+def _fk_tool0_to_ee_base_link(
+    pos_model: tuple[float, float, float] | list[float] | np.ndarray,
+    rot_model: np.ndarray,
+    ee_frame: str,
+) -> tuple[tuple[float, float, float], np.ndarray]:
+    base_pos, base_rot = _fk_model_to_base_link(pos_model, rot_model)
+    frame_name = str(ee_frame or "").strip()
+    if not frame_name or frame_name == "tool0":
+        return base_pos, base_rot
+
+    local_offset = None
+    tf_tool0_ee, _tf_reason = tf_get_transform("tool0", frame_name, timeout=0.05, logger=None)
+    if tf_tool0_ee is not None:
+        translation = tf_tool0_ee.transform.translation
+        local_offset = (
+            float(translation.x),
+            float(translation.y),
+            float(translation.z),
+        )
+    elif frame_name in {"rg2_pinch_center", "rg2_tcp"}:
+        local_offset = (0.0, 0.0, float(FK_TOOL0_TO_GRIPPER_TIP_M))
+
+    if local_offset is None:
+        return base_pos, base_rot
+
+    offset_base = tuple((np.asarray(base_rot, dtype=float) @ np.asarray(local_offset, dtype=float)).tolist())
+    return (
+        (
+            float(base_pos[0]) + float(offset_base[0]),
+            float(base_pos[1]) + float(offset_base[1]),
+            float(base_pos[2]) + float(offset_base[2]),
+        ),
+        base_rot,
+    )
 
 
 class CameraView(QLabel):
@@ -1318,8 +1380,41 @@ class ControlPanelV2(QMainWindow):
         self._state_event = threading.Event()
         self._debug_motion_lock = threading.Lock()
         self._debug_motion_continue_event = threading.Event()
+        self._step_gate_lock = threading.Lock()
+        self._step_wait_event = threading.Event()
         self._debug_motion_wait_active = False
         self._debug_motion_wait_reason = ""
+        self._step_mode = "AUTO"
+        self._step_wait_active = False
+        self._step_pending_phase = ""
+        self._step_pending_flow = ""
+        self._step_current_phase = ""
+        self._step_next_phase = ""
+        self._step_decision = ""
+        self._step_phase_position: Optional[Tuple[float, float, float]] = None
+        self._step_object_position: Optional[Tuple[float, float, float]] = None
+        self._step_start_pose_base: Optional[Tuple[float, float, float]] = None
+        self._step_start_pose_rpy_deg: Optional[Tuple[float, float, float]] = None
+        self._step_start_trigger = ""
+        self._step_history_flow = ""
+        self._step_history_rows: List[Tuple[str, Optional[Tuple[float, float, float]]]] = []
+        self._step_mode_combo_syncing = False
+        self._step_window = None
+        self._step_phase_label = None
+        self._step_mode_label = None
+        self._step_current_label = None
+        self._step_next_label = None
+        self._step_intent_label = None
+        self._step_decision_label = None
+        self._step_target_label = None
+        self._step_live_operational_label = None
+        self._step_live_visual_label = None
+        self._step_gripper_expected_label = None
+        self._step_live_gripper_label = None
+        self._step_object_label = None
+        self._step_start_pose_label = None
+        self._step_history_table = None
+        self._step_continue_btn = None
         self._debug_motion_pause_alcance_enabled = str(
             os.environ.get("PANEL_DEBUG_PAUSE_ALCANCE", "0") or "0"
         ).strip().lower() not in {"0", "false", "no", "off"}
@@ -1370,8 +1465,8 @@ class ControlPanelV2(QMainWindow):
         self._moveit_bridge_stop_grace_until = 0.0
         self._star_inflight = False
         self._controller_spawn_last_start = 0.0
-        self._robot_test_done = False
-        self._robot_test_disabled = False
+        self._robot_test_done = True
+        self._robot_test_disabled = True
         self._robot_test_active = False
         self._robot_test_substate = "IDLE"
         self._robot_test_last_failure = ""
@@ -3097,6 +3192,10 @@ class ControlPanelV2(QMainWindow):
         self.btn_debug_logs = QPushButton("Debug logs")
         self.btn_debug_logs.setCheckable(True)
         self.btn_debug_logs.setChecked(self._debug_logs_enabled)
+        self.step_mode_combo = QComboBox()
+        self.step_mode_combo.addItems(["AUTO", "STEP_BY_STEP"])
+        self.step_mode_combo.setCurrentText(self._step_mode)
+        self.step_mode_combo.currentTextChanged.connect(self._on_step_mode_combo_changed)
         self._apply_debug_button_style(self.btn_debug_joints, self._debug_joints_to_stdout)
         self._apply_debug_button_style(self.btn_debug_logs, self._debug_logs_enabled)
 
@@ -3212,6 +3311,8 @@ class ControlPanelV2(QMainWindow):
         top.addWidget(self.btn_close_terminal)
         top.addWidget(self.btn_debug_joints)
         top.addWidget(self.btn_debug_logs)
+        top.addWidget(QLabel("Ejecución:"))
+        top.addWidget(self.step_mode_combo)
         top.addWidget(self.status_lbl, 1)
 
         main.addLayout(top)
@@ -4595,6 +4696,560 @@ class ControlPanelV2(QMainWindow):
             btn.setToolTip(
                 "Pausa manual de depuración: cuando haya una pausa activa, pulsa para continuar."
             )
+
+    def _on_step_mode_combo_changed(self, text: str) -> None:
+        if self._step_mode_combo_syncing:
+            return
+        self._set_step_mode(text, emit_log=True)
+
+    def _set_step_mode(self, mode: str, *, emit_log: bool = True) -> None:
+        requested = str(mode or "").strip().upper()
+        normalized = "STEP_BY_STEP" if requested == "STEP_BY_STEP" else "AUTO"
+        previous = self._step_mode
+        self._step_mode = normalized
+
+        combo = getattr(self, "step_mode_combo", None)
+        if combo is not None and combo.currentText() != normalized:
+            self._step_mode_combo_syncing = True
+            try:
+                combo.setCurrentText(normalized)
+            finally:
+                self._step_mode_combo_syncing = False
+
+        if normalized == "STEP_BY_STEP":
+            self.signal_run_ui.emit(self._step_window_set_waiting)
+            if emit_log and previous != normalized:
+                self._emit_log("[STEP] mode=STEP_BY_STEP")
+            return
+
+        # AUTO always releases any gate currently waiting.
+        self._step_wait_event.set()
+        self.signal_run_ui.emit(self._step_window_hide)
+        if emit_log and previous != normalized:
+            self._emit_log("[STEP] mode=AUTO")
+
+    def _ensure_step_window(self) -> None:
+        if self._step_window is not None:
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle("STEP_BY_STEP")
+        dlg.setModal(False)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg.resize(520, 360)
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        lbl_title = QLabel("Control de fases")
+        lbl_title.setStyleSheet("font-weight:700;")
+        lbl_mode = QLabel("Modo: --")
+        lbl_phase = QLabel("Fase pendiente: (ninguna)")
+        lbl_current = QLabel("Fase actual: --")
+        lbl_next = QLabel("Fase siguiente: --")
+        lbl_intent = QLabel("Qué pretende hacer: --")
+        lbl_decision = QLabel("Motivo de decisión: --")
+        lbl_target = QLabel("Objetivo fase XYZ: --")
+        lbl_live_operational = QLabel("Punto operativo live: --")
+        lbl_live_visual = QLabel("Pinza visual live: --")
+        lbl_gripper_expected = QLabel("Pinza esperada en fase actual: --")
+        lbl_gripper_live = QLabel("Pinza live: --")
+        lbl_object = QLabel("Objeto XYZ: --")
+        lbl_start_pose = QLabel("Pose inicial robot: --")
+        history_table = QTableWidget(0, 5)
+        history_table.setHorizontalHeaderLabels(["Fase", "Pinza", "X", "Y", "Z"])
+        history_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        history_table.setSelectionMode(QTableWidget.NoSelection)
+        history_table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
+        history_header = history_table.horizontalHeader()
+        if history_header is not None:
+            history_header.setSectionResizeMode(0, QHeaderView.Stretch)
+            history_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+            history_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+            history_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+            history_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        history_table.verticalHeader().setVisible(False)
+        btn_continue = QPushButton("Sigue")
+        btn_continue.clicked.connect(self._on_step_continue_clicked)
+
+        layout.addWidget(lbl_title)
+        layout.addWidget(lbl_mode)
+        layout.addWidget(lbl_phase)
+        layout.addWidget(lbl_current)
+        layout.addWidget(lbl_next)
+        layout.addWidget(lbl_intent)
+        layout.addWidget(lbl_decision)
+        layout.addWidget(lbl_target)
+        layout.addWidget(lbl_live_operational)
+        layout.addWidget(lbl_live_visual)
+        layout.addWidget(lbl_gripper_expected)
+        layout.addWidget(lbl_gripper_live)
+        layout.addWidget(lbl_object)
+        layout.addWidget(lbl_start_pose)
+        layout.addWidget(history_table, 1)
+        layout.addWidget(btn_continue)
+
+        dlg.finished.connect(self._on_step_window_finished)
+
+        self._step_window = dlg
+        self._step_mode_label = lbl_mode
+        self._step_phase_label = lbl_phase
+        self._step_current_label = lbl_current
+        self._step_next_label = lbl_next
+        self._step_intent_label = lbl_intent
+        self._step_decision_label = lbl_decision
+        self._step_target_label = lbl_target
+        self._step_live_operational_label = lbl_live_operational
+        self._step_live_visual_label = lbl_live_visual
+        self._step_gripper_expected_label = lbl_gripper_expected
+        self._step_live_gripper_label = lbl_gripper_live
+        self._step_object_label = lbl_object
+        self._step_start_pose_label = lbl_start_pose
+        self._step_history_table = history_table
+        self._step_continue_btn = btn_continue
+
+    def _step_present_flow_name(self, flow: str) -> str:
+        flow_name = str(flow or "").strip().upper()
+        mapping = {
+            "DIRECT": "DIRECTO",
+            "DIRECT2": "DIRECTO2",
+            "PICK_OBJECT": "MOVEIT",
+            "MOVEIT": "MOVEIT",
+            "AGARRE": "AGARRE",
+        }
+        return mapping.get(flow_name, flow_name or "--")
+
+    def _step_phase_sequence(self, flow: str) -> List[str]:
+        flow_name = str(flow or "").strip().upper()
+        sequences = {
+            "DIRECT": [
+                "PICK_PRE_CLOSE_REF",
+                "APPROACH_COARSE",
+                "GRASP_DOWN_JOINT",
+                "GRASP_ALIGN_IK",
+                "PRE_CLOSE",
+                "CLOSE",
+                "ATTACH_GATE",
+                "LIFT",
+                "MESA_WITH_OBJECT",
+                "CESTA",
+                "CESTA_RELEASE",
+                "HOME_FINAL",
+            ],
+            "DIRECT2": ["MESA_1", "POSE_BUENA", "MESA_2", "CESTA"],
+            "PICK_OBJECT": [
+                "APPROACH",
+                "PRE_GRASP",
+                "GRASP_DOWN",
+                "GRASP_ATTACH",
+                "LIFT",
+                "MESA_WITH_OBJECT",
+                "HOME_WITH_OBJECT",
+                "TRANSPORT",
+                "DROP",
+                "RELEASE",
+                "HOME_FINAL",
+            ],
+            "MOVEIT": [
+                "APPROACH",
+                "PRE_GRASP",
+                "GRASP_DOWN",
+                "GRASP_ATTACH",
+                "LIFT",
+                "TRANSPORT",
+                "DROP",
+                "RELEASE",
+                "HOME_FINAL",
+            ],
+            "AGARRE": [],
+        }
+        return list(sequences.get(flow_name, []))
+
+    def _step_predict_next_phase(self, flow: str, phase: str) -> str:
+        phase_name = str(phase or "").strip().upper()
+        sequence = self._step_phase_sequence(flow)
+        if phase_name in sequence:
+            idx = sequence.index(phase_name)
+            if idx + 1 < len(sequence):
+                return sequence[idx + 1]
+        return "--"
+
+    def _step_phase_intent(self, flow: str, phase: str) -> str:
+        flow_name = str(flow or "").strip().upper()
+        phase_name = str(phase or "").strip().upper()
+        intents = {
+            "DIRECT": {
+                "PICK_PRE_CLOSE_REF": "Ir a la referencia manual previa al cierre.",
+                "APPROACH_COARSE": "Acercarse al objeto de forma gruesa.",
+                "GRASP_DOWN_JOINT": "Bajar hacia el objeto con movimiento articular.",
+                "GRASP_ALIGN_IK": "Alinear la pinza fina sobre el objeto.",
+                "PRE_CLOSE": "Colocar la pinza justo antes del cierre.",
+                "CLOSE": "Cerrar la pinza sobre el objeto.",
+                "ATTACH_GATE": "Comprobar si el objeto ha quedado agarrado.",
+                "LIFT": "Elevar el objeto tras el agarre.",
+                "MESA_WITH_OBJECT": "Retirarse con el objeto hacia zona segura.",
+                "CESTA": "Transportar el objeto hacia la cesta.",
+                "CESTA_RELEASE": "Soltar el objeto en la cesta.",
+                "HOME_FINAL": "Volver a la pose final segura.",
+            },
+            "DIRECT2": {
+                "MESA_1": "Ir al primer punto fijo sobre la mesa.",
+                "POSE_BUENA": "Ir a la pose buena de referencia.",
+                "MESA_2": "Salir de la mesa con el objeto.",
+                "CESTA": "Ir a la cesta para dejar el objeto.",
+            },
+            "PICK_OBJECT": {
+                "APPROACH": "Acercarse al objeto con MoveIt.",
+                "PRE_GRASP": "Colocarse en pre-agarre.",
+                "GRASP_DOWN": "Descender hasta la altura de agarre.",
+                "GRASP_ATTACH": "Cerrar y validar el agarre.",
+                "LIFT": "Levantar el objeto.",
+                "MESA_WITH_OBJECT": "Retirarse de la mesa con el objeto.",
+                "HOME_WITH_OBJECT": "Pasar por HOME manteniendo el objeto.",
+                "TRANSPORT": "Transportar el objeto hacia la cesta.",
+                "DROP": "Bajar para dejar el objeto.",
+                "RELEASE": "Abrir la pinza y liberar el objeto.",
+                "HOME_FINAL": "Volver a la pose final segura.",
+            },
+            "MOVEIT": {
+                "APPROACH": "Acercarse al objeto con MoveIt.",
+                "PRE_GRASP": "Colocarse en pre-agarre.",
+                "GRASP_DOWN": "Descender hasta la altura de agarre.",
+                "GRASP_ATTACH": "Cerrar y validar el agarre.",
+                "LIFT": "Levantar el objeto.",
+                "TRANSPORT": "Transportar el objeto hacia la cesta.",
+                "DROP": "Bajar para dejar el objeto.",
+                "RELEASE": "Abrir la pinza y liberar el objeto.",
+                "HOME_FINAL": "Volver a la pose final segura.",
+            },
+        }
+        return str(intents.get(flow_name, {}).get(phase_name) or "Sin descripción")
+
+    def _step_phase_gripper_state(self, flow: str, phase: str) -> str:
+        flow_name = str(flow or "").strip().upper()
+        phase_name = str(phase or "").strip().upper()
+        states = {
+            "DIRECT": {
+                "PICK_PRE_CLOSE_REF": "Abierta",
+                "APPROACH_COARSE": "Abierta",
+                "GRASP_DOWN_JOINT": "Abierta",
+                "GRASP_ALIGN_IK": "Abierta",
+                "PRE_CLOSE": "Abierta",
+                "CLOSE": "Cerrada",
+                "ATTACH_GATE": "Cerrada",
+                "LIFT": "Cerrada",
+                "MESA_WITH_OBJECT": "Cerrada",
+                "CESTA": "Cerrada",
+                "CESTA_RELEASE": "Abierta",
+                "HOME_FINAL": "Abierta",
+            },
+            "DIRECT2": {
+                "MESA_1": "Abierta",
+                "POSE_BUENA": "Cerrada",
+                "MESA_2": "Cerrada",
+                "CESTA": "Abierta",
+            },
+            "PICK_OBJECT": {
+                "APPROACH": "Abierta",
+                "PRE_GRASP": "Abierta",
+                "GRASP_DOWN": "Abierta",
+                "GRASP_ATTACH": "Cerrada",
+                "LIFT": "Cerrada",
+                "MESA_WITH_OBJECT": "Cerrada",
+                "HOME_WITH_OBJECT": "Cerrada",
+                "TRANSPORT": "Cerrada",
+                "DROP": "Cerrada",
+                "RELEASE": "Abierta",
+                "HOME_FINAL": "Abierta",
+            },
+            "MOVEIT": {
+                "APPROACH": "Abierta",
+                "PRE_GRASP": "Abierta",
+                "GRASP_DOWN": "Abierta",
+                "GRASP_ATTACH": "Cerrada",
+                "LIFT": "Cerrada",
+                "TRANSPORT": "Cerrada",
+                "DROP": "Cerrada",
+                "RELEASE": "Abierta",
+                "HOME_FINAL": "Abierta",
+            },
+        }
+        return str(states.get(flow_name, {}).get(phase_name) or "--")
+
+    def _step_live_gripper_state(self) -> str:
+        if bool(getattr(self, "_gripper_is_closed", getattr(self, "_gripper_closed", False))):
+            return "Cerrada"
+        return "Abierta"
+
+    def _step_format_xyz(self, position: Optional[Tuple[float, float, float]]) -> Tuple[str, str, str]:
+        if position is None:
+            return ("--", "--", "--")
+        return (f"{float(position[0]):.3f}", f"{float(position[1]):.3f}", f"{float(position[2]):.3f}")
+
+    def _step_format_inline_xyz(self, position: Optional[Tuple[float, float, float]]) -> str:
+        x, y, z = self._step_format_xyz(position)
+        if x == "--":
+            return "--"
+        return f"({x}, {y}, {z})"
+
+    def _step_format_inline_rpy(self, rpy_deg: Optional[Tuple[float, float, float]]) -> str:
+        if rpy_deg is None:
+            return "--"
+        try:
+            return f"({float(rpy_deg[0]):.1f}, {float(rpy_deg[1]):.1f}, {float(rpy_deg[2]):.1f})"
+        except Exception:
+            return "--"
+
+    def _step_fetch_live_pose(self, ee_frame: str) -> Optional[Tuple[float, float, float]]:
+        frame_name = str(ee_frame or "").strip()
+        if not frame_name:
+            return None
+        base_frame = self._business_base_frame()
+        tcp_pose_base, _tcp_rpy_deg, _tcp_reason = tf_get_tcp_in_base(
+            base_frame=base_frame,
+            ee_frame=frame_name,
+            timeout=0.05,
+            logger=None,
+        )
+        if tcp_pose_base is None:
+            return None
+        return (
+            float(tcp_pose_base.pose.position.x),
+            float(tcp_pose_base.pose.position.y),
+            float(tcp_pose_base.pose.position.z),
+        )
+
+    def _step_live_pose_text(self, label: str, ee_frame: str, position: Optional[Tuple[float, float, float]]) -> str:
+        frame_name = str(ee_frame or "").strip() or "--"
+        xyz_txt = self._step_format_inline_xyz(position)
+        return f"{label}: {xyz_txt} | frame: {frame_name}"
+
+    def _step_capture_start_pose(self, trigger: str) -> None:
+        base_frame = self._business_base_frame()
+        ee_frame = str(
+            getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center"
+        ).strip() or "rg2_pinch_center"
+        start_xyz = None
+        start_rpy = None
+        tcp_pose_base, tcp_rpy_deg, _tcp_reason = tf_get_tcp_in_base(
+            base_frame=base_frame,
+            ee_frame=ee_frame,
+            timeout=0.12,
+            logger=None,
+        )
+        if tcp_pose_base is not None:
+            start_xyz = (
+                float(tcp_pose_base.pose.position.x),
+                float(tcp_pose_base.pose.position.y),
+                float(tcp_pose_base.pose.position.z),
+            )
+            if tcp_rpy_deg is not None and len(tcp_rpy_deg) >= 3:
+                start_rpy = (
+                    float(tcp_rpy_deg[0]),
+                    float(tcp_rpy_deg[1]),
+                    float(tcp_rpy_deg[2]),
+                )
+        if start_xyz is None:
+            start_xyz = self._last_trace_tcp_base or self._last_tcp_base
+        if start_rpy is None:
+            start_rpy = self._last_trace_tcp_rpy_deg or self._last_tcp_rpy_deg
+        self._step_start_pose_base = start_xyz
+        self._step_start_pose_rpy_deg = start_rpy
+        self._step_start_trigger = str(trigger or "").strip()
+
+    def _step_record_history(self, flow: str, phase: str, position=None) -> None:
+        phase_name = str(phase or "").strip().upper()
+        flow_name = str(flow or "").strip().upper()
+        pos3 = None
+        if isinstance(position, (list, tuple)) and len(position) >= 3:
+            try:
+                pos3 = (float(position[0]), float(position[1]), float(position[2]))
+            except Exception:
+                pos3 = None
+        sequence = self._step_phase_sequence(flow_name)
+        first_phase = sequence[0] if sequence else ""
+        if flow_name != self._step_history_flow or (first_phase and phase_name == first_phase):
+            self._step_history_flow = flow_name
+            self._step_history_rows = []
+        if self._step_history_rows and self._step_history_rows[-1][0] == phase_name:
+            self._step_history_rows[-1] = (phase_name, pos3)
+        else:
+            self._step_history_rows.append((phase_name, pos3))
+
+    def _step_window_refresh(self) -> None:
+        self._ensure_step_window()
+        if self._step_mode_label is not None:
+            self._step_mode_label.setText(f"Modo: {self._step_present_flow_name(self._step_pending_flow)}")
+        if self._step_phase_label is not None:
+            phase = str(self._step_pending_phase or "").strip() or "(esperando fase)"
+            self._step_phase_label.setText(f"Fase pendiente: {phase}")
+        if self._step_current_label is not None:
+            current = str(self._step_current_phase or "").strip() or "--"
+            current_gripper = self._step_phase_gripper_state(
+                str(self._step_pending_flow or "").strip(),
+                current,
+            )
+            self._step_current_label.setText(
+                f"Fase actual: {current} | pinza esperada: {current_gripper}"
+            )
+        if self._step_next_label is not None:
+            nxt = str(self._step_next_phase or "").strip() or "--"
+            next_gripper = self._step_phase_gripper_state(
+                str(self._step_pending_flow or "").strip(),
+                nxt,
+            )
+            self._step_next_label.setText(
+                f"Fase siguiente: {nxt} | pinza esperada: {next_gripper}"
+            )
+        if self._step_intent_label is not None:
+            current_flow = str(self._step_pending_flow or "").strip()
+            current_phase = str(self._step_current_phase or "").strip()
+            intent = self._step_phase_intent(current_flow, current_phase)
+            self._step_intent_label.setText(f"Qué pretende hacer: {intent}")
+        if self._step_decision_label is not None:
+            decision = str(self._step_decision or "").strip() or "--"
+            self._step_decision_label.setText(f"Motivo de decisión: {decision}")
+        if self._step_target_label is not None:
+            self._step_target_label.setText(
+                self._step_live_pose_text(
+                    "Objetivo fase XYZ",
+                    getattr(self, "_step_target_frame", "") or getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center",
+                    self._step_phase_position,
+                )
+            )
+        operational_frame = str(
+            getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center"
+        ).strip() or "rg2_pinch_center"
+        operational_live = self._step_fetch_live_pose(operational_frame)
+        if operational_live is None and operational_frame == getattr(self, "_ee_frame_effective", ""):
+            operational_live = self._last_trace_tcp_base or self._last_tcp_base
+        if self._step_live_operational_label is not None:
+            self._step_live_operational_label.setText(
+                self._step_live_pose_text("Punto operativo live", operational_frame, operational_live)
+            )
+        visual_frame = "rg2_tcp"
+        visual_live = self._step_fetch_live_pose(visual_frame)
+        if self._step_live_visual_label is not None:
+            self._step_live_visual_label.setText(
+                self._step_live_pose_text("Pinza visual live", visual_frame, visual_live)
+            )
+        if self._step_gripper_expected_label is not None:
+            current_flow = str(self._step_pending_flow or "").strip()
+            current_phase = str(self._step_current_phase or "").strip()
+            expected_gripper = self._step_phase_gripper_state(current_flow, current_phase)
+            self._step_gripper_expected_label.setText(
+                f"Pinza esperada en fase actual: {expected_gripper}"
+            )
+        if self._step_live_gripper_label is not None:
+            self._step_live_gripper_label.setText(
+                f"Pinza live: {self._step_live_gripper_state()}"
+            )
+        if self._step_object_label is not None:
+            self._step_object_label.setText(
+                f"Objeto XYZ: {self._step_format_inline_xyz(self._step_object_position)}"
+            )
+        if self._step_start_pose_label is not None:
+            trigger = str(self._step_start_trigger or "").strip() or "--"
+            xyz_txt = self._step_format_inline_xyz(self._step_start_pose_base)
+            rpy_txt = self._step_format_inline_rpy(self._step_start_pose_rpy_deg)
+            self._step_start_pose_label.setText(
+                f"Pose inicial robot: {xyz_txt} | RPY: {rpy_txt} | botón: {trigger}"
+            )
+        if self._step_history_table is not None:
+            self._step_history_table.setRowCount(len(self._step_history_rows))
+            for row_idx, (phase_name, pos3) in enumerate(self._step_history_rows):
+                display_phase = f"{phase_name} - {self._step_phase_intent(self._step_history_flow, phase_name)}"
+                expected_gripper = self._step_phase_gripper_state(self._step_history_flow, phase_name)
+                values = (display_phase, expected_gripper) + self._step_format_xyz(pos3)
+                for col_idx, value in enumerate(values):
+                    item = QTableWidgetItem(value)
+                    self._step_history_table.setItem(row_idx, col_idx, item)
+
+    def _step_window_set_waiting(self) -> None:
+        self._ensure_step_window()
+        self._step_window_refresh()
+        if self._step_continue_btn is not None:
+            self._step_continue_btn.setEnabled(True)
+        if self._step_window is not None:
+            self._step_window.show()
+
+    def _step_window_hide(self) -> None:
+        if self._step_window is None:
+            return
+        self._step_window.hide()
+
+    def _on_step_window_finished(self, _result: int) -> None:
+        # If user closes the step window manually, return to AUTO to avoid deadlocks.
+        if self._closing:
+            return
+        if self._step_mode == "STEP_BY_STEP":
+            self._set_step_mode("AUTO", emit_log=True)
+
+    def _on_step_continue_clicked(self) -> None:
+        with self._step_gate_lock:
+            pending = str(self._step_pending_phase or "").strip()
+            active = bool(self._step_wait_active)
+            self._step_wait_event.set()
+        if active:
+            self._emit_log(f"[STEP] continue_requested phase={pending or 'unknown'}")
+
+    def _step_wait_for_phase(self, phase: str, *, flow: str = "", position=None, decision: str = "", object_position=None) -> None:
+        if self._step_mode != "STEP_BY_STEP":
+            return
+        phase_name = str(phase or "").strip() or "UNKNOWN_PHASE"
+        flow_name = str(flow or "general").strip() or "general"
+        display_phase = phase_name.split(".", 1)[-1].strip().upper()
+        next_phase = self._step_predict_next_phase(flow_name, display_phase)
+
+        with self._step_gate_lock:
+            self._step_pending_flow = flow_name
+            self._step_pending_phase = phase_name
+            self._step_current_phase = display_phase
+            self._step_next_phase = next_phase
+            self._step_decision = str(decision or "").strip()
+            phase_pos = None
+            if isinstance(position, (list, tuple)) and len(position) >= 3:
+                try:
+                    phase_pos = (float(position[0]), float(position[1]), float(position[2]))
+                except Exception:
+                    phase_pos = None
+            self._step_phase_position = phase_pos
+            obj_pos = None
+            if isinstance(object_position, (list, tuple)) and len(object_position) >= 3:
+                try:
+                    obj_pos = (float(object_position[0]), float(object_position[1]), float(object_position[2]))
+                except Exception:
+                    obj_pos = None
+            self._step_object_position = obj_pos
+            self._step_record_history(flow_name, display_phase, position)
+            self._step_wait_active = True
+            self._step_wait_event.clear()
+
+        self._emit_log(f"[STEP] pending flow={flow_name} phase={phase_name}")
+        self.signal_run_ui.emit(self._step_window_set_waiting)
+
+        reason = "button"
+        while True:
+            if self._closing:
+                reason = "closing"
+                break
+            if self._step_mode != "STEP_BY_STEP":
+                reason = "mode_auto"
+                break
+            if self._step_wait_event.wait(timeout=0.1):
+                reason = "button"
+                break
+
+        with self._step_gate_lock:
+            self._step_wait_active = False
+            self._step_pending_phase = ""
+            self._step_wait_event.clear()
+
+        if self._step_mode == "STEP_BY_STEP":
+            self.signal_run_ui.emit(self._step_window_set_waiting)
+        else:
+            self.signal_run_ui.emit(self._step_window_hide)
+        self._emit_log(f"[STEP] release flow={flow_name} phase={phase_name} reason={reason}")
 
     def _on_debug_motion_button(self) -> None:
         with self._debug_motion_lock:
@@ -6003,9 +6658,12 @@ class ControlPanelV2(QMainWindow):
                 break
             q.append(pos_map[joint])
         if len(q) == 6:
-            pos, rot = fk_ur5(q)
+            pos_model, rot_model = fk_ur5(q)
+            ee_frame = str(
+                getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center"
+            ).strip() or "rg2_pinch_center"
+            (bx, by, bz), rot = _fk_tool0_to_ee_base_link(pos_model, rot_model, ee_frame)
             roll, pitch, yaw = _rot_to_rpy(rot)
-            bx, by, bz = float(pos[0]), float(pos[1]), float(pos[2])
             wx, wy, wz = base_to_world(bx, by, bz)
             self._last_tcp_base = (bx, by, bz)
             self._last_tcp_world = (wx, wy, wz)
@@ -6065,7 +6723,11 @@ class ControlPanelV2(QMainWindow):
                     joint_parts.append(f"{joint}={pos_map[joint]:.4f}m")
             pose_txt = "tcp xyz=-- rpy=--"
             if len(q) == 6:
-                pos, rot = fk_ur5(q)
+                pos_model, rot_model = fk_ur5(q)
+                ee_frame = str(
+                    getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center"
+                ).strip() or "rg2_pinch_center"
+                pos, rot = _fk_tool0_to_ee_base_link(pos_model, rot_model, ee_frame)
                 roll, pitch, yaw = _rot_to_rpy(rot)
                 pose_txt = (
                     f"tcp xyz=({pos[0]:.3f},{pos[1]:.3f},{pos[2]:.3f}) "
@@ -13573,6 +14235,8 @@ class ControlPanelV2(QMainWindow):
 
     def _run_pick_demo(self):
         """Ejecuta la ruta directa del demo sobre el objeto seleccionado."""
+        self._log_button("Agarre Objeto (Directo)")
+        self._step_capture_start_pose("Agarre Objeto (Directo)")
         run_pick_demo(self)
 
     def _set_direct2_visual_target(self, joints: Optional[List[float]], label: str = "") -> None:
@@ -13672,10 +14336,13 @@ class ControlPanelV2(QMainWindow):
     def _run_pick_demo2(self):
         """Ejecuta una secuencia fija basada en la Pose Buena de pick_demo."""
         self._log_button("Agarre Objeto (Directo2)")
+        self._step_capture_start_pose("Agarre Objeto (Directo2)")
         self._direct2_controller.request_run(source="gui_button")
 
     def _run_pick_object(self):
         """Ejecuta pick & place del objeto seleccionado hacia la cesta."""
+        self._log_button("Agarre Objeto (MoveIT)")
+        self._step_capture_start_pose("Agarre Objeto (MoveIT)")
         run_pick_object(self)
     
     def _get_object_world_position(self, obj_name: str) -> Optional[tuple]:
@@ -16289,6 +16956,10 @@ class ControlPanelV2(QMainWindow):
             event.accept()
             return
         self._closing = True
+        self._set_step_mode("AUTO", emit_log=False)
+        self._step_wait_event.set()
+        if self._step_window is not None:
+            self._step_window.close()
         self._emit_log("[TRACE] Shutdown: begin")
         self._bridge_running = False
         self._gz_running = False
