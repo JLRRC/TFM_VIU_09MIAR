@@ -218,6 +218,15 @@ def _sample_at_or_after(samples: list[dict], t: float) -> Optional[dict]:
     return None
 
 
+def _sample_at_or_before(samples: list[dict], t: float) -> Optional[dict]:
+    selected = None
+    for sample in samples:
+        if _time_of(sample) > float(t):
+            break
+        selected = sample
+    return selected
+
+
 def _iter_window(samples: list[dict], start: float, end: float) -> Iterable[dict]:
     for sample in samples:
         ts = _time_of(sample)
@@ -423,7 +432,11 @@ def _closure_corridor(sample: Optional[dict]) -> dict:
     }
 
 
-def _release_destination_error(samples: list[dict], t_detach: Optional[float]) -> tuple[Optional[float], str]:
+def _release_destination_error(
+    samples: list[dict],
+    t_open: Optional[float],
+    t_detach: Optional[float],
+) -> tuple[Optional[float], str]:
     final_sample = None
     if t_detach is None:
         final_sample = samples[-1] if samples else None
@@ -439,14 +452,35 @@ def _release_destination_error(samples: list[dict], t_detach: Optional[float]) -
     obj = _object_pose(final_sample)
     if not obj:
         return None, "missing_final_object_pose"
-    err = _norm3(
+    basket_err = _norm3(
         (
             float(obj["x"]) - BASKET_DROP[0],
             float(obj["y"]) - BASKET_DROP[1],
             float(obj["z"]) - BASKET_DROP[2],
         )
     )
-    return err, source
+
+    release_reference_sample = None
+    if t_open is not None:
+        release_reference_sample = _sample_at_or_before(samples, t_open)
+    if release_reference_sample is None and t_detach is not None:
+        release_reference_sample = _sample_at_or_before(samples, t_detach)
+
+    release_reference = None
+    if release_reference_sample is not None:
+        release_reference = _extract_translation(
+            (release_reference_sample.get("tf") or {}).get("world->rg2_pinch_center")
+        )
+
+    if release_reference is not None:
+        release_dx = float(obj["x"]) - float(release_reference["x"])
+        release_dy = float(obj["y"]) - float(release_reference["y"])
+        release_dxy = math.sqrt((release_dx * release_dx) + (release_dy * release_dy))
+        release_below = float(obj["z"]) <= (float(release_reference["z"]) + 0.10)
+        if release_below:
+            return release_dxy, f"{source}->release_reference_xy"
+
+    return basket_err, source
 
 
 def _verdict(value: Optional[float], ok: float, reserve: float, lower_is_better: bool = True) -> str:
@@ -507,7 +541,7 @@ def _analyze_run(spec: RunSpec) -> dict:
         mode=spec.mode,
         tcp_key="world->rg2_pinch_center",
     )
-    release_error, release_source = _release_destination_error(samples, t_detach)
+    release_error, release_source = _release_destination_error(samples, t_open, t_detach)
 
     attach_latency = None
     if t_attach is not None and t_close is not None:

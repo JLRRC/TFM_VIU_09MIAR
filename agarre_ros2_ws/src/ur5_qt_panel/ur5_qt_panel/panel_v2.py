@@ -4473,9 +4473,22 @@ class ControlPanelV2(QMainWindow):
     def _pick_demo_remote_ready_status(self) -> Tuple[bool, str, bool]:
         if getattr(self, "_script_motion_active", False) or getattr(self, "_manual_inflight", False):
             return False, "ejecución en curso", False
+        if not bool(getattr(self, "_objects_release_done", False)):
+            return False, "release de objetos pendiente", True
+        if not bool(getattr(self, "_objects_settled", False)):
+            return False, "objetos no estabilizados", True
         ok, reason = pick_ui_status(self)
         if not ok:
-            return False, str(reason or "pick_ui_no_listo"), True
+            reason_txt = str(reason or "pick_ui_no_listo")
+            if reason_txt != "camera_warmup" or not bool(
+                getattr(self, "btn_pick_demo", None) and self.btn_pick_demo.isEnabled()
+            ):
+                return False, reason_txt, True
+            self._emit_log_throttled(
+                "PICK_REMOTE:camera_warmup_bypass",
+                "[PICK][REMOTE][DIRECT] camera_warmup tolerado: btn_pick_demo ya habilitado",
+                min_interval=2.0,
+            )
         controllers_ok, controllers_reason = self._controllers_ready()
         if not controllers_ok:
             return False, str(controllers_reason or "controladores no listos"), True
@@ -4493,6 +4506,35 @@ class ControlPanelV2(QMainWindow):
             )
             return False, reason, False
         return True, "", False
+
+    def _auto_release_drop_objects_when_ready(self) -> None:
+        if not self._auto_release_drop_objects or self._closing or not self._gz_running:
+            return
+        if self._objects_release_done or self._detach_inflight:
+            return
+        if self._pose_info_ok and self._sync_external_release_state():
+            self._emit_log("[PHYSICS] Auto-release DROP omitido: escena ya reconciliada en mesa.")
+            return
+        now = time.monotonic()
+        bridge_age = (now - self._bridge_start_ts) if self._bridge_start_ts > 0.0 else 0.0
+        pose_ready_live = False
+        try:
+            pose_ready_live = bool(self._pose_info_ready())
+        except Exception:
+            pose_ready_live = False
+        if pose_ready_live and not self._pose_info_ok:
+            try:
+                self._update_pose_info_status()
+            except Exception:
+                pass
+            if self._pose_info_ok and self._sync_external_release_state():
+                self._emit_log("[PHYSICS] Auto-release DROP omitido: escena reconciliada tras pose/info.")
+                return
+        if not self._pose_info_ok and bridge_age < max(2.0, float(TF_INIT_GRACE_SEC)):
+            QTimer.singleShot(400, self._auto_release_drop_objects_when_ready)
+            return
+        self._emit_log("[PHYSICS] Auto-release DROP: ejecutando release_objects tras espera inicial.")
+        self._release_objects()
 
     def _require_ready_vision(self, action: str) -> bool:
         return self._safety.require_ready_vision(action)
@@ -4754,6 +4796,16 @@ class ControlPanelV2(QMainWindow):
         if age > 2.0:
             return False, f"{topic}:stale age={age:.2f}s"
         return True, f"topic={topic} age={age:.2f}s names={len(names)}"
+
+    def _bridge_transport_detected(self) -> bool:
+        # A pose-only bridge (gz_pose_bridge) is not enough for DIRECTO; require
+        # joint_states as well before treating the full ROS bridge as active.
+        if self._proc_alive(self.bridge_proc):
+            return True
+        if not self._pose_info_active():
+            return False
+        js_ok, _js_reason = self._joint_states_status()
+        return bool(js_ok)
 
     def _bridge_ready_status(self) -> Tuple[bool, str]:
         if not self._bridge_running:
@@ -5722,7 +5774,7 @@ class ControlPanelV2(QMainWindow):
         QTimer.singleShot(300, self._refresh_camera_topics)
         QTimer.singleShot(600, self._auto_connect_camera)
         if self._auto_release_drop_objects:
-            QTimer.singleShot(250, self._release_objects)
+            QTimer.singleShot(250, self._auto_release_drop_objects_when_ready)
         else:
             QTimer.singleShot(600, lambda: self._maybe_hold_drop_objects("bridge"))
             QTimer.singleShot(700, lambda: self._attach_drop_objects("bridge"))
@@ -7363,7 +7415,7 @@ class ControlPanelV2(QMainWindow):
         clock_ok, _ = self._clock_status()
         gz_state = self._gazebo_state()
         gz_ok = gz_state == "GAZEBO_READY"
-        br_ok = self._bridge_running or self._pose_info_active()
+        br_ok = self._bridge_transport_detected()
         bag_ok = self._rosbag_running()
         ctrl_ok = self._ros2_control_available()
         moveit_ok = self._moveit_ready()
@@ -7396,9 +7448,7 @@ class ControlPanelV2(QMainWindow):
             clock_ok, _ = self._clock_status()
             gz_state = self._gazebo_state()
             gz_ok = gz_state == "GAZEBO_READY"
-            _br_self = self._bridge_running
-            _pi_active = self._pose_info_active()
-            br_ok = _br_self or _pi_active
+            br_ok = self._bridge_transport_detected()
             bag_ok = self._rosbag_running()
             ctrl_ok = self._ros2_control_available() if br_ok else False
             moveit_ok = self._moveit_ready()

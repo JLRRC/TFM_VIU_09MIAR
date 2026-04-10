@@ -38,6 +38,9 @@ def main() -> int:
     app = QApplication(sys.argv)
     panel = ControlPanelV2()
     panel.show()
+    retry_timer = QTimer(panel)
+    retry_timer.setInterval(RETRY_MS)
+    retry_timer.setSingleShot(False)
     state = {
         "attempts": 0,
         "triggered": False,
@@ -47,6 +50,9 @@ def main() -> int:
         "gz_stop_requested": False,  # True after clicking btn_gz_stop to clear DEGRADED
         "gz_stop_attempt": 0,        # counts how many times we tried to stop Gazebo
         "bridge_requested": False,
+        "release_requested": False,
+        "selection_staged": False,
+        "script_motion_guard_logged": False,
     }
 
     def _stamp() -> str:
@@ -67,6 +73,7 @@ def main() -> int:
         )
         if still_active or demo_done:
             state["confirmed"] = True
+            retry_timer.stop()
             print(
                 f"[{_stamp()}] [AUDIT][DIRECTO] trigger_confirmed "
                 f"demo_done={str(demo_done).lower()}",
@@ -79,12 +86,23 @@ def main() -> int:
                 flush=True,
             )
             state["triggered"] = False
-            if state["attempts"] < MAX_ATTEMPTS:
-                QTimer.singleShot(RETRY_MS, _trigger)
 
     def _trigger() -> None:
         if state["triggered"]:
             return
+        # Guard against re-entrant calls: if the panel already has script_motion_active
+        # from a concurrent trigger, avoid double-fire but do not latch the helper
+        # as triggered unless we have actually observed request_run ok=true.
+        if bool(getattr(panel, "_script_motion_active", False)):
+            if not state["script_motion_guard_logged"]:
+                print(
+                    f"[{_stamp()}] [AUDIT][DIRECTO] script_motion_active_guard "
+                    "helper_waiting_for_script_to_clear",
+                    flush=True,
+                )
+                state["script_motion_guard_logged"] = True
+            return
+        state["script_motion_guard_logged"] = False
         state["attempts"] += 1
         gz_state = "UNKNOWN"
         try:
@@ -95,13 +113,37 @@ def main() -> int:
         gz_enabled = bool(getattr(panel, "btn_gz_start", None) and panel.btn_gz_start.isEnabled())
         bridge_enabled = bool(getattr(panel, "btn_bridge_start", None) and panel.btn_bridge_start.isEnabled())
         btn_enabled = bool(getattr(panel, "btn_pick_demo", None) and panel.btn_pick_demo.isEnabled())
+        try:
+            panel._selected_object = "pick_demo"
+            panel._selection_last_user_name = "pick_demo"
+            panel._selection_last_user_ts = time.time()
+            if not state["selection_staged"]:
+                panel._emit_log("[AUDIT][DIRECTO] offscreen helper staged selection: pick_demo")
+                state["selection_staged"] = True
+        except Exception:
+            pass
         ready, reason = panel._manual_control_status()
+        remote_ready = bool(ready)
+        remote_reason = reason or "ok"
+        remote_waitable = False
+        remote_ready_status = getattr(panel, "_pick_demo_remote_ready_status", None)
+        if callable(remote_ready_status):
+            try:
+                remote_ready, remote_reason, remote_waitable = remote_ready_status()
+            except Exception as exc:
+                remote_ready = False
+                remote_reason = f"remote_ready_error:{exc}"
+                remote_waitable = False
+        remote_reason_norm = str(remote_reason or "").strip().lower()
         selected = str(getattr(panel, "_selected_object", None) or "none")
         user_selected = str(getattr(panel, "_selection_last_user_name", None) or "none")
         print(
             f"[{_stamp()}] [AUDIT][DIRECTO] attempt={state['attempts']} "
             f"ready={str(bool(ready)).lower()} "
             f"reason={reason or 'ok'} "
+            f"remote_ready={str(bool(remote_ready)).lower()} "
+            f"remote_reason={remote_reason or 'ok'} "
+            f"remote_waitable={str(bool(remote_waitable)).lower()} "
             f"gz_state={gz_state} "
             f"bridge_running={str(bridge_running).lower()} "
             f"gz_enabled={str(gz_enabled).lower()} "
@@ -111,8 +153,51 @@ def main() -> int:
             f"user_selected={user_selected}",
             flush=True,
         )
+        if (not ready) and gz_state == "GAZEBO_READY" and str(reason or "").startswith("gazebo_not_ready"):
+            print(
+                f"[{_stamp()}] [AUDIT][DIRECTO] gate_mismatch "
+                f"gz_state={gz_state} reason={reason} btn_enabled={str(btn_enabled).lower()}",
+                flush=True,
+            )
         gz_stop_enabled = bool(getattr(panel, "btn_gz_stop", None) and panel.btn_gz_stop.isEnabled())
-        if not ready:
+        # If the button is enabled but remote_ready is False due to a waitable condition
+        # (e.g. settle timeout, objects not stabilised) that has persisted for many
+        # attempts, override remote_ready so we can still fire.  The real UI button is
+        # enabled, meaning the panel's hard gate already allows clicking.
+        _REMOTE_WAITABLE_OVERRIDE_ATTEMPTS = 6
+        if (
+            ready
+            and btn_enabled
+            and (not remote_ready)
+            and remote_waitable
+            and state["attempts"] >= _REMOTE_WAITABLE_OVERRIDE_ATTEMPTS
+        ):
+            print(
+                f"[{_stamp()}] [AUDIT][DIRECTO] remote_waitable_override "
+                f"attempts={state['attempts']} remote_reason={remote_reason} btn_enabled=true",
+                flush=True,
+            )
+            remote_ready = True
+        if (not ready) or (not remote_ready) or (not btn_enabled):
+            if (
+                ready
+                and gz_state == "GAZEBO_READY"
+                and bridge_running
+                and remote_reason_norm == "release de objetos pendiente"
+                and not bool(getattr(panel, "_detach_inflight", False))
+                and not state["release_requested"]
+            ):
+                release_btn = getattr(panel, "btn_release_objects", None)
+                if release_btn is not None and release_btn.isEnabled():
+                    panel._emit_log("[AUDIT][DIRECTO] offscreen helper clicking btn_release_objects")
+                    release_btn.click()
+                    state["release_requested"] = True
+                else:
+                    release_fn = getattr(panel, "_release_objects", None)
+                    if callable(release_fn):
+                        panel._emit_log("[AUDIT][DIRECTO] offscreen helper invoking _release_objects")
+                        release_fn()
+                        state["release_requested"] = True
             if gz_state in ("GAZEBO_OFF", "GAZEBO_DEGRADED") and gz_enabled and not state["gz_requested"]:
                 panel._emit_log(f"[AUDIT][DIRECTO] offscreen helper clicking btn_gz_start (gz_state={gz_state})")
                 panel.btn_gz_start.click()
@@ -150,26 +235,14 @@ def main() -> int:
                 panel._emit_log("[AUDIT][DIRECTO] offscreen helper clicking btn_bridge_start")
                 panel.btn_bridge_start.click()
                 state["bridge_requested"] = True
-            if state["attempts"] < MAX_ATTEMPTS:
-                QTimer.singleShot(RETRY_MS, _trigger)
+            if state["attempts"] >= MAX_ATTEMPTS:
+                retry_timer.stop()
             return
         try:
-            # Simulate user selection of pick_demo (required by run_pick_demo guard).
-            # A real user would click the object in the camera image; we set the
-            # attributes directly since there is no camera in offscreen mode.
-            panel._selected_object = "pick_demo"
-            panel._selection_last_user_name = "pick_demo"
-            panel._selection_last_user_ts = time.time()
-            panel._emit_log("[AUDIT][DIRECTO] offscreen helper set selection: pick_demo")
             if btn_enabled:
                 panel._emit_log("[AUDIT][DIRECTO] offscreen helper clicking btn_pick_demo")
-            else:
-                panel._emit_log("[AUDIT][DIRECTO] offscreen helper invoking _run_pick_demo (button disabled)")
             before = bool(getattr(panel, "_script_motion_active", False))
-            if btn_enabled:
-                panel.btn_pick_demo.click()
-            else:
-                panel._run_pick_demo()
+            panel.btn_pick_demo.click()
             ok = bool(getattr(panel, "_script_motion_active", False)) and not before
             message = "started" if ok else "no_script_motion_active"
             print(
@@ -180,17 +253,30 @@ def main() -> int:
             if ok:
                 state["triggered"] = True
                 state["trigger_ts"] = time.monotonic()
+                retry_timer.stop()
                 # Schedule a confirmation check: if DIRECTO aborts within TRIGGER_SETTLE_SEC
                 # we will re-arm and try again.
                 QTimer.singleShot(int(TRIGGER_SETTLE_SEC * 1000), _check_trigger_confirmed)
-            elif state["attempts"] < MAX_ATTEMPTS:
-                QTimer.singleShot(RETRY_MS, _trigger)
+            elif state["attempts"] >= MAX_ATTEMPTS:
+                retry_timer.stop()
         except Exception as exc:
             print(f"[{_stamp()}] [AUDIT][DIRECTO] invoke_error={exc}", flush=True)
-            if state["attempts"] < MAX_ATTEMPTS:
-                QTimer.singleShot(RETRY_MS, _trigger)
+            if state["attempts"] >= MAX_ATTEMPTS:
+                retry_timer.stop()
+
+    def _trigger_safe() -> None:
+        try:
+            _trigger()
+        except Exception as exc:
+            print(f"[{_stamp()}] [AUDIT][DIRECTO] trigger_error={exc}", flush=True)
+
+    def _start_polling() -> None:
+        _trigger_safe()
+        if not state["confirmed"] and state["attempts"] < MAX_ATTEMPTS and not retry_timer.isActive():
+            retry_timer.start()
 
     def _close() -> None:
+        retry_timer.stop()
         panel._emit_log("[AUDIT][DIRECTO] offscreen helper closing panel")
         panel.close()
 
@@ -201,7 +287,8 @@ def main() -> int:
         if sig is not None:
             signal.signal(sig, _handle_signal)
 
-    QTimer.singleShot(CLICK_DELAY_MS, _trigger)
+    retry_timer.timeout.connect(_trigger_safe)
+    QTimer.singleShot(CLICK_DELAY_MS, _start_polling)
     QTimer.singleShot(EXIT_AFTER_MS, _close)
     return app.exec_()
 

@@ -20,7 +20,10 @@ OUT_DIR="${OUT_DIR:-$AUDIT_DIR/$RUN_ID}"
 
 mkdir -p "$OUT_DIR"
 
-# Cargar entorno ROS 2
+# Cargar entorno ROS 2 base + overlay del workspace.
+if [[ -f /opt/ros/jazzy/setup.bash ]]; then
+    source /opt/ros/jazzy/setup.bash
+fi
 if [[ -f "$WS_DIR/install/setup.bash" ]]; then
     source "$WS_DIR/install/setup.bash"
 fi
@@ -44,9 +47,15 @@ echo "[ORCH] Salida: $OUT_DIR"
 echo "[ORCH] Limpiando procesos residuales..."
 pkill -f "gz sim" 2>/dev/null || true
 pkill -f "gz_server" 2>/dev/null || true
+pkill -f "ros_gz_bridge" 2>/dev/null || true
+pkill -f "parameter_bridge" 2>/dev/null || true
 pkill -f "ros2_control_node" 2>/dev/null || true
+pkill -f "controller_manager" 2>/dev/null || true
 pkill -f "spawner" 2>/dev/null || true
-sleep 3
+pkill -f "robot_state_publisher" 2>/dev/null || true
+sleep 4
+# Limpiar shared memory residual de FastDDS/CycloneDDS (evita 'Failed init_port' errors)
+rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
 echo "[ORCH] Limpieza completada"
 
 # --- Lanzar el runner del panel offscreen ---
@@ -57,6 +66,8 @@ env \
     PANEL_SKIP_CLEANUP=1 \
     PANEL_CAMERA_REQUIRED=0 \
     PANEL_FATAL_STOPS_ALL=0 \
+    PANEL_GZ_HEALTH_FREEZE_SEC=30 \
+    PANEL_ALLOW_UNSETTLED_ON_TIMEOUT=1 \
     PANEL_TF_INIT_GRACE_SEC=300 \
     PANEL_PICK_DEMO_MAX_PROMOTED_STABLE_AGE_SEC=300 \
     PANEL_PICK_DEMO_MOVE_SEC=15 \

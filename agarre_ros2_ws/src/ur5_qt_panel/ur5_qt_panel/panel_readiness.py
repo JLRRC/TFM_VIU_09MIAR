@@ -5,6 +5,8 @@
 """Readiness helpers for panel subsystems."""
 from __future__ import annotations
 
+import time
+
 from typing import Optional, Tuple
 
 from .panel_utils import (
@@ -42,6 +44,23 @@ def manual_control_status(panel) -> Tuple[bool, str]:
         if not (clock_ok and pose_ok):
             return False, "Gazebo no listo"
     if not panel._controllers_ok:
+        live_check = getattr(panel, "_controllers_ready", None)
+        if callable(live_check):
+            try:
+                live_ok, live_reason = live_check()
+            except Exception:
+                live_ok, live_reason = False, ""
+            else:
+                if live_ok:
+                    panel._controllers_ok = True
+                    panel._controllers_reason = str(live_reason or "ok")
+                    if hasattr(panel, "_controllers_state"):
+                        panel._controllers_state = "READY"
+                    if hasattr(panel, "_last_controller_check"):
+                        panel._last_controller_check = time.time()
+                    return True, ""
+                if live_reason:
+                    panel._controllers_reason = str(live_reason)
         return False, controllers_not_ready_reason(panel)
     return True, ""
 
@@ -65,6 +84,25 @@ def pose_info_ready_status(panel) -> Tuple[bool, str]:
         return _managed_ready_status(panel)
     if panel._pose_info_ok:
         return True, ""
+    live_refresh = getattr(panel, "_update_pose_info_status", None)
+    if callable(live_refresh):
+        try:
+            live_refresh()
+        except Exception:
+            pass
+        if panel._pose_info_ok:
+            return True, ""
+    live_check = getattr(panel, "_pose_info_ready", None)
+    if callable(live_check):
+        try:
+            live_ok = bool(live_check())
+        except Exception:
+            live_ok = False
+        if live_ok:
+            panel._pose_info_ok = True
+            if hasattr(panel, "_pose_info_ever_ok"):
+                panel._pose_info_ever_ok = True
+            return True, ""
     return False, pose_info_not_ready_reason(panel)
 
 

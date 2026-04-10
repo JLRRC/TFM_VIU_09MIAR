@@ -134,6 +134,38 @@ def start_world_tf_publisher(panel, world_name: str) -> None:
     except Exception as exc:
         panel._log_error(f"[TF] Error iniciando world_tf_publisher: {exc}")
 
+def start_attach_backend(panel, world_name: str) -> None:
+    """Launch gripper_attach_backend if not already running."""
+    if getattr(panel, "_attach_backend_proc", None) is not None:
+        proc = panel._attach_backend_proc
+        if proc.poll() is None:
+            return  # already running
+    try:
+        ensure_dir(LOG_DIR)
+        ab_log = os.path.join(LOG_DIR, "attach_backend.log")
+        rotate_log(ab_log)
+        max_dist = os.environ.get("ATTACH_BACKEND_MAX_DIST_M", "0.06").strip()
+        demo_transport = os.environ.get("ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS", "pick_demo").strip()
+        gz_env = build_gz_env(resolve_gz_partition(getattr(panel, "gz_partition", "")))
+        cmd_core = with_line_buffer(
+            "ros2 run ur5_tools gripper_attach_backend "
+            "--ros-args "
+            "-p use_sim_time:=true "
+            "-p tcp_frame:=rg2_pinch_center "
+            f"-p attach_max_dist_m:={max_dist} "
+            f"-p demo_transport_objects:=[{demo_transport}] "
+            f"-p world_name:={shlex.quote(world_name)}"
+        )
+        cmd = bash_preamble(panel.ws_dir) + gz_env + f"export ROS_LOG_DIR='{LOG_DIR}/ros' ; " + f"{cmd_core} > '{ab_log}' 2>&1"
+        panel._attach_backend_proc = subprocess.Popen(
+            ["bash", "-lc", cmd],
+            preexec_fn=os.setsid,
+        )
+        panel._emit_log("[BRIDGE] gripper_attach_backend lanzado")
+    except Exception as exc:
+        panel._log_error(f"[BRIDGE] Error iniciando gripper_attach_backend: {exc}")
+
+
 def start_gz_pose_bridge(panel, world_name: str) -> None:
     if panel.gz_pose_proc is not None and panel.gz_pose_proc.poll() is None:
         return
@@ -461,10 +493,15 @@ def start_bridge(panel):
     if not panel._ros_worker_started:
         panel._ensure_ros_worker_started()
     world_name = read_world_name(panel.world_combo.currentText().strip()) or GZ_WORLD
-    pose_topic = f"/world/{world_name}/pose/info"
-    if panel.ros_worker.node_ready() and panel.ros_worker.topic_has_publishers(pose_topic):
-        panel._log_warning("Bridge ya activo (pose/info con publishers)")
-        panel._set_status("Bridge ya activo (pose/info detectado)", error=False)
+    bridge_detected = False
+    if panel.ros_worker.node_ready():
+        bridge_detected = bool(
+            getattr(panel, "_bridge_transport_detected", None)
+            and panel._bridge_transport_detected()
+        )
+    if bridge_detected:
+        panel._log_warning("Bridge ya activo (pose+joint_states detectados)")
+        panel._set_status("Bridge ya activo (bridge ROS detectado)", error=False)
         panel._bridge_running = True
         set_led(panel.led_bridge, "on")
         # Inicializar suscripciones y cámara sin activar deadlines de TF
@@ -567,6 +604,7 @@ def start_bridge(panel):
             panel.signal_refresh_controls.emit()
             panel._start_world_tf_publisher(world_name)
             start_gz_pose_bridge(panel, world_name)
+            start_attach_backend(panel, world_name)
             panel._spawn_controllers_async()
             panel.signal_bridge_ready.emit()
         except Exception as exc:
@@ -589,6 +627,7 @@ def stop_bridge(panel):
     panel._kill_proc(panel.bridge_proc, "parameter_bridge")
     panel._kill_proc(panel.rsp_proc, "robot_state_publisher")
     panel._kill_proc(panel.gz_pose_proc, "gz_pose_bridge")
+    panel._kill_proc(getattr(panel, "_attach_backend_proc", None), "gripper_attach_backend")
     panel._stop_world_tf_publisher()
     panel.rsp_proc = None
     panel._kill_proc(panel.release_service_proc, "release_objects_service")

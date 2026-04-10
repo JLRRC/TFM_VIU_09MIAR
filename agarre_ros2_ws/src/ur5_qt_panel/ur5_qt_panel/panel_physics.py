@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import json
+import math
+import os
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -46,6 +48,7 @@ OBJECT_SETTLE_WINDOW_SEC = 1.0
 OBJECT_SETTLE_POLL_SEC = 0.6
 OBJECT_SETTLE_TIMEOUT_SEC = 10.0
 OBJECT_SETTLE_XY_EPS = 0.002
+OBJECT_SETTLE_GROSS_Z_JUMP_M = 0.50
 SETTLE_PATTERNS = ("box_", "cyl_", "cross_")
 
 
@@ -86,6 +89,47 @@ def _parse_sdf_gravity(world_path: str) -> Tuple[float, float, float]:
 class PanelPhysics:
     def __init__(self, panel: "ControlPanelV2") -> None:
         self._panel = panel
+
+    def _settle_position_with_stable_fallback(
+        self,
+        name: str,
+        raw_pos: Tuple[float, float, float],
+    ) -> Tuple[float, float, float]:
+        p = self._panel
+        stable_pos = get_object_positions().get(name)
+        if stable_pos is None:
+            return raw_pos
+        try:
+            sx, sy, sz = (float(stable_pos[0]), float(stable_pos[1]), float(stable_pos[2]))
+        except Exception:
+            return raw_pos
+        divergence_tol_m = max(
+            0.05,
+            float(
+                os.environ.get(
+                    "PANEL_PICK_DEMO_OBJECT_SOURCE_DIVERGENCE_TOL_M",
+                    "0.150",
+                )
+                or 0.150
+            ),
+        )
+        dx = float(raw_pos[0]) - sx
+        dy = float(raw_pos[1]) - sy
+        dz = float(raw_pos[2]) - sz
+        div_m = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if div_m <= divergence_tol_m or dz <= OBJECT_SETTLE_GROSS_Z_JUMP_M:
+            return raw_pos
+        p._emit_log_throttled(
+            f"PHYSICS:SETTLE_DIV:{name}",
+            "[PHYSICS][SETTLE] "
+            f"model={name} "
+            f"raw_world=({float(raw_pos[0]):.3f},{float(raw_pos[1]):.3f},{float(raw_pos[2]):.3f}) "
+            f"stable_world=({sx:.3f},{sy:.3f},{sz:.3f}) "
+            f"delta_m={div_m:.3f} z_jump={dz:.3f} "
+            "fallback=stable_object_cache",
+            min_interval=1.5,
+        )
+        return (sx, sy, sz)
 
     def _footprint_radius(self, name: str) -> Optional[float]:
         p = self._panel
@@ -146,6 +190,17 @@ class PanelPhysics:
                 p._emit_log("[PHYSICS][SETTLE] gating: pose_info_ready=false, settle NO iniciado")
                 p._last_settle_gating_log = now
             p._update_pose_info_status()
+            if p._gz_running and not p._closing:
+                QTimer.singleShot(
+                    int(max(0.25, POSE_INFO_POLL_SEC) * 1000),
+                    lambda: (
+                        p._gz_running
+                        and not p._closing
+                        and not p._settle_worker_active
+                        and not p._objects_settled
+                        and p.signal_start_objects_settle_watch.emit()
+                    ),
+                )
             return
         p._ensure_pose_subscription()
         p._objects_settled = False
@@ -367,9 +422,12 @@ class PanelPhysics:
                 if name not in targets:
                     continue
                 position = pose.get("position") or {}
-                x = float(position.get("x") or 0.0)
-                y = float(position.get("y") or 0.0)
-                z = float(position.get("z") or 0.0)
+                raw_pos = (
+                    float(position.get("x") or 0.0),
+                    float(position.get("y") or 0.0),
+                    float(position.get("z") or 0.0),
+                )
+                x, y, z = self._settle_position_with_stable_fallback(name, raw_pos)
                 prev = last_positions.get(name)
                 dz = z - prev[2] if prev else 0.0
                 dx = x - prev[0] if prev else 0.0

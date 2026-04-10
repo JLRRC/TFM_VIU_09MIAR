@@ -737,25 +737,63 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
     """Confirma por posicion que el objeto demo esta en la cesta."""
     start = time.monotonic()
     basket_world = tuple(float(v) for v in BASKET_DROP)
+    release_reference_world = _pick_demo_tuple3(
+        getattr(panel, "_pick_demo_release_reference_world", None)
+    )
     world_frame = str(
         getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
             WORLD_FRAME or "world"
         )
     ).strip() or "world"
-    base_frame = str(getattr(panel, "_base_frame_effective", "") or BASE_FRAME)
+    try:
+        base_frame = str(panel._business_base_frame() or BASE_FRAME or "base_link")
+    except Exception:
+        base_frame = str(getattr(panel, "_base_frame_effective", "") or BASE_FRAME or "base_link")
     basket_base, _ = transform_point_to_frame(
         basket_world,
         base_frame,
         source_frame=world_frame,
     )
+    release_reference_base = None
+    if release_reference_world is not None:
+        release_reference_base, _ = transform_point_to_frame(
+            release_reference_world,
+            base_frame,
+            source_frame=world_frame,
+        )
+
+    def _fresh_demo_world() -> tuple[float, float, float] | None:
+        try:
+            if (
+                getattr(panel, "_ros_worker_started", False)
+                and getattr(panel, "ros_worker", None) is not None
+            ):
+                pose_map, _ = panel.ros_worker.pose_snapshot()
+                live = (pose_map or {}).get(PICK_DEMO_OBJECT_NAME)
+                if live is not None and len(live) >= 3:
+                    return (float(live[0]), float(live[1]), float(live[2]))
+        except Exception:
+            pass
+        return None
+
     xy_tol_world = 0.35
     z_tol_world = 0.35
     xy_tol_base = 0.30
     z_tol_base = 0.25
+    release_xy_tol_world = 0.20
+    release_xy_tol_base = 0.20
+    release_z_headroom_world = 0.10
+    release_z_headroom_base = 0.10
     while (time.monotonic() - start) <= timeout_sec:
         st = get_object_state(PICK_DEMO_OBJECT_NAME)
         if st is not None:
-            xw, yw, zw = (float(st.position[0]), float(st.position[1]), float(st.position[2]))
+            physical_world = _pick_demo_tuple3(_fresh_demo_world())
+            state_world = _pick_demo_tuple3(getattr(st, "position", None))
+            obj_world = physical_world or state_world
+            if obj_world is None:
+                time.sleep(0.2)
+                continue
+            xw, yw, zw = (float(obj_world[0]), float(obj_world[1]), float(obj_world[2]))
 
             # Criterio en mundo (pose state suele almacenarse en WORLD_FRAME).
             dxw = xw - basket_world[0]
@@ -768,6 +806,7 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
             base_ok = False
             dxy_base = float("inf")
             dz_base = float("inf")
+            obj_base = None
             if basket_base:
                 obj_base, _ = transform_point_to_frame(
                     (xw, yw, zw),
@@ -781,14 +820,46 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
                     dz_base = abs(float(obj_base[2]) - float(basket_base[2]))
                     base_ok = dxy_base <= xy_tol_base and dz_base <= z_tol_base
 
+            release_xy_ok_world = False
+            release_xy_ok_base = False
+            release_dxy_world = float("inf")
+            release_dxy_base = float("inf")
+            release_below_world = False
+            release_below_base = False
+            if release_reference_world is not None:
+                release_dxw = xw - float(release_reference_world[0])
+                release_dyw = yw - float(release_reference_world[1])
+                release_dxy_world = (release_dxw * release_dxw + release_dyw * release_dyw) ** 0.5
+                release_below_world = zw <= (float(release_reference_world[2]) + release_z_headroom_world)
+                release_xy_ok_world = (
+                    release_dxy_world <= release_xy_tol_world and release_below_world
+                )
+            if release_reference_base and obj_base:
+                release_dxb = float(obj_base[0]) - float(release_reference_base[0])
+                release_dyb = float(obj_base[1]) - float(release_reference_base[1])
+                release_dxy_base = (release_dxb * release_dxb + release_dyb * release_dyb) ** 0.5
+                release_below_base = float(obj_base[2]) <= (
+                    float(release_reference_base[2]) + release_z_headroom_base
+                )
+                release_xy_ok_base = (
+                    release_dxy_base <= release_xy_tol_base and release_below_base
+                )
+
             detached_ok = (not bool(st.attached)) and (st.owner == ObjectOwner.NONE)
-            if detached_ok and (world_ok or base_ok):
+            release_ok = release_xy_ok_world or release_xy_ok_base
+            if detached_ok and (world_ok or base_ok or release_ok):
+                confirmation_source = "basket_reference"
+                if release_ok and not (world_ok or base_ok):
+                    confirmation_source = "release_reference"
                 panel._emit_log(
                     "[PICK][DEMO] confirmacion cesta OK "
+                    f"source={confirmation_source} "
                     f"world_obj=({xw:.3f},{yw:.3f},{zw:.3f}) "
                     f"world_basket=({basket_world[0]:.3f},{basket_world[1]:.3f},{basket_world[2]:.3f}) "
+                    f"world_release={_pick_demo_fmt_vec(release_reference_world)} "
                     f"dxy_w={dxy_world:.3f} dz_w={dz_world:.3f} "
-                    f"dxy_b={dxy_base:.3f} dz_b={dz_base:.3f}"
+                    f"dxy_b={dxy_base:.3f} dz_b={dz_base:.3f} "
+                    f"release_dxy_w={release_dxy_world:.3f} release_dxy_b={release_dxy_base:.3f}"
                 )
                 return True
         time.sleep(0.2)
@@ -975,6 +1046,39 @@ def run_pick_demo(panel) -> None:
             _pick_demo_cycle_object_snapshot_age_sec = None
             _pick_demo_cycle_object_stable_age_sec = None
             _pick_demo_cycle_object_selected_divergence_m = None
+
+            def _clear_cycle_object_reference(*, reason: str) -> None:
+                nonlocal _pick_demo_cycle_object_world
+                nonlocal _pick_demo_cycle_object_base
+                nonlocal _pick_demo_cycle_object_source
+                nonlocal _pick_demo_cycle_object_reason
+                nonlocal _pick_demo_cycle_object_promoted_stable
+                nonlocal _pick_demo_cycle_object_snapshot_age_sec
+                nonlocal _pick_demo_cycle_object_stable_age_sec
+                nonlocal _pick_demo_cycle_object_selected_divergence_m
+
+                if (
+                    _pick_demo_cycle_object_world is None
+                    and _pick_demo_cycle_object_base is None
+                    and str(_pick_demo_cycle_object_source or "none") == "none"
+                ):
+                    return
+                prev_world = _tuple3(_pick_demo_cycle_object_world)
+                prev_base = _tuple3(_pick_demo_cycle_object_base)
+                prev_source = str(_pick_demo_cycle_object_source or "none")
+                _pick_demo_cycle_object_world = None
+                _pick_demo_cycle_object_base = None
+                _pick_demo_cycle_object_source = "none"
+                _pick_demo_cycle_object_reason = str(reason or "cleared")
+                _pick_demo_cycle_object_promoted_stable = False
+                _pick_demo_cycle_object_snapshot_age_sec = None
+                _pick_demo_cycle_object_stable_age_sec = None
+                _pick_demo_cycle_object_selected_divergence_m = None
+                _append_trace(
+                    "[PICK][DIRECT][CYCLE_REF][CLEAR] tag=[DIRECT][CYCLE_REF][CLEAR] "
+                    f"reason={_pick_demo_cycle_object_reason} prev_source={prev_source} "
+                    f"prev_world={_fmt_vec(prev_world)} prev_base={_fmt_vec(prev_base)}"
+                )
 
             # DIRECTO usa rg2_pinch_center como marco operacional de agarre.
             # rg2_pinch_center ES el punto de contacto — ya está al nivel de las yemas.
@@ -1246,6 +1350,33 @@ def run_pick_demo(panel) -> None:
                 except Exception:
                     pass
                 return _live_object_world()
+
+            def _fresh_gazebo_object_base():
+                """Transforma la pose fresca de Gazebo a base_link para validaciones físicas."""
+                obj_world = _tuple3(_fresh_gazebo_object_world())
+                if obj_world is None:
+                    return _live_object_base()
+                world_frame = str(
+                    getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
+                        WORLD_FRAME or "world"
+                    )
+                ).strip() or "world"
+                base_frame = str(panel._business_base_frame() or BASE_FRAME or "base_link")
+                try:
+                    obj_base, _ = transform_point_to_frame(
+                        obj_world,
+                        base_frame,
+                        source_frame=world_frame,
+                    )
+                    obj_base = _tuple3(obj_base)
+                    if obj_base is not None:
+                        return obj_base
+                except Exception:
+                    pass
+                try:
+                    return tuple(float(v) for v in world_to_base(*obj_world))
+                except Exception:
+                    return _live_object_base()
 
             def _live_tcp_world():
                 tcp_base = _live_tcp_base()
@@ -1582,21 +1713,10 @@ def run_pick_demo(panel) -> None:
             except Exception as _exc_compare:
                 panel._emit_log(f"[COMPARE][DIRECT2][GOOD_REF] error={_exc_compare}")
 
-            def _current_joint_seed():
-                # Allow orchestrator to pin the IK seed to a known-good configuration
-                # via env var (comma-separated 6 joint values in radians).
-                # This does NOT change the IK target — it only tells the solver where
-                # to start searching.  Useful when the robot's current arm pose is far
-                # from the solution manifold (e.g. starting from HOME rather than
-                # joint-zero as in prior validation runs).
-                _seed_override_str = os.environ.get("PANEL_PICK_DEMO_IK_SEED_JOINTS", "").strip()
-                if _seed_override_str:
-                    try:
-                        _override = [float(v.strip()) for v in _seed_override_str.split(",")]
-                        if len(_override) == 6:
-                            return _override
-                    except Exception:
-                        pass
+            def _current_joint_seed(*, return_source: bool = False):
+                # DIRECTO should prefer the live arm state as IK seed/orientation
+                # reference.  A fixed HOME override is still kept as fallback when the
+                # live snapshot is incomplete.
                 seed = []
                 try:
                     snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
@@ -1604,9 +1724,23 @@ def run_pick_demo(panel) -> None:
                     snapshot = {}
                 for joint_name in UR5_JOINT_NAMES:
                     if joint_name not in snapshot:
-                        return list(JOINT_GRASP_DOWN_POSE_RAD)
+                        seed = []
+                        break
                     seed.append(float(snapshot[joint_name]))
-                return seed
+                if len(seed) == len(UR5_JOINT_NAMES):
+                    return (seed, "live_joint_state") if return_source else seed
+
+                _seed_override_str = os.environ.get("PANEL_PICK_DEMO_IK_SEED_JOINTS", "").strip()
+                if _seed_override_str:
+                    try:
+                        _override = [float(v.strip()) for v in _seed_override_str.split(",")]
+                        if len(_override) == 6:
+                            return (_override, "env_override") if return_source else _override
+                    except Exception:
+                        pass
+
+                fallback = list(JOINT_GRASP_DOWN_POSE_RAD)
+                return (fallback, "preset_fallback") if return_source else fallback
 
             def _read_gripper_state(*, expected_closed: Optional[bool] = None):
                 joint_snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
@@ -2625,8 +2759,13 @@ def run_pick_demo(panel) -> None:
                 tcp_base = _live_tcp_base()
                 if tcp_base is None:
                     raise RuntimeError(f"{label.lower()}_tcp_pose_unavailable")
-                seed = _current_joint_seed()
+                seed, seed_source = _current_joint_seed(return_source=True)
                 _seed_pos, target_rot = fk_ur5(seed)
+                panel._emit_log(
+                    "[PICK][DIRECT][IK_SEED] "
+                    f"label={label} source={seed_source} "
+                    f"joints={json.dumps(_json_safe(seed), ensure_ascii=True)}"
+                )
                 delta_runtime = (
                     float(target_tcp_runtime[0]) - float(tcp_base[0]),
                     float(target_tcp_runtime[1]) - float(tcp_base[1]),
@@ -2713,15 +2852,31 @@ def run_pick_demo(panel) -> None:
                         for q, s in zip(q_arr, s_arr)
                     ]
                     return max(devs)
-                _IK_RETRY_SCHEDULE = [0.08, 0.15]  # escalating seed weights
                 _IK_DEV_THRESHOLD = _math_ik_retry.pi / 2  # 90° — flag a wrong-branch solution
                 if ik_ok and pos_err_m <= float(ik_err_tol) and _seed_max_dev(solved_q, seed) > _IK_DEV_THRESHOLD:
                     _best_q, _best_err, _best_ok = solved_q, pos_err_m, ik_ok
-                    for _retry_sw in _IK_RETRY_SCHEDULE:
+                    # Build a list of (seed_variant, seed_weight) pairs to try.
+                    # The first group uses the original seed with escalating weights.
+                    # The second group uses diverse seeds derived from known good
+                    # configurations (e.g. run-4 APPROACH_COARSE solution that had
+                    # wrist_2≈-π/2, which lands in the wrist_3≈0° branch).
+                    _PI_H = _math_ik_retry.pi / 2
+                    _diverse_seeds = [
+                        # wrist_2 flipped to -π/2 (mimics run-4 elbow configuration)
+                        [seed[0], seed[1], seed[2], seed[3], -_PI_H, seed[5]],
+                        # wrist_2 at -π/2, shoulder_pan slightly negative
+                        [-0.26, seed[1], seed[2], seed[3], -_PI_H, 0.0],
+                    ]
+                    _retry_schedule = (
+                        [(seed, sw) for sw in [0.08, 0.15, 0.25, 0.35]]
+                        + [(_ds, 0.035) for _ds in _diverse_seeds]
+                        + [(_ds, 0.08) for _ds in _diverse_seeds]
+                    )
+                    for _rseed, _retry_sw in _retry_schedule:
                         _rq, _re_norm, _rok = ik_ur5(
                             target_ik,
                             target_rot,
-                            seed,
+                            _rseed,
                             max_iter=360,
                             pos_weight=1.0,
                             rot_weight=float(rot_weight),
@@ -2734,6 +2889,7 @@ def run_pick_demo(panel) -> None:
                         ))
                         panel._emit_log(
                             f"[PICK][DIRECT][IK_RETRY] label={label} retry_seed_weight={_retry_sw:.3f} "
+                            f"seed={'diverse' if _rseed is not seed else 'home'} "
                             f"pos_err_m={_rpos_err:.4f} ok={str(bool(_rok)).lower()} "
                             f"max_dev_rad={_seed_max_dev(_rq, seed):.3f}"
                         )
@@ -3575,7 +3731,10 @@ def run_pick_demo(panel) -> None:
                 )
                 while time.time() < deadline:
                     obj_world = _obj_world_source()
-                    obj_base = _live_object_base()
+                    if live_world_fn is not None:
+                        obj_base = _fresh_gazebo_object_base()
+                    else:
+                        obj_base = _live_object_base()
                     tcp_base = _live_tcp_base()
                     last_obj_world = obj_world
                     last_obj_base = obj_base
@@ -4968,7 +5127,15 @@ def run_pick_demo(panel) -> None:
                 f"age={_fmt_scalar((close_wait_state or {}).get('joint_state_age_sec'))} "
                 f"close_delta_best={_fmt_scalar((close_wait_state or {}).get('close_delta_best'))}"
             )
-            close_metrics = _close_alignment_metrics()
+            close_metrics = dict(pre_close_metrics) if bool(pre_close_ok) else _close_alignment_metrics()
+            close_metrics["geometry_source"] = (
+                "pre_close_reference" if bool(pre_close_ok) else "post_close_live"
+            )
+            close_metrics["gripper_closed_measured"] = bool(
+                (close_wait_state or {}).get("measured_target_ok")
+            )
+            close_metrics["gripper_opening_sum"] = (close_wait_state or {}).get("opening_sum")
+            close_metrics["gripper_max_abs_err"] = (close_wait_state or {}).get("max_abs_err")
             close_metrics["close_confirmed"] = bool(close_confirmed)
             close_metrics["close_wait_state"] = _json_safe(close_wait_state)
             # basket es el camino seguro por defecto para el demo: mantiene el
@@ -5071,6 +5238,43 @@ def run_pick_demo(panel) -> None:
                 float(obj_base_grasp[2]) + _DIRECTO_GRASP_Z,
             )
             target_world_attach = _target_world_from_base(target_base_attach)
+            attach_xy_tol_m = max(
+                0.02,
+                float(os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.080") or 0.080),
+            )
+            attach_z_tol_m = max(
+                0.02,
+                float(os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.080") or 0.080),
+            )
+            attach_dx = float(obj_base_grasp[0]) - float(tcp_base_grasp[0])
+            attach_dy = float(obj_base_grasp[1]) - float(tcp_base_grasp[1])
+            attach_tcp_contact_z = float(tcp_base_grasp[2]) - float(GRIPPER_TCP_Z_OFFSET)
+            attach_obj_ref_z = float(obj_base_grasp[2])
+            attach_dz = attach_obj_ref_z - attach_tcp_contact_z
+            attach_xy_dist = math.hypot(attach_dx, attach_dy)
+            attach_tcp_obj_dist = _dist(tcp_base_grasp, obj_base_grasp)
+            attach_geometry_ok = bool(
+                abs(attach_dx) <= attach_xy_tol_m
+                and abs(attach_dy) <= attach_xy_tol_m
+                and abs(attach_dz) <= attach_z_tol_m
+            )
+            attach_reference_metrics = {
+                "ok": attach_geometry_ok,
+                "geometry_ok": attach_geometry_ok,
+                "reason": "ok" if attach_geometry_ok else "alignment_out_of_tolerance",
+                "geometry_source": "attach_contact_reference",
+                "xy_dist": float(attach_xy_dist),
+                "z_gap": float(float(tcp_base_grasp[2]) - float(obj_base_grasp[2])),
+                "z_error": float(abs(attach_dz)),
+                "tcp_obj_dist": float(attach_tcp_obj_dist),
+                "xy_tol": float(attach_xy_tol_m),
+                "z_tol": float(attach_z_tol_m),
+                "tcp_contact_z": float(attach_tcp_contact_z),
+                "object_ref_z": float(attach_obj_ref_z),
+                "z_ref_mode": "center",
+                "tcp_base": _tuple3(tcp_base_grasp),
+                "object_base": _tuple3(obj_base_grasp),
+            }
             _phase_begin(
                 "ATTACH_GATE",
                 target_world=target_world_attach,
@@ -5078,8 +5282,8 @@ def run_pick_demo(panel) -> None:
                 frame_used="base_link",
                 offsets={
                     "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
-                    "attach_xy_tol_m": max(0.02, float(os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.080") or 0.080)),
-                    "attach_z_tol_m": max(0.02, float(os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.080") or 0.080)),
+                    "attach_xy_tol_m": float(attach_xy_tol_m),
+                    "attach_z_tol_m": float(attach_z_tol_m),
                 },
                 note="attach geometry gate and follow confirmation",
             )
@@ -5096,8 +5300,8 @@ def run_pick_demo(panel) -> None:
                 tcp_base=tcp_base_grasp,
                 object_base=obj_base_grasp,
                 base_frame=str(panel._business_base_frame() or BASE_FRAME or "base_link"),
-                xy_tol_m=max(0.02, float(os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.080") or 0.080)),
-                z_tol_m=max(0.02, float(os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.080") or 0.080)),
+                xy_tol_m=attach_xy_tol_m,
+                z_tol_m=attach_z_tol_m,
                 z_ref_mode="center",
             )
             panel._emit_log(
@@ -5155,7 +5359,21 @@ def run_pick_demo(panel) -> None:
                 max_tcp_dist_m=attach_follow_max_tcp_dist_m,
             )
             demo_follow_confirmed = True
-            attach_metrics = _close_alignment_metrics()
+            _clear_cycle_object_reference(reason="attach_follow_confirmed")
+            if not mark_object_grasped(PICK_DEMO_OBJECT_NAME, reason="demo_attach_follow_confirmed"):
+                raise RuntimeError("demo_mark_grasped_after_attach_failed")
+            if not mark_object_attached(PICK_DEMO_OBJECT_NAME, reason="demo_attach_follow_confirmed"):
+                raise RuntimeError("demo_mark_attached_after_attach_failed")
+            demo_logical_attached = True
+            attach_metrics = dict(attach_reference_metrics)
+            attach_metrics["follow_confirmed"] = True
+            attach_metrics["attach_published"] = bool(demo_attach_published)
+            attach_metrics["logical_attached"] = True
+            attach_metrics["logical_state"] = "CARRIED"
+            attach_metrics["owner"] = "ROBOT"
+            attach_metrics["gripper_closed_measured"] = bool(
+                (_read_gripper_state(expected_closed=True) or {}).get("measured_target_ok")
+            )
             _final_phase_trace(
                 "ATTACH_GATE",
                 event="wait_done",
@@ -5372,11 +5590,12 @@ def run_pick_demo(panel) -> None:
                     },
                 )
                 raise
-            if not mark_object_grasped(PICK_DEMO_OBJECT_NAME, reason="demo_physical_lift_ok"):
-                raise RuntimeError("demo_mark_grasped_failed")
-            if not mark_object_attached(PICK_DEMO_OBJECT_NAME, reason="demo_physical_lift_ok"):
-                raise RuntimeError("demo_mark_attached_failed")
-            demo_logical_attached = True
+            if not demo_logical_attached:
+                if not mark_object_grasped(PICK_DEMO_OBJECT_NAME, reason="demo_physical_lift_ok"):
+                    raise RuntimeError("demo_mark_grasped_failed")
+                if not mark_object_attached(PICK_DEMO_OBJECT_NAME, reason="demo_physical_lift_ok"):
+                    raise RuntimeError("demo_mark_attached_failed")
+                demo_logical_attached = True
             short_release_mode = str(
                 os.environ.get("PANEL_PICK_DEMO_SHORT_RELEASE_ONLY", "0") or "0"
             ).strip().lower() not in {"0", "false", "no", "off"}
@@ -5568,6 +5787,7 @@ def run_pick_demo(panel) -> None:
                 min_obj_move_m=0.080,
                 min_lift_delta_m=0.060,
                 max_tcp_dist_m=0.200,
+                live_world_fn=_fresh_gazebo_object_world,
             )
             _run_joint_step(
                 "CESTA",
@@ -5603,6 +5823,7 @@ def run_pick_demo(panel) -> None:
                 reason="open_wait_close_wait",
                 request_state="basket_release",
             )
+            panel._pick_demo_release_reference_world = _tuple3(_live_tcp_world())
             panel.signal_run_ui.emit(_open_and_release)
             time.sleep(1.0)
             panel._emit_log("[DEMO] Cerrando pinza en cesta")
