@@ -1,5 +1,0 @@
-experiment,n_seeds,best_epoch_mean,best_epoch_std,val_success_mean,val_success_std,val_iou_mean,val_iou_std,val_angle_mean_deg,val_angle_std_deg,val_loss_mean,val_loss_std,source_best_epoch_summary
-EXP1_SIMPLE_RGB,3,10.0,0.0,0.202889,0.031767,0.232734,0.018265,19.928338,0.71928,0.07659,0.052806,/home/laboratorio/TFM/report/metrics/raw/experiments/EXP1_SIMPLE_RGB/best_epoch_summary.csv
-EXP2_SIMPLE_RGBD,3,10.0,0.0,0.378585,0.008079,0.323577,0.005766,17.881764,0.387832,0.032189,0.000231,/home/laboratorio/TFM/report/metrics/raw/experiments/EXP2_SIMPLE_RGBD/best_epoch_summary.csv
-EXP3_RESNET18_RGB_AUGMENT,3,50.0,0.0,0.676864,0.03029,0.380857,0.012923,10.332306,1.443273,0.029236,0.000509,/home/laboratorio/TFM/report/metrics/raw/experiments/EXP3_RESNET18_RGB_AUGMENT/best_epoch_summary.csv
-EXP4_RESNET18_RGBD,3,50.0,0.0,0.654132,0.013673,0.382037,0.004393,11.661295,1.207335,0.028602,0.001123,/home/laboratorio/TFM/report/metrics/raw/experiments/EXP4_RESNET18_RGBD/best_epoch_summary.csv

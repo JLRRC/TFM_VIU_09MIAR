@@ -35,9 +35,13 @@ def main() -> int:
     os.environ.setdefault("PANEL_FORCE_OFFSCREEN", "1")
     os.environ.setdefault("PANEL_START_STACK", "0")
 
+    def _stamp() -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%S")
+
     app = QApplication(sys.argv)
     panel = ControlPanelV2()
     panel.show()
+    print(f"[{_stamp()}] [SHUTDOWN][HELPER] app_started", flush=True)
     retry_timer = QTimer(panel)
     retry_timer.setInterval(RETRY_MS)
     retry_timer.setSingleShot(False)
@@ -54,9 +58,6 @@ def main() -> int:
         "selection_staged": False,
         "script_motion_guard_logged": False,
     }
-
-    def _stamp() -> str:
-        return time.strftime("%Y-%m-%dT%H:%M:%S")
 
     def _check_trigger_confirmed() -> None:
         """Scheduled TRIGGER_SETTLE_SEC after ok=true.  If script_motion_active is
@@ -277,8 +278,13 @@ def main() -> int:
 
     def _close() -> None:
         retry_timer.stop()
+        print(f"[{_stamp()}] [SHUTDOWN][HELPER] close_begin", flush=True)
         panel._emit_log("[AUDIT][DIRECTO] offscreen helper closing panel")
         panel.close()
+        QTimer.singleShot(250, app.quit)
+
+    def _about_to_quit() -> None:
+        print(f"[{_stamp()}] [SHUTDOWN][HELPER] about_to_quit", flush=True)
 
     def _handle_signal(_signum, _frame) -> None:
         QTimer.singleShot(0, _close)
@@ -288,9 +294,14 @@ def main() -> int:
             signal.signal(sig, _handle_signal)
 
     retry_timer.timeout.connect(_trigger_safe)
+    app.aboutToQuit.connect(_about_to_quit)
     QTimer.singleShot(CLICK_DELAY_MS, _start_polling)
     QTimer.singleShot(EXIT_AFTER_MS, _close)
-    return app.exec_()
+    rc = app.exec_()
+    print(f"[{_stamp()}] [SHUTDOWN][HELPER] app_exec_end rc={rc}", flush=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(rc)
 
 
 if __name__ == "__main__":

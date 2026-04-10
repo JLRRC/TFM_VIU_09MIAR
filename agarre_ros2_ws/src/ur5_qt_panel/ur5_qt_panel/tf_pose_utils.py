@@ -112,7 +112,12 @@ def get_tcp_in_base(
     *,
     logger: LoggerFn = None,
 ):
-    tf, reason = get_transform(base_frame, ee_frame, timeout=timeout, logger=logger)
+    tf, reason = get_transform(
+        base_frame,
+        ee_frame,
+        timeout=timeout,
+        logger=logger,
+    )
     if tf is None:
         return None, None, reason
     out = PoseStamped()

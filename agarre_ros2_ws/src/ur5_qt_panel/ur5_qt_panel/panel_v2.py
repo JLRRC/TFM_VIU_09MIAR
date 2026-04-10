@@ -33,7 +33,7 @@ except Exception:
     psutil = None
 import numpy as np
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot, QObject, QThread
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QColor, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QAbstractScrollArea,
@@ -1177,6 +1177,16 @@ class CameraController:
 
     def auto_connect(self) -> None:
         p = self._panel
+        if p._closing:
+            p._emit_log("[CAMERA] auto_connect cancelado: panel cerrando")
+            return
+        if not p._camera_required:
+            p._emit_log("[CAMERA] auto_connect cancelado: camera_required=false")
+            return
+        if bool(getattr(p, "_script_motion_active", False)):
+            p._emit_log("[CAMERA] auto_connect diferido: script_motion_active")
+            self.schedule_reconnect("script_motion_active", delay_ms=2000)
+            return
         if not p._bridge_running:
             if p._debug_logs_enabled:
                 p._log("[CAMERA] Bridge aún no activo, reintentando auto-conexión en 1s")
@@ -1397,7 +1407,9 @@ class ControlPanelV2(QMainWindow):
         self._step_start_pose_rpy_deg: Optional[Tuple[float, float, float]] = None
         self._step_start_trigger = ""
         self._step_history_flow = ""
-        self._step_history_rows: List[Tuple[str, Optional[Tuple[float, float, float]]]] = []
+        self._step_history_rows: List[Dict[str, object]] = []
+        self._step_history_target_xy_tol_m = max(0.001, _env_float("PANEL_STEP_HISTORY_TARGET_XY_TOL_M", 0.02))
+        self._step_history_target_z_tol_m = max(0.001, _env_float("PANEL_STEP_HISTORY_TARGET_Z_TOL_M", 0.02))
         self._step_mode_combo_syncing = False
         self._step_window = None
         self._step_phase_label = None
@@ -1535,10 +1547,10 @@ class ControlPanelV2(QMainWindow):
         if CAMERA_REQUIRED is None:
             self._camera_required = True
         else:
-            self._camera_required = True
-            if not bool(CAMERA_REQUIRED):
+            self._camera_required = bool(CAMERA_REQUIRED)
+            if not self._camera_required:
                 self._emit_log(
-                    "[SAFETY] CAMERA_REQUIRED deshabilitado por config, forzando ON (dependencia crítica)."
+                    "[STARTUP] CAMERA_REQUIRED=false; auto-connect y health-check de cámara deshabilitados."
                 )
         self._system_state = SystemState.BOOT
         self._system_state_reason = "boot"
@@ -4511,6 +4523,8 @@ class ControlPanelV2(QMainWindow):
             return True
         if msg.startswith("[STARTUP]"):
             return True
+        if msg.startswith("[SHUTDOWN]"):
+            return True
         if msg.startswith("[TFM]"):
             return True
         if msg.startswith("[BTN]"):
@@ -4749,15 +4763,15 @@ class ControlPanelV2(QMainWindow):
         lbl_next = QLabel("Fase siguiente: --")
         lbl_intent = QLabel("Qué pretende hacer: --")
         lbl_decision = QLabel("Motivo de decisión: --")
-        lbl_target = QLabel("Objetivo fase XYZ: --")
-        lbl_live_operational = QLabel("Punto operativo live: --")
-        lbl_live_visual = QLabel("Pinza visual live: --")
+        lbl_target = QLabel("XYZ objetivo de fase: --")
+        lbl_live_operational = QLabel("XYZ actual de la pinza: --")
+        lbl_live_visual = QLabel("XYZ visual de la pinza: --")
         lbl_gripper_expected = QLabel("Pinza esperada en fase actual: --")
         lbl_gripper_live = QLabel("Pinza live: --")
         lbl_object = QLabel("Objeto XYZ: --")
         lbl_start_pose = QLabel("Pose inicial robot: --")
-        history_table = QTableWidget(0, 5)
-        history_table.setHorizontalHeaderLabels(["Fase", "Pinza", "X", "Y", "Z"])
+        history_table = QTableWidget(0, 9)
+        history_table.setHorizontalHeaderLabels(["Fase", "Pinza", "X act", "Y act", "Z act", "X obj", "Y obj", "Z obj", "Check"])
         history_table.setEditTriggers(QTableWidget.NoEditTriggers)
         history_table.setSelectionMode(QTableWidget.NoSelection)
         history_table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
@@ -4768,6 +4782,10 @@ class ControlPanelV2(QMainWindow):
             history_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
             history_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
             history_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+            history_header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+            history_header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+            history_header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+            history_header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
         history_table.verticalHeader().setVisible(False)
         btn_continue = QPushButton("Sigue")
         btn_continue.clicked.connect(self._on_step_continue_clicked)
@@ -4881,7 +4899,7 @@ class ControlPanelV2(QMainWindow):
             "DIRECT": {
                 "PICK_PRE_CLOSE_REF": "Ir a la referencia manual previa al cierre.",
                 "APPROACH_COARSE": "Acercarse al objeto de forma gruesa.",
-                "GRASP_DOWN_JOINT": "Bajar hacia el objeto con movimiento articular.",
+                "GRASP_DOWN_JOINT": "Bajar de forma conservadora preservando el XY útil.",
                 "GRASP_ALIGN_IK": "Alinear la pinza fina sobre el objeto.",
                 "PRE_CLOSE": "Colocar la pinza justo antes del cierre.",
                 "CLOSE": "Cerrar la pinza sobre el objeto.",
@@ -4977,9 +4995,85 @@ class ControlPanelV2(QMainWindow):
         return str(states.get(flow_name, {}).get(phase_name) or "--")
 
     def _step_live_gripper_state(self) -> str:
-        if bool(getattr(self, "_gripper_is_closed", getattr(self, "_gripper_closed", False))):
-            return "Cerrada"
-        return "Abierta"
+        state = self._read_gripper_feedback_state()
+        command_closed = bool(state.get("command_closed"))
+        command_txt = "Cerrada" if command_closed else "Abierta"
+        inferred_state = str(state.get("inferred_state") or "unknown")
+        age = state.get("joint_state_age_sec")
+        age_ok = age is None or float(age) <= 0.5
+        if not state.get("joint_positions"):
+            return f"Sin medida | comando: {command_txt}"
+        if not age_ok:
+            age_txt = f"{float(age):.2f}s" if age is not None else "--"
+            return f"Medida obsoleta | comando: {command_txt} | age: {age_txt}"
+        if inferred_state == "open":
+            measured_txt = "Abierta"
+        elif inferred_state == "closed":
+            measured_txt = "Cerrada"
+        else:
+            measured_txt = "Indeterminada"
+        if measured_txt == command_txt:
+            return f"{measured_txt} (medida)"
+        return f"{measured_txt} (medida) | comando: {command_txt}"
+
+    def _read_gripper_feedback_state(self) -> Dict[str, object]:
+        positions: Dict[str, float] = {}
+        joint_state_age_sec = None
+        if self._ros_worker_started and self.ros_worker is not None:
+            try:
+                payload, wall_ts = self.ros_worker.get_last_joint_state()
+            except Exception:
+                payload, wall_ts = None, 0.0
+            if payload:
+                try:
+                    names = [
+                        _normalize_joint_name(str(name))
+                        for name in (payload.get("name") or [])
+                    ]
+                    pos_list = payload.get("position") or []
+                except Exception:
+                    names, pos_list = [], []
+                for joint_name, pos in zip(names, pos_list):
+                    if joint_name not in GRIPPER_JOINT_NAMES:
+                        continue
+                    try:
+                        positions[joint_name] = float(pos)
+                    except Exception:
+                        continue
+                if wall_ts:
+                    try:
+                        joint_state_age_sec = max(0.0, time.time() - float(wall_ts))
+                    except Exception:
+                        joint_state_age_sec = None
+        if not positions:
+            joint_snapshot = dict(getattr(self, "_last_joint_positions", {}) or {})
+            for joint_name in GRIPPER_JOINT_NAMES:
+                if joint_name in joint_snapshot:
+                    positions[joint_name] = float(joint_snapshot[joint_name])
+        open_target = abs(float(GRIPPER_OPEN_RAD))
+        closed_target = abs(float(GRIPPER_CLOSED_RAD))
+        open_err = None
+        closed_err = None
+        inferred_state = "unknown"
+        opening_sum = None
+        if positions:
+            magnitudes = [abs(float(pos)) for pos in positions.values()]
+            opening_sum = float(sum(magnitudes))
+            open_err = float(max(abs(mag - open_target) for mag in magnitudes))
+            closed_err = float(max(abs(mag - closed_target) for mag in magnitudes))
+            if open_err < closed_err:
+                inferred_state = "open"
+            elif closed_err < open_err:
+                inferred_state = "closed"
+        return {
+            "joint_positions": positions,
+            "joint_state_age_sec": joint_state_age_sec,
+            "opening_sum": opening_sum,
+            "open_err": open_err,
+            "closed_err": closed_err,
+            "inferred_state": inferred_state,
+            "command_closed": bool(getattr(self, "_gripper_is_closed", getattr(self, "_gripper_closed", False))),
+        }
 
     def _step_format_xyz(self, position: Optional[Tuple[float, float, float]]) -> Tuple[str, str, str]:
         if position is None:
@@ -5019,16 +5113,54 @@ class ControlPanelV2(QMainWindow):
             float(tcp_pose_base.pose.position.z),
         )
 
+    def _step_operational_frame_name(self) -> str:
+        return str(
+            getattr(self, "_step_target_frame", "")
+            or getattr(self, "_ee_frame_effective", "")
+            or self._required_ee_frame
+            or "rg2_pinch_center"
+        ).strip() or "rg2_pinch_center"
+
     def _step_live_pose_text(self, label: str, ee_frame: str, position: Optional[Tuple[float, float, float]]) -> str:
         frame_name = str(ee_frame or "").strip() or "--"
         xyz_txt = self._step_format_inline_xyz(position)
         return f"{label}: {xyz_txt} | frame: {frame_name}"
 
+    def _step_assess_target_reached(
+        self,
+        target: Optional[Tuple[float, float, float]],
+        actual: Optional[Tuple[float, float, float]],
+    ) -> Optional[bool]:
+        if target is None or actual is None:
+            return None
+        try:
+            dx = abs(float(actual[0]) - float(target[0]))
+            dy = abs(float(actual[1]) - float(target[1]))
+            dz = abs(float(actual[2]) - float(target[2]))
+        except Exception:
+            return None
+        return (
+            dx <= float(self._step_history_target_xy_tol_m)
+            and dy <= float(self._step_history_target_xy_tol_m)
+            and dz <= float(self._step_history_target_z_tol_m)
+        )
+
+    def _step_status_item(self, reached: Optional[bool]) -> QTableWidgetItem:
+        if reached is True:
+            item = QTableWidgetItem("OK")
+            item.setBackground(QColor(34, 197, 94))
+        elif reached is False:
+            item = QTableWidgetItem("NO")
+            item.setBackground(QColor(239, 68, 68))
+        else:
+            item = QTableWidgetItem("PEND")
+            item.setBackground(QColor(245, 158, 11))
+        item.setTextAlignment(Qt.AlignCenter)
+        return item
+
     def _step_capture_start_pose(self, trigger: str) -> None:
         base_frame = self._business_base_frame()
-        ee_frame = str(
-            getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center"
-        ).strip() or "rg2_pinch_center"
+        ee_frame = self._step_operational_frame_name()
         start_xyz = None
         start_rpy = None
         tcp_pose_base, tcp_rpy_deg, _tcp_reason = tf_get_tcp_in_base(
@@ -5071,10 +5203,26 @@ class ControlPanelV2(QMainWindow):
         if flow_name != self._step_history_flow or (first_phase and phase_name == first_phase):
             self._step_history_flow = flow_name
             self._step_history_rows = []
-        if self._step_history_rows and self._step_history_rows[-1][0] == phase_name:
-            self._step_history_rows[-1] = (phase_name, pos3)
+        if self._step_history_rows:
+            last_row = self._step_history_rows[-1]
+            last_phase = str(last_row.get("phase") or "").strip().upper()
+            if last_phase != phase_name and last_row.get("actual") is None:
+                actual_pose = self._step_fetch_live_pose(self._step_operational_frame_name())
+                if actual_pose is None:
+                    actual_pose = self._last_trace_tcp_base or self._last_tcp_base
+                last_row["actual"] = actual_pose
+                last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
+        if self._step_history_rows and str(self._step_history_rows[-1].get("phase") or "").strip().upper() == phase_name:
+            self._step_history_rows[-1]["target"] = pos3
         else:
-            self._step_history_rows.append((phase_name, pos3))
+            self._step_history_rows.append(
+                {
+                    "phase": phase_name,
+                    "target": pos3,
+                    "actual": None,
+                    "reached": None,
+                }
+            )
 
     def _step_window_refresh(self) -> None:
         self._ensure_step_window()
@@ -5112,26 +5260,24 @@ class ControlPanelV2(QMainWindow):
         if self._step_target_label is not None:
             self._step_target_label.setText(
                 self._step_live_pose_text(
-                    "Objetivo fase XYZ",
+                    "XYZ objetivo de fase",
                     getattr(self, "_step_target_frame", "") or getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center",
                     self._step_phase_position,
                 )
             )
-        operational_frame = str(
-            getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center"
-        ).strip() or "rg2_pinch_center"
+        operational_frame = self._step_operational_frame_name()
         operational_live = self._step_fetch_live_pose(operational_frame)
         if operational_live is None and operational_frame == getattr(self, "_ee_frame_effective", ""):
             operational_live = self._last_trace_tcp_base or self._last_tcp_base
         if self._step_live_operational_label is not None:
             self._step_live_operational_label.setText(
-                self._step_live_pose_text("Punto operativo live", operational_frame, operational_live)
+                self._step_live_pose_text("XYZ actual de la pinza", operational_frame, operational_live)
             )
         visual_frame = "rg2_tcp"
         visual_live = self._step_fetch_live_pose(visual_frame)
         if self._step_live_visual_label is not None:
             self._step_live_visual_label.setText(
-                self._step_live_pose_text("Pinza visual live", visual_frame, visual_live)
+                self._step_live_pose_text("XYZ visual de la pinza", visual_frame, visual_live)
             )
         if self._step_gripper_expected_label is not None:
             current_flow = str(self._step_pending_flow or "").strip()
@@ -5157,13 +5303,36 @@ class ControlPanelV2(QMainWindow):
             )
         if self._step_history_table is not None:
             self._step_history_table.setRowCount(len(self._step_history_rows))
-            for row_idx, (phase_name, pos3) in enumerate(self._step_history_rows):
+            for row_idx, row_data in enumerate(self._step_history_rows):
+                phase_name = str(row_data.get("phase") or "").strip().upper()
+                pos3 = row_data.get("target")
+                actual3 = row_data.get("actual")
+                reached = row_data.get("reached")
+                if actual3 is None and phase_name == str(self._step_current_phase or "").strip().upper():
+                    actual3 = operational_live
                 display_phase = f"{phase_name} - {self._step_phase_intent(self._step_history_flow, phase_name)}"
                 expected_gripper = self._step_phase_gripper_state(self._step_history_flow, phase_name)
-                values = (display_phase, expected_gripper) + self._step_format_xyz(pos3)
+                values = (display_phase, expected_gripper) + self._step_format_xyz(actual3) + self._step_format_xyz(pos3)
                 for col_idx, value in enumerate(values):
                     item = QTableWidgetItem(value)
+                    if col_idx != 0:
+                        item.setTextAlignment(Qt.AlignCenter)
                     self._step_history_table.setItem(row_idx, col_idx, item)
+                self._step_history_table.setItem(row_idx, len(values), self._step_status_item(reached))
+
+    def _step_record_current_phase_actual(self) -> None:
+        if not self._step_history_rows:
+            return
+        last_row = self._step_history_rows[-1]
+        if last_row.get("actual") is not None:
+            return
+        actual_pose = self._step_fetch_live_pose(self._step_operational_frame_name())
+        if actual_pose is None:
+            actual_pose = self._last_trace_tcp_base or self._last_tcp_base
+        last_row["actual"] = actual_pose
+        last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
+        if self._step_history_table is not None:
+            self._step_window_refresh()
 
     def _step_window_set_waiting(self) -> None:
         self._ensure_step_window()
@@ -6345,6 +6514,12 @@ class ControlPanelV2(QMainWindow):
     
     def _auto_connect_camera(self):
         """Auto-conectar cámara al iniciar el panel."""
+        if self._closing:
+            self._emit_log("[CAMERA] auto_connect omitido: panel cerrando")
+            return
+        if not self._camera_required:
+            self._emit_log("[CAMERA] auto_connect omitido: camera_required=false")
+            return
         self._camera_ctrl.auto_connect()
 
     def _ensure_ros_worker_started(self):
@@ -8167,7 +8342,8 @@ class ControlPanelV2(QMainWindow):
             self._ensure_pose_subscription()
             self._start_pose_info_watch()
             self._start_tf_ready_timer()
-            QTimer.singleShot(600, self._auto_connect_camera)
+            if self._camera_required:
+                QTimer.singleShot(600, self._auto_connect_camera)
         if self._moveit_state == MoveItState.OFF and moveit_ok:
             self._moveit_state = MoveItState.READY
             if self._moveit_bridge_detected():
@@ -16956,32 +17132,70 @@ class ControlPanelV2(QMainWindow):
             event.accept()
             return
         self._closing = True
+        self._emit_log("[SHUTDOWN][PANEL] begin")
         self._set_step_mode("AUTO", emit_log=False)
+        self._emit_log("[SHUTDOWN][PANEL] stop_step_mode ok")
         self._step_wait_event.set()
         if self._step_window is not None:
             self._step_window.close()
-        self._emit_log("[TRACE] Shutdown: begin")
         self._bridge_running = False
         self._gz_running = False
-        self._log("[TRACE] Shutdown: stopping timers")
+        self._log("[SHUTDOWN][PANEL] stop_timers begin")
         for timer in (
             self._trace_timer,
             self._tf_ready_timer,
             self._pose_debug_timer,
             self._pose_info_timer,
+            getattr(self, "_camera_health_timer", None),
+            getattr(self, "_drop_hold_timer", None),
             getattr(self, "_watchdog_timer", None),
             getattr(self, "objects_timer", None),
             getattr(self, "joint_timer", None),
         ):
             if timer:
                 timer.stop()
+        self._log("[SHUTDOWN][PANEL] stop_timers ok")
         self._trace_ready = False
         self._reset_trace_throttle("panel close")
-        self._log("[TRACE] Shutdown: stopping RosWorker")
+        self._log("[SHUTDOWN][PANEL] stop_workers begin")
         self.ros_worker.stop_and_join()
-        self._log("[TRACE] Shutdown: shutting down TF helper")
+        self._log("[SHUTDOWN][PANEL] stop_workers ros_worker ok")
+        self._log("[SHUTDOWN][PANEL] stop_workers tf_helper begin")
         shutdown_tf_helper()
-        self._log("[TRACE] Shutdown: TF helper stopped")
+        self._log("[SHUTDOWN][PANEL] stop_workers tf_helper ok")
+        for thread_name, thread in (("settle_thread", getattr(self, "_settle_thread", None)),):
+            if thread is None:
+                continue
+            try:
+                running = bool(thread.isRunning())
+            except RuntimeError:
+                self._emit_log(
+                    f"[SHUTDOWN][PANEL] thread_join name={thread_name} ok=true timeout=0.0 note=already_deleted"
+                )
+                continue
+            if running:
+                thread.quit()
+                joined = bool(thread.wait(1000))
+                self._emit_log(
+                    f"[SHUTDOWN][PANEL] thread_join name={thread_name} ok={str(joined).lower()} timeout=1.0"
+                )
+        for idx, thread in enumerate(list(getattr(self, "_async_threads", []))):
+            if thread is None:
+                continue
+            try:
+                running = bool(thread.isRunning())
+            except RuntimeError:
+                self._emit_log(
+                    f"[SHUTDOWN][PANEL] thread_join name=async_{idx} ok=true timeout=0.0 note=already_deleted"
+                )
+                continue
+            if running:
+                thread.quit()
+                joined = bool(thread.wait(1000))
+                self._emit_log(
+                    f"[SHUTDOWN][PANEL] thread_join name=async_{idx} ok={str(joined).lower()} timeout=1.0"
+                )
+        self._log("[SHUTDOWN][PANEL] stop_workers ok")
         self._kill_proc(self.bag_proc, "ros2 bag record")
         # FASE 8: Stop MoveIt bridge and move_group BEFORE killing the Gazebo
         # bridge and simulators so in-flight plans drain cleanly.
@@ -17015,12 +17229,14 @@ class ControlPanelV2(QMainWindow):
             self._moveit_node = None
             self._moveit_pose_pub = None
         try:
-            self._log("[TRACE] Shutdown: calling rclpy.try_shutdown()")
+            self._log("[SHUTDOWN][PANEL] ros_shutdown begin")
             rclpy.try_shutdown()
+            self._log("[SHUTDOWN][PANEL] ros_shutdown ok")
         except Exception as exc:
             _log_exception("rclpy.try_shutdown", exc)
-        self._emit_log("[TRACE] Shutdown: workers stopped")
-        self._emit_log("[TRACE] Shutdown: done")
+        self._emit_log("[SHUTDOWN][PANEL] qt_close begin")
+        self._emit_log("[SHUTDOWN][PANEL] qt_close ok")
+        self._emit_log("[SHUTDOWN][PANEL] done")
         self._shutdown_complete = True
         super().closeEvent(event)
 

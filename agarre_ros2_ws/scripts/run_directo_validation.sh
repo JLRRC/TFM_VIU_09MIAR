@@ -94,13 +94,17 @@ CAPTURE_PID=$!
 echo "[ORCH] Capture PID=$CAPTURE_PID"
 
 # --- Esperar al runner del panel ---
+echo "[ORCH][SHUTDOWN] helper_wait_begin"
 wait "$HELPER_PID" && HELPER_RC=0 || HELPER_RC=$?
+echo "[ORCH][SHUTDOWN] helper_wait_end rc=$HELPER_RC"
 echo "[ORCH] Runner terminó rc=$HELPER_RC"
 
 # Dar unos segundos más al capturador para que cierre limpiamente
 sleep 3
+echo "[ORCH][SHUTDOWN] capture_stop_begin pid=$CAPTURE_PID"
 kill "$CAPTURE_PID" 2>/dev/null || true
 wait "$CAPTURE_PID" && CAPTURE_RC=0 || CAPTURE_RC=$?
+echo "[ORCH][SHUTDOWN] capture_stop_end rc=$CAPTURE_RC"
 echo "[ORCH] Capture terminó rc=$CAPTURE_RC"
 
 # --- Ejecutar el benchmark ---
@@ -119,4 +123,5 @@ echo "[ORCH] Benchmark rc=$BENCHMARK_RC"
 
 echo "[ORCH] Resumen guardado en $SUMMARY"
 echo "[ORCH] Logs: $OUT_DIR"
+echo "[ORCH][SHUTDOWN] final_rc=$HELPER_RC"
 echo "helper_final_rc=$HELPER_RC capture_rc=$CAPTURE_RC benchmark_rc=$BENCHMARK_RC"
