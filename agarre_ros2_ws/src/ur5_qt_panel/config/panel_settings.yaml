@@ -24,7 +24,7 @@ panel_settings:
   moveit_launch_timeout_sec: 25.0
   moveit_bridge_launch_timeout_sec: 15.0
   controller_drop_grace_sec: 3.0
-  gripper_tcp_z_offset: 0.05
+  gripper_tcp_z_offset: 0.0
   pick_tf_retry_sec: 0.2
   pick_tf_timeout_sec: 3.0
   selection_timeout_sec: 12.0
