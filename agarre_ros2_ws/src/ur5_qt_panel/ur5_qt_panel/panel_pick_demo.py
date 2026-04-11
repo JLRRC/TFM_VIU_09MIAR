@@ -2470,6 +2470,12 @@ def run_pick_demo(panel) -> None:
                 phase_seq["value"] += 1
                 _append_trace(f"[PICK][DIRECT][DEBUG] ENTER_PHASE {phase}")
                 step_gate_fn = getattr(panel, "_step_wait_for_phase", None)
+                if callable(step_gate_fn) and getattr(panel, "_step_mode", "") == "STEP_BY_STEP":
+                    # Esperar a que TF se estabilice tras el último movimiento.
+                    # _wait_for_joint_target se satisface antes de que el TF tree
+                    # propague la nueva pose, y origin_snapshot capturaría datos stale.
+                    # 0.12 s es suficiente para que robot_state_publisher + TF publiquen.
+                    time.sleep(0.12)
                 if callable(step_gate_fn):
                     step_gate_fn(
                         f"DIRECT.{phase}",
@@ -4917,6 +4923,89 @@ def run_pick_demo(panel) -> None:
                 panel._emit_log(resume_msg)
                 _append_trace(resume_msg)
 
+            # === GATE INICIO — ANTES de cualquier movimiento ===
+            # En STEP_BY_STEP: presenta Org/Target en el panel de fases, espera "Sigue".
+            # En AUTO: retorna inmediatamente (gate es no-op).
+            # GARANTÍA: el robot NO se mueve entre "Siguiente" en popup y "Sigue" en panel.
+            _step_gate = getattr(panel, "_step_wait_for_phase", None)
+            if callable(_step_gate):
+                _inicio_pose = None
+                _get_pose_fn = getattr(panel, "_step_fetch_live_pose", None)
+                _get_frame_fn = getattr(panel, "_step_operational_frame_name", None)
+                if callable(_get_pose_fn) and callable(_get_frame_fn):
+                    _inicio_pose = _get_pose_fn(_get_frame_fn())
+                _inicio_next_target = None
+                _obj_for_inicio = _live_object_base()
+                _inicio_preview_phase = "PICK_PRE_CLOSE_REF"
+                if route_selected == "manual_reference" and _obj_for_inicio is not None:
+                    _manual_ref_extra_z = max(
+                        0.0,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_MANUAL_REF_EXTRA_Z_M",
+                                os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.10"),
+                            )
+                            or 0.10
+                        ),
+                    )
+                    _inicio_next_target = (
+                        float(_obj_for_inicio[0]),
+                        float(_obj_for_inicio[1]),
+                        float(_obj_for_inicio[2]) + float(_DIRECTO_GRASP_Z) + float(_manual_ref_extra_z),
+                    )
+                elif _obj_for_inicio is not None:
+                    _coarse_extra_z_m = max(
+                        0.0,
+                        float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.10") or 0.10),
+                    )
+                    _inicio_next_target = (
+                        float(_obj_for_inicio[0]),
+                        float(_obj_for_inicio[1]),
+                        float(_obj_for_inicio[2]) + float(_DIRECTO_GRASP_Z) + float(_coarse_extra_z_m),
+                    )
+                    _inicio_preview_phase = "APPROACH_COARSE"
+                panel._emit_log(
+                    "[STEP][POPUP_CONFIRM_ACCEPTED] "
+                    f"route={route_selected} "
+                    f"tcp_actual={_fmt_vec(_tuple3(_inicio_pose))} "
+                    f"obj_base={_fmt_vec(_tuple3(_obj_for_inicio))} "
+                    f"next_target={_fmt_vec(_tuple3(_inicio_next_target))} "
+                    f"preview_phase={_inicio_preview_phase}"
+                )
+                if _obj_for_inicio is not None:
+                    panel._emit_log(
+                        f"[STEP][OBJECT_POSE_READY] obj_base={_fmt_vec(_tuple3(_obj_for_inicio))}"
+                    )
+                if _inicio_pose is not None:
+                    panel._emit_log(
+                        f"[STEP][ORG_READY] phase=INICIO pose={_fmt_vec(_tuple3(_inicio_pose))}"
+                    )
+                if _inicio_next_target is not None:
+                    panel._emit_log(
+                        f"[STEP][TARGET_READY] phase=INICIO target={_fmt_vec(_tuple3(_inicio_next_target))}"
+                    )
+                panel._emit_log(
+                    "[STEP][PHASE_GATE_ARMED_NO_MOTION] "
+                    f"phase=INICIO preview={_inicio_preview_phase} no_motion=true "
+                    f"org={_fmt_vec(_tuple3(_inicio_pose))} target={_fmt_vec(_tuple3(_inicio_next_target))}"
+                )
+                panel._emit_log("[STEP][PANEL_CONTEXT_READY] phase=INICIO sigue_enabled=pending")
+                _step_gate(
+                    "DIRECT.INICIO",
+                    flow="DIRECT",
+                    position=(
+                        _tuple3(_inicio_next_target)
+                        if _inicio_next_target is not None
+                        else _tuple3(_inicio_pose)
+                    ),
+                    decision="INICIO - Pose verificada - pulse siguiente",
+                    object_position=_tuple3(_obj_for_inicio),
+                )
+                panel._emit_log(
+                    "[STEP][PHASE_START_RELEASED_BY_PANEL] "
+                    "phase=INICIO motion=authorized reason=sigue_pressed"
+                )
+
             _run_joint_step("HOME", home_pose)
             # Waypoint intermedio para evitar el salto grande j2: 0°→90° en un solo paso.
             # MoveIt falla silenciosamente cuando el salto de elbow (j2) supera ~80°,
@@ -4993,62 +5082,6 @@ def run_pick_demo(panel) -> None:
                     float(obj_base_3[0]),
                     float(obj_base_3[1]),
                     float(obj_base_3[2]) + float(_DIRECTO_GRASP_Z) + float(dynamic_extra_z_m),
-                )
-
-            # Gate de inicio STEP_BY_STEP: en modo STEP muestra la pose actual antes de
-            # que el robot empiece a moverse, y espera a que el usuario pulse Siguiente.
-            # En modo AUTO retorna inmediatamente.
-            _step_gate = getattr(panel, "_step_wait_for_phase", None)
-            if callable(_step_gate):
-                _inicio_pose = None
-                _get_pose = getattr(panel, "_step_fetch_live_pose", None)
-                _get_frame = getattr(panel, "_step_operational_frame_name", None)
-                if callable(_get_pose) and callable(_get_frame):
-                    _inicio_pose = _get_pose(_get_frame())
-                # Objetivo de la primera fase real (preview para la fila INICIO de la
-                # tabla): muestra "estoy aquí -> voy a ir aquí" antes de pulsar Siguiente.
-                # En ruta manual_reference el primer objetivo XYZ es PICK_PRE_CLOSE_REF.
-                # En rutas no-manuales, el primer objetivo XYZ útil es APPROACH_COARSE.
-                _inicio_next_target = None
-                _obj_for_inicio = _live_object_base()
-                _inicio_preview_phase = "PICK_PRE_CLOSE_REF"
-                if route_selected == "manual_reference" and _obj_for_inicio is not None:
-                    _inicio_next_target = _dynamic_pre_close_reference_base(_obj_for_inicio)
-                elif _obj_for_inicio is not None:
-                    _coarse_extra_z_m = max(
-                        0.0,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M",
-                                "0.10",
-                            )
-                            or 0.10
-                        ),
-                    )
-                    _inicio_next_target = (
-                        float(_obj_for_inicio[0]),
-                        float(_obj_for_inicio[1]),
-                        float(_obj_for_inicio[2]) + float(_DIRECTO_GRASP_Z) + float(_coarse_extra_z_m),
-                    )
-                    _inicio_preview_phase = "APPROACH_COARSE"
-                panel._emit_log(
-                    "[STEP][INICIO_TARGET] "
-                    f"route={route_selected} "
-                    f"preview_phase={_inicio_preview_phase} "
-                    f"tcp_actual={_fmt_vec(_tuple3(_inicio_pose))} "
-                    f"obj_base={_fmt_vec(_tuple3(_obj_for_inicio))} "
-                    f"next_target_preview={_fmt_vec(_tuple3(_inicio_next_target))}"
-                )
-                _step_gate(
-                    "DIRECT.INICIO",
-                    flow="DIRECT",
-                    position=(
-                        _tuple3(_inicio_next_target)
-                        if _inicio_next_target is not None
-                        else _tuple3(_inicio_pose)
-                    ),
-                    decision="INICIO - Pose verificada - pulse siguiente",
-                    object_position=_tuple3(_obj_for_inicio),
                 )
 
             manual_reference_ok = False
@@ -5163,6 +5196,85 @@ def run_pick_demo(panel) -> None:
                     )
             if route_selected != "manual_reference" or not manual_reference_ok:
                 _run_joint_step("PICK_IMAGE", JOINT_PICK_IMAGE_POSE_RAD)
+
+                # ── [FIX] Verificación cartesiana post-PICK_IMAGE ──────────────────
+                # _run_joint_step acepta hasta 0.06 rad de error articular en retry,
+                # lo que puede dejar el TCP a ~10 cm del objetivo cartesiano.
+                # Este bloque verifica que rg2_pinch_center esté suficientemente cerca
+                # de la pose FK esperada antes de abrir el gate de APPROACH_COARSE.
+                _pick_image_tcp_expected = None
+                try:
+                    _fk_pos, _fk_rot = fk_ur5(list(JOINT_PICK_IMAGE_POSE_RAD))
+                    # rg2_pinch_center = tool0 + 0.175 m en eje Z del tool frame
+                    _fk_pinch = (
+                        float(_fk_pos[0]) + float(_fk_rot[0, 2]) * DIRECT_TOOL0_TO_RG2_TCP_Z_M,
+                        float(_fk_pos[1]) + float(_fk_rot[1, 2]) * DIRECT_TOOL0_TO_RG2_TCP_Z_M,
+                        float(_fk_pos[2]) + float(_fk_rot[2, 2]) * DIRECT_TOOL0_TO_RG2_TCP_Z_M,
+                    )
+                    _pick_image_tcp_expected = _fk_pinch
+                except Exception as _fk_exc:
+                    _append_trace(f"[STEP][PICK_IMAGE_EXPECTED_TCP] fk_failed={_fk_exc}")
+                panel._emit_log(
+                    f"[STEP][PICK_IMAGE_EXPECTED_TCP] expected={_fmt_vec(_pick_image_tcp_expected)}"
+                )
+                _pi_tol_m = max(
+                    0.01,
+                    float(os.environ.get("PANEL_PICK_DEMO_PICK_IMAGE_TCP_TOL_M", "0.030") or 0.030),
+                )
+                _pi_settle_sec = max(
+                    1.0,
+                    float(os.environ.get("PANEL_PICK_DEMO_PICK_IMAGE_SETTLE_SEC", "3.0") or 3.0),
+                )
+                _t_pi_start = time.monotonic()
+                _pi_gate_open = False
+                while time.monotonic() - _t_pi_start < _pi_settle_sec:
+                    _tcp_now = _live_tcp_base()
+                    _delta_now = (
+                        _dist(_tcp_now, _pick_image_tcp_expected)
+                        if (_tcp_now is not None and _pick_image_tcp_expected is not None)
+                        else None
+                    )
+                    panel._emit_log(
+                        f"[STEP][PICK_IMAGE_MEASURED_TCP] "
+                        f"tcp={_fmt_vec(_tcp_now)} "
+                        f"delta={f'{_delta_now:.3f}m' if _delta_now is not None else 'n/a'}"
+                    )
+                    if _pick_image_tcp_expected is None:
+                        _pi_gate_open = True  # FK no disponible, no podemos bloquear
+                        break
+                    if _delta_now is not None and _delta_now <= _pi_tol_m:
+                        _pi_gate_open = True
+                        break
+                    time.sleep(0.15)
+                _tcp_pi_final = _live_tcp_base()
+                _delta_pi_final = (
+                    _dist(_tcp_pi_final, _pick_image_tcp_expected)
+                    if (_tcp_pi_final is not None and _pick_image_tcp_expected is not None)
+                    else None
+                )
+                panel._emit_log(
+                    f"[STEP][PICK_IMAGE_TCP_DELTA] "
+                    f"expected={_fmt_vec(_pick_image_tcp_expected)} "
+                    f"actual={_fmt_vec(_tcp_pi_final)} "
+                    f"delta={f'{_delta_pi_final:.3f}m' if _delta_pi_final is not None else 'n/a'} "
+                    f"tol={_pi_tol_m:.3f}m "
+                    f"gate={'open' if _pi_gate_open else 'timeout_continue'}"
+                )
+                if not _pi_gate_open:
+                    panel._emit_log(
+                        f"[STEP][APPROACH_COARSE_GATE_TIMEOUT_CONTINUE] "
+                        f"reason=pick_image_tcp_not_settled "
+                        f"delta={f'{_delta_pi_final:.3f}m' if _delta_pi_final is not None else 'n/a'} "
+                        f"tol={_pi_tol_m:.3f}m "
+                        f"elapsed={time.monotonic() - _t_pi_start:.1f}s"
+                    )
+                else:
+                    panel._emit_log(
+                        f"[STEP][APPROACH_COARSE_GATE_OPEN] "
+                        f"tcp={_fmt_vec(_tcp_pi_final)} "
+                        f"delta={f'{_delta_pi_final:.3f}m' if _delta_pi_final is not None else 'n/a'}"
+                    )
+                # ── [/FIX] ──────────────────────────────────────────────────────────
 
                 panel._emit_log("[DEMO] Bajando a pose de grasp (joints)")
                 coarse_extra_z_m = max(

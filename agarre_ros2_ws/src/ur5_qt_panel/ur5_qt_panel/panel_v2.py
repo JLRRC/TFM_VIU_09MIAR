@@ -4775,7 +4775,7 @@ class ControlPanelV2(QMainWindow):
         lbl_object = QLabel("Objeto XYZ: --")
         lbl_start_pose = QLabel("Pose inicial robot: --")
         history_table = QTableWidget(0, 9)
-        history_table.setHorizontalHeaderLabels(["Fase", "Pinza", "X act", "Y act", "Z act", "X obj", "Y obj", "Z obj", "Check"])
+        history_table.setHorizontalHeaderLabels(["Fase", "Pinza", "X Org", "Y Org", "Z Org", "X Target", "Y Target", "Z Target", "Check"])
         history_table.setEditTriggers(QTableWidget.NoEditTriggers)
         history_table.setSelectionMode(QTableWidget.NoSelection)
         history_table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
@@ -4829,6 +4829,31 @@ class ControlPanelV2(QMainWindow):
         self._step_start_pose_label = lbl_start_pose
         self._step_history_table = history_table
         self._step_continue_btn = btn_continue
+
+        # Timer de refresco live para los labels de pose del step window.
+        # Solo actúa si hay un gate activo (_step_wait_active) y modo STEP_BY_STEP.
+        # Frecuencia: 500ms — suficiente para que el usuario vea la pose "en vivo"
+        # sin saturar el bus TF con lookups continuos.
+        _step_live_timer = QTimer(dlg)
+        _step_live_timer.setInterval(500)
+        _step_live_timer.timeout.connect(self._step_window_maybe_refresh)
+        _step_live_timer.start()
+        self._step_live_timer = _step_live_timer
+
+    def _step_window_maybe_refresh(self) -> None:
+        """Refresca el header del step window cada 500ms, solo si hay gate activo.
+
+        Garantiza que los labels 'XYZ actual de la pinza' y 'XYZ base gripper (tool0)'
+        sean verdaderamente live mientras el usuario espera para pulsar 'Sigue'.
+        Sin este timer, los labels solo se actualizaban en la transición de gate.
+        """
+        if self._step_mode != "STEP_BY_STEP":
+            return
+        if not bool(getattr(self, "_step_wait_active", False)):
+            return
+        if self._step_window is None or not self._step_window.isVisible():
+            return
+        self._step_window_refresh()
 
     def _step_present_flow_name(self, flow: str) -> str:
         flow_name = str(flow or "").strip().upper()
@@ -5204,14 +5229,13 @@ class ControlPanelV2(QMainWindow):
                 pos3 = None
         sequence = self._step_phase_sequence(flow_name)
         first_phase = sequence[0] if sequence else ""
-        # No resetear si la fila INICIO ya fue pre-insertada desde el hilo principal
-        # (actual ya fijado = congelado).  En ese caso el worker reutiliza la fila
-        # existente y solo actualiza el target si es necesario.
+        # No resetear si la fila INICIO ya fue pre-insertada desde el hilo principal.
+        # El guard se activa si existe una fila con la fase inicial (independientemente
+        # de si actual está fijado o no — la fila es válida en cualquier caso).
         _inicio_pre_frozen = bool(
             first_phase
             and self._step_history_rows
             and str(self._step_history_rows[0].get("phase", "")).strip().upper() == first_phase
-            and self._step_history_rows[0].get("actual") is not None
         )
         if flow_name != self._step_history_flow:
             self._step_history_flow = flow_name
@@ -5241,33 +5265,77 @@ class ControlPanelV2(QMainWindow):
                 # Sin fallback a caché stale: si TF no devuelve pose, actual queda None
                 # y la tabla muestra PEND en vez de datos inventados.
                 last_row["actual"] = actual_pose
-                last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
-            elif last_phase != phase_name and last_row.get("actual") is not None:
-                # Fila pre-congelada (ej. INICIO): actual ya fijado, no se sobreescribe.
-                # Si el reached aún es None (pendiente), marcar OK: el usuario confirmó
-                # la pose al pulsar Sigue — la verificación fue exitosa por definición.
-                if last_phase == first_phase and last_row.get("reached") is None:
+                # INICIO es fase de verificación (no movimiento): su resultado siempre
+                # es OK — el usuario confirmó la pose al pulsar Sigue.
+                if last_phase == first_phase:
                     last_row["reached"] = True
+                else:
+                    last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
+            elif last_phase != phase_name and last_row.get("actual") is not None:
                 self._emit_log(
                     "[STEP][ROW_FROZEN] "
                     f"phase={last_phase} "
                     f"actual={self._step_format_inline_xyz(last_row.get('actual'))} "
-                    f"target={self._step_format_inline_xyz(last_row.get('target'))} "
-                    f"reached={last_row.get('reached')}"
+                    f"target={self._step_format_inline_xyz(last_row.get('target'))}"
                 )
+        _op_frame_snap = self._step_operational_frame_name()
         if self._step_history_rows and str(self._step_history_rows[-1].get("phase") or "").strip().upper() == phase_name:
-            # Solo actualizar target si aún está sin dato: evita sobreescribir el
-            # target verificado de INICIO (actual=target=pose_de_partida, reached=True).
-            if self._step_history_rows[-1].get("target") is None:
-                self._step_history_rows[-1]["target"] = pos3
+            # Mismo fase: solo actualizar target. origin_snapshot NUNCA se sobreescribe.
+            _existing_snap = self._step_history_rows[-1].get("origin_snapshot")
+            if _existing_snap is not None:
+                _current_snap = self._step_fetch_live_pose(_op_frame_snap)
+                if _current_snap is not None:
+                    _mut_delta = max(abs(_current_snap[i] - _existing_snap[i]) for i in range(3))
+                    if _mut_delta > 0.02:
+                        self._emit_log(
+                            f"[STEP][ORIGIN_MUTATION_ERROR] phase={phase_name} "
+                            f"old={self._step_format_inline_xyz(_existing_snap)} "
+                            f"new={self._step_format_inline_xyz(_current_snap)} "
+                            f"delta_m={_mut_delta:.4f}"
+                        )
+            self._step_history_rows[-1]["target"] = pos3
         else:
+            # Nueva fase: capturar pose actual como origin_snapshot (congelado).
+            # Retry hasta 3 veces con 80ms de espera si TF devuelve None — puede ocurrir
+            # cuando move_group limpia el buffer por un salto de reloj de Gazebo
+            # ("Detected jump back in time. Clearing TF buffer."). Cada 80ms ≈ 1.5 ciclos
+            # de publicación de /tf (20Hz), suficiente para que el buffer se reponga.
+            _origin_snap = None
+            _snap_source = "unavailable_after_3_retries"
+            for _snap_attempt in range(3):
+                _origin_snap = self._step_fetch_live_pose(_op_frame_snap)
+                if _origin_snap is not None:
+                    _snap_source = f"tf_live_attempt_{_snap_attempt + 1}"
+                    break
+                time.sleep(0.08)
+            self._emit_log(
+                f"[STEP][ORG_CAPTURE] phase={phase_name} "
+                f"frame={_op_frame_snap} "
+                f"xyz={self._step_format_inline_xyz(_origin_snap)} "
+                f"source={_snap_source}"
+            )
+            self._emit_log(
+                f"[STEP][ORG_CAPTURE_FRAME] phase={phase_name} "
+                f"op_frame={_op_frame_snap} "
+                f"capture_time_mono={time.monotonic():.3f}"
+            )
             self._step_history_rows.append(
                 {
                     "phase": phase_name,
                     "target": pos3,
                     "actual": None,
+                    "origin_snapshot": _origin_snap,  # pose robot al abrir la gate (congelada)
                     "reached": None,
                 }
+            )
+            self._emit_log(f"[STEP][PREPARED_PHASE] phase={phase_name} started=false")
+            self._emit_log(
+                f"[STEP][ORIGIN_SNAPSHOT] phase={phase_name} "
+                f"pose={self._step_format_inline_xyz(_origin_snap)} frame={_op_frame_snap}"
+            )
+            self._emit_log(
+                f"[STEP][TARGET_SNAPSHOT] phase={phase_name} "
+                f"pose={self._step_format_inline_xyz(pos3)}"
             )
             # actual queda None hasta que la fase SIGUIENTE empiece: en ese momento
             # la lógica de transición (líneas ~5224-5246) captura la pose real del
@@ -5285,8 +5353,12 @@ class ControlPanelV2(QMainWindow):
         ANTES del diálogo de confirmación, para que sea visible antes de pulsar Siguiente.
 
         - No bloquea (no espera evento de continue).
-        - Fija 'actual' en la fila → el worker posterior no la sobreescribirá
-          (el guard 'if last_row.get("actual") is None' la protege).
+        - 'actual' se deja None: _step_window_refresh muestra la pose TF2 en vivo mientras
+          el usuario espera.  Cuando el worker pase a APPROACH_COARSE, la lógica de transición
+          en _step_record_history capturará la pose real (robot aún en HOME) y marcará
+          reached=True (INICIO es fase de verificación, no de movimiento).
+        - 'target' = pos3_target (destino APPROACH_COARSE): la columna "X/Y/Z Obj" del
+          panel muestra adónde irá el robot cuando el usuario pulse Sigue.
         - Deshabilita el botón "Sigue" hasta que el worker esté listo y llame a
           _step_wait_for_phase, que lo habilitará via _step_window_set_waiting.
         - Solo actúa en modo STEP_BY_STEP; no hace nada en AUTO.
@@ -5315,16 +5387,27 @@ class ControlPanelV2(QMainWindow):
             except Exception:
                 pos3_target = None
 
-        # Insertar fila INICIO: target = actual (pose verificada de partida).
-        # La semántica de INICIO es "estoy aquí, verificado" → target = actual.
-        # El label "XYZ objetivo de fase" (top) mostrará el destino real via
-        # _step_phase_position = pos3_target. El Check = OK porque actual == target.
+        # Insertar fila INICIO:
+        #   origin_snapshot = pos3_actual → pose congelada del robot al pulsar el botón
+        #   actual = None  → se captura en transición (dónde llegó el robot al salir de INICIO)
+        #   target = pos3_target → destino APPROACH_COARSE (objeto + Z extra)
+        #   reached = None → PEND (naranja) hasta que la transición lo resuelva
         self._step_history_rows.append({
             "phase": first_phase,
-            "target": pos3_actual,   # ← pose verificada = dónde está el robot
-            "actual": pos3_actual,
-            "reached": True,          # ← siempre OK: el usuario verificó la pose
+            "target": pos3_target,        # ← destino APPROACH_COARSE
+            "actual": None,               # ← capturado en transición (pose de llegada)
+            "origin_snapshot": pos3_actual,  # ← congelado: pose robot al abrir la gate
+            "reached": None,              # ← PEND hasta transición
         })
+        self._emit_log(f"[STEP][PREPARED_PHASE] phase={first_phase} started=false")
+        self._emit_log(
+            f"[STEP][ORIGIN_SNAPSHOT] phase={first_phase} "
+            f"pose={self._step_format_inline_xyz(pos3_actual)} frame={self._step_operational_frame_name()}"
+        )
+        self._emit_log(
+            f"[STEP][TARGET_SNAPSHOT] phase={first_phase} "
+            f"pose={self._step_format_inline_xyz(pos3_target)}"
+        )
 
         # Pose del objeto físico en frame base_link (label "Objeto XYZ")
         pos3_obj = None
@@ -5402,15 +5485,21 @@ class ControlPanelV2(QMainWindow):
         operational_frame = self._step_operational_frame_name()
         operational_live = self._step_fetch_live_pose(operational_frame)
         # Sin fallback a caché stale: si TF no disponible, el label muestra "--"
+        if operational_live is not None:
+            self._emit_log(
+                f"[STEP][LIVE_POSE_HEADER] "
+                f"frame={operational_frame} "
+                f"xyz={self._step_format_inline_xyz(operational_live)}"
+            )
         if self._step_live_operational_label is not None:
             self._step_live_operational_label.setText(
                 self._step_live_pose_text("XYZ actual de la pinza", operational_frame, operational_live)
             )
-        visual_frame = "rg2_tcp"
+        visual_frame = "tool0"
         visual_live = self._step_fetch_live_pose(visual_frame)
         if self._step_live_visual_label is not None:
             self._step_live_visual_label.setText(
-                self._step_live_pose_text("XYZ visual de la pinza", visual_frame, visual_live)
+                self._step_live_pose_text("XYZ base gripper (tool0)", visual_frame, visual_live)
             )
         if self._step_gripper_expected_label is not None:
             current_flow = str(self._step_pending_flow or "").strip()
@@ -5439,10 +5528,18 @@ class ControlPanelV2(QMainWindow):
             for row_idx, row_data in enumerate(self._step_history_rows):
                 phase_name = str(row_data.get("phase") or "").strip().upper()
                 pos3 = row_data.get("target")
-                actual3 = row_data.get("actual")
                 reached = row_data.get("reached")
-                if actual3 is None and phase_name == str(self._step_current_phase or "").strip().upper():
-                    actual3 = operational_live
+                # Org column: siempre muestra origin_snapshot (congelado al abrir el gate).
+                # El campo `actual` (pose al transicionar) NO se usa aquí — la pose de
+                # llegada queda implícita como Org de la fase siguiente.
+                # Fallback: actual si no hay snapshot; live TF solo para fase activa PEND.
+                _origin_snap = row_data.get("origin_snapshot")
+                if _origin_snap is not None:
+                    actual3 = _origin_snap
+                else:
+                    actual3 = row_data.get("actual")
+                    if actual3 is None and phase_name == str(self._step_current_phase or "").strip().upper():
+                        actual3 = operational_live  # fallback: TF en vivo si no hay snapshot
                 display_phase = f"{phase_name} - {self._step_phase_intent(self._step_history_flow, phase_name)}"
                 expected_gripper = self._step_phase_gripper_state(self._step_history_flow, phase_name)
                 values = (display_phase, expected_gripper) + self._step_format_xyz(actual3) + self._step_format_xyz(pos3)
@@ -5580,6 +5677,8 @@ class ControlPanelV2(QMainWindow):
         else:
             self.signal_run_ui.emit(self._step_window_hide)
         self._emit_log(f"[STEP] release flow={flow_name} phase={phase_name} reason={reason}")
+        if reason == "button":
+            self._emit_log(f"[STEP][PHASE_START] phase={display_phase} flow={flow_name}")
 
     def _on_debug_motion_button(self) -> None:
         with self._debug_motion_lock:
@@ -14304,7 +14403,11 @@ class ControlPanelV2(QMainWindow):
             tcp_base = None
             tcp_source = "none"
             base_frame = self._business_base_frame()
-            ee_frame = str(getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center").strip() or "rg2_pinch_center"
+            # Usar rg2_tcp para el dot de cámara: es el frame visual de la pinza (tip/TCP),
+            # que corresponde mejor a lo que la cámara muestra visualmente.
+            # El frame operacional (rg2_pinch_center) se sigue usando para IK y grasping —
+            # este cambio solo afecta la posición del marcador en el overlay de cámara.
+            ee_frame = "rg2_tcp"
             tcp_pose_base, rpy, tcp_reason = tf_get_tcp_in_base(
                 base_frame=base_frame,
                 ee_frame=ee_frame,

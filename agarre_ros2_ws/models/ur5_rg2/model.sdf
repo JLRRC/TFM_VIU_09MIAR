@@ -608,10 +608,10 @@
         </link>
         <joint name="pick_demo_anchor_joint" type="fixed">
             <!-- Align the detachable-joint origin with the demo grasp center.
-                 tool0 -> rg2_tcp is +0.175 m and the direct demo grasps pick_demo
-                 with a 0.05 m tcp_z_offset, so the object center sits at +0.125 m
-                 in tool0 coordinates when the attach gate is correct. -->
-            <pose relative_to="tool0">0 0 0.125 0 0 0</pose>
+                 tool0 -> rg2_pinch_center is +0.175 m (URDF rg2_pinch_center_joint).
+                 The tcp_z_offset=0.05 m was removed in commit 9b58910 (_DIRECTO_GRASP_Z=0.0),
+                 so the anchor must be at +0.175 m to match rg2_pinch_center exactly. -->
+            <pose relative_to="tool0">0 0 0.175 0 0 0</pose>
             <parent>tool0</parent>
             <child>pick_demo_anchor</child>
         </joint>
