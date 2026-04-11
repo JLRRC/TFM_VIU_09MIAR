@@ -1,0 +1,5 @@
+experiment	policy	raw_range	margin	train_ylim	val_ylim	editorial_note	notes
+EXP1_SIMPLE_RGB	shared_global_train_val	[0.029188, 0.570865]	0.027084 (5%)	[0.002104, 0.597949]	[0.002104, 0.597949]		EXP1_SIMPLE_RGB: se detectó un posible outlier alto en loss (max=0.570865, umbral Tukey 3*IQR=0.072586). Se mantiene el rango completo sin recortar datos.
+EXP2_SIMPLE_RGBD	independent_train_val	[0.031860, 0.039406]	0.000228 (5%)	[0.034611, 0.039635]	[0.031748, 0.034216]	Comentario del tutor: esta ilustracion se mantiene como excepcion editorial activa, con `ylim` independiente por subplot, porque forzar la misma escala se considera poco practico en este caso concreto.	
+EXP3_RESNET18_RGB_AUGMENT	shared_global_train_val	[0.024178, 0.079740]	0.002778 (5%)	[0.021400, 0.082518]	[0.021400, 0.082518]		
+EXP4_RESNET18_RGBD	shared_global_train_val	[0.021216, 0.054524]	0.001665 (5%)	[0.019550, 0.056189]	[0.019550, 0.056189]		

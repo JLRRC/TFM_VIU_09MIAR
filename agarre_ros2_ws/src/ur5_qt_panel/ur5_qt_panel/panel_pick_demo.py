@@ -941,7 +941,7 @@ def run_pick_demo(panel) -> None:
         panel._set_status("Controladores no listos; esperando", error=False)
         return
     requested_route_mode = str(
-        os.environ.get("PANEL_PICK_DEMO_ROUTE_MODE", "manual_reference") or "manual_reference"
+        os.environ.get("PANEL_PICK_DEMO_ROUTE_MODE", "direct_ik_hybrid") or "direct_ik_hybrid"
     ).strip().lower()
     route_candidates = "manual_reference,direct_ik_hybrid,joint_preset_fallback"
     route_gate_manual_reference = True
@@ -4486,6 +4486,8 @@ def run_pick_demo(panel) -> None:
                                     ),
                                 ),
                                 z_ref_mode="center",
+                                # rg2_pinch_center ya es el frame de contacto
+                                tcp_z_correction_m=0.0,
                             )
                         )
                     except Exception as exc:
@@ -4993,6 +4995,62 @@ def run_pick_demo(panel) -> None:
                     float(obj_base_3[2]) + float(_DIRECTO_GRASP_Z) + float(dynamic_extra_z_m),
                 )
 
+            # Gate de inicio STEP_BY_STEP: en modo STEP muestra la pose actual antes de
+            # que el robot empiece a moverse, y espera a que el usuario pulse Siguiente.
+            # En modo AUTO retorna inmediatamente.
+            _step_gate = getattr(panel, "_step_wait_for_phase", None)
+            if callable(_step_gate):
+                _inicio_pose = None
+                _get_pose = getattr(panel, "_step_fetch_live_pose", None)
+                _get_frame = getattr(panel, "_step_operational_frame_name", None)
+                if callable(_get_pose) and callable(_get_frame):
+                    _inicio_pose = _get_pose(_get_frame())
+                # Objetivo de la primera fase real (preview para la fila INICIO de la
+                # tabla): muestra "estoy aquí -> voy a ir aquí" antes de pulsar Siguiente.
+                # En ruta manual_reference el primer objetivo XYZ es PICK_PRE_CLOSE_REF.
+                # En rutas no-manuales, el primer objetivo XYZ útil es APPROACH_COARSE.
+                _inicio_next_target = None
+                _obj_for_inicio = _live_object_base()
+                _inicio_preview_phase = "PICK_PRE_CLOSE_REF"
+                if route_selected == "manual_reference" and _obj_for_inicio is not None:
+                    _inicio_next_target = _dynamic_pre_close_reference_base(_obj_for_inicio)
+                elif _obj_for_inicio is not None:
+                    _coarse_extra_z_m = max(
+                        0.0,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M",
+                                "0.10",
+                            )
+                            or 0.10
+                        ),
+                    )
+                    _inicio_next_target = (
+                        float(_obj_for_inicio[0]),
+                        float(_obj_for_inicio[1]),
+                        float(_obj_for_inicio[2]) + float(_DIRECTO_GRASP_Z) + float(_coarse_extra_z_m),
+                    )
+                    _inicio_preview_phase = "APPROACH_COARSE"
+                panel._emit_log(
+                    "[STEP][INICIO_TARGET] "
+                    f"route={route_selected} "
+                    f"preview_phase={_inicio_preview_phase} "
+                    f"tcp_actual={_fmt_vec(_tuple3(_inicio_pose))} "
+                    f"obj_base={_fmt_vec(_tuple3(_obj_for_inicio))} "
+                    f"next_target_preview={_fmt_vec(_tuple3(_inicio_next_target))}"
+                )
+                _step_gate(
+                    "DIRECT.INICIO",
+                    flow="DIRECT",
+                    position=(
+                        _tuple3(_inicio_next_target)
+                        if _inicio_next_target is not None
+                        else _tuple3(_inicio_pose)
+                    ),
+                    decision="INICIO - Pose verificada - pulse siguiente",
+                    object_position=_tuple3(_obj_for_inicio),
+                )
+
             manual_reference_ok = False
             if route_selected == "manual_reference":
                 ref_target_base = None
@@ -5211,6 +5269,73 @@ def run_pick_demo(panel) -> None:
                 )
                 approach_debug = None
                 approach_decision = "direct_ik_move"
+                # TCP canónico después del gate: usar el valor capturado POR _phase_begin
+                # justo después de que el usuario pulsó "Sigue".  Evita el bug de TF stale
+                # donde una segunda llamada a _live_tcp_base() devuelve un valor cacheado
+                # de la sesión anterior, distinto al valor que _phase_begin registró en el
+                # trace (que usa la misma función pero en el mismo contexto temporal).
+                _phase_data_after_gate = current_phase.get("data") or {}
+                _tcp_canonical = _tuple3(_phase_data_after_gate.get("tcp_pose_base_before"))
+                if _tcp_canonical is None:
+                    _tcp_canonical = _live_tcp_base()
+                _tcp_canonical_src = (
+                    "phase_begin_capture" if _tuple3(_phase_data_after_gate.get("tcp_pose_base_before")) is not None
+                    else "live_fallback"
+                )
+                # Si target_base_coarse fue calculado en modo keep_current_xy usando un
+                # tcp_before_coarse que ahora resulta diferente del TCP canónico (> 1 cm),
+                # reanclar el target con el TCP canónico real.
+                if (
+                    coarse_target_mode == "keep_current_xy_plus_object_z"
+                    and _tcp_canonical is not None
+                    and tcp_before_coarse is not None
+                    and target_base_coarse is not None
+                ):
+                    _stale_delta_xy = math.hypot(
+                        float(_tcp_canonical[0]) - float(tcp_before_coarse[0]),
+                        float(_tcp_canonical[1]) - float(tcp_before_coarse[1]),
+                    )
+                    if _stale_delta_xy > 0.010:
+                        _fresh_obj_reanchor = _live_object_base()
+                        if _fresh_obj_reanchor is not None:
+                            _fresh_tcp_obj_xy = math.hypot(
+                                float(_tcp_canonical[0]) - float(_fresh_obj_reanchor[0]),
+                                float(_tcp_canonical[1]) - float(_fresh_obj_reanchor[1]),
+                            )
+                            _reanchor_keep_xy_tol = max(
+                                0.01,
+                                float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_KEEP_XY_TOL_M", "0.06") or 0.06),
+                            )
+                            if _fresh_tcp_obj_xy <= _reanchor_keep_xy_tol:
+                                _new_target_x = float(_tcp_canonical[0])
+                                _new_target_y = float(_tcp_canonical[1])
+                                _reanchor_mode = "keep_fresh_tcp_xy"
+                            else:
+                                _new_target_x = float(_fresh_obj_reanchor[0])
+                                _new_target_y = float(_fresh_obj_reanchor[1])
+                                _reanchor_mode = "object_xy_fresh"
+                            target_base_coarse = (
+                                _new_target_x,
+                                _new_target_y,
+                                float(target_base_coarse[2]),
+                            )
+                            coarse_target_mode = f"reanchored_{_reanchor_mode}"
+                            _reanchor_msg = (
+                                "[PICK][DIRECT][APPROACH_COARSE_REANCHOR] "
+                                f"stale_delta_xy={_stale_delta_xy:.3f} "
+                                f"tcp_stale={_fmt_vec(tcp_before_coarse)} "
+                                f"tcp_canon={_fmt_vec(_tcp_canonical)} "
+                                f"new_target={_fmt_vec(target_base_coarse)} "
+                                f"mode={_reanchor_mode}"
+                            )
+                            panel._emit_log(_reanchor_msg)
+                            _append_trace(_reanchor_msg)
+                            _phase_target_update(
+                                "APPROACH_COARSE",
+                                target_base=target_base_coarse,
+                                target_world=_target_world_from_base(target_base_coarse),
+                                frame_used="base_link",
+                            )
                 if target_base_coarse is not None:
                     coarse_skip_xy_tol = max(
                         0.005,
@@ -5220,33 +5345,21 @@ def run_pick_demo(panel) -> None:
                         0.005,
                         float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_SKIP_Z_TOL_M", "0.04") or 0.04),
                     )
-                    if tcp_before_coarse is not None:
-                        # Re-leer TCP fresh justo antes del skip check. _phase_begin bloqueó
-                        # en _step_wait_for_phase (STEP_BY_STEP) hasta que el usuario pulsó
-                        # "Sigue", durante ese tiempo el robot pudo moverse o el valor cacheado
-                        # de _live_tcp_base() pudo quedar stale de la sesión anterior.
-                        _tcp_at_skip_check = _live_tcp_base()
-                        if _tcp_at_skip_check is None:
-                            _tcp_at_skip_check = tcp_before_coarse
-                        _tcp_at_skip_check_src = "live" if _tcp_at_skip_check is not tcp_before_coarse else "fallback_before_coarse"
-                        coarse_dx = float(_tcp_at_skip_check[0]) - float(target_base_coarse[0])
-                        coarse_dy = float(_tcp_at_skip_check[1]) - float(target_base_coarse[1])
-                        coarse_dz = float(_tcp_at_skip_check[2]) - float(target_base_coarse[2])
+                    if _tcp_canonical is not None:
+                        coarse_dx = float(_tcp_canonical[0]) - float(target_base_coarse[0])
+                        coarse_dy = float(_tcp_canonical[1]) - float(target_base_coarse[1])
+                        coarse_dz = float(_tcp_canonical[2]) - float(target_base_coarse[2])
                         coarse_xy = math.hypot(coarse_dx, coarse_dy)
-                        # Hard safety limit: never skip if TCP is clearly far from target.
-                        # Prevents false skips when _live_tcp_base() returns an inconsistent
-                        # value or when keep_current_xy mode placed the target at the wrong XY.
                         _coarse_max_skip_m = max(
                             coarse_skip_xy_tol,
                             float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_MAX_SKIP_M", "0.06") or 0.06),
                         )
-                        # Always trace the skip-check values so we can diagnose future issues.
                         _skip_check_msg = (
                             "[PICK][DIRECT][APPROACH_SKIP_CHECK] "
-                            f"tcp_at_check={_fmt_vec(_tcp_at_skip_check)} tcp_src={_tcp_at_skip_check_src} "
+                            f"tcp_canon={_fmt_vec(_tcp_canonical)} tcp_src={_tcp_canonical_src} "
                             f"target={_fmt_vec(target_base_coarse)} "
                             f"xy_dist={coarse_xy:.3f}/{coarse_skip_xy_tol:.3f} max_skip={_coarse_max_skip_m:.3f} "
-                            f"dz={coarse_dz:.3f}/{coarse_skip_z_tol:.3f}"
+                            f"dz={coarse_dz:.3f}/{coarse_skip_z_tol:.3f} mode={coarse_target_mode}"
                         )
                         _append_trace(_skip_check_msg)
                         if (
@@ -5257,7 +5370,7 @@ def run_pick_demo(panel) -> None:
                             approach_decision = "skip_already_at_coarse_target"
                             _skip_msg = (
                                 "[PICK][DIRECT][APPROACH_SKIP] "
-                                f"tcp_at_check={_fmt_vec(_tcp_at_skip_check)} target={_fmt_vec(target_base_coarse)} "
+                                f"tcp_canon={_fmt_vec(_tcp_canonical)} target={_fmt_vec(target_base_coarse)} "
                                 f"xy_dist={coarse_xy:.3f}/{coarse_skip_xy_tol:.3f} "
                                 f"dz={coarse_dz:.3f}/{coarse_skip_z_tol:.3f}"
                             )
@@ -5272,7 +5385,6 @@ def run_pick_demo(panel) -> None:
                             and abs(coarse_dz) <= coarse_skip_z_tol
                             and coarse_xy > _coarse_max_skip_m
                         ):
-                            # Tolerances met but hard limit blocks the skip — force a real move.
                             _skip_blocked_msg = (
                                 "[PICK][DIRECT][APPROACH_SKIP_BLOCKED] "
                                 f"xy_dist={coarse_xy:.3f}/{coarse_skip_xy_tol:.3f} "
@@ -5353,7 +5465,12 @@ def run_pick_demo(panel) -> None:
                 # PHASE_CHECK: medir error geométrico real de APPROACH_COARSE y
                 # capturar variables de gate que usará GRASP_DOWN_JOINT para decidir
                 # si hereda o no el XY de esta fase.
-                _coarse_check_tcp = _live_tcp_base()
+                # Si approach_decision == skip, reutilizar _tcp_canonical (mismo frame temporal
+                # que el skip check). Si hubo movimiento real, leer el TCP fresco post-move.
+                if approach_decision == "skip_already_at_coarse_target":
+                    _coarse_check_tcp = _tcp_canonical
+                else:
+                    _coarse_check_tcp = _live_tcp_base()
                 _coarse_check_obj = _live_object_base()
                 coarse_gate_xy_ok: bool = False
                 coarse_gate_z_ok: bool = False
@@ -6107,6 +6224,7 @@ def run_pick_demo(panel) -> None:
                 "phase=PRE_CLOSE "
                 f"xy_err={_fmt_scalar(pre_close_metrics.get('xy_dist'))}/{_fmt_scalar(pre_close_metrics.get('xy_tol'))} "
                 f"z_err={_fmt_scalar(pre_close_metrics.get('z_error'))}/{_fmt_scalar(pre_close_metrics.get('z_tol'))} "
+                f"target_xyz={_fmt_vec(_tuple3(target_base_pre))} "
                 f"actual_xyz={_fmt_vec(_tuple3(_pc_check_tcp))} "
                 f"object_xyz={_fmt_vec(_tuple3(_pc_check_obj))} "
                 f"result={_pc_check_result}"
@@ -6405,6 +6523,8 @@ def run_pick_demo(panel) -> None:
                 xy_tol_m=attach_xy_tol_m,
                 z_tol_m=attach_z_tol_m,
                 z_ref_mode="center",
+                # rg2_pinch_center ya es el frame de contacto: no restar GRIPPER_TCP_Z_OFFSET
+                tcp_z_correction_m=0.0,
             )
             _ag_attach_reason = "attach_call_ok" if attach_ok else "attempt_attach_returned_false"
             panel._emit_log(

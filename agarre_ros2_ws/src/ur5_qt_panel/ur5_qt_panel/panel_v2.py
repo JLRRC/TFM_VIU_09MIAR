@@ -2441,6 +2441,7 @@ class ControlPanelV2(QMainWindow):
         z_clearance_m: float = 0.0,
         tcp_stamp_ns: Optional[int] = None,
         obj_stamp_ns: Optional[int] = None,
+        tcp_z_correction_m: Optional[float] = None,
     ) -> bool:
         """Intenta vincular el objeto seleccionado al gripper en Gazebo."""
         positions = get_object_positions() or {}
@@ -2500,7 +2501,10 @@ class ControlPanelV2(QMainWindow):
             z_clearance = float(z_clearance_m or 0.0)
             obj_ref_z = obj_center_z if mode == "center" else obj_top_z
             obj_ref_z += z_clearance
-            tcp_contact_z = float(tcp_base_pos[2]) - float(GRIPPER_TCP_Z_OFFSET)
+            # tcp_z_correction_m=0.0 cuando el TCP ya está en el frame de contacto
+            # (rg2_pinch_center). Si es None, usar GRIPPER_TCP_Z_OFFSET por retrocompatibilidad.
+            _tz_corr = float(tcp_z_correction_m) if tcp_z_correction_m is not None else float(GRIPPER_TCP_Z_OFFSET)
+            tcp_contact_z = float(tcp_base_pos[2]) - _tz_corr
             dx = float(obj_base_pos[0]) - float(tcp_base_pos[0])
             dy = float(obj_base_pos[1]) - float(tcp_base_pos[1])
             dz = obj_ref_z - tcp_contact_z
@@ -2510,7 +2514,7 @@ class ControlPanelV2(QMainWindow):
             self._emit_log(
                 "[PICK][ATTACH][GEOM] "
                 f"frame={frame_name} tcp=({float(tcp_base_pos[0]):.3f},{float(tcp_base_pos[1]):.3f},{float(tcp_base_pos[2]):.3f}) "
-                f"tcp_contact_z={tcp_contact_z:.3f} tcp_z_offset={float(GRIPPER_TCP_Z_OFFSET):.3f} "
+                f"tcp_contact_z={tcp_contact_z:.3f} tcp_z_correction={_tz_corr:.3f} "
                 f"obj_center=({float(obj_base_pos[0]):.3f},{float(obj_base_pos[1]):.3f},{obj_center_z:.3f}) "
                 f"obj_top_z={obj_top_z:.3f} obj_height={obj_height:.3f} "
                 f"z_ref_mode={mode} z_clearance={z_clearance:.3f} obj_ref_z={obj_ref_z:.3f} "
@@ -4841,7 +4845,7 @@ class ControlPanelV2(QMainWindow):
         flow_name = str(flow or "").strip().upper()
         sequences = {
             "DIRECT": [
-                "PICK_PRE_CLOSE_REF",
+                "INICIO",
                 "APPROACH_COARSE",
                 "GRASP_DOWN_JOINT",
                 "GRASP_ALIGN_IK",
@@ -4849,9 +4853,8 @@ class ControlPanelV2(QMainWindow):
                 "CLOSE",
                 "ATTACH_GATE",
                 "LIFT",
-                "MESA_WITH_OBJECT",
-                "CESTA",
-                "CESTA_RELEASE",
+                "CARRY",
+                "RELEASE",
                 "HOME_FINAL",
             ],
             "DIRECT2": ["MESA_1", "POSE_BUENA", "MESA_2", "CESTA"],
@@ -4897,6 +4900,7 @@ class ControlPanelV2(QMainWindow):
         phase_name = str(phase or "").strip().upper()
         intents = {
             "DIRECT": {
+                "INICIO": "Pose verificada - pulse siguiente.",
                 "PICK_PRE_CLOSE_REF": "Ir a la referencia manual previa al cierre.",
                 "APPROACH_COARSE": "Acercarse al objeto de forma gruesa.",
                 "GRASP_DOWN_JOINT": "Bajar de forma conservadora preservando el XY útil.",
@@ -4905,9 +4909,8 @@ class ControlPanelV2(QMainWindow):
                 "CLOSE": "Cerrar la pinza sobre el objeto.",
                 "ATTACH_GATE": "Comprobar si el objeto ha quedado agarrado.",
                 "LIFT": "Elevar el objeto tras el agarre.",
-                "MESA_WITH_OBJECT": "Retirarse con el objeto hacia zona segura.",
-                "CESTA": "Transportar el objeto hacia la cesta.",
-                "CESTA_RELEASE": "Soltar el objeto en la cesta.",
+                "CARRY": "Transportar el objeto hacia la cesta.",
+                "RELEASE": "Soltar el objeto en la cesta.",
                 "HOME_FINAL": "Volver a la pose final segura.",
             },
             "DIRECT2": {
@@ -4948,6 +4951,7 @@ class ControlPanelV2(QMainWindow):
         phase_name = str(phase or "").strip().upper()
         states = {
             "DIRECT": {
+                "INICIO": "Abierta",
                 "PICK_PRE_CLOSE_REF": "Abierta",
                 "APPROACH_COARSE": "Abierta",
                 "GRASP_DOWN_JOINT": "Abierta",
@@ -4956,9 +4960,8 @@ class ControlPanelV2(QMainWindow):
                 "CLOSE": "Cerrada",
                 "ATTACH_GATE": "Cerrada",
                 "LIFT": "Cerrada",
-                "MESA_WITH_OBJECT": "Cerrada",
-                "CESTA": "Cerrada",
-                "CESTA_RELEASE": "Abierta",
+                "CARRY": "Cerrada",
+                "RELEASE": "Abierta",
                 "HOME_FINAL": "Abierta",
             },
             "DIRECT2": {
@@ -5095,6 +5098,7 @@ class ControlPanelV2(QMainWindow):
             return "--"
 
     def _step_fetch_live_pose(self, ee_frame: str) -> Optional[Tuple[float, float, float]]:
+        """Consulta TF en tiempo real. Devuelve None si TF no disponible; nunca usa caché stale."""
         frame_name = str(ee_frame or "").strip()
         if not frame_name:
             return None
@@ -5102,7 +5106,7 @@ class ControlPanelV2(QMainWindow):
         tcp_pose_base, _tcp_rpy_deg, _tcp_reason = tf_get_tcp_in_base(
             base_frame=base_frame,
             ee_frame=frame_name,
-            timeout=0.05,
+            timeout=0.20,
             logger=None,
         )
         if tcp_pose_base is None:
@@ -5200,20 +5204,62 @@ class ControlPanelV2(QMainWindow):
                 pos3 = None
         sequence = self._step_phase_sequence(flow_name)
         first_phase = sequence[0] if sequence else ""
-        if flow_name != self._step_history_flow or (first_phase and phase_name == first_phase):
+        # No resetear si la fila INICIO ya fue pre-insertada desde el hilo principal
+        # (actual ya fijado = congelado).  En ese caso el worker reutiliza la fila
+        # existente y solo actualiza el target si es necesario.
+        _inicio_pre_frozen = bool(
+            first_phase
+            and self._step_history_rows
+            and str(self._step_history_rows[0].get("phase", "")).strip().upper() == first_phase
+            and self._step_history_rows[0].get("actual") is not None
+        )
+        if flow_name != self._step_history_flow:
             self._step_history_flow = flow_name
+            self._step_history_rows = []
+        elif first_phase and phase_name == first_phase and not _inicio_pre_frozen:
             self._step_history_rows = []
         if self._step_history_rows:
             last_row = self._step_history_rows[-1]
             last_phase = str(last_row.get("phase") or "").strip().upper()
             if last_phase != phase_name and last_row.get("actual") is None:
-                actual_pose = self._step_fetch_live_pose(self._step_operational_frame_name())
-                if actual_pose is None:
-                    actual_pose = self._last_trace_tcp_base or self._last_tcp_base
+                _op_frame = self._step_operational_frame_name()
+                actual_pose = self._step_fetch_live_pose(_op_frame)
+                _pose_src = "tf_live" if actual_pose is not None else "unavailable"
+                _xyz_log = (
+                    f"({actual_pose[0]:.3f},{actual_pose[1]:.3f},{actual_pose[2]:.3f})"
+                    if actual_pose is not None else "none"
+                )
+                self._emit_log(
+                    f"[STEP][TF_LIVE] available={str(actual_pose is not None).lower()} "
+                    f"frame={_op_frame} xyz={_xyz_log}"
+                )
+                self._emit_log(
+                    f"[STEP][POSE_SOURCE] phase={last_phase} source={_pose_src} "
+                    f"frame={_op_frame} xyz={_xyz_log} "
+                    f"same_frame_as_backend=true same_source_as_backend=true"
+                )
+                # Sin fallback a caché stale: si TF no devuelve pose, actual queda None
+                # y la tabla muestra PEND en vez de datos inventados.
                 last_row["actual"] = actual_pose
                 last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
+            elif last_phase != phase_name and last_row.get("actual") is not None:
+                # Fila pre-congelada (ej. INICIO): actual ya fijado, no se sobreescribe.
+                # Si el reached aún es None (pendiente), marcar OK: el usuario confirmó
+                # la pose al pulsar Sigue — la verificación fue exitosa por definición.
+                if last_phase == first_phase and last_row.get("reached") is None:
+                    last_row["reached"] = True
+                self._emit_log(
+                    "[STEP][ROW_FROZEN] "
+                    f"phase={last_phase} "
+                    f"actual={self._step_format_inline_xyz(last_row.get('actual'))} "
+                    f"target={self._step_format_inline_xyz(last_row.get('target'))} "
+                    f"reached={last_row.get('reached')}"
+                )
         if self._step_history_rows and str(self._step_history_rows[-1].get("phase") or "").strip().upper() == phase_name:
-            self._step_history_rows[-1]["target"] = pos3
+            # Solo actualizar target si aún está sin dato: evita sobreescribir el
+            # target verificado de INICIO (actual=target=pose_de_partida, reached=True).
+            if self._step_history_rows[-1].get("target") is None:
+                self._step_history_rows[-1]["target"] = pos3
         else:
             self._step_history_rows.append(
                 {
@@ -5223,6 +5269,94 @@ class ControlPanelV2(QMainWindow):
                     "reached": None,
                 }
             )
+            # actual queda None hasta que la fase SIGUIENTE empiece: en ese momento
+            # la lógica de transición (líneas ~5224-5246) captura la pose real del
+            # robot, que YA habrá llegado al destino de esta fase. Esto garantiza que
+            # la columna "actual" muestre dónde llegó el robot (pose de llegada),
+            # no dónde estaba antes de empezar a moverse (pose de salida).
+
+    def _step_pre_insert_inicio_row(
+        self,
+        pos_actual,
+        target_pos,
+        obj_pos=None,
+    ) -> None:
+        """Pre-inserta la fila INICIO en la tabla STEP_BY_STEP desde el hilo principal,
+        ANTES del diálogo de confirmación, para que sea visible antes de pulsar Siguiente.
+
+        - No bloquea (no espera evento de continue).
+        - Fija 'actual' en la fila → el worker posterior no la sobreescribirá
+          (el guard 'if last_row.get("actual") is None' la protege).
+        - Deshabilita el botón "Sigue" hasta que el worker esté listo y llame a
+          _step_wait_for_phase, que lo habilitará via _step_window_set_waiting.
+        - Solo actúa en modo STEP_BY_STEP; no hace nada en AUTO.
+        - obj_pos: pose del objeto en frame base_link (para el label "Objeto XYZ").
+        """
+        if self._step_mode != "STEP_BY_STEP":
+            return
+        flow_name = "DIRECT"
+        first_phase = "INICIO"
+
+        # Reset del flow para este nuevo ciclo
+        self._step_history_flow = flow_name
+        self._step_history_rows = []
+
+        pos3_actual = None
+        if isinstance(pos_actual, (list, tuple)) and len(pos_actual) >= 3:
+            try:
+                pos3_actual = (float(pos_actual[0]), float(pos_actual[1]), float(pos_actual[2]))
+            except Exception:
+                pos3_actual = None
+
+        pos3_target = None
+        if isinstance(target_pos, (list, tuple)) and len(target_pos) >= 3:
+            try:
+                pos3_target = (float(target_pos[0]), float(target_pos[1]), float(target_pos[2]))
+            except Exception:
+                pos3_target = None
+
+        # Insertar fila INICIO: target = actual (pose verificada de partida).
+        # La semántica de INICIO es "estoy aquí, verificado" → target = actual.
+        # El label "XYZ objetivo de fase" (top) mostrará el destino real via
+        # _step_phase_position = pos3_target. El Check = OK porque actual == target.
+        self._step_history_rows.append({
+            "phase": first_phase,
+            "target": pos3_actual,   # ← pose verificada = dónde está el robot
+            "actual": pos3_actual,
+            "reached": True,          # ← siempre OK: el usuario verificó la pose
+        })
+
+        # Pose del objeto físico en frame base_link (label "Objeto XYZ")
+        pos3_obj = None
+        if isinstance(obj_pos, (list, tuple)) and len(obj_pos) >= 3:
+            try:
+                pos3_obj = (float(obj_pos[0]), float(obj_pos[1]), float(obj_pos[2]))
+            except Exception:
+                pos3_obj = None
+        self._step_object_position = pos3_obj
+
+        # Actualizar estado visible de la ventana
+        self._step_pending_flow = flow_name.lower()
+        self._step_pending_phase = f"{flow_name}.{first_phase}"
+        self._step_current_phase = first_phase
+        self._step_next_phase = self._step_predict_next_phase(flow_name, first_phase)
+        self._step_decision = "INICIO - Pose verificada - pulse siguiente"
+        self._step_phase_position = pos3_target
+
+        # Abrir ventana, mostrar fila, deshabilitar "Sigue" (worker aún no arrancó)
+        self._ensure_step_window()
+        self._step_window_refresh()
+        if self._step_continue_btn is not None:
+            self._step_continue_btn.setEnabled(False)
+        if self._step_window is not None:
+            self._step_window.show()
+
+        self._emit_log(
+            "[STEP][PRE_INSERT_INICIO] "
+            f"actual={self._step_format_inline_xyz(pos3_actual)} "
+            f"target={self._step_format_inline_xyz(pos3_target)} "
+            "btn_sigue=disabled pending_worker=true"
+        )
 
     def _step_window_refresh(self) -> None:
         self._ensure_step_window()
@@ -5267,8 +5401,7 @@ class ControlPanelV2(QMainWindow):
             )
         operational_frame = self._step_operational_frame_name()
         operational_live = self._step_fetch_live_pose(operational_frame)
-        if operational_live is None and operational_frame == getattr(self, "_ee_frame_effective", ""):
-            operational_live = self._last_trace_tcp_base or self._last_tcp_base
+        # Sin fallback a caché stale: si TF no disponible, el label muestra "--"
         if self._step_live_operational_label is not None:
             self._step_live_operational_label.setText(
                 self._step_live_pose_text("XYZ actual de la pinza", operational_frame, operational_live)
@@ -5326,9 +5459,24 @@ class ControlPanelV2(QMainWindow):
         last_row = self._step_history_rows[-1]
         if last_row.get("actual") is not None:
             return
-        actual_pose = self._step_fetch_live_pose(self._step_operational_frame_name())
-        if actual_pose is None:
-            actual_pose = self._last_trace_tcp_base or self._last_tcp_base
+        _op_frame = self._step_operational_frame_name()
+        actual_pose = self._step_fetch_live_pose(_op_frame)
+        _pose_src = "tf_live" if actual_pose is not None else "unavailable"
+        _phase_tag = str(last_row.get("phase") or "").strip()
+        _xyz_log = (
+            f"({actual_pose[0]:.3f},{actual_pose[1]:.3f},{actual_pose[2]:.3f})"
+            if actual_pose is not None else "none"
+        )
+        self._emit_log(
+            f"[STEP][TF_LIVE] available={str(actual_pose is not None).lower()} "
+            f"frame={_op_frame} xyz={_xyz_log}"
+        )
+        self._emit_log(
+            f"[STEP][POSE_SOURCE] phase={_phase_tag} source={_pose_src} "
+            f"frame={_op_frame} xyz={_xyz_log} "
+            f"same_frame_as_backend=true same_source_as_backend=true"
+        )
+        # Sin fallback a caché stale: si TF no disponible, actual queda None → PEND
         last_row["actual"] = actual_pose
         last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
         if self._step_history_table is not None:
@@ -5396,6 +5544,19 @@ class ControlPanelV2(QMainWindow):
 
         self._emit_log(f"[STEP] pending flow={flow_name} phase={phase_name}")
         self.signal_run_ui.emit(self._step_window_set_waiting)
+        with self._step_gate_lock:
+            row_actual = None
+            row_target = None
+            if self._step_history_rows:
+                _row = self._step_history_rows[-1]
+                row_actual = _row.get("actual")
+                row_target = _row.get("target")
+            self._emit_log(
+                "[STEP][ROW_VISIBLE_BEFORE_CONTINUE] "
+                f"flow={flow_name} phase={display_phase} "
+                f"actual={self._step_format_inline_xyz(row_actual)} "
+                f"target={self._step_format_inline_xyz(row_target)}"
+            )
 
         reason = "button"
         while True:
@@ -14409,10 +14570,90 @@ class ControlPanelV2(QMainWindow):
         painter.end()
         return img_copy
 
+    @staticmethod
+    def _pick_confirm_dialog(parent, btn_label: str, frame: str, pose_str: str) -> bool:
+        """Muestra diálogo de confirmación con pose actual de la pinza.
+        Devuelve True si el usuario pulsa Siguiente, False si cancela.
+        Se ejecuta en el GUI thread antes de que el worker arranque.
+        """
+        from PyQt5.QtWidgets import QMessageBox, QPushButton
+        dlg = QMessageBox(parent)
+        dlg.setWindowTitle(f"Confirmar: {btn_label}")
+        dlg.setText(
+            f"<b>Botón pulsado:</b> {btn_label}<br><br>"
+            f"<b>Pose actual de la pinza</b><br>"
+            f"&nbsp;&nbsp;frame: <tt>{frame}</tt><br>"
+            f"&nbsp;&nbsp;XYZ&nbsp;&nbsp;: <tt>{pose_str}</tt><br><br>"
+            f"Pulse <b>Siguiente</b> para iniciar la secuencia,<br>"
+            f"o <b>Cancelar</b> para abortar."
+        )
+        btn_sig = dlg.addButton("Siguiente", QMessageBox.AcceptRole)
+        btn_can = dlg.addButton("Cancelar",  QMessageBox.RejectRole)
+        dlg.setDefaultButton(btn_sig)
+        dlg.exec_()
+        return dlg.clickedButton() is btn_sig
+
     def _run_pick_demo(self):
         """Ejecuta la ruta directa del demo sobre el objeto seleccionado."""
         self._log_button("Agarre Objeto (Directo)")
         self._step_capture_start_pose("Agarre Objeto (Directo)")
+        _op_frame = self._step_operational_frame_name()
+        _fresh_xyz = self._step_fetch_live_pose(_op_frame)
+        if _fresh_xyz is not None:
+            _px, _py, _pz = _fresh_xyz
+            _pose_str = f"({_px:.4f}, {_py:.4f}, {_pz:.4f})"
+        else:
+            _pose_str = "no disponible (TF no listo)"
+        self._emit_log(
+            f"[BOTON] Pulsado: Agarre Objeto (Directo) | "
+            f"frame={_op_frame} | Pose pinza ahora: {_pose_str}"
+        )
+        # En modo STEP_BY_STEP: pre-insertar la fila INICIO en la ventana antes de
+        # mostrar el diálogo de confirmación, para que el usuario la vea ya en la
+        # tabla mientras decide si continuar o cancelar.
+        if self._step_mode == "STEP_BY_STEP":
+            _inicio_first_target = None
+            _obj_base = None  # inicializar antes del try para evitar NameError
+            try:
+                from .panel_pick_demo import (
+                    _resolve_live_object_base,
+                    _effective_direct_grasp_z,
+                    PICK_DEMO_OBJECT_NAME,
+                    DIRECT_SOURCE_FRAME,
+                )
+                _grasp_z_raw = float(
+                    os.environ.get("PANEL_PICK_DEMO_GRASP_TCP_Z_OFFSET_M", "0.0") or "0.0"
+                )
+                _grasp_z = _effective_direct_grasp_z(DIRECT_SOURCE_FRAME, _grasp_z_raw)
+                _coarse_extra_z = max(
+                    0.0,
+                    float(
+                        os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.10") or "0.10"
+                    ),
+                )
+                _obj_result = _resolve_live_object_base(self, PICK_DEMO_OBJECT_NAME)
+                _obj_base = (_obj_result or {}).get("base")
+                if _obj_base is not None and len(_obj_base) >= 3:
+                    _inicio_first_target = (
+                        float(_obj_base[0]),
+                        float(_obj_base[1]),
+                        float(_obj_base[2]) + _grasp_z + _coarse_extra_z,
+                    )
+            except Exception as _exc:
+                self._emit_log(f"[STEP][PRE_INSERT_INICIO] target_compute_error={_exc}")
+            self._emit_log(
+                f"[STEP][PRE_INSERT_INICIO] obj_base={_obj_base} "
+                f"target={_inicio_first_target}"
+            )
+            self._step_pre_insert_inicio_row(_fresh_xyz, _inicio_first_target, obj_pos=_obj_base)
+        if not self._pick_confirm_dialog(self, "Agarre Objeto (Directo)", _op_frame, _pose_str):
+            self._emit_log("[BOTON] Inicio cancelado por el usuario")
+            if self._step_mode == "STEP_BY_STEP":
+                # El usuario canceló: limpiar fila pre-insertada y ocultar ventana
+                self._step_history_rows = []
+                self._step_history_flow = ""
+                self._step_window_refresh()
+            return
         run_pick_demo(self)
 
     def _set_direct2_visual_target(self, joints: Optional[List[float]], label: str = "") -> None:
@@ -14513,6 +14754,19 @@ class ControlPanelV2(QMainWindow):
         """Ejecuta una secuencia fija basada en la Pose Buena de pick_demo."""
         self._log_button("Agarre Objeto (Directo2)")
         self._step_capture_start_pose("Agarre Objeto (Directo2)")
+        _op_frame = self._step_operational_frame_name()
+        _fresh_xyz = self._step_fetch_live_pose(_op_frame)
+        _pose_str = (
+            f"({float(_fresh_xyz[0]):.4f}, {float(_fresh_xyz[1]):.4f}, {float(_fresh_xyz[2]):.4f})"
+            if _fresh_xyz is not None else "no disponible (TF no listo)"
+        )
+        self._emit_log(
+            f"[BOTON] Pulsado: Agarre Objeto (Directo2) | "
+            f"frame={_op_frame} | Pose pinza ahora: {_pose_str}"
+        )
+        if not self._pick_confirm_dialog(self, "Agarre Objeto (Directo2)", _op_frame, _pose_str):
+            self._emit_log("[BOTON] Inicio cancelado por el usuario")
+            return
         self._direct2_controller.request_run(source="gui_button")
 
     def _run_pick_object(self):

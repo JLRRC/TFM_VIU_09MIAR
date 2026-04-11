@@ -1,0 +1,11 @@
+field	value
+experiment	EXP2_SIMPLE_RGBD
+seed	0
+model	SimpleGraspCNN
+modality	rgbd
+image_path	data/raw/cornell/09/pcd0932r.png
+iou	0.225442573428154
+angle_deg	33.78694152832031
+success	False
+cause	IoU + Δθ
+checkpoint_path	/home/laboratorio/TFM/agarre_inteligente/experiments/EXP2_SIMPLE_RGBD/seed_0/checkpoints/best.pth
