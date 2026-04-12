@@ -4774,22 +4774,23 @@ class ControlPanelV2(QMainWindow):
         lbl_gripper_live = QLabel("Pinza live: --")
         lbl_object = QLabel("Objeto XYZ: --")
         lbl_start_pose = QLabel("Pose inicial robot: --")
-        history_table = QTableWidget(0, 9)
-        history_table.setHorizontalHeaderLabels(["Fase", "Pinza", "X Org", "Y Org", "Z Org", "X Target", "Y Target", "Z Target", "Check"])
+        history_table = QTableWidget(0, 15)
+        history_table.setHorizontalHeaderLabels([
+            "Fase", "Pinza",
+            "X Org", "Y Org", "Z Org",
+            "X Cierre", "Y Cierre", "Z Cierre",
+            "X Target", "Y Target", "Z Target",
+            "X Exec", "Y Exec", "Z Exec",
+            "Check",
+        ])
         history_table.setEditTriggers(QTableWidget.NoEditTriggers)
         history_table.setSelectionMode(QTableWidget.NoSelection)
         history_table.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
         history_header = history_table.horizontalHeader()
         if history_header is not None:
             history_header.setSectionResizeMode(0, QHeaderView.Stretch)
-            history_header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-            history_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-            history_header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-            history_header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-            history_header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-            history_header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
-            history_header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
-            history_header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
+            for _col in range(1, 15):
+                history_header.setSectionResizeMode(_col, QHeaderView.ResizeToContents)
         history_table.verticalHeader().setVisible(False)
         btn_continue = QPushButton("Sigue")
         btn_continue.clicked.connect(self._on_step_continue_clicked)
@@ -5325,6 +5326,7 @@ class ControlPanelV2(QMainWindow):
                     "target": pos3,
                     "actual": None,
                     "origin_snapshot": _origin_snap,  # pose robot al abrir la gate (congelada)
+                    "exec_target_snapshot": None,      # fijado por _step_set_exec_target tras _phase_begin
                     "reached": None,
                 }
             )
@@ -5394,10 +5396,11 @@ class ControlPanelV2(QMainWindow):
         #   reached = None → PEND (naranja) hasta que la transición lo resuelva
         self._step_history_rows.append({
             "phase": first_phase,
-            "target": pos3_target,        # ← destino APPROACH_COARSE
-            "actual": None,               # ← capturado en transición (pose de llegada)
+            "target": pos3_target,           # ← destino APPROACH_COARSE
+            "actual": None,                  # ← capturado en transición (pose de llegada)
             "origin_snapshot": pos3_actual,  # ← congelado: pose robot al abrir la gate
-            "reached": None,              # ← PEND hasta transición
+            "exec_target_snapshot": pos3_target,  # ← INICIO no mueve: exec = target
+            "reached": None,                 # ← PEND hasta transición
         })
         self._emit_log(f"[STEP][PREPARED_PHASE] phase={first_phase} started=false")
         self._emit_log(
@@ -5529,20 +5532,30 @@ class ControlPanelV2(QMainWindow):
                 phase_name = str(row_data.get("phase") or "").strip().upper()
                 pos3 = row_data.get("target")
                 reached = row_data.get("reached")
-                # Org column: siempre muestra origin_snapshot (congelado al abrir el gate).
-                # El campo `actual` (pose al transicionar) NO se usa aquí — la pose de
-                # llegada queda implícita como Org de la fase siguiente.
-                # Fallback: actual si no hay snapshot; live TF solo para fase activa PEND.
+                # Org: origin_snapshot congelado al abrir el gate (donde estaba el robot).
+                # Fallback a actual si no hay snapshot; TF en vivo solo para la fase activa PEND.
                 _origin_snap = row_data.get("origin_snapshot")
                 if _origin_snap is not None:
-                    actual3 = _origin_snap
+                    org3 = _origin_snap
                 else:
-                    actual3 = row_data.get("actual")
-                    if actual3 is None and phase_name == str(self._step_current_phase or "").strip().upper():
-                        actual3 = operational_live  # fallback: TF en vivo si no hay snapshot
+                    org3 = row_data.get("actual")
+                    if org3 is None and phase_name == str(self._step_current_phase or "").strip().upper():
+                        org3 = operational_live  # fallback: TF en vivo si no hay snapshot aún
+                # Cierre: pose real del robot al cerrar la fase (capturada en transición).
+                # Es None (PEND) mientras la fase no haya concluido.
+                cierre3 = row_data.get("actual")
+                # Target: destino teórico de la fase (calculado al planificar).
+                # Exec: target efectivo enviado al IK/movimiento (fijado por _step_set_exec_target).
+                exec3 = row_data.get("exec_target_snapshot")
                 display_phase = f"{phase_name} - {self._step_phase_intent(self._step_history_flow, phase_name)}"
                 expected_gripper = self._step_phase_gripper_state(self._step_history_flow, phase_name)
-                values = (display_phase, expected_gripper) + self._step_format_xyz(actual3) + self._step_format_xyz(pos3)
+                values = (
+                    (display_phase, expected_gripper)
+                    + self._step_format_xyz(org3)
+                    + self._step_format_xyz(cierre3)
+                    + self._step_format_xyz(pos3)
+                    + self._step_format_xyz(exec3)
+                )
                 for col_idx, value in enumerate(values):
                     item = QTableWidgetItem(value)
                     if col_idx != 0:
@@ -5578,6 +5591,34 @@ class ControlPanelV2(QMainWindow):
         last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
         if self._step_history_table is not None:
             self._step_window_refresh()
+
+    def _step_set_exec_target(self, target_base) -> None:
+        """Registra el target de ejecución real en la última fila de la tabla STEP.
+
+        Se llama desde _phase_begin (hilo worker) inmediatamente después de que el
+        gate se libera, para fijar en la columna Exec el target efectivo que el IK /
+        sistema de movimiento va a usar.  Puede diferir del campo 'target' si hubo
+        ajuste XY u otro override en la lógica previa al movimiento.
+
+        - Modifica solo 'exec_target_snapshot' de la última fila.
+        - No toca 'target', 'actual' ni 'origin_snapshot'.
+        - No bloquea, no lanza excepciones.
+        """
+        if not self._step_history_rows:
+            return
+        pos3 = None
+        if isinstance(target_base, (list, tuple)) and len(target_base) >= 3:
+            try:
+                pos3 = (float(target_base[0]), float(target_base[1]), float(target_base[2]))
+            except Exception:
+                pos3 = None
+        last_row = self._step_history_rows[-1]
+        last_row["exec_target_snapshot"] = pos3
+        self._emit_log(
+            f"[STEP][EXEC_TARGET] "
+            f"phase={str(last_row.get('phase') or '').strip().upper()} "
+            f"exec={self._step_format_inline_xyz(pos3)}"
+        )
 
     def _step_window_set_waiting(self) -> None:
         self._ensure_step_window()

@@ -1,0 +1,17 @@
+{
+  "run_id": "fix_inicio_target_pose_table_20260412_130130",
+  "fecha": "2026-04-12T13:01:30",
+  "tipo": "fix",
+  "alcance": "Target(INICIO) / Exec(INICIO)",
+  "archivo_modificado": "agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py",
+  "lineas_afectadas": {
+    "import": "lineas 21-29 (añadido POSE_TABLE_DATA)",
+    "logica": "lineas 5129-5133 (reemplazado bloque FK por asignacion directa)"
+  },
+  "variable_eliminada": "_inicio_next_target = FK(JOINT_TABLE_POSE_RAD) con offset DIRECT_TOOL0_TO_RG2_TCP_Z_M",
+  "variable_nueva": "_inicio_next_target = POSE_TABLE_DATA[\"position\"]",
+  "valor_antes": [0.311, 0.091, -0.056],
+  "valor_despues": [0.30, -0.35, 0.28],
+  "build": "colcon build --packages-select ur5_qt_panel: OK (1.03s)",
+  "auditoria_base": "auditoria/auditoria_runtime_inicio_target_20260412.md"
+}

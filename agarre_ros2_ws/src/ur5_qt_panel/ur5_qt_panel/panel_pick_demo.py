@@ -2484,6 +2484,13 @@ def run_pick_demo(panel) -> None:
                         decision=str(note or "").strip(),
                         object_position=_tuple3(_live_object_base()),
                     )
+                    # Registrar exec_target_snapshot: target efectivo que el IK va a usar.
+                    # Se llama tras el gate (usuario pulsó Sigue) para que la fila ya exista.
+                    # Si target_base es None usamos last_target para no dejar Exec en --.
+                    _exec_base = _tuple3(target_base) or _tuple3(last_target.get("target_base"))
+                    _set_exec_fn = getattr(panel, "_step_set_exec_target", None)
+                    if callable(_set_exec_fn):
+                        _set_exec_fn(_exec_base)
                 if any(v is not None for v in (target_world, target_base, frame_used, offsets, joint_goal, ik_solution, note)):
                     _phase_target_update(
                         phase,
@@ -5301,6 +5308,7 @@ def run_pick_demo(panel) -> None:
                 preset_grasp_down = "direct_rg2_tcp_dynamic_down"
                 obj_base_before_coarse = _live_object_base()
                 tcp_before_coarse = _live_tcp_base()
+
                 if obj_base_before_coarse is None:
                     _append_trace(
                         "[PICK][DIRECT][CYCLE_REF][ABORT] tag=[DIRECT][CYCLE_REF][ABORT] "
@@ -5381,6 +5389,21 @@ def run_pick_demo(panel) -> None:
                 )
                 approach_debug = None
                 approach_decision = "direct_ik_move"
+                # ── STEP_BY_STEP: forzar skip siempre ───────────────────────────────
+                # En modo STEP_BY_STEP el usuario ya aprobó el gate (Sigue). La fase
+                # APPROACH_COARSE se registra en la tabla pero no ejecuta movimiento:
+                # GRASP_DOWN_JOINT resuelve directamente desde la posición actual.
+                if getattr(panel, "_step_mode", "") == "STEP_BY_STEP":
+                    approach_decision = "skip_step_by_step_forced"
+                    _skip_sbs_msg = (
+                        "[PICK][DIRECT][APPROACH_SKIP] "
+                        f"reason=step_by_step_forced "
+                        f"tcp={_fmt_vec(_tuple3((current_phase.get('data') or {}).get('tcp_pose_base_before')))}"
+                    )
+                    panel._emit_log(_skip_sbs_msg)
+                    _append_trace(_skip_sbs_msg)
+                    approach_debug = {"note": approach_decision}
+                # ────────────────────────────────────────────────────────────────────
                 # TCP canónico después del gate: usar el valor capturado POR _phase_begin
                 # justo después de que el usuario pulsó "Sigue".  Evita el bug de TF stale
                 # donde una segunda llamada a _live_tcp_base() devuelve un valor cacheado
@@ -5578,11 +5601,57 @@ def run_pick_demo(panel) -> None:
                 # capturar variables de gate que usará GRASP_DOWN_JOINT para decidir
                 # si hereda o no el XY de esta fase.
                 # Si approach_decision == skip, reutilizar _tcp_canonical (mismo frame temporal
-                # que el skip check). Si hubo movimiento real, leer el TCP fresco post-move.
-                if approach_decision == "skip_already_at_coarse_target":
+                # que el skip check). Si hubo movimiento real, esperar que TF2 converja
+                # antes de leer el TCP (evita falso NO por lectura stale post-trayectoria).
+                if approach_decision in ("skip_already_at_coarse_target", "skip_step_by_step_forced"):
                     _coarse_check_tcp = _tcp_canonical
                 else:
-                    _coarse_check_tcp = _live_tcp_base()
+                    # ── [FIX] PHASE_CHECK settle wait ────────────────────────────────
+                    _ac_settle_max_sec = max(
+                        0.5,
+                        float(os.environ.get("PANEL_PICK_DEMO_AC_PHASE_CHECK_SETTLE_SEC", "3.0") or 3.0),
+                    )
+                    _ac_settle_threshold_m = max(
+                        0.001,
+                        float(os.environ.get("PANEL_PICK_DEMO_AC_PHASE_CHECK_THRESHOLD_M", "0.004") or 0.004),
+                    )
+                    _ac_settle_samples = max(
+                        2,
+                        int(os.environ.get("PANEL_PICK_DEMO_AC_PHASE_CHECK_STABLE_SAMPLES", "3") or 3),
+                    )
+                    _ac_settle_t0 = time.monotonic()
+                    _ac_settle_prev = _live_tcp_base()
+                    _ac_settle_count = 0
+                    _ac_settle_done = False
+                    while time.monotonic() - _ac_settle_t0 < _ac_settle_max_sec:
+                        time.sleep(0.10)
+                        _ac_settle_curr = _live_tcp_base()
+                        if _ac_settle_curr is not None and _ac_settle_prev is not None:
+                            _ac_s_delta = _dist(_ac_settle_curr, _ac_settle_prev)
+                            if _ac_s_delta <= _ac_settle_threshold_m:
+                                _ac_settle_count += 1
+                                if _ac_settle_count >= _ac_settle_samples:
+                                    panel._emit_log(
+                                        f"[APPROACH_COARSE][PHASE_CHECK_STABLE] "
+                                        f"sample={_ac_settle_count} "
+                                        f"delta_m={_ac_s_delta:.4f} "
+                                        f"elapsed={time.monotonic() - _ac_settle_t0:.2f}s "
+                                        f"tcp={_fmt_vec(_ac_settle_curr)}"
+                                    )
+                                    _coarse_check_tcp = _ac_settle_curr
+                                    _ac_settle_done = True
+                                    break
+                            else:
+                                _ac_settle_count = 0
+                        _ac_settle_prev = _ac_settle_curr
+                    if not _ac_settle_done:
+                        _coarse_check_tcp = _live_tcp_base()
+                        panel._emit_log(
+                            f"[APPROACH_COARSE][PHASE_CHECK_DELAYED] "
+                            f"elapsed={time.monotonic() - _ac_settle_t0:.2f}s "
+                            f"tcp={_fmt_vec(_coarse_check_tcp)}"
+                        )
+                    # ── [/FIX PHASE_CHECK settle wait] ───────────────────────────────
                 _coarse_check_obj = _live_object_base()
                 coarse_gate_xy_ok: bool = False
                 coarse_gate_z_ok: bool = False
