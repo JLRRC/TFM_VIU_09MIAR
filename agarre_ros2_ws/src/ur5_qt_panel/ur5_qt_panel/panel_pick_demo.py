@@ -2743,6 +2743,7 @@ def run_pick_demo(panel) -> None:
                 rot_weight: float = 0.35,
                 ik_err_tol: float = 0.035,
                 joint_weight: float = -1.0,
+                force_send: bool = False,
             ) -> dict:
                 def _resolve_direct_execution_target(
                     tcp_target_base,
@@ -3062,6 +3063,7 @@ def run_pick_demo(panel) -> None:
                     tol_rad=align_joint_tol_rad,
                     runtime_target_base=target_tcp_runtime,
                     runtime_target_tol_m=_direct_runtime_target_tol_m(label),
+                    force_send=force_send,
                 )
                 tcp_after = _live_tcp_base()
                 runtime_target_ok = None
@@ -3500,6 +3502,7 @@ def run_pick_demo(panel) -> None:
                                 rot_weight=rot_weight,
                                 ik_err_tol=ik_err_tol,
                                 joint_weight=joint_weight,
+                                force_send=True,
                             )
                         last_route = route
                     except Exception as exc:
@@ -3535,6 +3538,7 @@ def run_pick_demo(panel) -> None:
                                 rot_weight=permissive_rot_weight,
                                 ik_err_tol=permissive_ik_err_tol,
                                 joint_weight=permissive_joint_weight,
+                                force_send=True,
                             )
                             last_route = "permissive_direct_descent"
                         except Exception as permissive_exc:
@@ -4034,9 +4038,9 @@ def run_pick_demo(panel) -> None:
                                 float(
                                     os.environ.get(
                                         "PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL",
-                                        "0.10",
+                                        "0.15",
                                     )
-                                    or 0.10
+                                    or 0.15
                                 ),
                             ),
                             joint_weight=max(
@@ -5897,6 +5901,29 @@ def run_pick_demo(panel) -> None:
                     )
                     panel._emit_log(_gd_check_msg)
                     _append_trace(_gd_check_msg)
+            # DESCENSO_DIRECTO: paso articular a JOINT_GRASP_DOWN_POSE_RAD sin IK.
+            # El IK de GRASP_DOWN_JOINT falla por TF lag (~2cm) y rama cinemática;
+            # este paso garantiza que el brazo llega a Z≈0.025m.
+            # El XY resultante puede diferir del objeto → GRASP_ALIGN_IK lo corrige.
+            _descenso_msg = "[PICK][DIRECT] DESCENSO_DIRECTO → JOINT_GRASP_DOWN_POSE_RAD (force_send=True)"
+            panel._emit_log(_descenso_msg)
+            _append_trace(_descenso_msg)
+            _run_joint_step(
+                "GRASP_DOWN_DIRECT",
+                list(JOINT_GRASP_DOWN_POSE_RAD),
+                force_send=True,
+                timeout_sec=15.0,
+                tol_rad=0.05,
+            )
+            # TF_SETTLE: esperar a que TF converja antes de que GRASP_ALIGN_IK
+            # compute IK con la posición TF actual. Sin este wait el IK usa
+            # posición TF antigua y puede mandar el brazo al sitio equivocado.
+            _tf_settle_sec = float(os.environ.get("PANEL_PICK_DEMO_TF_SETTLE_SEC", "1.5") or 1.5)
+            _tf_msg = f"[PICK][DIRECT] TF_SETTLE: esperando {_tf_settle_sec:.1f}s para que TF converja"
+            panel._emit_log(_tf_msg)
+            _append_trace(_tf_msg)
+            import time as _time_mod
+            _time_mod.sleep(_tf_settle_sec)
             obj_base_align, obj_base_align_source, _align_base_extra = _resolved_align_object_base()
             target_base_align = None
             target_world_align = None
@@ -5907,9 +5934,12 @@ def run_pick_demo(panel) -> None:
                     float(obj_base_align[2]) + grasp_z_for_source_frame,
                 )
                 target_world_align = _target_world_from_base(target_base_align)
+            # SKIP_ALIGN_IF_REACHABLE desactivado por defecto: GRASP_DOWN_DIRECT
+            # llega al Z correcto pero con XY aproximado; GRASP_ALIGN_IK siempre
+            # debe ejecutar para corregir el XY antes del cierre de pinza.
             skip_align_if_reachable = str(
-                os.environ.get("PANEL_PICK_DEMO_SKIP_ALIGN_IF_REACHABLE", "1")
-                or "1"
+                os.environ.get("PANEL_PICK_DEMO_SKIP_ALIGN_IF_REACHABLE", "0")
+                or "0"
             ).strip().lower() in ("1", "true", "yes", "on")
             pre_align_metrics = _pre_close_alignment_metrics()
             # PHASE_ENTRY: trazar error con el que entra GRASP_ALIGN_IK (pre-align_metrics)
@@ -6909,17 +6939,31 @@ def run_pick_demo(panel) -> None:
                 frame_used="world",
                 offsets={
                     "min_obj_move_m": 0.030,
-                    "min_lift_delta_m": 0.025,
+                    "min_lift_delta_m": 0.060,
                     "max_tcp_dist_m": 0.080,  # FIX-CARRY-VALIDATION: was 0.160
                 },
                 note="carry validation after lift",
+            )
+            # DIAG-CARRY: Mostrar posición actual del objeto en Gazebo al entrar en CARRY.
+            # Esto permite ver si el objeto ha sido levantado físicamente antes de la
+            # validación, sin depender del ciclo de referencia congelado.
+            _carry_diag_obj_world = _fresh_gazebo_object_world()
+            _carry_diag_tcp_base = _live_tcp_base()
+            panel._emit_log(
+                "[PICK][DIRECT][CARRY_DIAG] "
+                f"initial_obj_world={_fmt_vec(initial_obj_world)} "
+                f"current_obj_world={_fmt_vec(_carry_diag_obj_world)} "
+                f"current_tcp_base={_fmt_vec(_carry_diag_tcp_base)} "
+                f"expected_lift_delta={_fmt_scalar(float(_carry_diag_obj_world[2]) - float(initial_obj_world[2]) if _carry_diag_obj_world is not None and initial_obj_world is not None else None)} "
+                f"threshold_lift_delta=0.060 "
+                "nota=CARRY_no_mueve_brazo_es_validacion_fisica"
             )
             _final_phase_trace(
                 "CARRY",
                 event="wait_start",
                 expected="carry_validation_ok",
                 received="pending",
-                timeout_sec="1.60",
+                timeout_sec="3.00",
                 reason="validate_demo_carry",
                 request_state="carry_validation",
             )
@@ -6941,10 +6985,14 @@ def run_pick_demo(panel) -> None:
                 #   no la referencia de ciclo congelada del panel.  Sin esto, si la
                 #   referencia estaba activa, obj_move = 0 siempre → gate siempre fallaba
                 #   o era inconsistente con los datos físicos reales.
+                #
+                # TIMEOUT: aumentado de 1.6 → 3.0 s para dar más margen al backend
+                # demo_transport (delete+spawn via gz service CLI) de actualizar la pose
+                # del objeto kinematico en Gazebo antes de que la validación lea.
                 _validate_demo_carry(
                     initial_obj_world=initial_obj_world,
                     phase="post_grasp_lift",
-                    timeout_sec=1.6,
+                    timeout_sec=3.0,
                     min_obj_move_m=0.030,
                     min_lift_delta_m=0.060,
                     max_tcp_dist_m=0.080,
