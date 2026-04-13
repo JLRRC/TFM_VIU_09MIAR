@@ -295,6 +295,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
                 )
                 for cam_name in (
                     "camera_overhead",
+                    "camera_debug_top",
                     "camera_north",
                     "camera_south",
                     "camera_east",

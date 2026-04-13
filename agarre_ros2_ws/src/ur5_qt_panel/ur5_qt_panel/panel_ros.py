@@ -2099,6 +2099,11 @@ class RosWorker(QObject):
         with self._lock:
             return self._node is not None
 
+    def is_worker_running(self) -> bool:
+        """Returns True if the spin loop is still active (not yet called _cleanup_ros)."""
+        with self._lock:
+            return bool(self._running)
+
     def _on_joint_state(self, msg: "JointState", topic: str):
         if not ROS_AVAILABLE:
             return

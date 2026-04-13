@@ -55,6 +55,12 @@
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
 
+- ros_topic_name: /camera_debug_top/image
+  gz_topic_name: /camera_debug_top/image
+  ros_type_name: sensor_msgs/msg/Image
+  gz_type_name: gz.msgs.Image
+  direction: GZ_TO_ROS
+
 
 # depth_image
 - ros_topic_name: /camera_overhead/depth_image
@@ -71,6 +77,18 @@
 
 - ros_topic_name: /camera_east/depth_image
   gz_topic_name: /camera_east/depth_image
+  ros_type_name: sensor_msgs/msg/Image
+  gz_type_name: gz.msgs.Image
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /camera_debug_top/depth_image
+  gz_topic_name: /camera_debug_top/depth_image
+  ros_type_name: sensor_msgs/msg/Image
+  gz_type_name: gz.msgs.Image
+  direction: GZ_TO_ROS
+
+- ros_topic_name: /camera_wrist/image
+  gz_topic_name: /camera_wrist/image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS

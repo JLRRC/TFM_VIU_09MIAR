@@ -98,6 +98,10 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     panel.btn_camera_connect.setEnabled(camera_enabled)
     if getattr(panel, "btn_camera_far_front", None) is not None:
         panel.btn_camera_far_front.setEnabled(camera_enabled)
+    if getattr(panel, "btn_camera_top", None) is not None:
+        panel.btn_camera_top.setEnabled(camera_enabled)
+    if getattr(panel, "btn_camera_wrist", None) is not None:
+        panel.btn_camera_wrist.setEnabled(camera_enabled)
     calib_ok, calib_reason = panel._calibration_action_status()
     if getattr(panel, "btn_calibrate", None) is not None:
         panel._set_btn_state(

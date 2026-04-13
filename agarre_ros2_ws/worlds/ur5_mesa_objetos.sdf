@@ -316,7 +316,7 @@
 
     <model name="mesa_robot">
       <static>true</static>
-      <pose>-1.10 0.00 0 0 0 0</pose>
+      <pose>-1.10 0.00 0.025 0 0 0</pose>
       <link name="link">
 
         <collision name="tablero_collision">
@@ -410,13 +410,13 @@
     <include>
       <uri>model://ur5_rg2</uri>
       <name>ur5_rg2</name>
-      
-      <pose>-0.85 0.00 0.825 0 0 0</pose>
-      
+
+      <pose>-0.85 0.00 0.850 0 0 0</pose>
+
     </include>
     <joint name="ur5_rg2_fixed_to_world" type="fixed">
       <parent>world</parent>
-      <pose>-0.85 0.00 0.825 0 0 0</pose>
+      <pose>-0.85 0.00 0.850 0 0 0</pose>
       <child>ur5_rg2::base_link</child>
     </joint>
 
@@ -444,6 +444,36 @@
           <camera>
             <horizontal_fov>0.75</horizontal_fov>
             <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>10.0</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <model name="camera_debug_top">
+      <static>true</static>
+      <!-- Cenital: centrada sobre la zona de trabajo (robot base x=-0.85, pick x=-0.42).
+           x=-0.50 centra el encuadre entre ambos puntos; FOV 1.2 rad (~69°) cubre
+           ~2.1 m de anchura a 1.5 m sobre la mesa. -->
+      <pose>-0.50 0.00 2.35 0 -1.5708 0</pose>
+      <link name="link">
+        <sensor name="camera_debug_top_rgb" type="camera">
+          <always_on>true</always_on>
+          <update_rate>30</update_rate>
+          <topic>/camera_debug_top/image</topic>
+          <camera>
+            <horizontal_fov>1.2</horizontal_fov>
+            <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>10.0</far></clip>
+          </camera>
+        </sensor>
+        <sensor name="camera_debug_top_depth" type="depth_camera">
+          <always_on>true</always_on>
+          <update_rate>30</update_rate>
+          <topic>/camera_debug_top/depth_image</topic>
+          <camera>
+            <horizontal_fov>1.2</horizontal_fov>
+            <image><width>640</width><height>480</height><format>R8G8B8</format></image>
             <clip><near>0.05</near><far>10.0</far></clip>
           </camera>
         </sensor>
