@@ -405,6 +405,12 @@ FAR_FRONT_CAMERA_TOPIC_CANDIDATES = (
     "/camera_north/image",
     "/camera_east/image",
 )
+TOP_CAMERA_TOPIC_CANDIDATES = (
+    "/camera_debug_top/image",
+)
+WRIST_CAMERA_TOPIC_CANDIDATES = (
+    "/camera_wrist/image",
+)
 
 _DEBUG_EXCEPTIONS = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
 
@@ -516,7 +522,7 @@ def _load_cornell_metrics(vision_dir: str):
 
 from .cameras_tab import ObjectListPanel
 from .calibration_service import CalibrationService, CalibrationMode
-from .ur5_kinematics import fk_ur5
+from .ur5_kinematics import fk_ur5, ik_ur5
 
 
 FK_TOOL0_TO_GRIPPER_TIP_M = 0.175
@@ -1427,6 +1433,17 @@ class ControlPanelV2(QMainWindow):
         self._step_start_pose_label = None
         self._step_history_table = None
         self._step_continue_btn = None
+        self._step_continue_help_label = None
+        self._step_cart_debug_window = None
+        self._step_cart_debug_pose_label = None
+        self._step_cart_debug_tool0_label = None
+        self._step_cart_debug_frame_label = None
+        self._step_cart_debug_time_label = None
+        self._step_cart_debug_status_label = None
+        self._step_cart_debug_step_combo = None
+        self._step_cart_debug_timer = None
+        self._step_cart_debug_move_inflight = False
+        self._step_cart_debug_last_sample_wall = 0.0
         self._debug_motion_pause_alcance_enabled = str(
             os.environ.get("PANEL_DEBUG_PAUSE_ALCANCE", "0") or "0"
         ).strip().lower() not in {"0", "false", "no", "off"}
@@ -2966,7 +2983,21 @@ class ControlPanelV2(QMainWindow):
         if not self._ros_worker_started:
             self._ensure_ros_worker_started()
         if not self.ros_worker.node_ready():
-            return False, self._ros_node_not_ready_reason()
+            # Worker may have stopped unexpectedly (spin loop exited between phases).
+            # Detect and restart before failing hard.
+            if hasattr(self.ros_worker, "is_worker_running") and not self.ros_worker.is_worker_running():
+                self._emit_log(
+                    "[ROS][WARN] _publish_joint_trajectory: worker detenido inesperadamente; reiniciando"
+                )
+                self._ros_worker_started = False
+                self._ensure_ros_worker_started()
+            # Wait up to 3s for the node to become ready (covers both restart and
+            # transient startup delays).
+            _node_ready_deadline = time.monotonic() + 3.0
+            while not self.ros_worker.node_ready() and time.monotonic() < _node_ready_deadline:
+                time.sleep(0.05)
+            if not self.ros_worker.node_ready():
+                return False, self._ros_node_not_ready_reason()
         ok, reason = self._wait_for_controllers_ready(CONTROLLER_READY_TIMEOUT_SEC)
         if not ok:
             return False, f"controladores no listos: {reason}"
@@ -3446,6 +3477,16 @@ class ControlPanelV2(QMainWindow):
             "Cambia a una cámara frontal lejana de la mesa (prioriza /camera_west/image)."
         )
         self.btn_camera_far_front.clicked.connect(self._set_far_front_camera_view)
+        self.btn_camera_top = QPushButton("Vista cenital")
+        self.btn_camera_top.setToolTip(
+            "Cambia a la cámara cenital (/camera_debug_top/image) — vista superior de la mesa y el robot."
+        )
+        self.btn_camera_top.clicked.connect(self._set_top_camera_view)
+        self.btn_camera_wrist = QPushButton("Vista muñeca")
+        self.btn_camera_wrist.setToolTip(
+            "Cambia a la cámara de muñeca (/camera_wrist/image) — ve lo que ve la pinza."
+        )
+        self.btn_camera_wrist.clicked.connect(self._set_wrist_camera_view)
         self.btn_release_objects = QPushButton("Soltar objetos")
         self.btn_release_objects.setMinimumHeight(32)
         self.btn_release_objects.setToolTip("Libera todos los objetos del drop anchor en Gazebo")
@@ -3462,6 +3503,8 @@ class ControlPanelV2(QMainWindow):
         cam_top.addWidget(self.btn_camera_refresh)
         cam_top.addWidget(self.btn_camera_connect)
         cam_top.addWidget(self.btn_camera_far_front)
+        cam_top.addWidget(self.btn_camera_top)
+        cam_top.addWidget(self.btn_camera_wrist)
         cam_top.addWidget(self.btn_release_objects)
         cam_top.addWidget(self.btn_calibrate)
         cam_top.addWidget(self.btn_recover)
@@ -4792,8 +4835,14 @@ class ControlPanelV2(QMainWindow):
             for _col in range(1, 15):
                 history_header.setSectionResizeMode(_col, QHeaderView.ResizeToContents)
         history_table.verticalHeader().setVisible(False)
-        btn_continue = QPushButton("Sigue")
+        btn_continue = QPushButton("▶ Ejecutar fase")
         btn_continue.clicked.connect(self._on_step_continue_clicked)
+        btn_cart_debug = QPushButton("Depurador cartesiano")
+        btn_cart_debug.setToolTip("Abrir ventana auxiliar para mover rg2_pinch_center en XYZ (base_link).")
+        btn_cart_debug.clicked.connect(self._show_step_cart_debug_window)
+        lbl_continue_help = QLabel("Pulsa '▶ Ejecutar fase' para que el robot ejecute la fase que aparece arriba. Al terminar, la siguiente fase quedará en espera hasta que vuelvas a pulsar el botón.")
+        lbl_continue_help.setWordWrap(True)
+        lbl_continue_help.setStyleSheet("color:#475569; font-size:12px;")
 
         layout.addWidget(lbl_title)
         layout.addWidget(lbl_mode)
@@ -4810,7 +4859,12 @@ class ControlPanelV2(QMainWindow):
         layout.addWidget(lbl_object)
         layout.addWidget(lbl_start_pose)
         layout.addWidget(history_table, 1)
-        layout.addWidget(btn_continue)
+        bottom_row = QHBoxLayout()
+        bottom_row.setContentsMargins(0, 0, 0, 0)
+        bottom_row.addWidget(btn_continue)
+        bottom_row.addWidget(btn_cart_debug)
+        layout.addLayout(bottom_row)
+        layout.addWidget(lbl_continue_help)
 
         dlg.finished.connect(self._on_step_window_finished)
 
@@ -4830,6 +4884,7 @@ class ControlPanelV2(QMainWindow):
         self._step_start_pose_label = lbl_start_pose
         self._step_history_table = history_table
         self._step_continue_btn = btn_continue
+        self._step_continue_help_label = lbl_continue_help
 
         # Timer de refresco live para los labels de pose del step window.
         # Solo actúa si hay un gate activo (_step_wait_active) y modo STEP_BY_STEP.
@@ -4840,6 +4895,505 @@ class ControlPanelV2(QMainWindow):
         _step_live_timer.timeout.connect(self._step_window_maybe_refresh)
         _step_live_timer.start()
         self._step_live_timer = _step_live_timer
+
+    def _step_cart_debug_trace_path(self) -> Path:
+        out_dir = Path(self.ws_dir) / "historico" / "step_cartesian_debug"
+        ensure_dir(str(out_dir))
+        return out_dir / "manual_moves.jsonl"
+
+    def _step_cart_debug_log_event(self, event: str, **payload) -> None:
+        data = {
+            "ts": datetime.now().isoformat(timespec="milliseconds"),
+            "event": str(event or "unknown"),
+            "step_mode": str(self._step_mode or ""),
+            "frame": "base_link",
+            **payload,
+        }
+        line = json.dumps(data, ensure_ascii=True, sort_keys=True)
+        self._emit_log(f"[STEP][CART_DEBUG] {line}")
+        try:
+            trace_path = self._step_cart_debug_trace_path()
+            with trace_path.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except Exception as exc:
+            self._emit_log(f"[STEP][CART_DEBUG] trace_write_error={exc}")
+
+    def _step_cart_debug_sample(self) -> Dict[str, object]:
+        base_frame = self._business_base_frame()
+        pinch = self._step_fetch_live_pose("rg2_pinch_center")
+        tool0 = self._step_fetch_live_pose("tool0")
+        now_wall = time.time()
+        self._step_cart_debug_last_sample_wall = now_wall
+        return {
+            "base_frame": base_frame,
+            "pinch": pinch,
+            "tool0": tool0,
+            "wall": now_wall,
+        }
+
+    def _step_cart_debug_set_status(self, text: str, error: bool = False) -> None:
+        if self._step_cart_debug_status_label is None:
+            return
+        self._step_cart_debug_status_label.setText(str(text or "--"))
+        color = "#ef4444" if error else "#0f766e"
+        self._step_cart_debug_status_label.setStyleSheet(f"color:{color}; font-weight:600;")
+
+    def _step_cart_debug_refresh(self) -> None:
+        if self._step_cart_debug_window is None:
+            return
+        if not self._step_cart_debug_window.isVisible():
+            return
+        sample = self._step_cart_debug_sample()
+        pinch = sample.get("pinch")
+        tool0 = sample.get("tool0")
+        base_frame = str(sample.get("base_frame") or "base_link")
+        wall = float(sample.get("wall") or time.time())
+        age_s = max(0.0, time.time() - wall)
+        if self._step_cart_debug_pose_label is not None:
+            self._step_cart_debug_pose_label.setText(
+                f"rg2_pinch_center@{base_frame}: {self._step_format_inline_xyz(pinch)}"
+            )
+        if self._step_cart_debug_tool0_label is not None:
+            self._step_cart_debug_tool0_label.setText(
+                f"tool0@{base_frame}: {self._step_format_inline_xyz(tool0)}"
+            )
+        if self._step_cart_debug_frame_label is not None:
+            self._step_cart_debug_frame_label.setText("Frame operativo: rg2_pinch_center -> base_link")
+        if self._step_cart_debug_time_label is not None:
+            self._step_cart_debug_time_label.setText(
+                f"timestamp: {datetime.fromtimestamp(wall).strftime('%H:%M:%S.%f')[:-3]} | age: {age_s:.3f}s"
+            )
+
+    def _step_cart_debug_step_m(self) -> float:
+        combo = self._step_cart_debug_step_combo
+        if combo is None:
+            return 0.002
+        data = combo.currentData()
+        if isinstance(data, (int, float)):
+            return max(0.001, float(data))
+        txt = str(combo.currentText() or "2 mm").strip().lower().replace("mm", "").strip()
+        try:
+            return max(0.001, float(txt) / 1000.0)
+        except Exception:
+            return 0.002
+
+    def _step_cartesian_move_runtime_target(
+        self,
+        target_tcp_runtime: Tuple[float, float, float],
+        timeout_sec: float,
+        *,
+        axis_tol_m: float,
+    ) -> Tuple[bool, str, Optional[Tuple[float, float, float]], Optional[Tuple[float, float, float]]]:
+        base_frame = self._business_base_frame()
+        joint_snapshot = dict(getattr(self, "_last_joint_positions", {}) or {})
+        seed: List[float] = []
+        missing = []
+        for name in UR5_JOINT_NAMES:
+            if name in joint_snapshot:
+                seed.append(float(joint_snapshot[name]))
+            else:
+                missing.append(name)
+        if len(seed) != len(UR5_JOINT_NAMES):
+            seed = [float(v) for v in self._get_home_joint_pose()]
+            seed_source = "home_fallback"
+        else:
+            seed_source = "joint_state_snapshot"
+
+        try:
+            _seed_pos, target_rot = fk_ur5(seed)
+        except Exception as exc:
+            return False, f"fk_seed_failed:{exc}", None, None
+
+        local_offset = None
+        tf_tool0_ee, tf_reason = tf_get_transform("tool0", "rg2_pinch_center", timeout=0.10, logger=None)
+        if tf_tool0_ee is not None:
+            tr = tf_tool0_ee.transform.translation
+            local_offset = (float(tr.x), float(tr.y), float(tr.z))
+            offset_source = "tf:tool0<-rg2_pinch_center"
+        else:
+            local_offset = (0.0, 0.0, float(FK_TOOL0_TO_GRIPPER_TIP_M))
+            offset_source = f"fallback:{tf_reason or 'default_0.175'}"
+
+        target_model = (
+            -float(target_tcp_runtime[0]),
+            -float(target_tcp_runtime[1]),
+            float(target_tcp_runtime[2]),
+        )
+        offset_vector = (
+            float(target_rot[0, 0]) * float(local_offset[0])
+            + float(target_rot[0, 1]) * float(local_offset[1])
+            + float(target_rot[0, 2]) * float(local_offset[2]),
+            float(target_rot[1, 0]) * float(local_offset[0])
+            + float(target_rot[1, 1]) * float(local_offset[1])
+            + float(target_rot[1, 2]) * float(local_offset[2]),
+            float(target_rot[2, 0]) * float(local_offset[0])
+            + float(target_rot[2, 1]) * float(local_offset[1])
+            + float(target_rot[2, 2]) * float(local_offset[2]),
+        )
+        target_ik = (
+            float(target_model[0]) - float(offset_vector[0]),
+            float(target_model[1]) - float(offset_vector[1]),
+            float(target_model[2]) - float(offset_vector[2]),
+        )
+
+        solved_q, err_norm, ik_ok = ik_ur5(
+            target_ik,
+            target_rot,
+            seed,
+            max_iter=240,
+            pos_weight=1.0,
+            rot_weight=1.20,
+            joint_weight=0.02,
+        )
+        if (not ik_ok) or float(err_norm) > 0.030:
+            return False, f"ik_failed err_norm={float(err_norm):.4f}", None, None
+
+        two_pi = 2.0 * math.pi
+        solved_q_list = [
+            float(q) + two_pi * round((float(s) - float(q)) / two_pi)
+            for q, s in zip([float(v) for v in solved_q.tolist()], seed)
+        ]
+
+        dist_m = math.sqrt(
+            float(target_tcp_runtime[0]) ** 2 + float(target_tcp_runtime[1]) ** 2 + float(target_tcp_runtime[2]) ** 2
+        )
+        move_sec = max(0.8, min(2.5, 0.8 + dist_m * 0.0))
+        ok, info = self._publish_joint_trajectory(solved_q_list, move_sec)
+        if not ok:
+            return False, f"joint_publish_failed:{info}", None, None
+
+        deadline = time.time() + max(0.5, float(timeout_sec))
+        final_pos: Optional[Tuple[float, float, float]] = None
+        err_xyz: Optional[Tuple[float, float, float]] = None
+        while time.time() < deadline:
+            final_pos = self._step_fetch_live_pose("rg2_pinch_center")
+            if final_pos is None:
+                time.sleep(0.05)
+                continue
+            err_xyz = (
+                float(target_tcp_runtime[0]) - float(final_pos[0]),
+                float(target_tcp_runtime[1]) - float(final_pos[1]),
+                float(target_tcp_runtime[2]) - float(final_pos[2]),
+            )
+            if (
+                abs(float(err_xyz[0])) <= float(axis_tol_m)
+                and abs(float(err_xyz[1])) <= float(axis_tol_m)
+                and abs(float(err_xyz[2])) <= float(axis_tol_m)
+            ):
+                return True, f"ok seed={seed_source} offset={offset_source}", final_pos, err_xyz
+            time.sleep(0.05)
+
+        if final_pos is not None and err_xyz is not None:
+            return (
+                False,
+                (
+                    f"target_not_reached frame={base_frame} final={self._step_format_inline_xyz(final_pos)} "
+                    f"err_xyz=({err_xyz[0]:+.4f},{err_xyz[1]:+.4f},{err_xyz[2]:+.4f}) "
+                    f"tol_axis={axis_tol_m:.4f} seed={seed_source} offset={offset_source}"
+                ),
+                final_pos,
+                err_xyz,
+            )
+        return False, "target_not_reached_no_tf", final_pos, err_xyz
+
+    def _step_cart_debug_move_delta(self, dx_m: float, dy_m: float, dz_m: float) -> None:
+        if self._step_mode != "STEP_BY_STEP":
+            self._step_cart_debug_set_status("Solo disponible en STEP_BY_STEP", error=True)
+            return
+        if self._step_cart_debug_move_inflight:
+            self._step_cart_debug_set_status("Movimiento en curso...", error=False)
+            return
+        before = self._step_fetch_live_pose("rg2_pinch_center")
+        if before is None:
+            self._step_cart_debug_set_status("TF rg2_pinch_center no disponible", error=True)
+            self._step_cart_debug_log_event(
+                "move_rejected",
+                reason="pinch_pose_unavailable",
+                delta_m=[float(dx_m), float(dy_m), float(dz_m)],
+            )
+            return
+        target = (
+            float(before[0]) + float(dx_m),
+            float(before[1]) + float(dy_m),
+            float(before[2]) + float(dz_m),
+        )
+        self._step_cart_debug_set_status("Ejecutando nudge cartesiano...", error=False)
+        self._step_cart_debug_log_event(
+            "move_request",
+            delta_m=[float(dx_m), float(dy_m), float(dz_m)],
+            before=before,
+            target=target,
+        )
+
+        def worker() -> None:
+            self._step_cart_debug_move_inflight = True
+            ok = False
+            info = ""
+            after = None
+            axis_err = None
+            try:
+                axis_tol_m = max(0.0010, self._step_cart_debug_step_m() * 0.30)
+                max_attempts = 3
+                for attempt in range(1, max_attempts + 1):
+                    ok, info, after, axis_err = self._step_cartesian_move_runtime_target(
+                        target,
+                        timeout_sec=4.0,
+                        axis_tol_m=axis_tol_m,
+                    )
+                    self._step_cart_debug_log_event(
+                        "move_attempt",
+                        attempt=int(attempt),
+                        max_attempts=int(max_attempts),
+                        target=target,
+                        after=after,
+                        axis_error_to_target=axis_err,
+                        success=bool(ok),
+                        result=str(info),
+                        axis_tol_m=float(axis_tol_m),
+                    )
+                    if ok:
+                        break
+            except Exception as exc:
+                ok = False
+                info = f"exception:{exc}"
+            finally:
+                self._step_cart_debug_move_inflight = False
+
+            delta_after = None
+            if before is not None and after is not None:
+                delta_after = (
+                    float(after[0]) - float(before[0]),
+                    float(after[1]) - float(before[1]),
+                    float(after[2]) - float(before[2]),
+                )
+
+            def _ui_done() -> None:
+                if ok:
+                    self._step_cart_debug_set_status("Nudge ejecutado", error=False)
+                else:
+                    self._step_cart_debug_set_status(f"Error: {info}", error=True)
+                self._step_cart_debug_refresh()
+
+            self.signal_run_ui.emit(_ui_done)
+            self._step_cart_debug_log_event(
+                "move_result",
+                success=bool(ok),
+                result=str(info),
+                delta_m=[float(dx_m), float(dy_m), float(dz_m)],
+                before=before,
+                target=target,
+                after=after,
+                delta_after=delta_after,
+                axis_error_to_target=axis_err,
+            )
+
+        self._run_async(worker, name="step_cartesian_debug_move")
+
+    def _step_cart_debug_handle_axis(self, axis: str, sign: int) -> None:
+        step = self._step_cart_debug_step_m()
+        axis_n = str(axis or "").strip().upper()
+        s = 1.0 if int(sign) >= 0 else -1.0
+        dx = s * step if axis_n == "X" else 0.0
+        dy = s * step if axis_n == "Y" else 0.0
+        dz = s * step if axis_n == "Z" else 0.0
+        self._step_cart_debug_move_delta(dx, dy, dz)
+
+    def _step_cart_debug_run_validation_xyz(self) -> None:
+        if self._step_mode != "STEP_BY_STEP":
+            self._step_cart_debug_set_status("Validación disponible solo en STEP_BY_STEP", error=True)
+            return
+        if self._step_cart_debug_move_inflight:
+            self._step_cart_debug_set_status("Movimiento en curso...", error=False)
+            return
+
+        def worker() -> None:
+            self._step_cart_debug_move_inflight = True
+            try:
+                step = 0.005
+                axis_tol_m = max(0.0010, step * 0.30)
+                tests = [
+                    ("X+", (step, 0.0, 0.0)),
+                    ("Y+", (0.0, step, 0.0)),
+                    ("Z+", (0.0, 0.0, step)),
+                ]
+                self._step_cart_debug_log_event(
+                    "validation_xyz_start",
+                    step_m=float(step),
+                    axis_tol_m=float(axis_tol_m),
+                )
+
+                for name, delta in tests:
+                    before = self._step_fetch_live_pose("rg2_pinch_center")
+                    if before is None:
+                        self._step_cart_debug_log_event(
+                            "validation_xyz_case",
+                            case=name,
+                            status="failed",
+                            reason="before_pose_unavailable",
+                        )
+                        continue
+                    target = (
+                        float(before[0]) + float(delta[0]),
+                        float(before[1]) + float(delta[1]),
+                        float(before[2]) + float(delta[2]),
+                    )
+                    ok, info, after, err_xyz = self._step_cartesian_move_runtime_target(
+                        target,
+                        timeout_sec=4.0,
+                        axis_tol_m=axis_tol_m,
+                    )
+                    delta_after = None
+                    if after is not None:
+                        delta_after = (
+                            float(after[0]) - float(before[0]),
+                            float(after[1]) - float(before[1]),
+                            float(after[2]) - float(before[2]),
+                        )
+                    self._step_cart_debug_log_event(
+                        "validation_xyz_case",
+                        case=name,
+                        status="ok" if ok else "failed",
+                        before=before,
+                        target=target,
+                        after=after,
+                        delta_after=delta_after,
+                        axis_error_to_target=err_xyz,
+                        result=str(info),
+                    )
+
+                self._step_cart_debug_log_event("validation_xyz_end")
+
+                def _ui_ok() -> None:
+                    self._step_cart_debug_set_status("Validación XYZ registrada en historico", error=False)
+                    self._step_cart_debug_refresh()
+
+                self.signal_run_ui.emit(_ui_ok)
+            except Exception as exc:
+                self._step_cart_debug_log_event("validation_xyz_error", error=str(exc))
+
+                def _ui_fail() -> None:
+                    self._step_cart_debug_set_status(f"Error validación: {exc}", error=True)
+                    self._step_cart_debug_refresh()
+
+                self.signal_run_ui.emit(_ui_fail)
+            finally:
+                self._step_cart_debug_move_inflight = False
+
+        self._run_async(worker, name="step_cartesian_debug_validation")
+
+    def _ensure_step_cart_debug_window(self) -> None:
+        if self._step_cart_debug_window is not None:
+            return
+        parent = self._step_window if self._step_window is not None else self
+        dlg = QDialog(parent)
+        dlg.setWindowTitle("STEP Depuracion Cartesiana")
+        dlg.setModal(False)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+        dlg.resize(420, 340)
+
+        root = QVBoxLayout(dlg)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
+
+        lbl_title = QLabel("Depuracion manual XYZ (base_link)")
+        lbl_title.setStyleSheet("font-weight:700;")
+        lbl_pose = QLabel("rg2_pinch_center@base_link: --")
+        lbl_tool0 = QLabel("tool0@base_link: --")
+        lbl_frame = QLabel("Frame operativo: rg2_pinch_center -> base_link")
+        lbl_time = QLabel("timestamp: --")
+
+        step_row = QHBoxLayout()
+        step_row.addWidget(QLabel("Paso:"))
+        combo = QComboBox()
+        combo.addItem("1 mm", 0.001)
+        combo.addItem("2 mm", 0.002)
+        combo.addItem("5 mm", 0.005)
+        combo.addItem("10 mm", 0.010)
+        combo.setCurrentIndex(1)
+        step_row.addWidget(combo)
+        step_row.addStretch(1)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(6)
+        grid.setVerticalSpacing(6)
+        btn_x_neg = QPushButton("X-")
+        btn_x_pos = QPushButton("X+")
+        btn_y_neg = QPushButton("Y-")
+        btn_y_pos = QPushButton("Y+")
+        btn_z_neg = QPushButton("Z-")
+        btn_z_pos = QPushButton("Z+")
+        btn_refresh = QPushButton("Actualizar")
+        btn_validate = QPushButton("Validar XYZ 5mm")
+
+        btn_x_neg.clicked.connect(lambda: self._step_cart_debug_handle_axis("X", -1))
+        btn_x_pos.clicked.connect(lambda: self._step_cart_debug_handle_axis("X", +1))
+        btn_y_neg.clicked.connect(lambda: self._step_cart_debug_handle_axis("Y", -1))
+        btn_y_pos.clicked.connect(lambda: self._step_cart_debug_handle_axis("Y", +1))
+        btn_z_neg.clicked.connect(lambda: self._step_cart_debug_handle_axis("Z", -1))
+        btn_z_pos.clicked.connect(lambda: self._step_cart_debug_handle_axis("Z", +1))
+        btn_refresh.clicked.connect(self._step_cart_debug_refresh)
+        btn_validate.clicked.connect(self._step_cart_debug_run_validation_xyz)
+
+        grid.addWidget(btn_x_neg, 0, 0)
+        grid.addWidget(btn_x_pos, 0, 1)
+        grid.addWidget(btn_y_neg, 1, 0)
+        grid.addWidget(btn_y_pos, 1, 1)
+        grid.addWidget(btn_z_neg, 2, 0)
+        grid.addWidget(btn_z_pos, 2, 1)
+        grid.addWidget(btn_refresh, 3, 0, 1, 2)
+        grid.addWidget(btn_validate, 4, 0, 1, 2)
+
+        # Fila de descensos rápidos fijos
+        lbl_bajar = QLabel("Bajar rápido:")
+        lbl_bajar.setStyleSheet("font-weight:600;")
+        drop_row = QHBoxLayout()
+        drop_row.setSpacing(6)
+        for _mm in (25, 50, 75, 100):
+            _dist_m = _mm / 1000.0
+            _btn = QPushButton(f"↓{_mm}mm")
+            _btn.setToolTip(f"Bajar {_mm} mm en Z (base_link)")
+            _btn.clicked.connect(
+                lambda checked=False, d=_dist_m: self._step_cart_debug_move_delta(0.0, 0.0, -d)
+            )
+            drop_row.addWidget(_btn)
+
+        lbl_status = QLabel("Estado: listo")
+        lbl_status.setStyleSheet("color:#0f766e; font-weight:600;")
+
+        root.addWidget(lbl_title)
+        root.addWidget(lbl_pose)
+        root.addWidget(lbl_tool0)
+        root.addWidget(lbl_frame)
+        root.addWidget(lbl_time)
+        root.addLayout(step_row)
+        root.addLayout(grid)
+        root.addWidget(lbl_bajar)
+        root.addLayout(drop_row)
+        root.addWidget(lbl_status)
+
+        timer = QTimer(dlg)
+        timer.setInterval(250)
+        timer.timeout.connect(self._step_cart_debug_refresh)
+        timer.start()
+
+        self._step_cart_debug_window = dlg
+        self._step_cart_debug_pose_label = lbl_pose
+        self._step_cart_debug_tool0_label = lbl_tool0
+        self._step_cart_debug_frame_label = lbl_frame
+        self._step_cart_debug_time_label = lbl_time
+        self._step_cart_debug_status_label = lbl_status
+        self._step_cart_debug_step_combo = combo
+        self._step_cart_debug_timer = timer
+
+    def _show_step_cart_debug_window(self) -> None:
+        self._ensure_step_cart_debug_window()
+        if self._step_cart_debug_window is None:
+            return
+        if self._step_window is not None:
+            geo = self._step_window.geometry()
+            self._step_cart_debug_window.move(geo.x() + geo.width() + 12, geo.y())
+        self._step_cart_debug_window.show()
+        self._step_cart_debug_refresh()
 
     def _step_window_maybe_refresh(self) -> None:
         """Refresca el header del step window cada 500ms, solo si hay gate activo.
@@ -4871,7 +5425,6 @@ class ControlPanelV2(QMainWindow):
         flow_name = str(flow or "").strip().upper()
         sequences = {
             "DIRECT": [
-                "INICIO",
                 "APPROACH_COARSE",
                 "GRASP_DOWN_JOINT",
                 "GRASP_ALIGN_IK",
@@ -5281,9 +5834,26 @@ class ControlPanelV2(QMainWindow):
                 )
         _op_frame_snap = self._step_operational_frame_name()
         if self._step_history_rows and str(self._step_history_rows[-1].get("phase") or "").strip().upper() == phase_name:
-            # Mismo fase: solo actualizar target. origin_snapshot NUNCA se sobreescribe.
+            # Mismo fase: actualizar target.
+            # origin_snapshot se actualiza si actual=None (gate aún no cerrado): esto ocurre
+            # cuando _step_pre_insert_inicio_row lo capturó antes de que el robot llegara
+            # a MESA. El worker llama de nuevo con la pose real post-MESA para corregirlo.
             _existing_snap = self._step_history_rows[-1].get("origin_snapshot")
-            if _existing_snap is not None:
+            _row_actual = self._step_history_rows[-1].get("actual")
+            if _row_actual is None:
+                # Gate no cerrado aún: actualizar origin_snapshot con TF live actual.
+                _current_snap = self._step_fetch_live_pose(_op_frame_snap)
+                if _current_snap is not None:
+                    if _existing_snap is not None:
+                        _mut_delta = max(abs(_current_snap[i] - _existing_snap[i]) for i in range(3))
+                        self._emit_log(
+                            f"[STEP][ORIGIN_UPDATE] phase={phase_name} "
+                            f"old={self._step_format_inline_xyz(_existing_snap)} "
+                            f"new={self._step_format_inline_xyz(_current_snap)} "
+                            f"delta_m={_mut_delta:.4f}"
+                        )
+                    self._step_history_rows[-1]["origin_snapshot"] = _current_snap
+            elif _existing_snap is not None:
                 _current_snap = self._step_fetch_live_pose(_op_frame_snap)
                 if _current_snap is not None:
                     _mut_delta = max(abs(_current_snap[i] - _existing_snap[i]) for i in range(3))
@@ -5297,10 +5867,9 @@ class ControlPanelV2(QMainWindow):
             self._step_history_rows[-1]["target"] = pos3
         else:
             # Nueva fase: capturar pose actual como origin_snapshot (congelado).
-            # Retry hasta 3 veces con 80ms de espera si TF devuelve None — puede ocurrir
-            # cuando move_group limpia el buffer por un salto de reloj de Gazebo
-            # ("Detected jump back in time. Clearing TF buffer."). Cada 80ms ≈ 1.5 ciclos
-            # de publicación de /tf (20Hz), suficiente para que el buffer se reponga.
+            # Retry hasta 3 veces con 80ms de espera si TF devuelve None.
+            # Siempre se usa TF live para reflejar la posición real del robot
+            # cuando abre el gate, independientemente de la fase anterior.
             _origin_snap = None
             _snap_source = "unavailable_after_3_retries"
             for _snap_attempt in range(3):
@@ -5309,6 +5878,12 @@ class ControlPanelV2(QMainWindow):
                     _snap_source = f"tf_live_attempt_{_snap_attempt + 1}"
                     break
                 time.sleep(0.08)
+            # Fallback si TF falló: usar el actual de la fila anterior.
+            if _origin_snap is None and self._step_history_rows:
+                _prev_actual = self._step_history_rows[-1].get("actual")
+                if _prev_actual is not None:
+                    _origin_snap = _prev_actual
+                    _snap_source = "prev_row_actual_fallback"
             self._emit_log(
                 f"[STEP][ORG_CAPTURE] phase={phase_name} "
                 f"frame={_op_frame_snap} "
@@ -5390,17 +5965,17 @@ class ControlPanelV2(QMainWindow):
                 pos3_target = None
 
         # Insertar fila INICIO:
-        #   origin_snapshot = pos3_actual → pose congelada del robot al pulsar el botón
-        #   actual = None  → se captura en transición (dónde llegó el robot al salir de INICIO)
-        #   target = pos3_target → destino APPROACH_COARSE (objeto + Z extra)
-        #   reached = None → PEND (naranja) hasta que la transición lo resuelva
+        #   origin_snapshot = pos3_actual → pose congelada del robot al abrir la gate (MESA)
+        #   actual = None  → PEND hasta que el worker capture el Cierre tras el gate
+        #   target = pos3_target → pose MESA (= pos3_actual, donde ya está el robot)
+        #   reached = None → PEND hasta captura
         self._step_history_rows.append({
             "phase": first_phase,
-            "target": pos3_target,           # ← destino APPROACH_COARSE
-            "actual": None,                  # ← capturado en transición (pose de llegada)
+            "target": pos3_target,           # ← pose MESA (= pos3_actual)
+            "actual": None,                  # ← capturado en worker tras pulsar Sigue
             "origin_snapshot": pos3_actual,  # ← congelado: pose robot al abrir la gate
-            "exec_target_snapshot": pos3_target,  # ← INICIO no mueve: exec = target
-            "reached": None,                 # ← PEND hasta transición
+            "exec_target_snapshot": pos3_target,
+            "reached": None,                 # ← PEND hasta captura
         })
         self._emit_log(f"[STEP][PREPARED_PHASE] phase={first_phase} started=false")
         self._emit_log(
@@ -5477,6 +6052,23 @@ class ControlPanelV2(QMainWindow):
         if self._step_decision_label is not None:
             decision = str(self._step_decision or "").strip() or "--"
             self._step_decision_label.setText(f"Motivo de decisión: {decision}")
+        if self._step_continue_help_label is not None:
+            current_flow = str(self._step_pending_flow or "").strip()
+            current_phase = str(self._step_current_phase or "").strip() or "fase actual"
+            next_phase = str(self._step_next_phase or "").strip()
+            current_intent = self._step_phase_intent(current_flow, current_phase)
+            if next_phase and next_phase != "--":
+                self._step_continue_help_label.setText(
+                    f"▶ Ejecutará: {current_phase}"
+                    + (f" — {current_intent}" if current_intent else "")
+                    + f". Al terminar, {next_phase} quedará en espera."
+                )
+            else:
+                self._step_continue_help_label.setText(
+                    f"▶ Ejecutará: {current_phase}"
+                    + (f" — {current_intent}" if current_intent else "")
+                    + ". Al terminar, el flujo avanzará al siguiente estado."
+                )
         if self._step_target_label is not None:
             self._step_target_label.setText(
                 self._step_live_pose_text(
@@ -5623,6 +6215,7 @@ class ControlPanelV2(QMainWindow):
     def _step_window_set_waiting(self) -> None:
         self._ensure_step_window()
         self._step_window_refresh()
+        self._show_step_cart_debug_window()
         if self._step_continue_btn is not None:
             self._step_continue_btn.setEnabled(True)
         if self._step_window is not None:
@@ -5632,6 +6225,8 @@ class ControlPanelV2(QMainWindow):
         if self._step_window is None:
             return
         self._step_window.hide()
+        if self._step_cart_debug_window is not None:
+            self._step_cart_debug_window.hide()
 
     def _on_step_window_finished(self, _result: int) -> None:
         # If user closes the step window manually, return to AUTO to avoid deadlocks.
@@ -5677,6 +6272,28 @@ class ControlPanelV2(QMainWindow):
                     obj_pos = None
             self._step_object_position = obj_pos
             self._step_record_history(flow_name, display_phase, position)
+            # Invariante semántico: Cierre[N] == Origen[N+1].
+            # _step_record_history acaba de capturar origin_snapshot para la fase actual
+            # con hasta 3 reintentos (3×80 ms). Usamos ese mismo valor como actual de la
+            # fila anterior para garantizar que ambas columnas muestren exactamente la
+            # misma pose (capturada con la mejor calidad disponible), sin depender de una
+            # captura TF independiente que puede devolver datos stale del movimiento previo.
+            if len(self._step_history_rows) >= 2:
+                _prev_row = self._step_history_rows[-2]
+                _curr_snap = self._step_history_rows[-1].get("origin_snapshot")
+                _prev_phase_name = str(_prev_row.get("phase") or "").strip().upper()
+                _phase_seq = self._step_phase_sequence(flow_name)
+                if _phase_seq and _prev_phase_name == _phase_seq[0]:
+                    # INICIO: actual ya está pre-fijado como home en _step_pre_insert_inicio_row.
+                    # No sobreescribir con el Org de APPROACH (posición post-PICK_IMAGE),
+                    # ya que INICIO cierra cuando el robot aún está en home (antes de PICK_IMAGE).
+                    _prev_row["reached"] = True
+                elif _curr_snap is not None:
+                    # Invariante Cierre[N] == Origen[N+1] para el resto de fases.
+                    _prev_row["actual"] = _curr_snap
+                    _prev_row["reached"] = self._step_assess_target_reached(
+                        _prev_row.get("target"), _curr_snap
+                    )
             self._step_wait_active = True
             self._step_wait_event.clear()
 
@@ -6796,6 +7413,28 @@ class ControlPanelV2(QMainWindow):
             self._set_status("Cámara: vista frontal lejana", error=False)
         else:
             self._set_status("No se pudo activar vista frontal", error=True)
+
+    @pyqtSlot()
+    def _set_top_camera_view(self) -> None:
+        ok = self._switch_camera_topic(
+            list(TOP_CAMERA_TOPIC_CANDIDATES),
+            label="cenital",
+        )
+        if ok:
+            self._set_status("Cámara: vista cenital", error=False)
+        else:
+            self._set_status("No se pudo activar vista cenital", error=True)
+
+    @pyqtSlot()
+    def _set_wrist_camera_view(self) -> None:
+        ok = self._switch_camera_topic(
+            list(WRIST_CAMERA_TOPIC_CANDIDATES),
+            label="muñeca",
+        )
+        if ok:
+            self._set_status("Cámara: vista muñeca", error=False)
+        else:
+            self._set_status("No se pudo activar vista muñeca", error=True)
 
     def _subscribe_camera(self, topic: str) -> bool:
         return self._camera_ctrl.subscribe(topic)
@@ -9168,6 +9807,10 @@ class ControlPanelV2(QMainWindow):
         self.btn_camera_connect.setEnabled(False)
         if getattr(self, "btn_camera_far_front", None) is not None:
             self.btn_camera_far_front.setEnabled(False)
+        if getattr(self, "btn_camera_top", None) is not None:
+            self.btn_camera_top.setEnabled(False)
+        if getattr(self, "btn_camera_wrist", None) is not None:
+            self.btn_camera_wrist.setEnabled(False)
         if self.btn_calibrate is not None:
             self.btn_calibrate.setEnabled(False)
         if self.btn_release_objects is not None:
@@ -12664,7 +13307,9 @@ class ControlPanelV2(QMainWindow):
                             str(reason_now or last_reason or "n/a"),
                         )
                         return
-                    self._run_pick_demo()
+                    # Skip confirm dialog for remote invocations (headless context)
+                    self._emit_log("[PICK][REMOTE] Ejecutando pick_demo sin diálogo de confirmación")
+                    run_pick_demo(self)
                     if bool(getattr(self, "_script_motion_active", False)):
                         self._complete_pending_pick_demo_request(True, "pick_demo_started")
                         return
@@ -12683,7 +13328,9 @@ class ControlPanelV2(QMainWindow):
             _ack(False, str(reason or "n/a"))
             return
 
-        self._run_pick_demo()
+        # Skip confirm dialog for remote invocations (headless context)
+        self._emit_log("[PICK][REMOTE] Ejecutando pick_demo sin diálogo de confirmación")
+        run_pick_demo(self)
         if request_id:
             if bool(getattr(self, "_script_motion_active", False)):
                 _ack(True, "pick_demo_started")
@@ -14752,44 +15399,8 @@ class ControlPanelV2(QMainWindow):
             f"[BOTON] Pulsado: Agarre Objeto (Directo) | "
             f"frame={_op_frame} | Pose pinza ahora: {_pose_str}"
         )
-        # En modo STEP_BY_STEP: pre-insertar la fila INICIO en la ventana antes de
-        # mostrar el diálogo de confirmación, para que el usuario la vea ya en la
-        # tabla mientras decide si continuar o cancelar.
-        if self._step_mode == "STEP_BY_STEP":
-            _inicio_first_target = None
-            _obj_base = None  # inicializar antes del try para evitar NameError
-            try:
-                from .panel_pick_demo import (
-                    _resolve_live_object_base,
-                    _effective_direct_grasp_z,
-                    PICK_DEMO_OBJECT_NAME,
-                    DIRECT_SOURCE_FRAME,
-                )
-                _grasp_z_raw = float(
-                    os.environ.get("PANEL_PICK_DEMO_GRASP_TCP_Z_OFFSET_M", "0.0") or "0.0"
-                )
-                _grasp_z = _effective_direct_grasp_z(DIRECT_SOURCE_FRAME, _grasp_z_raw)
-                _coarse_extra_z = max(
-                    0.0,
-                    float(
-                        os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.10") or "0.10"
-                    ),
-                )
-                _obj_result = _resolve_live_object_base(self, PICK_DEMO_OBJECT_NAME)
-                _obj_base = (_obj_result or {}).get("base")
-                if _obj_base is not None and len(_obj_base) >= 3:
-                    _inicio_first_target = (
-                        float(_obj_base[0]),
-                        float(_obj_base[1]),
-                        float(_obj_base[2]) + _grasp_z + _coarse_extra_z,
-                    )
-            except Exception as _exc:
-                self._emit_log(f"[STEP][PRE_INSERT_INICIO] target_compute_error={_exc}")
-            self._emit_log(
-                f"[STEP][PRE_INSERT_INICIO] obj_base={_obj_base} "
-                f"target={_inicio_first_target}"
-            )
-            self._step_pre_insert_inicio_row(_fresh_xyz, _inicio_first_target, obj_pos=_obj_base)
+        # INICIO eliminado: el robot ya va a MESA antes de que arranque el demo,
+        # así que la primera fase visible es directamente APPROACH_COARSE.
         if not self._pick_confirm_dialog(self, "Agarre Objeto (Directo)", _op_frame, _pose_str):
             self._emit_log("[BOTON] Inicio cancelado por el usuario")
             if self._step_mode == "STEP_BY_STEP":
@@ -17536,6 +18147,8 @@ class ControlPanelV2(QMainWindow):
         self._step_wait_event.set()
         if self._step_window is not None:
             self._step_window.close()
+        if self._step_cart_debug_window is not None:
+            self._step_cart_debug_window.close()
         self._bridge_running = False
         self._gz_running = False
         self._log("[SHUTDOWN][PANEL] stop_timers begin")
