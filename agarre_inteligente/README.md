@@ -18,6 +18,8 @@ Bloque de vision del TFM. Aqui estan el codigo de entrenamiento, evaluacion, con
 - `EXP2_SIMPLE_RGBD`
 - `EXP3_RESNET18_RGB_AUGMENT`
 - `EXP4_RESNET18_RGBD`
+- `EXP5_SIMPLEGRASP_RGB` Modelo definido en el TFM apartado 4.6.2
+- `EXP6_SIMPLEGRASP_RGBD` Modelo definido en el TFM apartado 4.6.2
 
 ## Scripts principales
 

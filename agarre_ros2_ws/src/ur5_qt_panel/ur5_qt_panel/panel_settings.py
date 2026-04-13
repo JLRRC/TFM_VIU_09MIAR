@@ -99,7 +99,9 @@ class PanelSettings:
     save_pose_info_positions: bool = False
     ur5_base_x: float = -0.85
     ur5_base_y: float = 0.0
-    ur5_base_z: float = 0.825
+    # Must match the UR5 spawn pose in the Gazebo world to keep world<->base
+    # fallbacks coherent when TF is temporarily unavailable.
+    ur5_base_z: float = 0.850
     ur5_reach_radius: float = 0.85
     gz_world: str = "ur5_mesa_objetos"
     gripper_attach_prefix: str = "/gripper"

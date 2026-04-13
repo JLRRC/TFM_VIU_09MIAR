@@ -4,6 +4,7 @@
 panel_settings:
   base_frame: base_link
   world_frame: null
+  ur5_base_z: 0.850
   camera_topic: /camera_overhead/image
   camera_required: null
   use_sim_time: true

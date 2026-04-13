@@ -36,4 +36,4 @@ Para regenerar artefactos del documento desde la raiz del proyecto:
 ./recrear_artefactos_tfm.sh
 ```
 
-La parte operativa del panel y sus logs de ejecucion en caliente se encuentra en `../agarre_ros2_ws/` y `../auditoria/panel_audit/`.
+La parte operativa del panel y sus logs de ejecucion en caliente se encuentra en `../agarre_ros2_ws/` y `../HISTORICOS/desde_auditoria/panel_audit/`.

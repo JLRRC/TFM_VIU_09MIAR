@@ -996,7 +996,7 @@ def run_pick_demo(panel) -> None:
             repo_root = Path(__file__).resolve().parents[4]
             debug_root = Path(
                 os.environ.get("PANEL_DIRECT_DEBUG_ROOT")
-                or (repo_root / "HISTORICO" / "panel_v2_20260321")
+                or (repo_root / "HISTORICOS" / "panel_v2_20260321")
             )
             debug_root.mkdir(parents=True, exist_ok=True)
             trace_path = debug_root / "DIRECTO_DEBUG_TRACE.log"
@@ -2085,12 +2085,12 @@ def run_pick_demo(panel) -> None:
                 z_error = abs(z_gap - _DIRECTO_GRASP_Z)
                 tcp_obj_dist = _dist(tcp_base, obj_base)
                 xy_tol = max(
-                    0.01,
-                    float(os.environ.get("PANEL_PICK_DEMO_CLOSE_XY_TOL_M", "0.035") or 0.035),
+                    0.006,
+                    float(os.environ.get("PANEL_PICK_DEMO_CLOSE_XY_TOL_M", "0.012") or 0.012),
                 )
                 z_tol = max(
-                    0.01,
-                    float(os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.018") or 0.018),
+                    0.008,
+                    float(os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.012") or 0.012),
                 )
                 gripper_state = _read_gripper_state(expected_closed=True)
                 gripper_closed_measured = bool(gripper_state.get("measured_target_ok"))
@@ -2134,23 +2134,23 @@ def run_pick_demo(panel) -> None:
                 z_error = abs(z_gap - _DIRECTO_GRASP_Z)
                 tcp_obj_dist = _dist(tcp_base, obj_base)
                 xy_tol = max(
-                    0.01,
+                    0.004,
                     float(
                         os.environ.get(
                             "PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M",
-                            os.environ.get("PANEL_PICK_DEMO_CLOSE_XY_TOL_M", "0.035"),
+                            os.environ.get("PANEL_PICK_DEMO_CLOSE_XY_TOL_M", "0.012"),
                         )
-                        or 0.035
+                        or 0.012
                     ),
                 )
                 z_tol = max(
-                    0.01,
+                    0.006,
                     float(
                         os.environ.get(
                             "PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M",
-                            os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.015"),
+                            os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.012"),
                         )
-                        or 0.015
+                        or 0.012
                     ),
                 )
                 ok = xy_dist <= xy_tol and z_error <= z_tol
@@ -3432,20 +3432,20 @@ def run_pick_demo(panel) -> None:
                 phase_seed_joints=None,
             ) -> tuple[dict | None, str, dict]:
                 strict_xy_tol = max(
-                    0.01,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M", "0.030") or 0.030),
+                    0.006,
+                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M", "0.012") or 0.012),
                 )
                 strict_z_tol = max(
-                    0.01,
+                    0.008,
                     float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M", "0.025") or 0.025),
                 )
                 target_dist_tol = max(
                     strict_xy_tol,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M", "0.040") or 0.040),
+                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M", "0.025") or 0.025),
                 )
                 max_attempts = max(
                     1,
-                    int(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS", "3") or 3),
+                    int(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS", "4") or 4),
                 )
                 rot_weight = max(
                     0.0,
@@ -3462,6 +3462,7 @@ def run_pick_demo(panel) -> None:
                 last_debug = None
                 last_metrics = _grasp_down_runtime_metrics(target_base=target_base, obj_base=obj_base)
                 last_route = "cartesian_like_descent"
+                _gd_seed_injected = False
                 for attempt in range(1, max_attempts + 1):
                     actual_before = _tuple3(_live_tcp_base())
                     object_now = _tuple3(_live_object_base()) or _tuple3(obj_base)
@@ -3675,6 +3676,8 @@ def run_pick_demo(panel) -> None:
                         panel._emit_log(accept_msg)
                         _append_trace(accept_msg)
                         decision = f"{last_route}:runtime_converged" if runtime_ok else f"{last_route}:metrics_converged"
+                        if _gd_seed_injected:
+                            os.environ.pop("PANEL_PICK_DEMO_IK_SEED_JOINTS", None)
                         return last_debug, decision, last_metrics
                     reject_reason = quality.get("reason")
                     reject_msg = (
@@ -3703,6 +3706,8 @@ def run_pick_demo(panel) -> None:
                         )
                         panel._emit_log(_fb_msg)
                         _append_trace(_fb_msg)
+                if _gd_seed_injected:
+                    os.environ.pop("PANEL_PICK_DEMO_IK_SEED_JOINTS", None)
                 raise RuntimeError(
                     "grasp_down_runtime_not_converged "
                     f"xy_err={_fmt_scalar(last_metrics.get('xy_err_target'))} "
@@ -3790,6 +3795,26 @@ def run_pick_demo(panel) -> None:
                             or 2.0
                         ),
                     )
+                    align_exit_xy_tol = max(
+                        0.004,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M",
+                                "0.006",
+                            )
+                            or 0.006
+                        ),
+                    )
+                    align_exit_z_tol = max(
+                        0.006,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M",
+                                "0.010",
+                            )
+                            or 0.010
+                        ),
+                    )
                     xy_tol_pre = float(pre_metrics.get("xy_tol") or 0.035)
                     z_tol_pre = float(pre_metrics.get("z_tol") or 0.030)
                     xy_dist_pre = (
@@ -3802,7 +3827,12 @@ def run_pick_demo(panel) -> None:
                         if pre_metrics.get("z_error") is not None
                         else None
                     )
-                    already_aligned = bool(pre_metrics.get("ok"))
+                    already_aligned = bool(
+                        xy_dist_pre is not None
+                        and z_error_pre is not None
+                        and xy_dist_pre <= align_exit_xy_tol
+                        and z_error_pre <= align_exit_z_tol
+                    )
                     if already_aligned:
                         panel._emit_log(
                             "[PICK][DIRECT][ALIGN_TRACE] "
@@ -4038,9 +4068,9 @@ def run_pick_demo(panel) -> None:
                                 float(
                                     os.environ.get(
                                         "PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL",
-                                        "0.15",
+                                        "0.08",
                                     )
-                                    or 0.15
+                                    or 0.08
                                 ),
                             ),
                             joint_weight=max(
@@ -4083,11 +4113,19 @@ def run_pick_demo(panel) -> None:
                         # If PRE_CLOSE is already satisfied despite the joint timeout,
                         # keep the sequence moving instead of aborting a valid grasp.
                         _pre_fail_metrics = _pre_close_alignment_metrics()
-                        if bool(_pre_fail_metrics.get("ok")):
+                        _pre_fail_xy = _pre_fail_metrics.get("xy_dist")
+                        _pre_fail_z = _pre_fail_metrics.get("z_error")
+                        _pre_fail_exit_ok = bool(
+                            _pre_fail_xy is not None
+                            and _pre_fail_z is not None
+                            and float(_pre_fail_xy) <= align_exit_xy_tol
+                            and float(_pre_fail_z) <= align_exit_z_tol
+                        )
+                        if _pre_fail_exit_ok:
                             panel._emit_log(
                                 "[PICK][DIRECT][ALIGN_TRACE] "
                                 f"attempt={attempt}/{max_attempts} "
-                                "align_graceful_fallback=pre_close_ok_despite_joint_timeout "
+                                "align_graceful_fallback=strict_alignment_ok_despite_joint_timeout "
                                 f"align_target_source={align_target_source} "
                                 f"xy_dist={_fmt_scalar(_pre_fail_metrics.get('xy_dist'))} "
                                 f"z_error={_fmt_scalar(_pre_fail_metrics.get('z_error'))}"
@@ -4127,11 +4165,11 @@ def run_pick_demo(panel) -> None:
                     )
                     xy_after_ok = bool(
                         xy_dist_after is not None
-                        and xy_dist_after <= max(0.010, xy_tol_pre * xy_lock_factor)
+                        and xy_dist_after <= align_exit_xy_tol
                     )
                     z_after_ok = bool(
                         z_error_after_cmp is not None
-                        and z_error_after_cmp <= align_z_residual_tol
+                        and z_error_after_cmp <= align_exit_z_tol
                     )
                     convergence_ok = bool(runtime_ok and xy_after_ok and z_after_ok)
                     z_improved = bool(
@@ -4156,7 +4194,7 @@ def run_pick_demo(panel) -> None:
                         f"xy_dist_before={_fmt_scalar(xy_dist_pre)} "
                         f"xy_dist_after={_fmt_scalar(xy_dist_after)} "
                         f"retries_used={attempt - 1} "
-                        f"convergence_criterion=runtime_ok&&xy<=xy_lock&&z<={align_z_residual_tol:.3f} "
+                        f"convergence_criterion=runtime_ok&&xy<={align_exit_xy_tol:.3f}&&z<={align_exit_z_tol:.3f} "
                         f"convergence_ok={str(convergence_ok).lower()} "
                         f"decision={decision}"
                     )
@@ -4192,7 +4230,8 @@ def run_pick_demo(panel) -> None:
                         f"runtime_ok={runtime_ok} "
                         f"xy_dist={_fmt_scalar(last_metrics.get('xy_dist'))} "
                         f"z_error={_fmt_scalar(last_metrics.get('z_error'))} "
-                        f"z_error_tight={_fmt_scalar(z_error_after_cmp)}/{align_z_residual_tol:.3f} "
+                        f"xy_error_tight={_fmt_scalar(xy_dist_after)}/{align_exit_xy_tol:.3f} "
+                        f"z_error_tight={_fmt_scalar(z_error_after_cmp)}/{align_exit_z_tol:.3f} "
                         f"tcp_obj_dist={_fmt_scalar(last_metrics.get('tcp_obj_dist'))} "
                         f"ok_pre_close={bool(last_metrics.get('ok'))} "
                         f"ok_align_z={str(convergence_ok).lower()}"
@@ -4211,10 +4250,6 @@ def run_pick_demo(panel) -> None:
                         panel._emit_log(z_msg)
                         _append_trace(z_msg)
                     if convergence_ok:
-                        return last_debug
-                    # Mantener estabilidad: si en el ultimo intento cumple PRE_CLOSE,
-                    # no bloquear la secuencia aunque no alcance la tolerancia Z estricta.
-                    if attempt >= max_attempts and bool(last_metrics.get("ok")):
                         return last_debug
                 raise RuntimeError(
                     "grasp_align_ik_runtime_not_aligned "
@@ -5226,9 +5261,9 @@ def run_pick_demo(panel) -> None:
                 coarse_extra_z_m = float(
                     os.environ.get(
                         "PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M",
-                        "0.02",
+                        "0.035",
                     )
-                    or 0.0
+                    or 0.035
                 )
                 grasp_down_extra_z_m = max(
                     0.0,
@@ -5641,6 +5676,81 @@ def run_pick_demo(panel) -> None:
                     )
                     panel._emit_log(_cg_msg)
                     _append_trace(_cg_msg)
+                    # ── [FIX] APPROACH_COARSE Z closed-loop correction ────────────────
+                    # El modelo FK del panel (DH estándar) diverge del FK real de Gazebo
+                    # (SDF kinematics) en ~34 mm en esta configuración: el brazo llega
+                    # físicamente a Z=0.026 cuando el panel FK dice Z=0.060.
+                    # Solución: medir el error físico real y emitir un movimiento de
+                    # corrección con el target del modelo ajustado por ese delta, de
+                    # forma que el brazo quede físicamente en la Z deseada.
+                    # Si FK_model(joints) = Z_model  y  FK_real(joints) = Z_real,
+                    # entonces FK_model ≈ FK_real + offset_constante.  Para alcanzar
+                    # Z_real = Z_target necesitamos Z_model_corr = Z_target + offset
+                    #        = Z_target + (Z_target - Z_real) = 2·Z_target - Z_real
+                    #        = Z_target - _cg_z_err  (ya que _cg_z_err = Z_real - Z_target)
+                    _ac_z_corr_tol_m = max(
+                        0.010,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_APPROACH_COARSE_Z_CORR_TOL_M", "0.020"
+                            )
+                            or 0.020
+                        ),
+                    )
+                    if (
+                        approach_decision == "direct_ik_move"
+                        and abs(_cg_z_err) > _ac_z_corr_tol_m
+                    ):
+                        _ac_corr_target_z = _cg_z_target - _cg_z_err  # = 2·Z_target - Z_real
+                        _ac_corr_target = (
+                            float(target_base_coarse[0]),
+                            float(target_base_coarse[1]),
+                            float(_ac_corr_target_z),
+                        )
+                        _ac_zc_log = (
+                            "[APPROACH_COARSE][Z_CORRECTION] "
+                            f"z_err={_cg_z_err:.4f} corr_tol={_ac_z_corr_tol_m:.4f} "
+                            f"target_z={_cg_z_target:.4f} physical_z={_cg_z_actual:.4f} "
+                            f"corrected_target={_fmt_vec(_ac_corr_target)}"
+                        )
+                        panel._emit_log(_ac_zc_log)
+                        _append_trace(_ac_zc_log)
+                        try:
+                            _move_tcp_direct(
+                                label="APPROACH_COARSE_Z_CORR",
+                                target_tcp_runtime=_ac_corr_target,
+                                timeout_sec=max(move_sec, 4.0),
+                                audit_target_source="z_correction_feedback",
+                                target_pose_original=target_base_coarse,
+                                target_frame_original="base_link",
+                            )
+                        except Exception as _zc_exc:
+                            panel._emit_log(
+                                f"[APPROACH_COARSE][Z_CORRECTION][WARN] "
+                                f"failed={_zc_exc} "
+                                "continuing with best achieved Z"
+                            )
+                        # Re-leer posición física tras la corrección
+                        _ac_zc_tcp = _live_tcp_base()
+                        if _ac_zc_tcp is not None:
+                            _ac_zc_err = float(_ac_zc_tcp[2]) - _cg_z_target
+                            _ac_zc_log2 = (
+                                "[APPROACH_COARSE][Z_CORRECTION][RESULT] "
+                                f"tcp_after={_fmt_vec(_ac_zc_tcp)} "
+                                f"z_target={_cg_z_target:.4f} "
+                                f"z_after={float(_ac_zc_tcp[2]):.4f} "
+                                f"z_err_after={_ac_zc_err:.4f}"
+                            )
+                            panel._emit_log(_ac_zc_log2)
+                            _append_trace(_ac_zc_log2)
+                            # Actualizar variables de gate para la decisión de herencia XY
+                            _coarse_check_tcp = _ac_zc_tcp
+                            _cg_z_actual = float(_ac_zc_tcp[2])
+                            _cg_z_err = _ac_zc_err
+                            coarse_gate_z_ok = bool(
+                                abs(_cg_z_err) <= max(0.05, float(_cg_xy_tol))
+                            )
+                    # ── [/FIX] APPROACH_COARSE Z closed-loop correction ───────────────
                 else:
                     panel._emit_log(
                         "[PICK][DIRECT][PHASE_CHECK] "
@@ -5874,21 +5984,36 @@ def run_pick_demo(panel) -> None:
                 # PHASE_CHECK para GRASP_DOWN_JOINT
                 _gd_check_tcp = _live_tcp_base()
                 _gd_check_obj = _live_object_base()
+                grasp_down_gate_ok = False
+                grasp_down_gate_metrics = {}
                 if _gd_check_tcp is not None and _gd_check_obj is not None and target_base_grasp_down is not None:
                     _gd_xy_tol = max(
-                        0.01,
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M", "0.030") or 0.030),
+                        0.006,
+                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M", "0.012") or 0.012),
                     )
                     _gd_z_tol = max(
-                        0.01,
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M", "0.025") or 0.025),
+                        0.008,
+                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M", "0.012") or 0.012),
                     )
                     _gd_check_xy_err = math.hypot(
                         float(_gd_check_tcp[0]) - float(target_base_grasp_down[0]),
                         float(_gd_check_tcp[1]) - float(target_base_grasp_down[1]),
                     )
                     _gd_check_z_err = float(_gd_check_tcp[2]) - float(target_base_grasp_down[2])
-                    _gd_check_result = "OK" if (_gd_check_xy_err <= _gd_xy_tol and abs(_gd_check_z_err) <= _gd_z_tol) else "NO"
+                    grasp_down_gate_ok = bool(
+                        _gd_check_xy_err <= _gd_xy_tol and abs(_gd_check_z_err) <= _gd_z_tol
+                    )
+                    grasp_down_gate_metrics = {
+                        "xy_err": float(_gd_check_xy_err),
+                        "xy_tol": float(_gd_xy_tol),
+                        "z_err": float(_gd_check_z_err),
+                        "z_tol": float(_gd_z_tol),
+                        "tcp_base": _tuple3(_gd_check_tcp),
+                        "object_base": _tuple3(_gd_check_obj),
+                        "target_base": _tuple3(target_base_grasp_down),
+                        "decision": str(grasp_down_decision),
+                    }
+                    _gd_check_result = "OK" if grasp_down_gate_ok else "NO"
                     _gd_check_msg = (
                         "[PICK][DIRECT][PHASE_CHECK] "
                         f"phase=GRASP_DOWN_JOINT "
@@ -5901,29 +6026,22 @@ def run_pick_demo(panel) -> None:
                     )
                     panel._emit_log(_gd_check_msg)
                     _append_trace(_gd_check_msg)
-            # DESCENSO_DIRECTO: paso articular a JOINT_GRASP_DOWN_POSE_RAD sin IK.
-            # El IK de GRASP_DOWN_JOINT falla por TF lag (~2cm) y rama cinemática;
-            # este paso garantiza que el brazo llega a Z≈0.025m.
-            # El XY resultante puede diferir del objeto → GRASP_ALIGN_IK lo corrige.
-            _descenso_msg = "[PICK][DIRECT] DESCENSO_DIRECTO → JOINT_GRASP_DOWN_POSE_RAD (force_send=True)"
-            panel._emit_log(_descenso_msg)
-            _append_trace(_descenso_msg)
-            _run_joint_step(
-                "GRASP_DOWN_DIRECT",
-                list(JOINT_GRASP_DOWN_POSE_RAD),
-                force_send=True,
-                timeout_sec=15.0,
-                tol_rad=0.05,
-            )
-            # TF_SETTLE: esperar a que TF converja antes de que GRASP_ALIGN_IK
-            # compute IK con la posición TF actual. Sin este wait el IK usa
-            # posición TF antigua y puede mandar el brazo al sitio equivocado.
-            _tf_settle_sec = float(os.environ.get("PANEL_PICK_DEMO_TF_SETTLE_SEC", "1.5") or 1.5)
-            _tf_msg = f"[PICK][DIRECT] TF_SETTLE: esperando {_tf_settle_sec:.1f}s para que TF converja"
-            panel._emit_log(_tf_msg)
-            _append_trace(_tf_msg)
-            import time as _time_mod
-            _time_mod.sleep(_tf_settle_sec)
+                    if not grasp_down_gate_ok:
+                        _gd_abort_msg = (
+                            "[PICK][DIRECT][ABORT] "
+                            "phase=GRASP_DOWN_JOINT reason=grasp_down_gate_not_satisfied "
+                            f"xy_err={_gd_check_xy_err:.3f}/{_gd_xy_tol:.3f} "
+                            f"z_err={_gd_check_z_err:.3f}/{_gd_z_tol:.3f} "
+                            f"decision={grasp_down_decision}"
+                        )
+                        panel._emit_log(_gd_abort_msg)
+                        _append_trace(_gd_abort_msg)
+                        _abort_grasp(
+                            code="GRASP_DOWN_NOT_READY",
+                            phase="GRASP_DOWN_JOINT",
+                            note="grasp_down left the TCP too far from the pre-grasp corridor; refusing to start fine align from a bad descent",
+                            metrics=grasp_down_gate_metrics,
+                        )
             obj_base_align, obj_base_align_source, _align_base_extra = _resolved_align_object_base()
             target_base_align = None
             target_world_align = None
@@ -5934,13 +6052,15 @@ def run_pick_demo(panel) -> None:
                     float(obj_base_align[2]) + grasp_z_for_source_frame,
                 )
                 target_world_align = _target_world_from_base(target_base_align)
-            # SKIP_ALIGN_IF_REACHABLE desactivado por defecto: GRASP_DOWN_DIRECT
-            # llega al Z correcto pero con XY aproximado; GRASP_ALIGN_IK siempre
-            # debe ejecutar para corregir el XY antes del cierre de pinza.
+            # SKIP_ALIGN_IF_REACHABLE activo por defecto: GRASP_DOWN_DIRECT fue
+            # eliminado; ahora GRASP_DOWN_JOINT ya centra el XY correctamente.
+            # Si el arm entra con pre_close_ok=True, GRASP_ALIGN_IK no aporta nada
+            # y su IK falla porque usa seed=PRESET lejano de la pose actual.
             skip_align_if_reachable = str(
-                os.environ.get("PANEL_PICK_DEMO_SKIP_ALIGN_IF_REACHABLE", "0")
-                or "0"
+                os.environ.get("PANEL_PICK_DEMO_SKIP_ALIGN_IF_REACHABLE", "1")
+                or "1"
             ).strip().lower() in ("1", "true", "yes", "on")
+            _align_seed_injected = False  # se activa solo en el path que ejecuta GRASP_ALIGN_IK
             pre_align_metrics = _pre_close_alignment_metrics()
             # PHASE_ENTRY: trazar error con el que entra GRASP_ALIGN_IK (pre-align_metrics)
             _pa_entry_msg = (
@@ -6008,6 +6128,35 @@ def run_pick_demo(panel) -> None:
                     f"z_error={float(pre_align_metrics.get('z_error') or 0.0):.3f}"
                 )
             else:
+                # ── [FIX] Inyectar joints reales como seed IK para GRASP_ALIGN_IK ──
+                # _current_joint_seed() siempre devuelve el PRESET, que dista mucho
+                # de la pose real cuando el brazo ya está cerca del objeto.
+                # Resultado: IK converge en rama incorrecta → pos_err_m≈0.12 > 0.08 → fallo.
+                # Solución: usar los joints reales (panel._last_joint_positions) como
+                # semilla, que ya están próximos al target → IK converge correctamente.
+                try:
+                    _live_jp = dict(getattr(panel, "_last_joint_positions", {}) or {})
+                    _align_seed_live = [
+                        float(_live_jp[n])
+                        for n in UR5_JOINT_NAMES
+                        if n in _live_jp
+                    ]
+                    if len(_align_seed_live) == 6:
+                        os.environ["PANEL_PICK_DEMO_IK_SEED_JOINTS"] = ",".join(
+                            f"{v:.8f}" for v in _align_seed_live
+                        )
+                        _align_seed_injected = True
+                        panel._emit_log(
+                            "[GRASP_ALIGN_IK][SEED_INJECT] "
+                            f"source=live_joints "
+                            f"joints={json.dumps(_json_safe(_align_seed_live), ensure_ascii=True)}"
+                        )
+                except Exception as _seed_exc:
+                    panel._emit_log(
+                        f"[GRASP_ALIGN_IK][SEED_INJECT][WARN] failed={_seed_exc} "
+                        "falling back to preset seed"
+                    )
+                # ── [/FIX] ─────────────────────────────────────────────────────────
                 _phase_begin(
                     "GRASP_ALIGN_IK",
                     target_world=target_world_align,
@@ -6113,6 +6262,10 @@ def run_pick_demo(panel) -> None:
                     preset_used=DIRECT_EXECUTION_IK_MODE,
                     decision="phase_exit",
                 )
+            # Limpiar seed inyectado para GRASP_ALIGN_IK (no contaminar fases siguientes)
+            if _align_seed_injected:
+                os.environ.pop("PANEL_PICK_DEMO_IK_SEED_JOINTS", None)
+                _align_seed_injected = False
             post_align_metrics = _pre_close_alignment_metrics()
             _pa_check_result = "OK" if bool(post_align_metrics.get("ok")) else "NO"
             _pa_check_tcp = post_align_metrics.get("tcp_base")
@@ -6323,9 +6476,9 @@ def run_pick_demo(panel) -> None:
                     float(
                         os.environ.get(
                             "PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES",
-                            "1",
+                            "2",
                         )
-                        or 1
+                        or 2
                     )
                 ),
             )
@@ -6608,12 +6761,12 @@ def run_pick_demo(panel) -> None:
             )
             target_world_attach = _target_world_from_base(target_base_attach)
             attach_xy_tol_m = max(
-                0.02,
-                float(os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.080") or 0.080),
+                0.006,
+                float(os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.012") or 0.012),
             )
             attach_z_tol_m = max(
-                0.02,
-                float(os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.080") or 0.080),
+                0.008,
+                float(os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.015") or 0.015),
             )
             attach_dx = float(obj_base_grasp[0]) - float(tcp_base_grasp[0])
             attach_dy = float(obj_base_grasp[1]) - float(tcp_base_grasp[1])
@@ -6739,13 +6892,13 @@ def run_pick_demo(panel) -> None:
                 ),
             )
             attach_follow_max_tcp_dist_m = max(
-                0.12,
+                0.02,
                 float(
                     os.environ.get(
                         "PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M",
-                        "0.160",
+                        "0.040",
                     )
-                    or 0.160
+                    or 0.040
                 ),
             )
             _final_phase_trace(
@@ -6993,9 +7146,9 @@ def run_pick_demo(panel) -> None:
                     initial_obj_world=initial_obj_world,
                     phase="post_grasp_lift",
                     timeout_sec=3.0,
-                    min_obj_move_m=0.030,
-                    min_lift_delta_m=0.060,
-                    max_tcp_dist_m=0.080,
+                    min_obj_move_m=0.020,
+                    min_lift_delta_m=0.025,
+                    max_tcp_dist_m=0.120,
                     live_world_fn=_fresh_gazebo_object_world,
                 )
                 # PHYSICAL_GATE: separación explícita attach lógico / attach físico.

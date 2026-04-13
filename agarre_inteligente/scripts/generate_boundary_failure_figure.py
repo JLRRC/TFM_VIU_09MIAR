@@ -25,8 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.transforms import get_val_transforms
-from src.models.resnet_variants import ResNetGrasp
-from src.models.simple_cnn import SimpleCNN
+from src.models.factory import build_model
 from src.training.metrics import angle_error_deg, cornell_success, iou_axis_aligned_boxes
 from src.utils.config_loader import load_config
 
@@ -37,6 +36,8 @@ CONFIG_BY_EXPERIMENT = {
     "EXP2_SIMPLE_RGBD": PROJECT_ROOT / "config" / "exp2_simple_rgbd.yaml",
     "EXP3_RESNET18_RGB_AUGMENT": PROJECT_ROOT / "config" / "exp3_resnet18_rgb_augment.yaml",
     "EXP4_RESNET18_RGBD": PROJECT_ROOT / "config" / "exp4_resnet18_rgbd.yaml",
+    "EXP5_SIMPLEGRASP_RGB": PROJECT_ROOT / "config" / "exp5_simplegrasp_rgb.yaml",
+    "EXP6_SIMPLEGRASP_RGBD": PROJECT_ROOT / "config" / "exp6_simplegrasp_rgbd.yaml",
 }
 
 DEFAULT_OUTPUT_DIR = WORKSPACE_ROOT / "reports" / "figures" / "chapter5"
@@ -94,20 +95,6 @@ class UniqueImageDataset(Dataset):
             image = rgb_tensor
 
         return image, str(row["image_path"]), int(orig_w), int(orig_h)
-
-
-def build_model(model_cfg: dict):
-    if model_cfg["name"] == "SimpleGraspCNN":
-        return SimpleCNN(
-            input_channels=int(model_cfg["input_channels"]),
-            dropout=float(model_cfg.get("dropout", 0.2)),
-        )
-    return ResNetGrasp(
-        input_channels=int(model_cfg["input_channels"]),
-        pretrained=False,
-        freeze_backbone=bool(model_cfg.get("freeze_backbone", False)),
-        dropout=float(model_cfg.get("dropout", 0.2)),
-    )
 
 
 def rotated_box_to_points(cx: float, cy: float, w: float, h: float, angle_deg: float) -> np.ndarray:

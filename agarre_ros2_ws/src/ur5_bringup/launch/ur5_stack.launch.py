@@ -338,20 +338,79 @@ def _prepare_runtime(context, *_args) -> List[object]:
         SetEnvironmentVariable("PANEL_MANAGED", managed_str),
         SetEnvironmentVariable("PANEL_CAMERA_REQUIRED", camera_required_env),
         SetEnvironmentVariable("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "0.175"),
-        # FIX-ATTACH-GATE: tighten panel-side ATTACH_GATE tolerances so the gripper
-        # must be within 5 cm XY and Z of the object before declaring attach success.
-        # Previously 0.080 m in each axis allowed the gripper to be 11+ cm away.
+        # Keep the direct pick gates aligned with the tighter panel defaults so
+        # CLOSE/ATTACH only succeed when the object is really centered in the gripper.
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_ATTACH_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.050"),
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.012"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_ATTACH_Z_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.050"),
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.015"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M", "0.080"),
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M", "0.040"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M",
+            os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.035"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "0.008"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M", "0.010"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_CLOSE_XY_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_CLOSE_XY_TOL_M", "0.012"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.012"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL",
+            os.environ.get("PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL", "0.08"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M", "0.006"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M", "0.010"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES",
+            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES", "2"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M", "0.012"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M", "0.012"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M", "0.018"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS",
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS", "4"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M", "0.012"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M", "0.012"),
         ),
         # FIX-IK-FRAME: disable X/Y negation in DIRECT IK route.
         # The numeric FK/IK works in DH base frame which is co-aligned with base_link,

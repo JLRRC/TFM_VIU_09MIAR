@@ -15,7 +15,6 @@ Se conserva el nombre `agarre_ros2_ws` por compatibilidad con scripts y rutas ab
 - `scripts/`: scripts operativos de arranque, parada, estado, validacion y diagnostico.
 - `worlds/`: mundos SDF.
 - `models/`: modelos de Gazebo.
-- `build/`, `install/`, `log/`: build activa del workspace.
 
 ## Arranque
 
@@ -83,6 +82,5 @@ Secuencia practica recomendada:
 
 ## Evidencias y trazas
 
-- Evidencias operativas del panel: `../auditoria/panel_audit/`
 - Evidencias curadas para memoria: `../reports/evidence/ros2/`
 - Logs reproducibles: `../reports/logs/reproducibility/`

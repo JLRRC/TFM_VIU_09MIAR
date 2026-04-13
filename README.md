@@ -1,17 +1,16 @@
 # TFM
 
-Raiz operativa del TFM para percepcion y agarre con ROS 2.
+Raiz del TFM para percepcion y agarre con ROS 2, ordenada para trabajo tecnico y entrega.
 
 ## Estructura vigente
 
-- `agarre_inteligente/`: entrenamiento, evaluacion, configuraciones y resultados de vision.
-- `agarre_ros2_ws/`: workspace ROS 2 (panel, Gazebo, MoveIt 2 y utilidades).
-- `reports/`: artefactos curados de memoria (figuras, tablas, metricas y evidencias).
-- `auditoria/`: trazas operativas y auditorias de ejecucion.
+- `agarre_inteligente/`: codigo, datos y resultados del bloque de vision.
+- `agarre_ros2_ws/`: workspace ROS 2 con codigo fuente, scripts y configuracion activa.
+- `reports/`: artefactos curados de la memoria (figuras, tablas, metricas y evidencias finales).
 
 ## Scripts raiz
 
-- `./lanzar_panelv2.sh`: arranque principal del panel (detecta SSH y activa modo headless remoto).
+- `./lanzar_panelv2.sh`: arranque principal del panel.
 - `./recrear_experimentos_cap5_gpu.sh`: relanza entrenamientos del capitulo 5.
 - `./recrear_artefactos_tfm.sh`: regenera artefactos curados del documento.
 
@@ -29,6 +28,6 @@ Parada del stack:
 
 ## Flujo de reproducibilidad
 
-1. Reentrenar (si aplica): `./recrear_experimentos_cap5_gpu.sh`
+1. Reentrenar, si aplica: `./recrear_experimentos_cap5_gpu.sh`
 2. Regenerar artefactos: `./recrear_artefactos_tfm.sh`
 3. Revisar salida final en `reports/`

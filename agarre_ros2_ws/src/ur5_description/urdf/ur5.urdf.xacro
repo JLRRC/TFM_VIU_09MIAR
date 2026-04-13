@@ -37,7 +37,11 @@
     safety_k_position="${safety_k_position}"
     force_abs_paths="${force_abs_paths}"
     >
-    <origin xyz="-0.85 0 0.825" rpy="0 0 0"/>
+    <!-- Keep the URDF world origin aligned with the Gazebo world include pose.
+         If these diverge, robot_state_publisher TF and the rendered Gazebo model
+         disagree in Z, which makes the panel report a different TCP height than
+         the one visible in the simulator. -->
+    <origin xyz="-0.85 0 0.850" rpy="0 0 0"/>
   </xacro:ur_robot>
 
   <!-- RG2 gripper (simplified kinematic stub for ros2_control) -->
