@@ -30,6 +30,153 @@ def _clip_roi(frame_w: int, frame_h: int, roi: tuple[int, int, int]) -> Optional
     return x0, y0, roi_size, roi_size
 
 
+def _resolve_infer_roi(panel) -> Optional[tuple[int, int, int]]:
+    selected_px = getattr(panel, "_selected_px", None)
+    if not selected_px or int(INFER_ROI_SIZE or 0) <= 0:
+        return None
+    roi_mode = str(os.environ.get("PANEL_TFM_INFER_USE_ROI", "auto") or "auto").strip().lower()
+    if roi_mode in ("0", "false", "off", "no", "full", "disabled"):
+        return None
+    if roi_mode not in ("1", "true", "on", "yes", "auto", ""):
+        roi_mode = "auto"
+    if roi_mode in ("auto", ""):
+        selected_name = str(getattr(panel, "_selected_object", "") or "").strip()
+        if not selected_name:
+            return None
+    roi_cx, roi_cy = selected_px
+    return int(roi_cx), int(roi_cy), int(INFER_ROI_SIZE)
+
+
+def reconcile_inferred_grasp_size(
+    pred: Optional[dict],
+    ref: Optional[dict],
+    *,
+    roi: Optional[tuple[int, int, int]] = None,
+) -> tuple[Optional[dict], bool]:
+    if not pred or not ref or not roi:
+        return pred, False
+    try:
+        roi_size = float(max(1, int(roi[2])))
+        pred_cx = float(pred.get("cx", 0.0) or 0.0)
+        pred_cy = float(pred.get("cy", 0.0) or 0.0)
+        pred_w = float(pred.get("w", 0.0) or 0.0)
+        pred_h = float(pred.get("h", 0.0) or 0.0)
+        ref_cx = float(ref.get("cx", 0.0) or 0.0)
+        ref_cy = float(ref.get("cy", 0.0) or 0.0)
+        ref_w = float(ref.get("w", 0.0) or 0.0)
+        ref_h = float(ref.get("h", 0.0) or 0.0)
+    except Exception:
+        return pred, False
+    if pred_w <= 0.0 or pred_h <= 0.0 or ref_w <= 0.0 or ref_h <= 0.0:
+        return pred, False
+    dist_px = ((pred_cx - ref_cx) ** 2 + (pred_cy - ref_cy) ** 2) ** 0.5
+    center_close = dist_px <= max(12.0, min(roi_size * 0.25, 24.0))
+    area_too_small = (pred_w * pred_h) < (ref_w * ref_h * 0.55)
+    span_too_small = pred_w < (ref_w * 0.75) or pred_h < (ref_h * 0.75)
+    if not center_close or (not area_too_small and not span_too_small):
+        return pred, False
+    adjusted = dict(pred)
+    adjusted["w"] = ref_w
+    adjusted["h"] = ref_h
+    return adjusted, True
+
+
+def reconcile_inferred_grasp_center(
+    pred: Optional[dict],
+    ref: Optional[dict],
+    *,
+    roi: Optional[tuple[int, int, int]] = None,
+) -> tuple[Optional[dict], bool]:
+    if not pred or not ref or not roi:
+        return pred, False
+    try:
+        roi_size = float(max(1, int(roi[2])))
+        pred_cx = float(pred.get("cx", 0.0) or 0.0)
+        pred_cy = float(pred.get("cy", 0.0) or 0.0)
+        ref_cx = float(ref.get("cx", 0.0) or 0.0)
+        ref_cy = float(ref.get("cy", 0.0) or 0.0)
+    except Exception:
+        return pred, False
+    dist_px = ((pred_cx - ref_cx) ** 2 + (pred_cy - ref_cy) ** 2) ** 0.5
+    center_close = dist_px <= max(12.0, min(roi_size * 0.25, 24.0))
+    if not center_close or dist_px < 1.5:
+        return pred, False
+    adjusted = dict(pred)
+    blend_to_ref = 0.6
+    adjusted["cx"] = pred_cx + ((ref_cx - pred_cx) * blend_to_ref)
+    adjusted["cy"] = pred_cy + ((ref_cy - pred_cy) * blend_to_ref)
+    return adjusted, True
+
+
+def reconcile_inferred_grasp_angle(
+    pred: Optional[dict],
+    ref: Optional[dict],
+    *,
+    roi: Optional[tuple[int, int, int]] = None,
+    object_shape: str = "",
+) -> tuple[Optional[dict], bool]:
+    if not pred or not ref or not roi:
+        return pred, False
+    shape = str(object_shape or "").strip().lower()
+    if shape not in ("circle", "square"):
+        return pred, False
+    try:
+        roi_size = float(max(1, int(roi[2])))
+        pred_cx = float(pred.get("cx", 0.0) or 0.0)
+        pred_cy = float(pred.get("cy", 0.0) or 0.0)
+        pred_angle = float(pred.get("angle_deg", 0.0) or 0.0)
+        ref_cx = float(ref.get("cx", 0.0) or 0.0)
+        ref_cy = float(ref.get("cy", 0.0) or 0.0)
+        ref_angle = float(ref.get("angle_deg", 0.0) or 0.0)
+    except Exception:
+        return pred, False
+    dist_px = ((pred_cx - ref_cx) ** 2 + (pred_cy - ref_cy) ** 2) ** 0.5
+    center_close = dist_px <= max(12.0, min(roi_size * 0.25, 24.0))
+    if not center_close or abs(pred_angle - ref_angle) < 1.0:
+        return pred, False
+    adjusted = dict(pred)
+    adjusted["angle_deg"] = ref_angle
+    return adjusted, True
+
+
+def _get_cached_preprocessed_input(panel, *, frame_ts: float, in_channels: int, roi=None):
+    if roi is not None:
+        return None
+    cached = getattr(panel, "_tfm_preprocessed_cache", None)
+    if not cached:
+        return None
+    try:
+        cached_ts = float(cached[0])
+        preprocessed = cached[1]
+    except Exception:
+        return None
+    if cached_ts != float(frame_ts):
+        return None
+    cached_channels = 0
+    try:
+        if len(cached) >= 3:
+            cached_channels = int(cached[2] or 0)
+    except Exception:
+        cached_channels = 0
+    if cached_channels > 0 and cached_channels != int(in_channels):
+        return None
+    try:
+        actual_channels = int(preprocessed.shape[0]) if getattr(preprocessed, "ndim", 0) == 3 else 0
+    except Exception:
+        actual_channels = 0
+    if actual_channels > 0 and actual_channels != int(in_channels):
+        return None
+    return preprocessed
+
+
+def _store_preprocessed_cache(panel, *, frame_ts: float, preprocessed, in_channels: int) -> None:
+    panel._tfm_preprocessed_cache = (
+        float(frame_ts),
+        preprocessed,
+        int(in_channels),
+    )
+
+
 def build_tfm_preprocessed_input(panel, qimg, w: int, h: int, frame_ts: float, roi=None):
     if not panel.tfm_module:
         return None
@@ -82,7 +229,12 @@ def build_tfm_preprocessed_input(panel, qimg, w: int, h: int, frame_ts: float, r
             preprocessed = PerceptionPipeline.to_preprocessed(rgb, img_size=img_size)
 
     if preprocessed is not None and roi is None:
-        panel._tfm_preprocessed_cache = (float(frame_ts), preprocessed)
+        _store_preprocessed_cache(
+            panel,
+            frame_ts=frame_ts,
+            preprocessed=preprocessed,
+            in_channels=in_channels,
+        )
     return preprocessed
 
 
@@ -118,6 +270,12 @@ def tfm_infer(panel) -> tuple[bool, str]:
     if panel._tfm_infer_inflight:
         panel._set_status("TFM: inferencia en curso", error=False)
         return False, "inferencia en curso"
+    experiment_ready, experiment_reason = panel._tfm_experiment_ready_status()
+    if not experiment_ready:
+        panel._set_status(f"TFM bloqueado: {experiment_reason}", error=True)
+        panel._emit_log(f"[SAFETY] TFM infer bloqueado: {experiment_reason}")
+        panel._audit_append("logs/infer.log", f"[TFM] infer_blocked reason={experiment_reason}")
+        return False, experiment_reason
     infer_ready, infer_reason = panel._tfm_infer_ready_status()
     if not infer_ready:
         panel._set_status(f"TFM en espera: {infer_reason}", error=True)
@@ -131,10 +289,7 @@ def tfm_infer(panel) -> tuple[bool, str]:
         panel._audit_append("logs/infer.log", "[TFM] infer_blocked reason=sin frame de cámara")
         return False, "sin frame de cámara"
     qimg, w, h, frame_ts = frame_snapshot
-    roi = None
-    if INFER_ROI_SIZE and panel._selected_px:
-        roi_cx, roi_cy = panel._selected_px
-        roi = (int(roi_cx), int(roi_cy), int(INFER_ROI_SIZE))
+    roi = _resolve_infer_roi(panel)
     selection_snapshot = _selection_snapshot(panel)
 
     ckpt_path = panel._tfm_get_ckpt_path() or INFER_CKPT
@@ -144,12 +299,28 @@ def tfm_infer(panel) -> tuple[bool, str]:
                 panel.tfm_module.load_model(ckpt_path)
         if panel.tfm_module.is_model_loaded():
             image_path, out_path = _prepare_module_artifacts(qimg)
+            model_info = panel.tfm_module.model_info()
+            in_channels = int((model_info or {}).get("in_channels", 0) or 0)
             preprocessed = None
-            cached = panel._tfm_preprocessed_cache if roi is None else None
-            if cached and float(cached[0]) == float(frame_ts):
-                preprocessed = cached[1]
-            else:
+            preprocessed = _get_cached_preprocessed_input(
+                panel,
+                frame_ts=frame_ts,
+                in_channels=in_channels,
+                roi=roi,
+            )
+            if preprocessed is None:
                 preprocessed = build_tfm_preprocessed_input(panel, qimg, w, h, frame_ts, roi=roi)
+            if in_channels >= 4 and preprocessed is None:
+                depth_required, depth_topic = panel._camera_depth_expectation()
+                reason = (
+                    f"depth no disponible para inferencia RGB-D ({depth_topic})"
+                    if depth_required
+                    else "entrada RGB-D no disponible"
+                )
+                panel._set_status(f"TFM en espera: {reason}", error=True)
+                panel._emit_log(f"[SAFETY] TFM infer bloqueado: {reason}")
+                panel._audit_append("logs/infer.log", f"[TFM] infer_blocked reason={reason}")
+                return False, reason
             if preprocessed is not None:
                 panel.tfm_module.set_input_image(
                     preprocessed,
@@ -166,14 +337,14 @@ def tfm_infer(panel) -> tuple[bool, str]:
                 f"mode=module ckpt={ckpt_path} camera={panel.camera_topic} roi={roi} "
                 f"selected={selection_snapshot.get('name') or 'none'} image={image_path or 'none'}",
             )
-            start_ts = time.time()
+            start_ts = time.monotonic()
             panel._tfm_infer_inflight = True
             panel._set_status("TFM: inferencia en curso…", error=False)
 
             def worker():
                 pred = panel.tfm_module.infer_grasp_params() if panel.tfm_module else None
-                infer_ms = (time.time() - start_ts) * 1000.0
-                total_ms = (time.time() - frame_ts) * 1000.0
+                infer_ms = (time.monotonic() - start_ts) * 1000.0
+                total_ms = max(0.0, (time.monotonic() - float(frame_ts)) * 1000.0)
                 err = ""
                 if not pred and panel.tfm_module:
                     err = panel.tfm_module.last_error()
@@ -185,6 +356,7 @@ def tfm_infer(panel) -> tuple[bool, str]:
                 result = {
                     "ok": bool(pred),
                     "pred": pred,
+                    "roi": tuple(roi) if roi is not None else None,
                     "infer_ms": infer_ms,
                     "total_ms": total_ms,
                     "frame_w": w,

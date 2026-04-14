@@ -108,7 +108,7 @@ class PanelSettings:
     gz_partition_file: str = ""
     infer_script: str = ""
     infer_ckpt: str = ""
-    infer_roi_size: int = 0
+    infer_roi_size: int = 96
     infer_retry_err_px: float = 60.0
     fastrtps_profiles: str = ""
     ur5_controllers_yaml: str = ""
@@ -267,7 +267,7 @@ class PanelSettings:
             save_pose_info_positions=_env_bool("PANEL_SAVE_POSE_INFO_POSITIONS", False),
             infer_script=os.path.join(vision_dir, "scripts", "predict.py"),
             infer_ckpt=_env_str("INFER_CKPT", ""),
-            infer_roi_size=max(0, int(os.environ.get("INFER_ROI_SIZE", "0"))),
+            infer_roi_size=max(0, int(os.environ.get("INFER_ROI_SIZE", "96"))),
             infer_retry_err_px=_env_float("INFER_RETRY_ERR_PX", 60.0),
             fastrtps_profiles=os.path.join(scripts_dir, "fastdds_no_shm.xml"),
             ur5_controllers_yaml=os.path.join(

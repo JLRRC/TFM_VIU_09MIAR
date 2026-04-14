@@ -300,48 +300,42 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     else:
         panel._set_btn_state(panel.btn_pick_object, False, block_tip)
     infer_ok, infer_reason = panel._tfm_infer_ready_status()
-    tfm_ready = (
-        infer_ok
-        and not test_pending
-        and panel._joint_limits_ok
+    tfm_experiment_ready, tfm_experiment_reason = panel._tfm_experiment_ready_status()
+    tfm_action_ready = (
+        tfm_experiment_ready
+        and not panel._tfm_infer_inflight
+        and not panel._tfm_execute_inflight
     )
     if panel._tfm_infer_inflight:
         tfm_block_tip = "Inferencia en curso"
     elif panel._tfm_execute_inflight:
         tfm_block_tip = "Ejecución en curso"
-    elif test_pending:
-        tfm_block_tip = "Ejecuta AUTO TUNE para habilitar"
-    elif not panel._joint_limits_ok:
-        tfm_block_tip = panel._joint_limits_err or "Limites articulares no cargados"
+    elif not tfm_experiment_ready:
+        tfm_block_tip = tfm_experiment_reason or "Aplica un experimento primero"
     elif not infer_ok:
         tfm_block_tip = infer_reason or "TFM no listo"
     else:
         tfm_block_tip = ""
-    # Selector y aplicar experimento no deben depender de cámara/test;
-    # solo los botones de ejecución (infer/visualize/publish) mantienen gating estricto.
+    # Selector y aplicar experimento siguen disponibles mientras exista modelo;
+    # el resto del bloque se arma tras pulsar Aplicar y se vuelve a bloquear con Reset.
     tfm_selector_ready = bool(panel.tfm_module)
     tfm_selector_tip = "" if tfm_selector_ready else "Modelo no disponible"
-    grasp_ok, grasp_reason = panel._current_grasp_status()
-    tfm_has_grasp = grasp_ok
-    tfm_grasp_tip = "" if tfm_has_grasp else (grasp_reason or "Primero infiere o recibe un grasp")
-    # Botones de ejecución requieren _objects_release_done
-    tfm_controls_ready = bool(panel.tfm_module) and panel._objects_release_done
-    tfm_controls_tip = "" if tfm_controls_ready else ("Modelo no disponible" if not panel.tfm_module else tfm_block_tip)
+    tfm_controls_tip = "" if tfm_action_ready else tfm_block_tip
     if hasattr(panel, "combo_tfm_experiment"):
         panel.combo_tfm_experiment.setEnabled(tfm_selector_ready)
     panel._set_btn_state(panel.btn_tfm_apply, tfm_selector_ready, tfm_selector_tip)
-    panel._set_btn_state(panel.btn_tfm_infer, tfm_ready, "" if tfm_ready else tfm_block_tip)
+    panel._set_btn_state(panel.btn_tfm_infer, tfm_action_ready, "" if tfm_action_ready else tfm_block_tip)
     panel._set_btn_state(
         panel.btn_tfm_visualize,
-        tfm_ready and tfm_has_grasp,
-        "" if (tfm_ready and tfm_has_grasp) else (tfm_block_tip if not tfm_ready else tfm_grasp_tip),
+        tfm_action_ready,
+        "" if tfm_action_ready else tfm_controls_tip,
     )
     panel._set_btn_state(
         panel.btn_tfm_publish,
-        tfm_ready and tfm_has_grasp,
-        "" if (tfm_ready and tfm_has_grasp) else (tfm_block_tip if not tfm_ready else tfm_grasp_tip),
+        tfm_action_ready,
+        "" if tfm_action_ready else tfm_controls_tip,
     )
-    panel._set_btn_state(panel.btn_tfm_reset, tfm_controls_ready, tfm_controls_tip)
+    panel._set_btn_state(panel.btn_tfm_reset, tfm_action_ready, tfm_controls_tip)
     if panel._script_motion_active:
         busy_tip = "Robot en movimiento"
         panel._set_btn_state(panel.btn_test_robot, False, busy_tip)

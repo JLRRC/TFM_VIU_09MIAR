@@ -1773,14 +1773,12 @@ def run_pick_demo(panel) -> None:
                 panel._emit_log(f"[COMPARE][DIRECT2][GOOD_REF] error={_exc_compare}")
 
             def _current_joint_seed(*, return_source: bool = False):
-                # Siempre usamos JOINT_GRASP_DOWN_POSE_RAD como semilla IK.
-                # Motivo: el arm llega a APPROACH/GRASP_ALIGN/GRASP_DOWN desde MESA
-                # (J2≈-0.1°) y el IK con estado vivo converge al mismo branch incorrecto
-                # sin descender a la Z objetivo. El preset JOINT_GRASP_DOWN_POSE_RAD
-                # corresponde exactamente a la posición de agarre (Z≈0.025m en base_link),
-                # por lo que usarlo como seed garantiza que el IK encuentre el branch
-                # correcto para todas las fases APPROACH/GRASP_ALIGN/GRASP_DOWN.
-                # El estado vivo se mantiene como diagnóstico en el log pero no se usa.
+                # Semilla IK adaptativa:
+                #   - Desde MESA (shoulder_lift_joint ≈ 0°): usamos JOINT_GRASP_DOWN_POSE_RAD
+                #     porque el IK con estado vivo converge al branch incorrecto sin descender.
+                #   - Post-APPROACH (shoulder_lift_joint < -0.05 rad): usamos las articulaciones
+                #     vivas. El arm ya está en el branch correcto y el IK estricto (joint_weight=0.45)
+                #     necesita una semilla cercana al estado actual para converger sin driftar en XY.
                 _seed_override_str = os.environ.get("PANEL_PICK_DEMO_IK_SEED_JOINTS", "").strip()
                 if _seed_override_str:
                     try:
@@ -1790,23 +1788,33 @@ def run_pick_demo(panel) -> None:
                     except Exception:
                         pass
 
-                # Log del estado vivo para diagnóstico (sin usarlo como seed)
+                # Umbral: si J1 (shoulder_lift_joint) < -0.05 rad el robot ya no está en MESA
+                _POST_APPROACH_J1_THRESHOLD = -0.05
                 try:
                     snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
-                    _live_j2 = snapshot.get("shoulder_lift_joint")
-                    if _live_j2 is not None:
-                        _preset_j2 = JOINT_GRASP_DOWN_POSE_RAD[1]
+                    _live_j1 = snapshot.get("shoulder_lift_joint")
+                    if _live_j1 is not None and float(_live_j1) < _POST_APPROACH_J1_THRESHOLD:
+                        # Construir semilla viva en el orden de UR5_JOINT_NAMES
+                        live_seed = [
+                            float(snapshot.get(jn, JOINT_GRASP_DOWN_POSE_RAD[i]))
+                            for i, jn in enumerate(UR5_JOINT_NAMES)
+                        ]
                         panel._emit_log(
-                            f"[PICK][DIRECT][IK_SEED_DIAG] "
-                            f"live_j2={float(_live_j2):.4f} preset_j2={float(_preset_j2):.4f} "
-                            f"diff={abs(float(_live_j2)-float(_preset_j2)):.4f} "
-                            "using=preset_grasp_down (always)"
+                            f"[PICK][DIRECT][IK_SEED] live_j1={float(_live_j1):.4f} < "
+                            f"{_POST_APPROACH_J1_THRESHOLD} → using live joints as IK seed"
+                        )
+                        return (live_seed, "live_post_approach") if return_source else live_seed
+                    # Diagnóstico cuando se usa preset
+                    if _live_j1 is not None:
+                        panel._emit_log(
+                            f"[PICK][DIRECT][IK_SEED] live_j1={float(_live_j1):.4f} ≥ "
+                            f"{_POST_APPROACH_J1_THRESHOLD} → using preset_grasp_down"
                         )
                 except Exception:
                     pass
 
                 preset_seed = list(JOINT_GRASP_DOWN_POSE_RAD)
-                return (preset_seed, "preset_grasp_down_always") if return_source else preset_seed
+                return (preset_seed, "preset_grasp_down_mesa") if return_source else preset_seed
 
             def _read_gripper_state(*, expected_closed: Optional[bool] = None):
                 joint_snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
@@ -4032,14 +4040,29 @@ def run_pick_demo(panel) -> None:
                     )
                     panel._emit_log(visual_msg)
                     _append_trace(visual_msg)
-                    if quality_ok and pose_sources_ok:
+                    # Accept when both quality checks pass.
+                    # Also accept on geometry_only: if TCP is within strict geometric
+                    # tolerance (z_err < 25mm, xy_err < 12mm) AND no branch change,
+                    # even when pose_sources_ok=False or runtime_ok=False.  This handles
+                    # the DH/SDF FK divergence at the grasp height (~13mm) that makes
+                    # panel._last_tcp_base (DH FK) diverge from the live TF TCP by more
+                    # than source_tol=6mm, causing a spurious sources_ok=False.
+                    geometry_only_ok = bool(ok and quality.get("branch_ok"))
+                    if (quality_ok and pose_sources_ok) or geometry_only_ok:
+                        if quality_ok and pose_sources_ok:
+                            accept_note = "geometry_and_joint_quality_ok"
+                            decision = f"{last_route}:runtime_converged" if runtime_ok else f"{last_route}:metrics_converged"
+                        else:
+                            accept_note = "geometry_ok_fk_model_diverges_accepted"
+                            decision = f"{last_route}:geometry_converged"
                         accept_msg = (
                             "[PICK][DIRECT][GRASP_DOWN_ACCEPT] "
-                            f"route={last_route} reason=geometry_and_joint_quality_ok"
+                            f"route={last_route} reason={accept_note} "
+                            f"runtime_ok={str(runtime_ok).lower()} "
+                            f"pose_sources_ok={str(pose_sources_ok).lower()}"
                         )
                         panel._emit_log(accept_msg)
                         _append_trace(accept_msg)
-                        decision = f"{last_route}:runtime_converged" if runtime_ok else f"{last_route}:metrics_converged"
                         if _gd_seed_injected:
                             os.environ.pop("PANEL_PICK_DEMO_IK_SEED_JOINTS", None)
                         return last_debug, decision, last_metrics
@@ -5373,19 +5396,9 @@ def run_pick_demo(panel) -> None:
                 _append_trace(resume_msg)
 
             # === POSICIONAMIENTO EN MESA — ANTES del gate de INICIO ===
-            # El robot va a HOME → HOME_ELBOW → MESA y abre la pinza ANTES de abrir
-            # el gate de INICIO, de modo que cuando el usuario vea el panel el robot
-            # ya está en la pose correcta de trabajo (MESA, pinza abierta).
-            # force_send=True: siempre se envía la trayectoria, independientemente de
-            # lo que diga el estado de joints cacheado. Evita el bug donde el arm no
-            # se mueve porque _local_joint_target_ok() ve estado obsoleto/incorrecto.
-            _run_joint_step("HOME", home_pose, force_send=True)
-            _run_joint_step(
-                "HOME_ELBOW",
-                [0.0, math.radians(-90.0), math.radians(55.0),
-                 math.radians(-90.0), 0.0, 0.0],
-                force_send=True,
-            )
+            # El robot va directamente a MESA y abre la pinza antes de empezar
+            # las fases. force_send=True garantiza que siempre se envía la
+            # trayectoria aunque el estado cacheado parezca correcto.
             _run_joint_step("MESA", JOINT_TABLE_POSE_RAD, force_send=True)
             _monitor_alcance(trigger="DIRECT_PICK_START")
             panel._emit_log("[DEMO] Abriendo pinza en posición MESA")
@@ -5393,8 +5406,6 @@ def run_pick_demo(panel) -> None:
             time.sleep(0.6)
 
             # INICIO eliminado: el robot ya está en MESA antes de llegar aquí.
-
-            # HOME → MESA y apertura de pinza ya ejecutados antes del gate de INICIO.
 
             def _joint_goal_operational_pose_base(joint_goal) -> tuple[float, float, float] | None:
                 try:
@@ -5567,9 +5578,12 @@ def run_pick_demo(panel) -> None:
                         f"z_error={_fmt_scalar(ref_metrics.get('z_error'))}"
                     )
             if route_selected != "manual_reference" or not manual_reference_ok:
-                # PICK_IMAGE: en modo normal corre ANTES del gate (para que Org = MESA en SBS).
-                # En SBS se ejecuta DESPUÉS del gate como semilla del IK.
-                if getattr(panel, "_step_mode", "") != "STEP_BY_STEP":
+                # PICK_IMAGE: corre siempre (AUTO y STEP_BY_STEP) antes del gate de
+                # APPROACH_COARSE, para que el robot esté en J0≈-15.7° cuando el IK de
+                # approach ejecuta. Desde MESA (J0≈-2.7°) el cambio de 13° en J0 más
+                # 24° en J1 producía una trayectoria que el controller rechazaba o que
+                # convergía a un branch incorrecto.
+                if True:
                     _run_joint_step("PICK_IMAGE", JOINT_PICK_IMAGE_POSE_RAD)
 
                     # ── [FIX] Verificación cartesiana post-PICK_IMAGE ──────────────────
@@ -5748,9 +5762,10 @@ def run_pick_demo(panel) -> None:
                     decision="phase_enter",
                 )
                 # En SBS: inyectar joints de PICK_IMAGE como semilla del IK
-                # sin mover el robot. Así el solver encuentra la configuración
-                # correcta (codo abajo) y el robot hace UN solo movimiento
-                # directo al approach target tras pulsar Sigue.
+                # (no mover el robot). En modo STEP el robot ya está en PICK_IMAGE,
+                # así que los live joints son equivalentes, pero la inyección
+                # explícita garantiza un seed determinista independientemente de
+                # posible ruido en el estado articular.
                 _sbs_ik_seed_injected = False
                 if getattr(panel, "_step_mode", "") == "STEP_BY_STEP":
                     _pi_seed_str = ",".join(
@@ -5765,9 +5780,9 @@ def run_pick_demo(panel) -> None:
 
                 approach_debug = None
                 approach_decision = "direct_ik_move"
-                # En STEP_BY_STEP el approach IK ejecuta igual que en modo normal.
-                # PICK_IMAGE se suprime antes del gate (robot llega en MESA) y no se
-                # ejecuta aquí. El IK mueve el robot sobre el objeto → Cierre correcto.
+                # PICK_IMAGE ahora corre en ambos modos (antes del gate de APPROACH_COARSE).
+                # El robot llega a PICK_IMAGE tanto en AUTO como en STEP_BY_STEP,
+                # garantizando la posición de partida correcta para el IK.
                 # ────────────────────────────────────────────────────────────────────
                 # TCP canónico después del gate: usar el valor capturado POR _phase_begin
                 # justo después de que el usuario pulsó "Sigue".  Evita el bug de TF stale
@@ -6221,7 +6236,7 @@ def run_pick_demo(panel) -> None:
                     grasp_down_target_source = "live_object_base"
                     if tcp_before_grasp_down is not None:
                         keep_xy_tol = max(
-                            0.005,
+                            0.001,
                             float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M", "0.003") or 0.003),
                         )
                         tcp_obj_xy = math.hypot(
@@ -6427,7 +6442,11 @@ def run_pick_demo(panel) -> None:
                     )
                     _gd_z_tol = max(
                         0.008,
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M", "0.012") or 0.012),
+                        # Raised from 0.012 to 0.025 to match strict_z_tol: the DH/SDF FK
+                        # divergence at the grasp height leaves the TCP ~13mm above the
+                        # target even after a successful descent.  GRASP_ALIGN_IK corrects
+                        # residual XY/Z errors, so a 25mm gate here is appropriate.
+                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M", "0.025") or 0.025),
                     )
                     _gd_check_xy_err = math.hypot(
                         float(_gd_check_tcp[0]) - float(target_base_grasp_down[0]),
@@ -6452,7 +6471,10 @@ def run_pick_demo(panel) -> None:
                     grasp_down_gate_ok = bool(
                         _gd_check_xy_err <= _gd_xy_tol
                         and abs(_gd_check_z_err) <= _gd_z_tol
-                        and bool(_gd_pose_metrics.get("ok_for_gate"))
+                        # Use phase_jump_ok (no teleport) instead of ok_for_gate:
+                        # ok_for_gate also requires sources_ok which fails when DH FK
+                        # model diverges from live TF (~13mm at grasp height).
+                        and bool(_gd_pose_metrics.get("phase_jump_ok"))
                     )
                     grasp_down_gate_metrics = {
                         "xy_err": float(_gd_check_xy_err),

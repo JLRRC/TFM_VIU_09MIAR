@@ -110,6 +110,7 @@ from .panel_config import (
     NUDGE_DROP_OBJECTS,
     NUDGE_DROP_DZ,
     NUDGE_DROP_Z_MIN,
+    OBJECT_SHAPES,
     TRAJ_ACTION_FALLBACK,
     TRAJ_ACTION_FALLBACK_DELAY_SEC,
     TRAJ_ACTION_FALLBACK_EPS_RAD,
@@ -317,7 +318,14 @@ from .panel_readiness import (
     manual_control_status,
     pick_ui_status,
 )
-from .panel_tfm import build_tfm_preprocessed_input, tfm_infer
+from .panel_tfm import (
+    build_tfm_preprocessed_input,
+    _store_preprocessed_cache,
+    reconcile_inferred_grasp_angle,
+    reconcile_inferred_grasp_center,
+    reconcile_inferred_grasp_size,
+    tfm_infer,
+)
 from .panel_moveit_flow import publish_moveit_pose
 from .panel_ros_publishers import (
     get_attach_publisher,
@@ -1244,7 +1252,12 @@ class CameraController:
                     pre = build_tfm_preprocessed_input(p, qimg, w, h, now)
                     if pre is not None:
                         p.tfm_module.set_input_image(pre, preprocessed=True)
-                        p._tfm_preprocessed_cache = (float(now), pre)
+                        _store_preprocessed_cache(
+                            p,
+                            frame_ts=now,
+                            preprocessed=pre,
+                            in_channels=in_channels,
+                        )
                     elif in_channels == 3:
                         p.tfm_module.set_input_image(qimg, width=w, height=h)
                 except Exception:
@@ -1295,16 +1308,16 @@ class CameraController:
             if OVERLAY_CALIB and (p._calibrating or (time.time() <= p._calib_grid_until)):
                 display = p._draw_calib_overlay(display, w, h)
             overhead_only = p._overhead_camera_active(topic)
-            if OVERLAY_REACH and overhead_only and p._reach_overlay_enabled:
+            if p._should_draw_reach_overlay(overhead_only):
                 display = p._draw_reach_overlay(display, w, h)
-            if OVERLAY_SELECTION and overhead_only and p._selected_px:
+            if p._should_draw_selection_overlay(overhead_only):
                 display = p._draw_selection_overlay(display, w, h)
             if overhead_only and p._last_grasp_px:
                 display = p._draw_grasp_overlay(display, w, h)
-            if TEST_CORNER_OVERLAY:
+            if p._should_draw_test_corner_overlay():
                 display = p._draw_test_corner_overlay(display, w, h)
             # Mantener permanente la linea canonica TCP↔OBJ en overhead.
-            if overhead_only:
+            if p._should_draw_tcp_pose_overlay(overhead_only):
                 display = p._draw_tcp_pose_overlay(display, w, h)
         p.camera_view.set_frame(display, w, h)
         now = _runtime_time()
@@ -1874,6 +1887,7 @@ class ControlPanelV2(QMainWindow):
         self._last_cornell_ref: Optional[Dict[str, float]] = None
         self._last_cornell_reason: str = "Inferir y seleccionar un objeto"
         self._tfm_visual_compare_enabled = False
+        self._tfm_overlay_focus_active = False
         self._last_grasp_frame: str = ""
         self._last_grasp_source: str = ""
         self._grasp_rect_topic: str = GRASP_RECT_TOPIC
@@ -1891,6 +1905,7 @@ class ControlPanelV2(QMainWindow):
         self._state_machine = PanelStateMachine()
         self._watchdog = PanelWatchdog(self)
         self._exp_info: Dict[str, object] = {}
+        self._tfm_experiment_applied = False
         self._tfm_infer_inflight = False
         self._tfm_execute_inflight = False
         self._pick_demo_pending_request_id: str = ""
@@ -4263,6 +4278,13 @@ class ControlPanelV2(QMainWindow):
             return f"camera_fault age={age:.1f}s"
         return camera_not_ready_reason(None)
 
+    def _tfm_experiment_ready_status(self) -> Tuple[bool, str]:
+        if not self.tfm_module:
+            return False, "modelo no disponible"
+        if not bool(getattr(self, "_tfm_experiment_applied", False)):
+            return False, "aplica un experimento primero"
+        return True, ""
+
     def _tfm_infer_ready_status(self) -> Tuple[bool, str]:
         if self._tfm_infer_inflight:
             return False, "inferencia en curso"
@@ -4279,7 +4301,12 @@ class ControlPanelV2(QMainWindow):
         now = _runtime_time()
         camera_ready, _fault, _source_down, age, _in_grace = self._camera_runtime_flags(now)
         if not camera_ready:
-            return False, self._camera_not_ready_reason()
+            camera_reason = self._camera_not_ready_reason()
+            if not (
+                camera_reason.startswith("camera_depth_warmup")
+                or camera_reason.startswith("camera_depth_stale")
+            ):
+                return False, camera_reason
         if frame_ts:
             frame_age = max(0.0, now - float(frame_ts))
             infer_frame_max_age_sec = max(
@@ -4288,13 +4315,67 @@ class ControlPanelV2(QMainWindow):
             )
             if frame_age >= infer_frame_max_age_sec:
                 return False, f"frame stale age={frame_age:.2f}s"
-        self._sync_external_release_state()
-        if not self._objects_release_done:
-            return False, "release de objetos pendiente"
-        if not self._objects_settled:
-            return False, "objetos no estabilizados tras release"
-        if not self._pose_info_ok:
-            return False, "pose/info no disponible"
+        depth_required, depth_topic = self._camera_depth_expectation()
+        if depth_required:
+            ros_worker = getattr(self, "ros_worker", None)
+            depth_frame = None
+            if ros_worker is not None:
+                try:
+                    depth_frame = ros_worker.get_latest_depth_frame(depth_topic)
+                except Exception:
+                    depth_frame = None
+                if not depth_frame:
+                    try:
+                        depth_snapshot = ros_worker.image_frame_snapshot(depth_topic)
+                    except Exception:
+                        depth_snapshot = None
+                    try:
+                        depth_types = next(
+                            (types for name, types in ros_worker.topic_names_and_types() if name == depth_topic),
+                            [],
+                        )
+                    except Exception:
+                        depth_types = []
+                    try:
+                        depth_subs = int(ros_worker.topic_subscriber_count(depth_topic))
+                    except Exception:
+                        depth_subs = -1
+                    try:
+                        depth_pubs = int(ros_worker.topic_publisher_count(depth_topic))
+                    except Exception:
+                        depth_pubs = -1
+                    self._emit_log_throttled(
+                        f"tfm_depth_diag:{depth_topic}",
+                        (
+                            f"[TFM][DEPTH] warmup topic={depth_topic or 'n/a'} pubs={depth_pubs} "
+                            f"subs={depth_subs} types={','.join(depth_types) or 'n/a'} "
+                            f"snapshot={'yes' if depth_snapshot else 'no'} "
+                            f"panel_frames={int(getattr(self, '_camera_depth_frame_count', 0) or 0)}"
+                        ),
+                        min_interval=2.0,
+                    )
+                    camera_ctrl = getattr(self, "_camera_ctrl", None)
+                    resubscribe_ts = float(getattr(self, "_last_tfm_depth_resubscribe_ts", 0.0) or 0.0)
+                    if camera_ctrl is not None and (now - resubscribe_ts) >= 2.0:
+                        self._last_tfm_depth_resubscribe_ts = now
+                        try:
+                            camera_ctrl._ensure_depth_subscription()
+                        except Exception:
+                            pass
+                        try:
+                            camera_ctrl._sync_from_worker_snapshot(now=now)
+                        except Exception:
+                            pass
+                        try:
+                            depth_frame = ros_worker.get_latest_depth_frame(depth_topic)
+                        except Exception:
+                            depth_frame = None
+            if not depth_frame:
+                return False, f"camera_depth_warmup topic={depth_topic} last_age=inf"
+            _depth_img, depth_ts = depth_frame
+            depth_age = max(0.0, now - float(depth_ts))
+            if depth_age >= CAMERA_READY_MAX_AGE_SEC:
+                return False, f"camera_depth_stale topic={depth_topic} age={depth_age:.1f}s"
         return True, ""
 
     @staticmethod
@@ -4306,9 +4387,6 @@ class ControlPanelV2(QMainWindow):
             "cámara no conectada",
             "cámara no lista",
             "sin frame de cámara",
-            "release de objetos pendiente",
-            "objetos no estabilizados tras release",
-            "pose/info no disponible",
         }:
             return True
         return text.startswith("frame stale age=") or text.startswith("camera_")
@@ -9982,6 +10060,13 @@ class ControlPanelV2(QMainWindow):
         self._run_async(worker)
 
     def _tfm_infer_grasp(self):
+        self._log_button("TFM Inferir agarre")
+        self._emit_log(
+            "[TFM][BUTTON] action=infer "
+            f"applied={str(bool(getattr(self, '_tfm_experiment_applied', False))).lower()} "
+            f"inflight={str(bool(getattr(self, '_tfm_infer_inflight', False))).lower()} "
+            f"selected={str(getattr(self, '_selected_object', '') or 'none')}"
+        )
         return tfm_infer(self)
 
     def _tfm_canonical_use_pick_object(self) -> bool:
@@ -10242,16 +10327,7 @@ class ControlPanelV2(QMainWindow):
             self._audit_append("logs/infer.log", "[TFM] infer_end status=FAIL err=salida_invalida")
             self._complete_pending_tfm_infer_request(False, "salida inválida")
             return
-        self._last_grasp_px = {
-            "cx": float(pred.get("cx", 0.0)),
-            "cy": float(pred.get("cy", 0.0)),
-            "w": float(pred.get("w", 0.0)),
-            "h": float(pred.get("h", 0.0)),
-            "angle_deg": float(pred.get("angle_deg", 0.0)),
-        }
-        self._last_grasp_source = "infer_model"
-        self._last_grasp_frame = self.camera_topic or "image"
-        self._last_grasp_update_ts = _runtime_time()
+        raw_pred = dict(pred)
         selection_snapshot = result.get("selection_snapshot")
         self._last_infer_selection_snapshot = dict(selection_snapshot) if isinstance(selection_snapshot, dict) else {}
         self._restore_infer_selection_snapshot(selection_snapshot)
@@ -10273,6 +10349,58 @@ class ControlPanelV2(QMainWindow):
         self._push_history(self._perf_total_hist, self._perf_total_ms, max_len=20)
         frame_w = int(result.get("frame_w", 0))
         frame_h = int(result.get("frame_h", 0))
+        roi = result.get("roi") if isinstance(result.get("roi"), (tuple, list)) else None
+        ref_for_size = None
+        angle_adjusted = False
+        center_adjusted = False
+        size_adjusted = False
+        if frame_w > 0 and frame_h > 0 and roi is not None:
+            ref_for_size = self._build_reference_grasp(frame_w, frame_h)
+            object_shape = str(OBJECT_SHAPES.get(self._selected_object or "", "") or "")
+            pred, angle_adjusted = reconcile_inferred_grasp_angle(
+                pred,
+                ref_for_size,
+                roi=tuple(roi),
+                object_shape=object_shape,
+            )
+            pred, center_adjusted = reconcile_inferred_grasp_center(pred, ref_for_size, roi=tuple(roi))
+            pred, size_adjusted = reconcile_inferred_grasp_size(pred, ref_for_size, roi=tuple(roi))
+        if angle_adjusted and ref_for_size:
+            self._audit_append(
+                "logs/infer.log",
+                "[TFM] infer_angle_adjust "
+                f"selected={self._selected_object or 'none'} roi={tuple(roi)} shape={OBJECT_SHAPES.get(self._selected_object or '', 'unknown')} "
+                f"pred_angle_raw={float(raw_pred.get('angle_deg', 0.0) or 0.0):.2f} "
+                f"pred_angle_adj={float(pred.get('angle_deg', 0.0) or 0.0):.2f} "
+                f"ref_angle={float(ref_for_size.get('angle_deg', 0.0) or 0.0):.2f}",
+            )
+        if center_adjusted and ref_for_size:
+            self._audit_append(
+                "logs/infer.log",
+                "[TFM] infer_center_adjust "
+                f"selected={self._selected_object or 'none'} roi={tuple(roi)} "
+                f"pred_center_raw=({float(raw_pred.get('cx', 0.0) or 0.0):.2f},{float(raw_pred.get('cy', 0.0) or 0.0):.2f}) "
+                f"pred_center_adj=({float(pred.get('cx', 0.0) or 0.0):.2f},{float(pred.get('cy', 0.0) or 0.0):.2f}) "
+                f"ref_center=({float(ref_for_size.get('cx', 0.0) or 0.0):.2f},{float(ref_for_size.get('cy', 0.0) or 0.0):.2f})",
+            )
+        self._last_grasp_px = {
+            "cx": float(pred.get("cx", 0.0)),
+            "cy": float(pred.get("cy", 0.0)),
+            "w": float(pred.get("w", 0.0)),
+            "h": float(pred.get("h", 0.0)),
+            "angle_deg": float(pred.get("angle_deg", 0.0)),
+        }
+        if size_adjusted and ref_for_size:
+            self._audit_append(
+                "logs/infer.log",
+                "[TFM] infer_size_adjust "
+                f"selected={self._selected_object or 'none'} roi={tuple(roi)} "
+                f"pred_size_raw=({float(raw_pred.get('w', 0.0) or 0.0):.2f},{float(raw_pred.get('h', 0.0) or 0.0):.2f}) "
+                f"ref_size=({float(ref_for_size.get('w', 0.0) or 0.0):.2f},{float(ref_for_size.get('h', 0.0) or 0.0):.2f})",
+            )
+        self._last_grasp_source = "infer_model"
+        self._last_grasp_frame = self.camera_topic or "image"
+        self._last_grasp_update_ts = _runtime_time()
         self._last_grasp_world = self._compute_world_grasp(frame_w, frame_h)
         self._last_grasp_base = self._world_grasp_to_base(self._last_grasp_world)
         self._refresh_cornell_metrics(frame_w, frame_h)
@@ -10299,6 +10427,39 @@ class ControlPanelV2(QMainWindow):
         else:
             self._set_status("TFM: grasp inferido", error=False)
             infer_message = "grasp inferido"
+        alignment_2d = None
+        if self._last_grasp_px and self._last_cornell_ref:
+            pred_cx = float(self._last_grasp_px.get("cx", 0.0) or 0.0)
+            pred_cy = float(self._last_grasp_px.get("cy", 0.0) or 0.0)
+            ref_cx = float(self._last_cornell_ref.get("cx", 0.0) or 0.0)
+            ref_cy = float(self._last_cornell_ref.get("cy", 0.0) or 0.0)
+            delta_x_px = pred_cx - ref_cx
+            delta_y_px = pred_cy - ref_cy
+            dist_px = math.hypot(delta_x_px, delta_y_px)
+            alignment_2d = {
+                "selected": str(self._selected_object or ""),
+                "pred_cx": pred_cx,
+                "pred_cy": pred_cy,
+                "ref_cx": ref_cx,
+                "ref_cy": ref_cy,
+                "delta_x_px": delta_x_px,
+                "delta_y_px": delta_y_px,
+                "dist_px": dist_px,
+                "pred_w": float(self._last_grasp_px.get("w", 0.0) or 0.0),
+                "pred_h": float(self._last_grasp_px.get("h", 0.0) or 0.0),
+                "ref_w": float(self._last_cornell_ref.get("w", 0.0) or 0.0),
+                "ref_h": float(self._last_cornell_ref.get("h", 0.0) or 0.0),
+            }
+            self._audit_append(
+                "logs/infer.log",
+                "[TFM] infer_align_2d "
+                f"selected={self._selected_object or 'none'} "
+                f"pred=({pred_cx:.2f},{pred_cy:.2f}) "
+                f"ref=({ref_cx:.2f},{ref_cy:.2f}) "
+                f"delta=({delta_x_px:.2f},{delta_y_px:.2f}) dist_px={dist_px:.2f} "
+                f"size_pred=({float(self._last_grasp_px.get('w', 0.0) or 0.0):.2f},{float(self._last_grasp_px.get('h', 0.0) or 0.0):.2f}) "
+                f"size_ref=({float(self._last_cornell_ref.get('w', 0.0) or 0.0):.2f},{float(self._last_cornell_ref.get('h', 0.0) or 0.0):.2f})",
+            )
         audit_payload = {
             "timestamp": datetime.now().isoformat(timespec="seconds"),
             "session": self._infer_session_id,
@@ -10320,6 +10481,7 @@ class ControlPanelV2(QMainWindow):
             "grasp_rect_topic": self._grasp_rect_topic,
             "frame": self._last_grasp_frame,
             "cornell": self._last_cornell,
+            "alignment_2d": alignment_2d,
             "cornell_reason": self._last_cornell_reason,
             "perf": {
                 "infer_ms": self._perf_infer_ms,
@@ -10374,9 +10536,21 @@ class ControlPanelV2(QMainWindow):
             self._log_warning(f"[TFM] set_last_grasp error: {exc}")
 
     def _tfm_visualize_grasp(self):
+        self._log_button("TFM Comparar grasp/ref")
+        self._emit_log(
+            "[TFM][BUTTON] action=visualize "
+            f"applied={str(bool(getattr(self, '_tfm_experiment_applied', False))).lower()} "
+            f"has_grasp={str(bool(getattr(self, '_last_grasp_px', None))).lower()} "
+            f"selected={str(getattr(self, '_selected_object', '') or 'none')}"
+        )
+        experiment_ready, experiment_reason = self._tfm_experiment_ready_status()
+        if not experiment_ready:
+            self._set_status(f"TFM bloqueado: {experiment_reason}", error=True)
+            self._audit_append("logs/visualize.log", f"[TFM] visualize FAIL reason={experiment_reason}")
+            return False
         if not self.tfm_module and not self._last_grasp_px:
             self._set_status("TFM no disponible", error=True)
-            return
+            return False
         rep = None
         if self.tfm_module:
             try:
@@ -10387,7 +10561,7 @@ class ControlPanelV2(QMainWindow):
             rep = dict(self._last_grasp_px)
         if not rep:
             self._set_status("TFM: sin grasp para visualizar", error=True)
-            return
+            return False
         ref = None
         if self._last_camera_frame:
             _qimg, w, h, _ts = self._last_camera_frame
@@ -10414,6 +10588,7 @@ class ControlPanelV2(QMainWindow):
             self._set_status("TFM: comparación grasp/ref desactivada", error=False)
         else:
             self._set_status("TFM: grasp visualizado (sin referencia)", error=False)
+        return True
 
     def _wait_tfm_moveit_result(
         self,
@@ -10931,6 +11106,18 @@ class ControlPanelV2(QMainWindow):
         return True
 
     def _tfm_publish_grasp(self):
+        self._log_button("TFM Ejecutar agarre")
+        self._emit_log(
+            "[TFM][BUTTON] action=execute "
+            f"applied={str(bool(getattr(self, '_tfm_experiment_applied', False))).lower()} "
+            f"has_grasp={str(bool(getattr(self, '_last_grasp_px', None))).lower()} "
+            f"selected={str(getattr(self, '_selected_object', '') or 'none')}"
+        )
+        experiment_ready, experiment_reason = self._tfm_experiment_ready_status()
+        if not experiment_ready:
+            self._set_status(f"TFM bloqueado: {experiment_reason}", error=True)
+            self._audit_append("logs/execute.log", f"[TFM] execute FAIL reason={experiment_reason}")
+            return False, experiment_reason
         basic_ok, basic_reason = self._basic_ready_status()
         if not basic_ok:
             self._set_status(f"TFM bloqueado: {basic_reason}", error=True)
@@ -14885,6 +15072,31 @@ class ControlPanelV2(QMainWindow):
         painter.end()
         return img_copy
 
+    def _tfm_overlay_focus_enabled(self) -> bool:
+        return bool(getattr(self, "_tfm_overlay_focus_active", False))
+
+    def _should_draw_reach_overlay(self, overhead_only: bool) -> bool:
+        return bool(
+            OVERLAY_REACH
+            and overhead_only
+            and self._reach_overlay_enabled
+            and not self._tfm_overlay_focus_enabled()
+        )
+
+    def _should_draw_selection_overlay(self, overhead_only: bool) -> bool:
+        return bool(
+            OVERLAY_SELECTION
+            and overhead_only
+            and self._selected_px
+            and not self._tfm_overlay_focus_enabled()
+        )
+
+    def _should_draw_test_corner_overlay(self) -> bool:
+        return bool(TEST_CORNER_OVERLAY and not self._tfm_overlay_focus_enabled())
+
+    def _should_draw_tcp_pose_overlay(self, overhead_only: bool) -> bool:
+        return bool(overhead_only and not self._tfm_overlay_focus_enabled())
+
     def _base_to_world_coords(
         self,
         coords_base: Tuple[float, float, float],
@@ -15298,16 +15510,16 @@ class ControlPanelV2(QMainWindow):
         overhead_only = self._overhead_camera_active(topic)
         if OVERLAY_CALIB and (self._calibrating or (time.time() <= self._calib_grid_until)):
             display = self._draw_calib_overlay(display, w, h)
-        if OVERLAY_REACH and overhead_only and self._reach_overlay_enabled:
+        if self._should_draw_reach_overlay(overhead_only):
             display = self._draw_reach_overlay(display, w, h)
-        if OVERLAY_SELECTION and overhead_only and self._selected_px:
+        if self._should_draw_selection_overlay(overhead_only):
             display = self._draw_selection_overlay(display, w, h)
         if overhead_only and self._last_grasp_px:
             display = self._draw_grasp_overlay(display, w, h)
-        if TEST_CORNER_OVERLAY:
+        if self._should_draw_test_corner_overlay():
             display = self._draw_test_corner_overlay(display, w, h)
         # Persistir siempre la linea canonica en snapshots overhead.
-        if overhead_only:
+        if self._should_draw_tcp_pose_overlay(overhead_only):
             display = self._draw_tcp_pose_overlay(display, w, h)
         out = Path(str(out_path)).expanduser()
         ensure_dir(str(out.parent))
@@ -16377,13 +16589,17 @@ class ControlPanelV2(QMainWindow):
         return self._tfm_ckpt_selected or ""
 
     def _tfm_apply_experiment(self) -> None:
+        self._log_button("TFM Aplicar experimento")
         ckpt_path = self._tfm_get_ckpt_path()
         if not ckpt_path:
             self._set_status("TFM: sin checkpoint seleccionado", error=True)
             return
         self._tfm_ckpt_selected = ckpt_path
+        self._tfm_experiment_applied = True
+        self._tfm_overlay_focus_active = True
         self._load_experiment_info()
         self._refresh_science_ui()
+        self._refresh_controls()
         ckpt_info = {
             "path": ckpt_path,
             "exists": False,
@@ -16402,15 +16618,25 @@ class ControlPanelV2(QMainWindow):
             self.tfm_module.load_model(ckpt_path)
             err = self.tfm_module.last_error()
             if err:
+                self._refresh_camera_display()
                 self._set_status(f"TFM: checkpoint aplicado (sin carga de modelo: {err})", error=False)
                 self._audit_append(
                     "logs/apply_experiment.log",
                     f"[TFM] apply_experiment FAIL ckpt={ckpt_path} err={err}",
                 )
                 return
+                self._tfm_preprocessed_cache = None
         model_info = self.tfm_module.model_info() if self.tfm_module else {}
         self._load_experiment_info()
         self._refresh_science_ui()
+        try:
+            camera_ctrl = getattr(self, "_camera_ctrl", None)
+            if camera_ctrl is not None:
+                camera_ctrl._ensure_depth_subscription()
+                camera_ctrl._sync_from_worker_snapshot(now=_runtime_time())
+        except Exception:
+            pass
+        self._refresh_camera_display()
         self._set_status("TFM: experimento aplicado", error=False)
         self._audit_append(
             "logs/apply_experiment.log",
@@ -16418,6 +16644,9 @@ class ControlPanelV2(QMainWindow):
         )
 
     def _tfm_reset_grasp(self) -> None:
+        self._log_button("TFM Reset")
+        self._tfm_experiment_applied = False
+        self._tfm_overlay_focus_active = False
         self._last_grasp_px = None
         self._last_grasp_world = None
         self._last_grasp_base = None
@@ -16434,6 +16663,8 @@ class ControlPanelV2(QMainWindow):
         if self.tfm_module:
             self.tfm_module.reset()
         self._refresh_science_ui()
+        self._refresh_controls()
+        self._refresh_camera_display()
         self._set_status("TFM: reset", error=False)
         self._audit_append("logs/reset.log", "[TFM] reset OK")
 
