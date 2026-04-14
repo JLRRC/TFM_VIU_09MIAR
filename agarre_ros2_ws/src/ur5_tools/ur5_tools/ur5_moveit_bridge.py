@@ -665,6 +665,10 @@ class UR5MoveItBridge(Node):
         "elbow_joint",
     )
 
+    _APPROACH_PATH_CONSTRAINT_JOINTS = (
+        "shoulder_pan_joint",
+    )
+
     _START_STATE_JOINTS = (
         "shoulder_pan_joint",
         "shoulder_lift_joint",
@@ -695,13 +699,9 @@ class UR5MoveItBridge(Node):
         self,
         request_uuid: str = "",
         phase_label: str | None = None,
+        tol_override: float | None = None,
     ) -> Constraints | None:
-        """Build joint path constraints to prevent IK configuration flipping.
-
-        Constrains shoulder_pan, shoulder_lift, and elbow joints
-        within +/- tolerance_rad of their current positions so the planner
-        stays in the same arm configuration.
-        """
+        """Build joint path constraints to prevent IK configuration flipping."""
         if self._is_skip_constraints_request(request_uuid):
             self.get_logger().info(
                 "[BRIDGE_CONSTRAINT] skip constraints for tagged request_uuid="
@@ -733,7 +733,15 @@ class UR5MoveItBridge(Node):
                     f"applied=false reason=approach_skip_env env={skip_approach_raw or '1'}"
                 )
                 return None
-        tol = self._path_constraint_joint_tol
+        tol = float(tol_override) if tol_override is not None else self._path_constraint_joint_tol
+        if phase_upper == "APPROACH" and tol_override is None:
+            tol = max(
+                0.05,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_APPROACH_PATH_CONSTRAINT_TOL_RAD",
+                    min(float(self._path_constraint_joint_tol), 0.35),
+                ),
+            )
         if tol <= 0.0:
             return None
         names = self._joint_state_last_names
@@ -744,7 +752,10 @@ class UR5MoveItBridge(Node):
         constraints = Constraints()
         constraints.name = "ik_config_lock"
         constrained = []
-        for jname in self._PATH_CONSTRAINT_JOINTS:
+        constraint_joints = self._PATH_CONSTRAINT_JOINTS
+        if phase_upper == "APPROACH":
+            constraint_joints = self._APPROACH_PATH_CONSTRAINT_JOINTS
+        for jname in constraint_joints:
             if jname not in joint_map:
                 continue
             jc = JointConstraint()
@@ -1105,7 +1116,8 @@ class UR5MoveItBridge(Node):
             expected,
             f"/{controller}/{action_ns}",
             f"/controller_manager/{controller}/{action_ns}",
-            f"{base_cm}/{controller}/{action_ns}",
+            tol_override: float | None = None,
+            tol_override: float | None = None,
             f"{base_cm_ns}/{controller}/{action_ns}" if base_cm_ns else "",
         ):
             name = str(raw or "").strip()
@@ -3954,39 +3966,103 @@ class UR5MoveItBridge(Node):
             finally:
                 if path_constraints is not None:
                     self._planning_component.set_path_constraints(Constraints())
-            # Fallback: if plan failed WITH constraints, retry WITHOUT them
+            # Fallback: if plan failed WITH constraints, first retry APPROACH
+            # with a relaxed shoulder_pan tolerance before disabling constraints.
             if path_constraints is not None and plan is not None:
                 _pc_ok = self._plan_success_ok(getattr(plan, "success", None))
                 _pc_traj = getattr(plan, "trajectory", None) is not None
                 _pc_ec = self._plan_error_code_val(plan)
                 _pc_ec_bad = _pc_ec is not None and _pc_ec != 1
                 if not _pc_ok or not _pc_traj or _pc_ec_bad:
-                    self.get_logger().warning(
-                        "[BRIDGE_CONSTRAINT] plan failed with constraints; "
-                        f"retrying WITHOUT constraints (fallback) "
-                        f"success_ok={_pc_ok} traj={_pc_traj} error_code={_pc_ec}"
+                    phase_upper = str(phase_label or "").strip().upper()
+                    relaxed_retry_allowed = (
+                        phase_upper == "APPROACH"
+                        and str(
+                            os.environ.get(
+                                "PANEL_MOVEIT_BRIDGE_APPROACH_RELAXED_CONSTRAINT_RETRY",
+                                "1",
+                            )
+                        ).strip().lower() not in ("0", "false", "no", "off")
                     )
-                    self.get_logger().warning(
-                        "[PICK][MOVEIT][DIVERGENCE] "
-                        f"phase={phase_label or 'n/a'} request_uuid={request_uuid or 'n/a'} "
-                        "kind=constraints_fallback_disabled_for_replan "
-                        f"success_ok={_pc_ok} traj={_pc_traj} error_code={_pc_ec if _pc_ec is not None else 'n/a'}"
-                    )
-                    start_state_ok, start_state_reason = (
-                        self._set_planning_start_state_from_joint_state()
-                    )
-                    if start_state_ok:
-                        self.get_logger().info(
-                            "[BRIDGE_START_STATE] retry source=joint_states "
-                            f"detail={start_state_reason}"
+                    if relaxed_retry_allowed:
+                        strict_tol = max(
+                            0.05,
+                            self._env_float(
+                                "PANEL_MOVEIT_BRIDGE_APPROACH_PATH_CONSTRAINT_TOL_RAD",
+                                min(float(self._path_constraint_joint_tol), 0.35),
+                            ),
                         )
-                    else:
+                        relaxed_tol = max(
+                            strict_tol,
+                            self._env_float(
+                                "PANEL_MOVEIT_BRIDGE_APPROACH_RELAXED_PATH_CONSTRAINT_TOL_RAD",
+                                0.60,
+                            ),
+                        )
+                        if relaxed_tol > strict_tol + 1e-6:
+                            self.get_logger().warning(
+                                "[BRIDGE_CONSTRAINT] plan failed with strict APPROACH constraints; "
+                                f"retrying with relaxed tol={relaxed_tol:.3f} "
+                                f"success_ok={_pc_ok} traj={_pc_traj} error_code={_pc_ec}"
+                            )
+                            start_state_ok, start_state_reason = (
+                                self._set_planning_start_state_from_joint_state()
+                            )
+                            if start_state_ok:
+                                self.get_logger().info(
+                                    "[BRIDGE_START_STATE] relaxed retry source=joint_states "
+                                    f"detail={start_state_reason}"
+                                )
+                            else:
+                                self.get_logger().warning(
+                                    "[BRIDGE_START_STATE] relaxed retry fallback=current_state_monitor "
+                                    f"detail={start_state_reason}"
+                                )
+                                self._planning_component.set_start_state_to_current_state()
+                            relaxed_constraints = self._build_joint_path_constraints(
+                                request_uuid=request_uuid,
+                                phase_label=phase_label,
+                                tol_override=relaxed_tol,
+                            )
+                            if relaxed_constraints is not None:
+                                self._planning_component.set_path_constraints(relaxed_constraints)
+                                try:
+                                    plan = self._planning_component.plan()
+                                finally:
+                                    self._planning_component.set_path_constraints(Constraints())
+                                _pc_ok = self._plan_success_ok(getattr(plan, "success", None))
+                                _pc_traj = getattr(plan, "trajectory", None) is not None
+                                _pc_ec = self._plan_error_code_val(plan)
+                                _pc_ec_bad = _pc_ec is not None and _pc_ec != 1
+                                if _pc_ok and _pc_traj and not _pc_ec_bad:
+                                    path_constraints = relaxed_constraints
+                    if not _pc_ok or not _pc_traj or _pc_ec_bad:
                         self.get_logger().warning(
-                            "[BRIDGE_START_STATE] retry fallback=current_state_monitor "
-                            f"detail={start_state_reason}"
+                            "[BRIDGE_CONSTRAINT] plan failed with constraints; "
+                            f"retrying WITHOUT constraints (fallback) "
+                            f"success_ok={_pc_ok} traj={_pc_traj} error_code={_pc_ec}"
                         )
-                        self._planning_component.set_start_state_to_current_state()
-                    plan = self._planning_component.plan()
+                        self.get_logger().warning(
+                            "[PICK][MOVEIT][DIVERGENCE] "
+                            f"phase={phase_label or 'n/a'} request_uuid={request_uuid or 'n/a'} "
+                            "kind=constraints_fallback_disabled_for_replan "
+                            f"success_ok={_pc_ok} traj={_pc_traj} error_code={_pc_ec if _pc_ec is not None else 'n/a'}"
+                        )
+                        start_state_ok, start_state_reason = (
+                            self._set_planning_start_state_from_joint_state()
+                        )
+                        if start_state_ok:
+                            self.get_logger().info(
+                                "[BRIDGE_START_STATE] retry source=joint_states "
+                                f"detail={start_state_reason}"
+                            )
+                        else:
+                            self.get_logger().warning(
+                                "[BRIDGE_START_STATE] retry fallback=current_state_monitor "
+                                f"detail={start_state_reason}"
+                            )
+                            self._planning_component.set_start_state_to_current_state()
+                        plan = self._planning_component.plan()
         except Exception as exc:
             self.get_logger().warning(f"Planificación MoveItPy fallida: {exc}")
             return False, f"plan_exception:{exc}", False, False

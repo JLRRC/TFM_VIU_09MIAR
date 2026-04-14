@@ -1,39 +1,61 @@
 # reports
 
-Directorio curado del documento del TFM y de sus artefactos finales.
+Directorio curado del documento del TFM y de los artefactos que respaldan la memoria final.
 
-## Contenido
+## Que hay aqui
 
+- `09MIAR_10_Z_2025-26.TFM..DEFINITIVO.pdf`: memoria final de referencia.
 - `figures/`: figuras finales organizadas por capitulo.
 - `tables/`: tablas finales organizadas por capitulo.
 - `metrics/raw/`: metricas copiadas desde los experimentos para trazabilidad.
 - `metrics/aggregated/`: agregaciones intermedias.
-- `metrics/validated/`: metricas finales que se deben citar.
-- `history/`: material historico util para comparativas internas del documento.
+- `metrics/validated/`: metricas finales que deben citarse.
 - `evidence/`: evidencias funcionales y cualitativas.
-- `logs/`: logs de entrenamiento, evaluacion y reproducibilidad.
-- `exports/`: artefactos exportados por capitulo.
+- `logs/`: logs de entrenamiento, regeneracion y reproducibilidad.
+- `exports/`: exportaciones por capitulo o por bloque.
+- `bench/`: mediciones de latencia y benchmarks auxiliares.
+- `cornell_audit/`: soporte minimo de auditoria del split Cornell.
+- `history/`: snapshots historicos utiles para comparativas internas.
 
-## Ubicaciones utiles
+## Ubicaciones canonicas
 
 - Figuras del capitulo 5: `figures/cap5/`
 - Tablas del capitulo 5: `tables/cap5/`
-- Resumen validado del capitulo 5: `metrics/validated/chapter5_experiment_summary_validated.csv`
-- Evidencia ROS 2: `evidence/ros2/`
-- Evidencia del capitulo 5: `evidence/chapter5/`
+- Tablas de anexos: `tables/anexos/`
+- Resumen validado del capitulo 5:
+  - `metrics/validated/chapter5_experiment_summary_validated.csv`
+- Evidencia del bloque TFM y casos cualitativos:
+  - `evidence/chapter5/`
+- Evidencia ROS 2 y auditoria del panel:
+  - `evidence/ros2/`
+- Logs de regeneracion y trazabilidad:
+  - `logs/reproducibility/`
 
-## Uso
+## Uso esperado
 
-Este directorio no es para lanzar el sistema ROS 2. Sirve para:
+Este directorio no es el lugar para arrancar ROS 2 ni para entrenar modelos. Sirve para:
 
-- consultar las figuras y tablas finales
+- consultar figuras y tablas finales
 - revisar metricas validadas
 - localizar evidencias que respaldan la memoria
+- seguir la trazabilidad entre resultados crudos y artefactos publicados
 
-Para regenerar artefactos del documento desde la raiz del proyecto:
+## Regeneracion
+
+Desde la raiz del proyecto:
 
 ```bash
 ./recrear_artefactos_tfm.sh
 ```
 
-La parte operativa del panel y sus logs de ejecucion en caliente se encuentra en `../agarre_ros2_ws/` y `../HISTORICOS/desde_auditoria/panel_audit/`.
+Para la tabla de latencia:
+
+```bash
+./recrear_tabla_5_3_latencia.sh
+```
+
+## Relacion con el resto del repo
+
+- `../agarre_inteligente/` produce experimentos, checkpoints y metricas base.
+- `../agarre_ros2_ws/` produce evidencias operativas, logs de panel y trazas ROS 2.
+- `history/` conserva material historico; no siempre coincide con el estado operativo actual.

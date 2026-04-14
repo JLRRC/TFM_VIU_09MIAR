@@ -1,6 +1,10 @@
 BORRAR/
 HISTORICOS/
 auditoria/
+agarre_inteligente/data/raw
+agarre_ros2_ws/build
+agarre_ros2_ws/install
+agarre_ros2_ws/log
 TRACE_PANEL_V2.log
 *.log
 .DS_Store

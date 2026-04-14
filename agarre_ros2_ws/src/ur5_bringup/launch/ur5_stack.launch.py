@@ -38,6 +38,20 @@ from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    raw = str(os.environ.get(name, "1" if default else "0") or "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = str(os.environ.get(name, str(default)) or "").strip()
+    try:
+        value = float(raw)
+    except Exception:
+        value = float(default)
+    return value
+
+
 def _prepare_runtime(context, *_args) -> List[object]:
     logger = get_logger("ur5_stack")
     ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
@@ -834,6 +848,35 @@ def generate_launch_description():
     # on-demand via the panel button; this makes it part of the managed launch.
     # When MoveIt (move_group) is not running the bridge will subscribe but will
     # fall back to a no-op, ensuring the topic is live without crashing the stack.
+    bridge_exec_timeout = max(1.0, _env_float("PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC", 150.0))
+    bridge_request_timeout = max(2.0, _env_float("PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC", 180.0))
+    bridge_joint_state_timeout = max(0.2, _env_float("PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC", 6.0))
+    bridge_joint_state_max_age = max(0.1, _env_float("PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC", 2.5))
+    bridge_force_fjt_direct = _env_flag("PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT", False)
+    bridge_unwrap_continuous = _env_flag("PANEL_MOVEIT_BRIDGE_UNWRAP_CONTINUOUS_JOINTS", False)
+    bridge_require_request_id = _env_flag("PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID", True)
+    bridge_drop_pending = _env_flag("PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED", True)
+    bridge_dry_run = _env_flag("PANEL_MOVEIT_BRIDGE_DRY_RUN", False)
+    bridge_path_constraint_tol = max(0.0, _env_float("PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD", 1.5))
+    bridge_controller_goal_time_tol = max(
+        0.0,
+        _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TIME_TOL_SEC", 45.0),
+    )
+    bridge_controller_expected_goal_time = max(
+        0.0,
+        _env_float(
+            "PANEL_MOVEIT_BRIDGE_CONTROLLER_EXPECTED_GOAL_TIME_SEC",
+            max(45.0, bridge_controller_goal_time_tol),
+        ),
+    )
+    bridge_controller_path_tol = max(
+        0.0,
+        _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_PATH_TOL_RAD", 4.0),
+    )
+    bridge_controller_goal_tol = max(
+        0.0,
+        _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TOL_RAD", 0.20),
+    )
     moveit_bridge = Node(
         package="ur5_tools",
         executable="ur5_moveit_bridge",
@@ -845,6 +888,20 @@ def generate_launch_description():
             {"ee_frame": "rg2_pinch_center"},
             {"result_topic": "/desired_grasp/result"},
             {"controller_manager": LaunchConfiguration("controller_manager")},
+            {"execute_timeout_sec": bridge_exec_timeout},
+            {"request_timeout_sec": bridge_request_timeout},
+            {"joint_state_valid_timeout_sec": bridge_joint_state_timeout},
+            {"joint_state_valid_max_age_sec": bridge_joint_state_max_age},
+            {"force_fjt_direct_for_walltime_sim": bridge_force_fjt_direct},
+            {"unwrap_continuous_joints": bridge_unwrap_continuous},
+            {"require_request_id": bridge_require_request_id},
+            {"drop_pending_on_tagged_request": bridge_drop_pending},
+            {"dry_run_plan_only": bridge_dry_run},
+            {"path_constraint_joint_tolerance_rad": bridge_path_constraint_tol},
+            {"controller_goal_time_tolerance_sec": bridge_controller_goal_time_tol},
+            {"controller_expected_goal_time_sec": bridge_controller_expected_goal_time},
+            {"controller_path_tolerance_rad": bridge_controller_path_tol},
+            {"controller_goal_tolerance_rad": bridge_controller_goal_tol},
         ],
         condition=IfCondition(LaunchConfiguration("launch_moveit_bridge")),
     )
