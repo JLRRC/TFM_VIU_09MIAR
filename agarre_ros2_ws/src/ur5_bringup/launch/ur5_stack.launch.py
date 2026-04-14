@@ -342,11 +342,11 @@ def _prepare_runtime(context, *_args) -> List[object]:
         # CLOSE/ATTACH only succeed when the object is really centered in the gripper.
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_ATTACH_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.012"),
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.008"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_ATTACH_Z_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.015"),
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.010"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M",
@@ -358,19 +358,19 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "0.008"),
+            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "0.006"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M", "0.010"),
+            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M", "0.006"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_CLOSE_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_CLOSE_XY_TOL_M", "0.012"),
+            os.environ.get("PANEL_PICK_DEMO_CLOSE_XY_TOL_M", "0.008"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.012"),
+            os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.008"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL",
@@ -382,7 +382,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M", "0.010"),
+            os.environ.get("PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M", "0.006"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES",
@@ -390,15 +390,15 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M", "0.012"),
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M", "0.008"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M", "0.012"),
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M", "0.008"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M", "0.018"),
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M", "0.012"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS",
@@ -406,11 +406,43 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M", "0.012"),
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M", "0.008"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M", "0.012"),
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M", "0.008"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M", "0.012"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M", "0.012"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_POSE_SOURCE_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_POSE_SOURCE_TOL_M", "0.006"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_PHASE_JUMP_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_PHASE_JUMP_TOL_M", "0.010"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SEC",
+            os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SEC", "2.5"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_DELTA_M",
+            os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_DELTA_M", "0.003"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SAMPLES",
+            os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SAMPLES", "3"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_POLL_SEC",
+            os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_POLL_SEC", "0.10"),
         ),
         # FIX-IK-FRAME: disable X/Y negation in DIRECT IK route.
         # The numeric FK/IK works in DH base frame which is co-aligned with base_link,

@@ -26,7 +26,12 @@ cp -a "$LOSS_TMP/ilustracion_5_5_curvas_loss_exp4_resnet18_rgbd.png" \
 
 "$PYTHON_BIN" "$ROOT/agarre_inteligente/scripts/generate_boundary_failure_figure.py" \
   --output-dir "$BOUNDARY_TMP" \
-  --base-name "fig_5_15_false_negative_plausible"
+  --base-name "fig_5_15_false_negative_plausible" \
+  --experiments \
+  EXP1_SIMPLE_RGB \
+  EXP2_SIMPLE_RGBD \
+  EXP3_RESNET18_RGB_AUGMENT \
+  EXP4_RESNET18_RGBD
 
 cp -a "$BOUNDARY_TMP/fig_5_15_false_negative_plausible.png" \
   "$ROOT/reports/figures/cap5/Ilustracion_5-15_caso_limite_de_falso_negativo_visualmente_plausible.png"

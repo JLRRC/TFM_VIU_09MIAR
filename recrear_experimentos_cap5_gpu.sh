@@ -15,6 +15,12 @@ CONFIGS=(
   "config/exp3_resnet18_rgb_augment.yaml"
   "config/exp4_resnet18_rgbd.yaml"
 )
+ALLOWED_CONFIGS=(
+  "config/exp1_simple_rgb.yaml"
+  "config/exp2_simple_rgbd.yaml"
+  "config/exp3_resnet18_rgb_augment.yaml"
+  "config/exp4_resnet18_rgbd.yaml"
+)
 
 mkdir -p "$LOG_DIR"
 
@@ -26,6 +32,21 @@ fi
 if [[ $# -gt 0 ]]; then
   CONFIGS=("$@")
 fi
+
+for config_path in "${CONFIGS[@]}"; do
+  is_allowed=0
+  for allowed in "${ALLOWED_CONFIGS[@]}"; do
+    if [[ "$config_path" == "$allowed" ]]; then
+      is_allowed=1
+      break
+    fi
+  done
+  if [[ $is_allowed -ne 1 ]]; then
+    echo "[ERROR] Config no permitida para recrear_experimentos_cap5_gpu: $config_path" >&2
+    echo "[ERROR] Solo se admiten: ${ALLOWED_CONFIGS[*]}" >&2
+    exit 1
+  fi
+done
 
 {
   echo "[INFO] Inicio de relanzamiento capítulo 5: $(date --iso-8601=seconds)"
