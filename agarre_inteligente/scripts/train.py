@@ -22,6 +22,29 @@ from src.training.trainer import Trainer
 from src.utils.config_loader import load_config, save_config_snapshot
 
 
+def _validate_split_size(
+    *,
+    split_name: str,
+    dataset,
+    csv_path: str,
+    expected_size: object,
+) -> None:
+    """Fail fast when the configured split metadata does not match the loaded dataset."""
+    if expected_size in (None, ""):
+        return
+    try:
+        expected = int(expected_size)
+    except Exception:
+        raise ValueError(
+            f"Tamaño esperado invalido para {split_name}: {expected_size!r}"
+        ) from None
+    actual = len(dataset)
+    if actual != expected:
+        raise ValueError(
+            f"Split {split_name} inconsistente: expected={expected} actual={actual} csv={csv_path}"
+        )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
@@ -60,6 +83,19 @@ def main() -> int:
         transform=get_val_transforms(image_size=image_size),
         allow_synthetic=args.allow_synthetic,
         seed=args.seed + 999,
+    )
+    exp_cfg = cfg.get("experiment", {}) if isinstance(cfg.get("experiment"), dict) else {}
+    _validate_split_size(
+        split_name="train",
+        dataset=train_ds,
+        csv_path=train_csv,
+        expected_size=exp_cfg.get("train_size_expected"),
+    )
+    _validate_split_size(
+        split_name="val",
+        dataset=val_ds,
+        csv_path=val_csv,
+        expected_size=exp_cfg.get("val_size_expected"),
     )
 
     batch_size = int(cfg["training"].get("batch_size", 32))

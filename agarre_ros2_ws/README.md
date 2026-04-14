@@ -30,6 +30,18 @@ Desde este workspace:
 ./scripts/start_panel_v2.sh --fg
 ```
 
+Modo reproduccion TFM del caso principal documentado:
+
+```bash
+./scripts/start_panel_v2.sh --fg --tfm-repro
+```
+
+Tambien puede activarse por entorno:
+
+```bash
+PANEL_TFM_REPRO_MODE=1 ./scripts/start_panel_v2.sh --fg
+```
+
 Parada limpia:
 
 ```bash
@@ -54,6 +66,8 @@ En la UI actual, los dos flujos de agarre visibles son:
 
 - `Agarre Objeto (Directo)`: demo directa de agarre sobre mesa.
 - `Agarre Objeto (MoveIT)`: flujo con percepcion, ROS 2 y MoveIt 2.
+
+En el bloque `TFM - Agarre Inteligente`, el panel muestra ahora cuando esta fijado el perfil de reproduccion TFM y si la prediccion ha recibido ajustes posteriores de angulo, centro o tamano.
 
 Secuencia practica recomendada:
 

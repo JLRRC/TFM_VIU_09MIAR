@@ -148,6 +148,10 @@ while [[ $# -gt 0 ]]; do
       PANEL_WRITE_PID=0
       shift
       ;;
+    --tfm-repro)
+      export PANEL_TFM_REPRO_MODE=1
+      shift
+      ;;
     *)
       err "Argumento desconocido: $1"
       exit 2
@@ -157,6 +161,9 @@ done
 
 log "WS_DIR=$WS_DIR"
 log "PANEL_CONTROLLER_MANAGER=${PANEL_CONTROLLER_MANAGER}"
+if [[ -n "${PANEL_TFM_REPRO_MODE:-}" ]]; then
+  log "PANEL_TFM_REPRO_MODE=${PANEL_TFM_REPRO_MODE} (perfil EXP3 seed_0 para reproduccion TFM)"
+fi
 
 # --- activar venv si procede ---
 if [[ "$PANEL_VENV_AUTO" == "1" && -z "${VIRTUAL_ENV:-}" ]]; then
@@ -344,8 +351,10 @@ export PANEL_TFM_INFER_USE_ROI="${PANEL_TFM_INFER_USE_ROI:-auto}"
 export PANEL_CRITICAL_POSE_TIMEOUT_SEC="${PANEL_CRITICAL_POSE_TIMEOUT_SEC:-60.0}"
 export PANEL_CRITICAL_CLOCK_TIMEOUT_SEC="${PANEL_CRITICAL_CLOCK_TIMEOUT_SEC:-5.0}"
 export PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M="${PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M:-0.175}"
-# GRASP_DOWN: z_tol 0.020 cubre divergencia FK≈16mm (PRESET joints→Z≈0.041 físico vs Z=0.025 FK)
-export PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M="${PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M:-0.020}"
+# GRASP_DOWN: z_tol 0.025 cubre divergencia FK≈13mm TCP-objeto al final del descenso
+# dist_tol 0.025: target_dist=sqrt(xy²+z²)≈0.014 < 0.025 → ok=True → geometry_only_ok activo
+export PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M="${PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M:-0.025}"
+export PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M="${PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M:-0.025}"
 export PANEL_PICK_OBJECT_EXTRA_DOWN_Z="${PANEL_PICK_OBJECT_EXTRA_DOWN_Z:-0.020}"
 export PANEL_PICK_OBJECT_CONTACT_DOWN_Z_M="${PANEL_PICK_OBJECT_CONTACT_DOWN_Z_M:-0.020}"
 export PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M="${PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M:-0.18}"

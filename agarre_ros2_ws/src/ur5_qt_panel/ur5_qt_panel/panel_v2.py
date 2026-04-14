@@ -10398,6 +10398,28 @@ class ControlPanelV2(QMainWindow):
                 f"pred_size_raw=({float(raw_pred.get('w', 0.0) or 0.0):.2f},{float(raw_pred.get('h', 0.0) or 0.0):.2f}) "
                 f"ref_size=({float(ref_for_size.get('w', 0.0) or 0.0):.2f},{float(ref_for_size.get('h', 0.0) or 0.0):.2f})",
             )
+        adjustments: List[str] = []
+        if angle_adjusted:
+            adjustments.append("angle")
+        if center_adjusted:
+            adjustments.append("center")
+        if size_adjusted:
+            adjustments.append("size")
+        if adjustments:
+            self._last_tfm_postprocess_note = f"ajustes panel: {', '.join(adjustments)}"
+            self._emit_log(
+                "[TFM] postprocess "
+                f"adjustments={','.join(adjustments)} "
+                f"selected={self._selected_object or 'none'}"
+            )
+            self._audit_append(
+                "logs/infer.log",
+                "[TFM] infer_postprocess "
+                f"adjustments={','.join(adjustments)} "
+                f"selected={self._selected_object or 'none'}",
+            )
+        else:
+            self._last_tfm_postprocess_note = "sin ajustes panel"
         self._last_grasp_source = "infer_model"
         self._last_grasp_frame = self.camera_topic or "image"
         self._last_grasp_update_ts = _runtime_time()
@@ -16429,8 +16451,83 @@ class ControlPanelV2(QMainWindow):
             self._perf_ui_last_ts = now
             self._refresh_science_ui()
 
+    def _tfm_repro_profile(self) -> str:
+        raw = str(os.environ.get("PANEL_TFM_REPRO_MODE", "") or "").strip().lower()
+        if raw in ("1", "true", "yes", "on", "exp3_seed0", "pdf_main_case", "tfm_pdf_main_case"):
+            return "exp3_seed0"
+        return ""
+
+    def _tfm_repro_checkpoint(self) -> str:
+        if self._tfm_repro_profile() != "exp3_seed0":
+            return ""
+        ckpt = (
+            Path(VISION_EXP_DIR).expanduser()
+            / "EXP3_RESNET18_RGB_AUGMENT"
+            / "seed_0"
+            / "checkpoints"
+            / "best.pth"
+        )
+        return str(ckpt) if ckpt.is_file() else ""
+
+    def _tfm_repro_checkpoint_meta(self) -> Dict[str, object]:
+        meta: Dict[str, object] = {
+            "experiment": "EXP3_RESNET18_RGB_AUGMENT",
+            "seed": 0,
+            "val_success": None,
+            "val_iou": None,
+        }
+        summary = (
+            Path(VISION_EXP_DIR).expanduser()
+            / "EXP3_RESNET18_RGB_AUGMENT"
+            / "best_epoch_summary.csv"
+        )
+        if not summary.exists():
+            return meta
+        try:
+            with summary.open("r", encoding="utf-8", newline="") as fh:
+                reader = csv.DictReader(fh)
+                for row in reader:
+                    try:
+                        seed_val = int(float(row.get("seed", "nan")))
+                    except Exception:
+                        continue
+                    if seed_val != 0:
+                        continue
+                    try:
+                        success = float(row.get("val_success", "nan"))
+                        meta["val_success"] = success if math.isfinite(success) else None
+                    except Exception:
+                        pass
+                    try:
+                        iou = float(row.get("val_iou", "nan"))
+                        meta["val_iou"] = iou if math.isfinite(iou) else None
+                    except Exception:
+                        pass
+                    break
+        except Exception:
+            pass
+        return meta
+
     def _discover_tfm_checkpoints(self, allow_rgbd: Optional[bool] = None) -> List[str]:
         del allow_rgbd  # Selector fijo EXP1..EXP4, independiente del checkbox depth.
+        repro_ckpt = self._tfm_repro_checkpoint()
+        if repro_ckpt:
+            self._tfm_ckpt_meta = {repro_ckpt: self._tfm_repro_checkpoint_meta()}
+            self._audit_write_json(
+                "artifacts/checkpoints_index.json",
+                {
+                    "root": str(Path(VISION_EXP_DIR).expanduser()),
+                    "count": 1,
+                    "repro_mode": self._tfm_repro_profile(),
+                    "entries": [
+                        {
+                            "path": repro_ckpt,
+                            **self._tfm_ckpt_meta[repro_ckpt],
+                        }
+                    ],
+                },
+            )
+            return [repro_ckpt]
         exp_names = (
             "EXP1_SIMPLE_RGB",
             "EXP2_SIMPLE_RGBD",
@@ -16660,6 +16757,7 @@ class ControlPanelV2(QMainWindow):
         self._last_infer_image_path = ""
         self._last_infer_output_path = ""
         self._last_cornell = None
+        self._last_tfm_postprocess_note = ""
         if self.tfm_module:
             self.tfm_module.reset()
         self._refresh_science_ui()
@@ -16681,12 +16779,15 @@ class ControlPanelV2(QMainWindow):
             "weights": "--",
             "weights_path": "",
             "config_path": "",
+            "selection_policy": "",
         }
         ckpt_value = self._tfm_ckpt_selected or INFER_CKPT
         ckpt_path = Path(ckpt_value).expanduser() if ckpt_value else None
         if ckpt_path:
             info["weights"] = ckpt_path.name
             info["weights_path"] = str(ckpt_path)
+        if self._tfm_repro_profile() == "exp3_seed0":
+            info["selection_policy"] = "modo reproducción TFM (EXP3 seed_0)"
         seed_dir = None
         exp_dir = None
         if ckpt_path and ckpt_path.exists():
@@ -16780,7 +16881,10 @@ class ControlPanelV2(QMainWindow):
             if self._cornell_metrics:
                 base_note = "Evaluación geométrica en simulación. No validación física."
                 detail = str(self._last_cornell_reason or "").strip()
-                self.lbl_cornell_note.setText(f"{base_note} {detail}" if detail else base_note)
+                postprocess_note = str(getattr(self, "_last_tfm_postprocess_note", "") or "").strip()
+                detail_parts = [part for part in (detail, postprocess_note) if part]
+                detail_txt = " ".join(detail_parts)
+                self.lbl_cornell_note.setText(f"{base_note} {detail_txt}" if detail_txt else base_note)
             else:
                 detail = self._cornell_metrics_err or "dependencia no disponible"
                 self.lbl_cornell_note.setText(f"Cornell offline: {detail}")
@@ -16799,7 +16903,11 @@ class ControlPanelV2(QMainWindow):
         if self.lbl_exp_iou:
             self.lbl_exp_iou.setText(str(self._exp_info.get("val_iou", "--")))
         if self.lbl_exp_weights:
-            self.lbl_exp_weights.setText(str(self._exp_info.get("weights", "--")))
+            weights_text = str(self._exp_info.get("weights", "--"))
+            selection_policy = str(self._exp_info.get("selection_policy", "") or "").strip()
+            if selection_policy:
+                weights_text = f"{weights_text} ({selection_policy})"
+            self.lbl_exp_weights.setText(weights_text)
         if self.lbl_perf_infer:
             avg = self._mean_history(self._perf_infer_hist)
             inst = self._perf_infer_ms

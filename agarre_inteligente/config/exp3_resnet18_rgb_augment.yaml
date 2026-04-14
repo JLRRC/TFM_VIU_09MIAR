@@ -6,8 +6,8 @@ experiment:
   description: "ResNet18Grasp RGB con augmentation"
   seeds: [0, 1, 2]
   split_protocol: "object-wise"
-  train_size_expected: 2121
-  val_size_expected: 531
+  train_size_expected: 3542
+  val_size_expected: 1569
 
 model:
   name: "ResNet18Grasp"
