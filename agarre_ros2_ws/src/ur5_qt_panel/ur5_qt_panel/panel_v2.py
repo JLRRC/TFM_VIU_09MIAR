@@ -3825,6 +3825,16 @@ class ControlPanelV2(QMainWindow):
         self.chk_tfm_use_depth.setToolTip("Se muestran EXP1-EXP4 con su mejor checkpoint")
         self.chk_tfm_use_depth.setChecked(True)
         self.chk_tfm_use_depth.setEnabled(False)
+        self.chk_tfm_repro_mode = QCheckBox("Modo reproducción TFM")
+        self.chk_tfm_repro_mode.setToolTip(
+            "Fija el caso principal documentado: EXP3_RESNET18_RGB_AUGMENT / seed_0"
+        )
+        self.chk_tfm_repro_mode.setChecked(self._tfm_repro_profile_env() == "exp3_seed0")
+        self.chk_tfm_raw_output = QCheckBox("Predicción raw (sin ajustes panel)")
+        self.chk_tfm_raw_output.setToolTip(
+            "Desactiva los ajustes heurísticos posteriores de ángulo, centro y tamaño"
+        )
+        self.chk_tfm_raw_output.setChecked(self._tfm_raw_output_env_enabled())
         self.btn_tfm_apply = QPushButton("Aplicar experimento")
         self.btn_tfm_infer = QPushButton("Inferir agarre")
         self.btn_tfm_visualize = QPushButton("Comparar grasp/ref")
@@ -3847,10 +3857,14 @@ class ControlPanelV2(QMainWindow):
         self.btn_tfm_publish.clicked.connect(self._tfm_publish_grasp)
         self.btn_tfm_reset.clicked.connect(self._tfm_reset_grasp)
         self.chk_tfm_use_depth.stateChanged.connect(lambda _state: self._refresh_tfm_checkpoint_options())
+        self.chk_tfm_repro_mode.stateChanged.connect(lambda _state: self._on_tfm_repro_mode_changed())
+        self.chk_tfm_raw_output.stateChanged.connect(lambda _state: self._on_tfm_postprocess_mode_changed())
         self._refresh_tfm_checkpoint_options()
         if not self.tfm_module:
             self.combo_tfm_experiment.setEnabled(False)
             self.chk_tfm_use_depth.setEnabled(False)
+            self.chk_tfm_repro_mode.setEnabled(False)
+            self.chk_tfm_raw_output.setEnabled(False)
             self.btn_tfm_apply.setEnabled(False)
             self.btn_tfm_infer.setEnabled(False)
             self.btn_tfm_visualize.setEnabled(False)
@@ -3884,6 +3898,8 @@ class ControlPanelV2(QMainWindow):
         tfm_col.setSpacing(6)
         tfm_col.addWidget(self.combo_tfm_experiment)
         tfm_col.addWidget(self.chk_tfm_use_depth)
+        tfm_col.addWidget(self.chk_tfm_repro_mode)
+        tfm_col.addWidget(self.chk_tfm_raw_output)
         tfm_col.addWidget(self.btn_tfm_apply)
         tfm_col.addWidget(self.btn_tfm_infer)
         tfm_col.addWidget(self.btn_tfm_visualize)
@@ -10350,11 +10366,12 @@ class ControlPanelV2(QMainWindow):
         frame_w = int(result.get("frame_w", 0))
         frame_h = int(result.get("frame_h", 0))
         roi = result.get("roi") if isinstance(result.get("roi"), (tuple, list)) else None
+        postprocess_enabled = self._tfm_postprocess_enabled()
         ref_for_size = None
         angle_adjusted = False
         center_adjusted = False
         size_adjusted = False
-        if frame_w > 0 and frame_h > 0 and roi is not None:
+        if postprocess_enabled and frame_w > 0 and frame_h > 0 and roi is not None:
             ref_for_size = self._build_reference_grasp(frame_w, frame_h)
             object_shape = str(OBJECT_SHAPES.get(self._selected_object or "", "") or "")
             pred, angle_adjusted = reconcile_inferred_grasp_angle(
@@ -10419,7 +10436,19 @@ class ControlPanelV2(QMainWindow):
                 f"selected={self._selected_object or 'none'}",
             )
         else:
-            self._last_tfm_postprocess_note = "sin ajustes panel"
+            if postprocess_enabled:
+                self._last_tfm_postprocess_note = "sin ajustes panel"
+            else:
+                self._last_tfm_postprocess_note = "postproceso desactivado (predicción raw)"
+                self._emit_log(
+                    "[TFM] postprocess disabled "
+                    f"selected={self._selected_object or 'none'} mode=raw"
+                )
+                self._audit_append(
+                    "logs/infer.log",
+                    "[TFM] infer_postprocess "
+                    f"adjustments=none selected={self._selected_object or 'none'} mode=raw_disabled",
+                )
         self._last_grasp_source = "infer_model"
         self._last_grasp_frame = self.camera_topic or "image"
         self._last_grasp_update_ts = _runtime_time()
@@ -16451,11 +16480,58 @@ class ControlPanelV2(QMainWindow):
             self._perf_ui_last_ts = now
             self._refresh_science_ui()
 
-    def _tfm_repro_profile(self) -> str:
+    def _tfm_repro_profile_env(self) -> str:
         raw = str(os.environ.get("PANEL_TFM_REPRO_MODE", "") or "").strip().lower()
         if raw in ("1", "true", "yes", "on", "exp3_seed0", "pdf_main_case", "tfm_pdf_main_case"):
             return "exp3_seed0"
         return ""
+
+    def _tfm_repro_profile(self) -> str:
+        if hasattr(self, "chk_tfm_repro_mode") and self.chk_tfm_repro_mode is not None:
+            try:
+                if bool(self.chk_tfm_repro_mode.isChecked()):
+                    return "exp3_seed0"
+                return ""
+            except Exception:
+                pass
+        return self._tfm_repro_profile_env()
+
+    def _tfm_raw_output_env_enabled(self) -> bool:
+        raw = str(os.environ.get("PANEL_TFM_RAW_OUTPUT", "") or "").strip().lower()
+        return raw in ("1", "true", "yes", "on", "raw", "disable_postprocess")
+
+    def _tfm_postprocess_enabled(self) -> bool:
+        if hasattr(self, "chk_tfm_raw_output") and self.chk_tfm_raw_output is not None:
+            try:
+                return not bool(self.chk_tfm_raw_output.isChecked())
+            except Exception:
+                pass
+        return not self._tfm_raw_output_env_enabled()
+
+    def _tfm_postprocess_policy_label(self) -> str:
+        return "ajustes panel habilitados" if self._tfm_postprocess_enabled() else "raw sin ajustes panel"
+
+    def _on_tfm_repro_mode_changed(self) -> None:
+        mode = self._tfm_repro_profile() or "best_checkpoint_auto"
+        self._tfm_experiment_applied = False
+        self._refresh_tfm_checkpoint_options()
+        self._set_status("TFM: modo de selección actualizado; reaplica experimento", error=False)
+        self._audit_append(
+            "logs/apply_experiment.log",
+            f"[TFM] selector_mode_changed mode={mode}",
+        )
+        self._refresh_controls()
+
+    def _on_tfm_postprocess_mode_changed(self) -> None:
+        policy = self._tfm_postprocess_policy_label()
+        self._set_status(f"TFM: salida configurada en {policy}", error=False)
+        self._audit_append(
+            "logs/infer.log",
+            f"[TFM] postprocess_mode_changed policy={policy}",
+        )
+        self._load_experiment_info()
+        self._refresh_science_ui()
+        self._refresh_controls()
 
     def _tfm_repro_checkpoint(self) -> str:
         if self._tfm_repro_profile() != "exp3_seed0":
@@ -16737,7 +16813,11 @@ class ControlPanelV2(QMainWindow):
         self._set_status("TFM: experimento aplicado", error=False)
         self._audit_append(
             "logs/apply_experiment.log",
-            f"[TFM] apply_experiment OK ckpt={ckpt_path} size={ckpt_info['size_bytes']} sha256={ckpt_info['sha256']} model={model_info}",
+            "[TFM] apply_experiment OK "
+            f"ckpt={ckpt_path} size={ckpt_info['size_bytes']} sha256={ckpt_info['sha256']} "
+            f"selection_policy={self._exp_info.get('selection_policy', '')} "
+            f"postprocess_policy={self._exp_info.get('postprocess_policy', '')} "
+            f"model={model_info}",
         )
 
     def _tfm_reset_grasp(self) -> None:
@@ -16780,6 +16860,7 @@ class ControlPanelV2(QMainWindow):
             "weights_path": "",
             "config_path": "",
             "selection_policy": "",
+            "postprocess_policy": self._tfm_postprocess_policy_label(),
         }
         ckpt_value = self._tfm_ckpt_selected or INFER_CKPT
         ckpt_path = Path(ckpt_value).expanduser() if ckpt_value else None
@@ -16788,6 +16869,8 @@ class ControlPanelV2(QMainWindow):
             info["weights_path"] = str(ckpt_path)
         if self._tfm_repro_profile() == "exp3_seed0":
             info["selection_policy"] = "modo reproducción TFM (EXP3 seed_0)"
+        else:
+            info["selection_policy"] = "mejor checkpoint automático"
         seed_dir = None
         exp_dir = None
         if ckpt_path and ckpt_path.exists():
@@ -16904,9 +16987,15 @@ class ControlPanelV2(QMainWindow):
             self.lbl_exp_iou.setText(str(self._exp_info.get("val_iou", "--")))
         if self.lbl_exp_weights:
             weights_text = str(self._exp_info.get("weights", "--"))
+            details: List[str] = []
             selection_policy = str(self._exp_info.get("selection_policy", "") or "").strip()
+            postprocess_policy = str(self._exp_info.get("postprocess_policy", "") or "").strip()
             if selection_policy:
-                weights_text = f"{weights_text} ({selection_policy})"
+                details.append(selection_policy)
+            if postprocess_policy:
+                details.append(postprocess_policy)
+            if details:
+                weights_text = f"{weights_text} ({' | '.join(details)})"
             self.lbl_exp_weights.setText(weights_text)
         if self.lbl_perf_infer:
             avg = self._mean_history(self._perf_infer_hist)

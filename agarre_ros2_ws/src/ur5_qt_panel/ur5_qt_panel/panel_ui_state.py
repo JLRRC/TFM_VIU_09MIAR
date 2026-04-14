@@ -323,6 +323,10 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     tfm_controls_tip = "" if tfm_action_ready else tfm_block_tip
     if hasattr(panel, "combo_tfm_experiment"):
         panel.combo_tfm_experiment.setEnabled(tfm_selector_ready)
+    if hasattr(panel, "chk_tfm_repro_mode"):
+        panel.chk_tfm_repro_mode.setEnabled(tfm_selector_ready)
+    if hasattr(panel, "chk_tfm_raw_output"):
+        panel.chk_tfm_raw_output.setEnabled(tfm_selector_ready)
     panel._set_btn_state(panel.btn_tfm_apply, tfm_selector_ready, tfm_selector_tip)
     panel._set_btn_state(panel.btn_tfm_infer, tfm_action_ready, "" if tfm_action_ready else tfm_block_tip)
     panel._set_btn_state(

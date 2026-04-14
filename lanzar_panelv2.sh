@@ -37,4 +37,4 @@ done
 
 # Lanzar el panelv2
 cd /home/laboratorio/TFM/agarre_ros2_ws
-./scripts/start_panel_v2.sh
+./scripts/start_panel_v2.sh "$@"

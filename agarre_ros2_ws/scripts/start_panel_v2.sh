@@ -152,6 +152,10 @@ while [[ $# -gt 0 ]]; do
       export PANEL_TFM_REPRO_MODE=1
       shift
       ;;
+    --tfm-raw)
+      export PANEL_TFM_RAW_OUTPUT=1
+      shift
+      ;;
     *)
       err "Argumento desconocido: $1"
       exit 2
@@ -163,6 +167,9 @@ log "WS_DIR=$WS_DIR"
 log "PANEL_CONTROLLER_MANAGER=${PANEL_CONTROLLER_MANAGER}"
 if [[ -n "${PANEL_TFM_REPRO_MODE:-}" ]]; then
   log "PANEL_TFM_REPRO_MODE=${PANEL_TFM_REPRO_MODE} (perfil EXP3 seed_0 para reproduccion TFM)"
+fi
+if [[ -n "${PANEL_TFM_RAW_OUTPUT:-}" ]]; then
+  log "PANEL_TFM_RAW_OUTPUT=${PANEL_TFM_RAW_OUTPUT} (prediccion raw sin ajustes panel)"
 fi
 
 # --- activar venv si procede ---

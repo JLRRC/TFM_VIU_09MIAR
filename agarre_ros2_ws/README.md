@@ -42,10 +42,20 @@ Modo reproduccion TFM del caso principal documentado:
 ./scripts/start_panel_v2.sh --fg --tfm-repro
 ```
 
+Prediccion raw sin ajustes del panel:
+
+```bash
+./scripts/start_panel_v2.sh --fg --tfm-raw
+```
+
 Tambien puede activarse por entorno:
 
 ```bash
 PANEL_TFM_REPRO_MODE=1 ./scripts/start_panel_v2.sh --fg
+```
+
+```bash
+PANEL_TFM_RAW_OUTPUT=1 ./scripts/start_panel_v2.sh --fg
 ```
 
 Parada limpia:
@@ -80,7 +90,8 @@ Notas importantes:
 - El selector trabaja con los experimentos `EXP1` a `EXP4`.
 - En modo normal, el panel puede autoelegir checkpoints segun `val_success`.
 - En modo `--tfm-repro`, fija el caso `EXP3_RESNET18_RGB_AUGMENT / seed_0`.
-- La UI y los logs indican ahora si la prediccion ha recibido ajustes posteriores de angulo, centro o tamano.
+- Puede ejecutarse tambien en modo `raw` sin los ajustes heurísticos posteriores del panel.
+- La UI y los logs indican ahora tanto la politica de seleccion del checkpoint como si la prediccion ha recibido ajustes posteriores de angulo, centro o tamano.
 
 ## Scripts operativos utiles
 
