@@ -287,7 +287,6 @@ from .panel_robot_presets import (
     JOINT_TABLE_POSE_RAD,
     JOINT_BASKET_POSE_RAD,
     JOINT_HOME_POSE_RAD,
-    JOINT_PICK_IMAGE_POSE_RAD,
     JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD,
     PRE_GRASP_POSE_DATA,
     GRASP_POSE_DATA,
@@ -3835,6 +3834,10 @@ class ControlPanelV2(QMainWindow):
             "Desactiva los ajustes heurísticos posteriores de ángulo, centro y tamaño"
         )
         self.chk_tfm_raw_output.setChecked(self._tfm_raw_output_env_enabled())
+        self.btn_tfm_memoria_case = QPushButton("Caso TFM Memoria")
+        self.btn_tfm_memoria_case.setToolTip(
+            "Activa de una vez EXP3_RESNET18_RGB_AUGMENT / seed_0 + salida raw y aplica el experimento"
+        )
         self.btn_tfm_apply = QPushButton("Aplicar experimento")
         self.btn_tfm_infer = QPushButton("Inferir agarre")
         self.btn_tfm_visualize = QPushButton("Comparar grasp/ref")
@@ -3844,6 +3847,7 @@ class ControlPanelV2(QMainWindow):
         self.btn_tfm_publish = QPushButton("Ejecutar agarre")
         self.btn_tfm_reset = QPushButton("Reset TFM")
         for b in (
+            self.btn_tfm_memoria_case,
             self.btn_tfm_apply,
             self.btn_tfm_infer,
             self.btn_tfm_visualize,
@@ -3852,10 +3856,12 @@ class ControlPanelV2(QMainWindow):
         ):
             b.setMinimumHeight(32)
         self.btn_tfm_apply.clicked.connect(self._tfm_apply_experiment)
+        self.btn_tfm_memoria_case.clicked.connect(self._tfm_apply_memoria_case)
         self.btn_tfm_infer.clicked.connect(self._tfm_infer_grasp)
         self.btn_tfm_visualize.clicked.connect(self._tfm_visualize_grasp)
         self.btn_tfm_publish.clicked.connect(self._tfm_publish_grasp)
         self.btn_tfm_reset.clicked.connect(self._tfm_reset_grasp)
+        self.combo_tfm_experiment.currentIndexChanged.connect(lambda _idx: self._on_tfm_checkpoint_selection_changed())
         self.chk_tfm_use_depth.stateChanged.connect(lambda _state: self._refresh_tfm_checkpoint_options())
         self.chk_tfm_repro_mode.stateChanged.connect(lambda _state: self._on_tfm_repro_mode_changed())
         self.chk_tfm_raw_output.stateChanged.connect(lambda _state: self._on_tfm_postprocess_mode_changed())
@@ -3865,6 +3871,7 @@ class ControlPanelV2(QMainWindow):
             self.chk_tfm_use_depth.setEnabled(False)
             self.chk_tfm_repro_mode.setEnabled(False)
             self.chk_tfm_raw_output.setEnabled(False)
+            self.btn_tfm_memoria_case.setEnabled(False)
             self.btn_tfm_apply.setEnabled(False)
             self.btn_tfm_infer.setEnabled(False)
             self.btn_tfm_visualize.setEnabled(False)
@@ -3900,6 +3907,7 @@ class ControlPanelV2(QMainWindow):
         tfm_col.addWidget(self.chk_tfm_use_depth)
         tfm_col.addWidget(self.chk_tfm_repro_mode)
         tfm_col.addWidget(self.chk_tfm_raw_output)
+        tfm_col.addWidget(self.btn_tfm_memoria_case)
         tfm_col.addWidget(self.btn_tfm_apply)
         tfm_col.addWidget(self.btn_tfm_infer)
         tfm_col.addWidget(self.btn_tfm_visualize)
@@ -4911,13 +4919,16 @@ class ControlPanelV2(QMainWindow):
         lbl_gripper_live = QLabel("Pinza live: --")
         lbl_object = QLabel("Objeto XYZ: --")
         lbl_start_pose = QLabel("Pose inicial robot: --")
+        lbl_history_frame_help = QLabel("Tabla STEP: Org/Cierre/Target/Exec en el frame operacional actual.")
+        lbl_history_frame_help.setWordWrap(True)
+        lbl_history_frame_help.setStyleSheet("color:#475569; font-size:12px;")
         history_table = QTableWidget(0, 15)
         history_table.setHorizontalHeaderLabels([
             "Fase", "Pinza",
-            "X Org", "Y Org", "Z Org",
-            "X Cierre", "Y Cierre", "Z Cierre",
-            "X Target", "Y Target", "Z Target",
-            "X Exec", "Y Exec", "Z Exec",
+            "Xw Org", "Yw Org", "Zw Org",
+            "Xw Cierre", "Yw Cierre", "Zw Cierre",
+            "Xw Target", "Yw Target", "Zw Target",
+            "Xw Exec", "Yw Exec", "Zw Exec",
             "Check",
         ])
         history_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -4952,6 +4963,7 @@ class ControlPanelV2(QMainWindow):
         layout.addWidget(lbl_gripper_live)
         layout.addWidget(lbl_object)
         layout.addWidget(lbl_start_pose)
+        layout.addWidget(lbl_history_frame_help)
         layout.addWidget(history_table, 1)
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
@@ -4976,6 +4988,7 @@ class ControlPanelV2(QMainWindow):
         self._step_live_gripper_label = lbl_gripper_live
         self._step_object_label = lbl_object
         self._step_start_pose_label = lbl_start_pose
+        self._step_history_frame_help_label = lbl_history_frame_help
         self._step_history_table = history_table
         self._step_continue_btn = btn_continue
         self._step_continue_help_label = lbl_continue_help
@@ -5519,6 +5532,7 @@ class ControlPanelV2(QMainWindow):
         flow_name = str(flow or "").strip().upper()
         sequences = {
             "DIRECT": [
+                "INICIO",
                 "APPROACH_COARSE",
                 "GRASP_DOWN_JOINT",
                 "GRASP_ALIGN_IK",
@@ -5573,7 +5587,7 @@ class ControlPanelV2(QMainWindow):
         phase_name = str(phase or "").strip().upper()
         intents = {
             "DIRECT": {
-                "INICIO": "Pose verificada - pulse siguiente.",
+                "INICIO": "Ir a MESA y abrir la pinza antes de la secuencia directa.",
                 "PICK_PRE_CLOSE_REF": "Ir a la referencia manual previa al cierre.",
                 "APPROACH_COARSE": "Acercarse al objeto de forma gruesa.",
                 "GRASP_DOWN_JOINT": "Bajar de forma conservadora preservando el XY útil.",
@@ -5756,6 +5770,19 @@ class ControlPanelV2(QMainWindow):
             return ("--", "--", "--")
         return (f"{float(position[0]):.3f}", f"{float(position[1]):.3f}", f"{float(position[2]):.3f}")
 
+    def _step_display_position(self, position: Optional[Tuple[float, float, float]]) -> Optional[Tuple[float, float, float]]:
+        if position is None:
+            return None
+        try:
+            pos3 = (float(position[0]), float(position[1]), float(position[2]))
+        except Exception:
+            return None
+        try:
+            wx, wy, wz = base_to_world(pos3[0], pos3[1], pos3[2])
+            return (float(wx), float(wy), float(wz))
+        except Exception:
+            return pos3
+
     def _step_format_inline_xyz(self, position: Optional[Tuple[float, float, float]]) -> str:
         x, y, z = self._step_format_xyz(position)
         if x == "--":
@@ -5913,12 +5940,7 @@ class ControlPanelV2(QMainWindow):
                 # Sin fallback a caché stale: si TF no devuelve pose, actual queda None
                 # y la tabla muestra PEND en vez de datos inventados.
                 last_row["actual"] = actual_pose
-                # INICIO es fase de verificación (no movimiento): su resultado siempre
-                # es OK — el usuario confirmó la pose al pulsar Sigue.
-                if last_phase == first_phase:
-                    last_row["reached"] = True
-                else:
-                    last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
+                last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
             elif last_phase != phase_name and last_row.get("actual") is not None:
                 self._emit_log(
                     "[STEP][ROW_FROZEN] "
@@ -6095,7 +6117,7 @@ class ControlPanelV2(QMainWindow):
         self._step_pending_phase = f"{flow_name}.{first_phase}"
         self._step_current_phase = first_phase
         self._step_next_phase = self._step_predict_next_phase(flow_name, first_phase)
-        self._step_decision = "INICIO - Pose verificada - pulse siguiente"
+        self._step_decision = "INICIO - Ir a MESA y abrir la pinza antes de continuar"
         self._step_phase_position = pos3_target
 
         # Abrir ventana, mostrar fila, deshabilitar "Sigue" (worker aún no arrancó)
@@ -6164,15 +6186,18 @@ class ControlPanelV2(QMainWindow):
                     + ". Al terminar, el flujo avanzará al siguiente estado."
                 )
         if self._step_target_label is not None:
+            world_frame = self._world_frame_last_first()
             self._step_target_label.setText(
                 self._step_live_pose_text(
-                    "XYZ objetivo de fase",
-                    getattr(self, "_step_target_frame", "") or getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center",
-                    self._step_phase_position,
+                    "XYZ objetivo de fase (world)",
+                    world_frame,
+                    self._step_display_position(self._step_phase_position),
                 )
             )
         operational_frame = self._step_operational_frame_name()
+        world_frame = self._world_frame_last_first()
         operational_live = self._step_fetch_live_pose(operational_frame)
+        operational_live_display = self._step_display_position(operational_live)
         # Sin fallback a caché stale: si TF no disponible, el label muestra "--"
         if operational_live is not None:
             self._emit_log(
@@ -6182,13 +6207,14 @@ class ControlPanelV2(QMainWindow):
             )
         if self._step_live_operational_label is not None:
             self._step_live_operational_label.setText(
-                self._step_live_pose_text("XYZ actual de la pinza", operational_frame, operational_live)
+                self._step_live_pose_text("XYZ actual de la pinza (world)", world_frame, operational_live_display)
             )
         visual_frame = "tool0"
         visual_live = self._step_fetch_live_pose(visual_frame)
+        visual_live_display = self._step_display_position(visual_live)
         if self._step_live_visual_label is not None:
             self._step_live_visual_label.setText(
-                self._step_live_pose_text("XYZ base gripper (tool0)", visual_frame, visual_live)
+                self._step_live_pose_text("XYZ visual de la pinza (world)", world_frame, visual_live_display)
             )
         if self._step_gripper_expected_label is not None:
             current_flow = str(self._step_pending_flow or "").strip()
@@ -6203,14 +6229,21 @@ class ControlPanelV2(QMainWindow):
             )
         if self._step_object_label is not None:
             self._step_object_label.setText(
-                f"Objeto XYZ: {self._step_format_inline_xyz(self._step_object_position)}"
+                f"Objeto XYZ (world): {self._step_format_inline_xyz(self._step_display_position(self._step_object_position))}"
             )
         if self._step_start_pose_label is not None:
             trigger = str(self._step_start_trigger or "").strip() or "--"
-            xyz_txt = self._step_format_inline_xyz(self._step_start_pose_base)
+            xyz_txt = self._step_format_inline_xyz(self._step_display_position(self._step_start_pose_base))
             rpy_txt = self._step_format_inline_rpy(self._step_start_pose_rpy_deg)
             self._step_start_pose_label.setText(
-                f"Pose inicial robot: {xyz_txt} | RPY: {rpy_txt} | botón: {trigger}"
+                f"Pose inicial robot (world): {xyz_txt} | frame: {world_frame} | RPY: {rpy_txt} | botón: {trigger}"
+            )
+        if getattr(self, "_step_history_frame_help_label", None) is not None:
+            self._step_history_frame_help_label.setText(
+                "Tabla STEP: "
+                f"Org/Cierre/Target/Exec mostrados en {world_frame}. "
+                f"Internamente se calculan en {operational_frame}@{self._business_base_frame()}. "
+                "Org=pose al abrir la fase, Cierre=pose al terminar, Target=destino planificado, Exec=destino realmente enviado."
             )
         if self._step_history_table is not None:
             self._step_history_table.setRowCount(len(self._step_history_rows))
@@ -6233,14 +6266,18 @@ class ControlPanelV2(QMainWindow):
                 # Target: destino teórico de la fase (calculado al planificar).
                 # Exec: target efectivo enviado al IK/movimiento (fijado por _step_set_exec_target).
                 exec3 = row_data.get("exec_target_snapshot")
+                org3_display = self._step_display_position(org3)
+                cierre3_display = self._step_display_position(cierre3)
+                pos3_display = self._step_display_position(pos3)
+                exec3_display = self._step_display_position(exec3)
                 display_phase = f"{phase_name} - {self._step_phase_intent(self._step_history_flow, phase_name)}"
                 expected_gripper = self._step_phase_gripper_state(self._step_history_flow, phase_name)
                 values = (
                     (display_phase, expected_gripper)
-                    + self._step_format_xyz(org3)
-                    + self._step_format_xyz(cierre3)
-                    + self._step_format_xyz(pos3)
-                    + self._step_format_xyz(exec3)
+                    + self._step_format_xyz(org3_display)
+                    + self._step_format_xyz(cierre3_display)
+                    + self._step_format_xyz(pos3_display)
+                    + self._step_format_xyz(exec3_display)
                 )
                 for col_idx, value in enumerate(values):
                     item = QTableWidgetItem(value)
@@ -6375,14 +6412,7 @@ class ControlPanelV2(QMainWindow):
             if len(self._step_history_rows) >= 2:
                 _prev_row = self._step_history_rows[-2]
                 _curr_snap = self._step_history_rows[-1].get("origin_snapshot")
-                _prev_phase_name = str(_prev_row.get("phase") or "").strip().upper()
-                _phase_seq = self._step_phase_sequence(flow_name)
-                if _phase_seq and _prev_phase_name == _phase_seq[0]:
-                    # INICIO: actual ya está pre-fijado como home en _step_pre_insert_inicio_row.
-                    # No sobreescribir con el Org de APPROACH (posición post-PICK_IMAGE),
-                    # ya que INICIO cierra cuando el robot aún está en home (antes de PICK_IMAGE).
-                    _prev_row["reached"] = True
-                elif _curr_snap is not None:
+                if _curr_snap is not None:
                     # Invariante Cierre[N] == Origen[N+1] para el resto de fases.
                     _prev_row["actual"] = _curr_snap
                     _prev_row["reached"] = self._step_assess_target_reached(
@@ -10355,6 +10385,33 @@ class ControlPanelV2(QMainWindow):
         ).strip()
         self._last_infer_image_path = str(result.get("image_path") or "")
         self._last_infer_output_path = str(result.get("out_path") or "")
+        infer_ckpt_path = str(result.get("ckpt_path") or "")
+        infer_selection_policy = str(result.get("selection_policy") or "")
+        infer_postprocess_policy = str(result.get("postprocess_policy") or "")
+        infer_model_info = result.get("model_info") if isinstance(result.get("model_info"), dict) else {}
+        infer_experiment = str(self._exp_info.get("experiment", "--"))
+        infer_seed: object = self._exp_info.get("seed", "--")
+        infer_meta = getattr(self, "_tfm_ckpt_meta", {}).get(infer_ckpt_path, {}) if infer_ckpt_path else {}
+        if isinstance(infer_meta, dict):
+            exp_meta = str(infer_meta.get("experiment") or "").strip()
+            if exp_meta:
+                infer_experiment = exp_meta
+            seed_meta = infer_meta.get("seed")
+            if seed_meta is not None:
+                infer_seed = seed_meta
+        if infer_ckpt_path:
+            infer_path = Path(infer_ckpt_path).expanduser()
+            if infer_path.parent.name == "checkpoints":
+                seed_dir = infer_path.parent.parent
+                exp_dir = seed_dir.parent
+            else:
+                seed_dir = infer_path.parent
+                exp_dir = seed_dir.parent if seed_dir.name.startswith("seed_") else None
+            if exp_dir and exp_dir.name:
+                infer_experiment = exp_dir.name
+            seed_match = re.match(r"seed_(\d+)", seed_dir.name) if infer_ckpt_path else None
+            if seed_match:
+                infer_seed = seed_match.group(1)
         try:
             self._last_infer_frame_ts = float(result.get("frame_ts", 0.0) or 0.0)
         except Exception:
@@ -10516,6 +10573,16 @@ class ControlPanelV2(QMainWindow):
             "session": self._infer_session_id,
             "status": "OK",
             "source": self._last_grasp_source,
+            "experiment": {
+                "selection_policy": infer_selection_policy,
+                "postprocess_policy": infer_postprocess_policy,
+                "checkpoint_path": infer_ckpt_path,
+                "experiment": infer_experiment,
+                "seed": infer_seed,
+                "model": self._exp_info.get("model", "--"),
+                "modality": self._exp_info.get("modality", "--"),
+                "model_info": infer_model_info,
+            },
             "visual_grasp": {
                 "topic": self._grasp_rect_topic,
                 "msg_type": "std_msgs/msg/Float32MultiArray",
@@ -16524,7 +16591,8 @@ class ControlPanelV2(QMainWindow):
 
     def _on_tfm_postprocess_mode_changed(self) -> None:
         policy = self._tfm_postprocess_policy_label()
-        self._set_status(f"TFM: salida configurada en {policy}", error=False)
+        self._tfm_experiment_applied = False
+        self._set_status(f"TFM: salida configurada en {policy}; reaplica experimento", error=False)
         self._audit_append(
             "logs/infer.log",
             f"[TFM] postprocess_mode_changed policy={policy}",
@@ -16532,6 +16600,47 @@ class ControlPanelV2(QMainWindow):
         self._load_experiment_info()
         self._refresh_science_ui()
         self._refresh_controls()
+
+    def _on_tfm_checkpoint_selection_changed(self) -> None:
+        if bool(getattr(self, "_tfm_refreshing_ckpt_combo", False)):
+            return
+        ckpt_path = self._tfm_get_ckpt_path()
+        self._tfm_ckpt_selected = ckpt_path
+        self._tfm_experiment_applied = False
+        self._load_experiment_info()
+        self._refresh_science_ui()
+        self._refresh_controls()
+        label = Path(ckpt_path).name if ckpt_path else "sin checkpoint"
+        self._set_status(f"TFM: checkpoint seleccionado ({label}); reaplica experimento", error=False)
+        self._audit_append(
+            "logs/apply_experiment.log",
+            f"[TFM] checkpoint_selection_changed ckpt={ckpt_path}",
+        )
+
+    def _tfm_apply_memoria_case(self) -> None:
+        self._log_button("TFM Caso Memoria")
+        changed = False
+        if hasattr(self, "chk_tfm_repro_mode") and self.chk_tfm_repro_mode is not None:
+            try:
+                if not bool(self.chk_tfm_repro_mode.isChecked()):
+                    self.chk_tfm_repro_mode.setChecked(True)
+                    changed = True
+            except Exception:
+                pass
+        if hasattr(self, "chk_tfm_raw_output") and self.chk_tfm_raw_output is not None:
+            try:
+                if not bool(self.chk_tfm_raw_output.isChecked()):
+                    self.chk_tfm_raw_output.setChecked(True)
+                    changed = True
+            except Exception:
+                pass
+        self._audit_append(
+            "logs/apply_experiment.log",
+            "[TFM] memoria_case preset=EXP3_RESNET18_RGB_AUGMENT/seed_0 postprocess=raw "
+            f"changed={str(bool(changed)).lower()}",
+        )
+        self._set_status("TFM: preset memoria activado; aplicando experimento", error=False)
+        self._tfm_apply_experiment()
 
     def _tfm_repro_checkpoint(self) -> str:
         if self._tfm_repro_profile() != "exp3_seed0":
@@ -16551,6 +16660,9 @@ class ControlPanelV2(QMainWindow):
             "seed": 0,
             "val_success": None,
             "val_iou": None,
+            "val_loss": None,
+            "selection_basis": "val_success",
+            "role": "oficial",
         }
         summary = (
             Path(VISION_EXP_DIR).expanduser()
@@ -16584,8 +16696,75 @@ class ControlPanelV2(QMainWindow):
             pass
         return meta
 
+    @staticmethod
+    def _tfm_is_aux_experiment(exp_name: str) -> bool:
+        return exp_name.startswith("EXP1.1_") or exp_name.startswith("EXP1.2_")
+
+    def _tfm_select_seed_from_summary(self, exp_name: str, summary_path: Path) -> Tuple[Optional[int], Optional[float], Optional[float], Optional[float], str]:
+        best_seed: Optional[int] = None
+        best_success: Optional[float] = None
+        best_iou: Optional[float] = None
+        best_loss: Optional[float] = None
+        selection_basis = "val_success"
+        rows: List[Dict[str, float]] = []
+
+        try:
+            with summary_path.open("r", encoding="utf-8", newline="") as fh:
+                reader = csv.DictReader(fh)
+                for row in reader:
+                    try:
+                        seed_val = float(row.get("seed", "nan"))
+                    except Exception:
+                        continue
+                    if not math.isfinite(seed_val):
+                        continue
+                    parsed: Dict[str, float] = {"seed": float(int(seed_val))}
+                    for key in ("val_success", "val_iou", "val_loss"):
+                        try:
+                            value = float(row.get(key, "nan"))
+                        except Exception:
+                            value = float("nan")
+                        parsed[key] = value
+                    rows.append(parsed)
+        except Exception:
+            return best_seed, best_success, best_iou, best_loss, selection_basis
+
+        if not rows:
+            return best_seed, best_success, best_iou, best_loss, selection_basis
+
+        rows_with_success = [row for row in rows if math.isfinite(row["val_success"])]
+        positive_success = [row for row in rows_with_success if row["val_success"] > 0.0]
+
+        chosen: Optional[Dict[str, float]] = None
+        if positive_success:
+            chosen = sorted(
+                positive_success,
+                key=lambda row: (
+                    row["val_success"],
+                    row["val_iou"] if math.isfinite(row["val_iou"]) else float("-inf"),
+                    -(row["val_loss"] if math.isfinite(row["val_loss"]) else float("inf")),
+                ),
+                reverse=True,
+            )[0]
+        elif self._tfm_is_aux_experiment(exp_name):
+            rows_with_loss = [row for row in rows if math.isfinite(row["val_loss"])]
+            if rows_with_loss:
+                chosen = min(rows_with_loss, key=lambda row: row["val_loss"])
+                selection_basis = "val_loss"
+        elif rows_with_success:
+            chosen = max(rows_with_success, key=lambda row: row["val_success"])
+
+        if chosen is None:
+            chosen = rows[0]
+
+        best_seed = int(chosen["seed"])
+        best_success = chosen["val_success"] if math.isfinite(chosen["val_success"]) else None
+        best_iou = chosen["val_iou"] if math.isfinite(chosen["val_iou"]) else None
+        best_loss = chosen["val_loss"] if math.isfinite(chosen["val_loss"]) else None
+        return best_seed, best_success, best_iou, best_loss, selection_basis
+
     def _discover_tfm_checkpoints(self, allow_rgbd: Optional[bool] = None) -> List[str]:
-        del allow_rgbd  # Selector fijo EXP1..EXP4, independiente del checkbox depth.
+        del allow_rgbd  # Selector fijo EXP1..EXP4 + EXP1.1/EXP1.2, independiente del checkbox depth.
         repro_ckpt = self._tfm_repro_checkpoint()
         if repro_ckpt:
             self._tfm_ckpt_meta = {repro_ckpt: self._tfm_repro_checkpoint_meta()}
@@ -16609,6 +16788,8 @@ class ControlPanelV2(QMainWindow):
             "EXP2_SIMPLE_RGBD",
             "EXP3_RESNET18_RGB_AUGMENT",
             "EXP4_RESNET18_RGBD",
+            "EXP1.1_SIMPLEGRASP_RGB",
+            "EXP1.2_SIMPLEGRASP_RGBD",
         )
         exp_root = Path(VISION_EXP_DIR).expanduser()
         ckpts: List[str] = []
@@ -16622,29 +16803,11 @@ class ControlPanelV2(QMainWindow):
             best_seed: Optional[int] = None
             best_success: Optional[float] = None
             best_iou: Optional[float] = None
+            best_loss: Optional[float] = None
+            selection_basis = "val_success"
             summary = exp_dir / "best_epoch_summary.csv"
             if summary.exists():
-                try:
-                    with summary.open("r", encoding="utf-8", newline="") as fh:
-                        reader = csv.DictReader(fh)
-                        for row in reader:
-                            try:
-                                success = float(row.get("val_success", "nan"))
-                                seed_val = float(row.get("seed", "nan"))
-                            except Exception:
-                                continue
-                            if not math.isfinite(success) or not math.isfinite(seed_val):
-                                continue
-                            if best_success is None or success > best_success:
-                                best_success = success
-                                best_seed = int(seed_val)
-                                try:
-                                    iou = float(row.get("val_iou", "nan"))
-                                    best_iou = iou if math.isfinite(iou) else None
-                                except Exception:
-                                    best_iou = None
-                except Exception:
-                    pass
+                best_seed, best_success, best_iou, best_loss, selection_basis = self._tfm_select_seed_from_summary(exp_name, summary)
 
             candidates: List[Path] = []
             if best_seed is not None:
@@ -16661,6 +16824,9 @@ class ControlPanelV2(QMainWindow):
                 "seed": best_seed,
                 "val_success": best_success,
                 "val_iou": best_iou,
+                "val_loss": best_loss,
+                "selection_basis": selection_basis,
+                "role": "auxiliar 4.6.2" if self._tfm_is_aux_experiment(exp_name) else "oficial",
             }
 
         self._tfm_ckpt_meta = ckpt_meta
@@ -16676,6 +16842,9 @@ class ControlPanelV2(QMainWindow):
                         "seed": ckpt_meta.get(ckpt, {}).get("seed"),
                         "val_success": ckpt_meta.get(ckpt, {}).get("val_success"),
                         "val_iou": ckpt_meta.get(ckpt, {}).get("val_iou"),
+                        "val_loss": ckpt_meta.get(ckpt, {}).get("val_loss"),
+                        "selection_basis": ckpt_meta.get(ckpt, {}).get("selection_basis"),
+                        "role": ckpt_meta.get(ckpt, {}).get("role"),
                     }
                     for ckpt in ckpts
                 ],
@@ -16718,17 +16887,21 @@ class ControlPanelV2(QMainWindow):
             self._load_experiment_info()
             self._refresh_science_ui()
             return
+        self._tfm_refreshing_ckpt_combo = True
         self.combo_tfm_experiment.clear()
-        if self._tfm_ckpt_options:
-            for ckpt in self._tfm_ckpt_options:
-                self.combo_tfm_experiment.addItem(self._format_ckpt_label(ckpt), ckpt)
-            if self._tfm_ckpt_selected:
-                idx = self.combo_tfm_experiment.findData(self._tfm_ckpt_selected)
-                if idx >= 0:
-                    self.combo_tfm_experiment.setCurrentIndex(idx)
-                    self._tfm_ckpt_selected = str(self.combo_tfm_experiment.itemData(idx) or self._tfm_ckpt_selected)
-        else:
-            self.combo_tfm_experiment.addItem("Sin checkpoints encontrados", "")
+        try:
+            if self._tfm_ckpt_options:
+                for ckpt in self._tfm_ckpt_options:
+                    self.combo_tfm_experiment.addItem(self._format_ckpt_label(ckpt), ckpt)
+                if self._tfm_ckpt_selected:
+                    idx = self.combo_tfm_experiment.findData(self._tfm_ckpt_selected)
+                    if idx >= 0:
+                        self.combo_tfm_experiment.setCurrentIndex(idx)
+                        self._tfm_ckpt_selected = str(self.combo_tfm_experiment.itemData(idx) or self._tfm_ckpt_selected)
+            else:
+                self.combo_tfm_experiment.addItem("Sin checkpoints encontrados", "")
+        finally:
+            self._tfm_refreshing_ckpt_combo = False
         self._load_experiment_info()
         self._refresh_science_ui()
 
@@ -16738,17 +16911,30 @@ class ControlPanelV2(QMainWindow):
         if exp_name:
             seed = meta.get("seed")
             success = meta.get("val_success")
+            val_loss = meta.get("val_loss")
+            selection_basis = str(meta.get("selection_basis") or "val_success").strip()
+            role = str(meta.get("role") or "").strip()
             success_txt = "--"
             try:
                 if success is not None and math.isfinite(float(success)):
                     success_txt = f"{float(success) * 100.0:.1f}%"
             except Exception:
                 success_txt = "--"
+            loss_txt = "--"
+            try:
+                if val_loss is not None and math.isfinite(float(val_loss)):
+                    loss_txt = f"{float(val_loss):.3f}"
+            except Exception:
+                loss_txt = "--"
             if isinstance(seed, (int, float)) and math.isfinite(float(seed)):
                 seed_txt = f"seed_{int(float(seed))}"
             else:
                 seed_txt = "seed_?"
-            return f"{exp_name} | mejor {seed_txt} | acierto {success_txt}"
+            metric_txt = f"acierto {success_txt}"
+            if selection_basis == "val_loss":
+                metric_txt = f"val_loss {loss_txt}"
+            role_txt = f" | {role}" if role else ""
+            return f"{exp_name} | mejor {seed_txt} | {metric_txt}{role_txt}"
         path = Path(ckpt_path)
         if path.parent.name == "checkpoints" and path.parent.parent.name:
             return f"{path.parent.parent.name}/{path.name}"
@@ -16801,6 +16987,27 @@ class ControlPanelV2(QMainWindow):
                 self._tfm_preprocessed_cache = None
         model_info = self.tfm_module.model_info() if self.tfm_module else {}
         self._load_experiment_info()
+        self._audit_write_json(
+            "artifacts/tfm_session_last.json",
+            {
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "status": "OK",
+                "selection_policy": self._exp_info.get("selection_policy", ""),
+                "postprocess_policy": self._exp_info.get("postprocess_policy", ""),
+                "experiment": self._exp_info.get("experiment", "--"),
+                "experiment_base": self._exp_info.get("experiment_base", "--"),
+                "seed": self._exp_info.get("seed", "--"),
+                "model": self._exp_info.get("model", "--"),
+                "modality": self._exp_info.get("modality", "--"),
+                "epoch": self._exp_info.get("epoch", "--"),
+                "config_path": self._exp_info.get("config_path", ""),
+                "weights_path": self._exp_info.get("weights_path", ckpt_path),
+                "val_success_pct": self._exp_info.get("val_success_pct", "--"),
+                "val_iou": self._exp_info.get("val_iou", "--"),
+                "checkpoint": ckpt_info,
+                "model_info": model_info,
+            },
+        )
         self._refresh_science_ui()
         try:
             camera_ctrl = getattr(self, "_camera_ctrl", None)
@@ -16914,6 +17121,9 @@ class ControlPanelV2(QMainWindow):
         if isinstance(meta, dict):
             success = meta.get("val_success")
             iou = meta.get("val_iou")
+            val_loss = meta.get("val_loss")
+            selection_basis = str(meta.get("selection_basis") or "").strip()
+            role = str(meta.get("role") or "").strip()
             try:
                 if success is not None and math.isfinite(float(success)):
                     info["val_success_pct"] = f"{float(success) * 100.0:.1f}%"
@@ -16924,6 +17134,16 @@ class ControlPanelV2(QMainWindow):
                     info["val_iou"] = f"{float(iou):.3f}"
             except Exception:
                 pass
+            if role:
+                info["selection_policy"] = f"{info['selection_policy']} | {role}"
+                if role == "auxiliar 4.6.2":
+                    info["experiment"] = f"{info['experiment']} [Aux 4.6.2]"
+            if selection_basis == "val_loss":
+                try:
+                    if val_loss is not None and math.isfinite(float(val_loss)):
+                        info["selection_policy"] = f"{info['selection_policy']} | semilla elegida por val_loss={float(val_loss):.3f}"
+                except Exception:
+                    pass
         if ckpt_path and ckpt_path.exists():
             try:
                 import torch  # type: ignore

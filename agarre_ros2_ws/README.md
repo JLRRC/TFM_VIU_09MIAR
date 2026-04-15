@@ -87,10 +87,14 @@ El panel incluye un bloque dedicado al TFM con este flujo base:
 
 Notas importantes:
 
-- El selector trabaja con los experimentos `EXP1` a `EXP4`.
+- El selector trabaja con `EXP1` a `EXP4` y tambien permite usar `EXP1.1` y `EXP1.2` para inferencia.
 - En modo normal, el panel puede autoelegir checkpoints segun `val_success`.
+- Para `EXP1.1` y `EXP1.2`, si `val_success` no discrimina entre seeds, el panel prioriza la seed con mejor `val_loss` para que la inferencia auxiliar no quede fijada de forma arbitraria en la primera epoca.
 - En modo `--tfm-repro`, fija el caso `EXP3_RESNET18_RGB_AUGMENT / seed_0`.
 - Puede ejecutarse tambien en modo `raw` sin los ajustes heurísticos posteriores del panel.
+- El boton `Caso TFM Memoria` deja activado de una vez `EXP3 seed_0 + raw` y aplica el experimento.
+- `EXP1.1` y `EXP1.2` estan expuestos en el panel como variantes auxiliares de inferencia; no forman parte de la recreacion oficial de resultados del TFM.
+- Cuando se cargan en panel, la ficha del experimento los muestra como `Aux 4.6.2` para reforzar esa distincion.
 - La UI y los logs indican ahora tanto la politica de seleccion del checkpoint como si la prediccion ha recibido ajustes posteriores de angulo, centro o tamano.
 
 ## Scripts operativos utiles
@@ -111,9 +115,22 @@ Validacion y diagnostico:
 - `scripts/validate_pick_3_cycles.sh`
 - `scripts/panel_block_smoke_test.sh`
 - `scripts/tfm_smoketest.py`
+- `scripts/export_tfm_evidence.py`
 - `scripts/diag_tf_tcp.sh`
 - `scripts/diag_startup_health.sh`
 - `scripts/audit_moveit2_system.py`
+
+Validacion corta del caso TFM documentado:
+
+```bash
+python3 ./scripts/tfm_smoketest.py --check-session --require-repro --require-raw
+```
+
+Exportar la evidencia mas reciente del panel TFM:
+
+```bash
+python3 ./scripts/export_tfm_evidence.py
+```
 
 Benchmark y trazas:
 
@@ -138,5 +155,13 @@ Benchmark y trazas:
 - Evidencias curadas del sistema ROS 2: `../reports/evidence/ros2/`
 - Evidencias del bloque del TFM en resultados: `../reports/evidence/chapter5/`
 - Logs de reproducibilidad: `../reports/logs/reproducibility/`
+
+Artefactos operativos utiles del panel:
+
+- `../auditoria/panel_audit/artifacts/tfm_session_last.json`: ultima aplicacion efectiva de experimento TFM.
+- `../auditoria/panel_audit/artifacts/grasp_last.json`: ultima inferencia con contexto experimental y metrica Cornell.
+- `../auditoria/panel_audit/logs/apply_experiment.log`
+- `../auditoria/panel_audit/logs/infer.log`
+- `../reports/evidence/ros2/tfm_session_exports/`: exportaciones curadas de sesiones TFM listas para compartir o revisar.
 
 La fuente editable del workspace esta en `src/`, `scripts/`, `worlds/` y `models/`. Los artefactos de compilacion o de ejecucion no deben editarse a mano.

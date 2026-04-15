@@ -36,8 +36,8 @@ CONFIG_BY_EXPERIMENT = {
     "EXP2_SIMPLE_RGBD": PROJECT_ROOT / "config" / "exp2_simple_rgbd.yaml",
     "EXP3_RESNET18_RGB_AUGMENT": PROJECT_ROOT / "config" / "exp3_resnet18_rgb_augment.yaml",
     "EXP4_RESNET18_RGBD": PROJECT_ROOT / "config" / "exp4_resnet18_rgbd.yaml",
-    "EXP5_SIMPLEGRASP_RGB": PROJECT_ROOT / "config" / "exp5_simplegrasp_rgb.yaml",
-    "EXP6_SIMPLEGRASP_RGBD": PROJECT_ROOT / "config" / "exp6_simplegrasp_rgbd.yaml",
+    "EXP1.1_SIMPLEGRASP_RGB": PROJECT_ROOT / "config" / "exp1_1_simplegrasp_rgb.yaml",
+    "EXP1.2_SIMPLEGRASP_RGBD": PROJECT_ROOT / "config" / "exp1_2_simplegrasp_rgbd.yaml",
 }
 
 DEFAULT_OUTPUT_DIR = WORKSPACE_ROOT / "reports" / "figures" / "chapter5"

@@ -31,7 +31,13 @@ for cfg in "${configs[@]}"; do
 done
 
 echo "[2/6] Seleccionando best_epoch por experimento..."
-for exp_dir in experiments/EXP*; do
+official_experiments=(
+  "experiments/EXP1_SIMPLE_RGB"
+  "experiments/EXP2_SIMPLE_RGBD"
+  "experiments/EXP3_RESNET18_RGB_AUGMENT"
+  "experiments/EXP4_RESNET18_RGBD"
+)
+for exp_dir in "${official_experiments[@]}"; do
   [[ -d "$exp_dir" ]] || continue
   python3 scripts/select_best_epoch.py --experiment-dir "$exp_dir"
 done
@@ -42,10 +48,13 @@ python3 scripts/summarize_results.py --experiments-root experiments --output rep
 echo "[4/6] Generando figuras..."
 python3 scripts/generate_figures.py --experiments-root experiments --summary reports/tables/summary_results.csv --out-dir reports/figures
 
-echo "[5/6] Generando tablas..."
+echo "[5/7] Validando scope oficial..."
+python3 scripts/validate_official_scope.py --summary reports/tables/summary_results.csv --results-by-seed reports/tables/results_by_seed.csv
+
+echo "[6/7] Generando tablas..."
 python3 scripts/generate_tables.py --summary reports/tables/summary_results.csv --out-dir reports/tables
 
-echo "[6/6] Validación de artefactos..."
+echo "[7/7] Validación de artefactos..."
 python3 scripts/validate_artifacts.py --strict
 
 echo "[OK] Bloque TFM regenerado"

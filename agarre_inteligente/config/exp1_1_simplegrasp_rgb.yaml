@@ -1,12 +1,12 @@
-# EXP5_SIMPLEGRASP_RGB
+# EXP1.1_SIMPLEGRASP_RGB
 # Modelo SimpleGrasp alineado con la arquitectura del TFM
 
 experiment:
-  name: "EXP5_SIMPLEGRASP_RGB"
-  description: "SimpleGrasp con RGB"
+  name: "EXP1.1_SIMPLEGRASP_RGB"
+  description: "EXP1.1 - SimpleGrasp con RGB"
   seeds: [0, 1, 2]
   split_protocol: "object-wise"
-  train_size_expected: 3542
+  train_size_expected: 3541
   val_size_expected: 1569
 
 model:

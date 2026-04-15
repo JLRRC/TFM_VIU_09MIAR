@@ -46,6 +46,17 @@ Regenerar la tabla de latencia de inferencia:
 - Integracion ROS 2 y panel: `agarre_ros2_ws/`
 - Figuras, tablas y metricas que respaldan la memoria: `reports/`
 
+En vision conviven dos familias ligeras:
+
+- `EXP1` y `EXP2`: referencia de resultados de la memoria; son los experimentos realmente usados en tablas, figuras y comparativas.
+- `EXP1.1` y `EXP1.2`: referencia de implementacion teorica; materializan en codigo el diseño objetivo descrito en `4.6.2`.
+
+Notas de rigor:
+
+- La recreacion oficial del TFM se mantiene sobre `EXP1..EXP4`.
+- `EXP1.1` y `EXP1.2` se conservan para trazabilidad teorica e inferencia en panel, sin reinterpretar retroactivamente los resultados ya presentados en la memoria.
+- El split Cornell operativo actual del workspace es `3541/1569`, coherente con los CSV activos y con la validacion interna del pipeline.
+
 ## Convenciones utiles
 
 - El codigo editable vive sobre todo en `agarre_inteligente/` y `agarre_ros2_ws/src/`.

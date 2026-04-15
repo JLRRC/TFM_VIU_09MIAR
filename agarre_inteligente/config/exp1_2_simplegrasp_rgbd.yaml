@@ -1,12 +1,12 @@
-# EXP6_SIMPLEGRASP_RGBD
+# EXP1.2_SIMPLEGRASP_RGBD
 # Modelo SimpleGrasp alineado con la arquitectura del TFM
 
 experiment:
-  name: "EXP6_SIMPLEGRASP_RGBD"
-  description: "SimpleGrasp con RGB-D y augmentation moderado"
+  name: "EXP1.2_SIMPLEGRASP_RGBD"
+  description: "EXP1.2 - SimpleGrasp con RGB-D y augmentation moderado"
   seeds: [0, 1, 2]
   split_protocol: "object-wise"
-  train_size_expected: 3542
+  train_size_expected: 3541
   val_size_expected: 1569
 
 model:

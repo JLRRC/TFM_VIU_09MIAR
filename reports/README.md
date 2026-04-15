@@ -28,8 +28,22 @@ Directorio curado del documento del TFM y de los artefactos que respaldan la mem
   - `evidence/chapter5/`
 - Evidencia ROS 2 y auditoria del panel:
   - `evidence/ros2/`
+  - `evidence/ros2/tfm_panel_repro_seed0_raw_trace_20260415.md`
+  - `evidence/ros2/tfm_session_exports/`
+- Nota de rigor del workspace:
+  - `evidence/workspace_rigour_notes_20260415.md`
+- Trazabilidad de `EXP1.1` y `EXP1.2` como implementacion de `4.6.2`:
+  - `evidence/exp1_1_exp1_2_theoretical_implementation_trace_20260415.md`
 - Logs de regeneracion y trazabilidad:
   - `logs/reproducibility/`
+
+## Notas de rigor del workspace
+
+- El split Cornell operativo actual queda fijado en `3541` muestras de entrenamiento y `1569` de validacion.
+- Esta cifra sustituye a recuentos historicos mas altos porque el `train.csv` activo se saneo para eliminar una fila corrupta con valores no finitos; el objetivo es que el CSV y el dataset realmente cargado coincidan sin ambiguedad.
+- La recreacion oficial del TFM sigue referida a `EXP1`, `EXP2`, `EXP3` y `EXP4`.
+- `EXP1.1` y `EXP1.2` quedan en el workspace como implementacion en codigo del diseño teorico descrito en `4.6.2`, pero no forman parte de las tablas y figuras oficiales del documento.
+- En el panel pueden usarse para inferencia como variantes auxiliares, sin mezclar su uso con la reproduccion oficial del bloque experimental de la memoria.
 
 ## Uso esperado
 
