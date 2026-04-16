@@ -670,10 +670,12 @@ class UR5MoveItBridge(Node):
         "shoulder_pan_joint",
         "shoulder_lift_joint",
         "elbow_joint",
+        "wrist_2_joint",
     )
 
     _APPROACH_PATH_CONSTRAINT_JOINTS = (
         "shoulder_pan_joint",
+        "wrist_2_joint",
     )
 
     _START_STATE_JOINTS = (
