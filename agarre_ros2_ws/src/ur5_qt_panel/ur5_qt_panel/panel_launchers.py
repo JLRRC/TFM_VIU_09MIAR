@@ -685,7 +685,7 @@ def start_moveit(panel):
         return
     if not panel._ros_worker_started:
         panel._ensure_ros_worker_started()
-    if panel._move_group_ready():
+    if panel._move_group_startup_ready():
         panel.signal_moveit_state.emit("READY", "move_group ya activo")
         panel._set_status("MoveIt ya activo")
         return

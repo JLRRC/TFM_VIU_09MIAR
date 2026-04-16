@@ -1783,6 +1783,9 @@ class ControlPanelV2(QMainWindow):
         self._last_debug_tcp_ts: float = 0.0
         self._last_trace_tcp_base: Optional[Tuple[float, float, float]] = None
         self._last_trace_tcp_ts: float = 0.0
+        # Sim-time stamp (nanoseconds) from the TF message header when _last_trace_tcp_base
+        # was last updated.  Used to compute true bridge latency (sim_now - tf_stamp).
+        self._last_trace_tcp_tf_stamp_ns: int = 0
         self._last_panel_trace_audit_ts: float = 0.0
         self._tf_chain_logged: bool = False
         self._debug_joints_to_stdout = bool(DEBUG_JOINTS_TO_STDOUT)
@@ -4741,6 +4744,14 @@ class ControlPanelV2(QMainWindow):
             return False, "release de objetos pendiente", True
         if not bool(getattr(self, "_objects_settled", False)):
             return False, "objetos no estabilizados", True
+        basic_ok, basic_reason = self._basic_ready_status()
+        if not basic_ok:
+            reason_txt = str(basic_reason or "basic_not_ready")
+            basic_waitable = (
+                self._system_state != SystemState.ERROR_FATAL
+                and not reason_txt.lower().startswith("startup failed:")
+            )
+            return False, reason_txt, basic_waitable
         ok, reason = pick_ui_status(self)
         if not ok:
             reason_txt = str(reason or "pick_ui_no_listo")
@@ -8101,7 +8112,7 @@ class ControlPanelV2(QMainWindow):
             gazebo_state=self._gazebo_state,
             is_bridge_running=lambda: self._bridge_running,
             bridge_ready=lambda: self._bridge_ready_status()[0],
-            moveit_ready=lambda: self._moveit_state == MoveItState.READY,
+            moveit_ready=self._move_group_startup_ready,
             controllers_ready=lambda: self._controllers_ready()[0],
             is_closing=lambda: self._closing,
             start_gazebo=self._start_gazebo,
@@ -9588,13 +9599,32 @@ class ControlPanelV2(QMainWindow):
         self._moveit_bridge_detected_ts = now
         return detected
 
+    def _move_group_startup_ready(self) -> bool:
+        status_ready = self._moveit_status_ready()
+        action_ready = self._moveit_action_ready()
+        ready = status_ready or action_ready
+        ros_node_ready = bool(self.ros_worker and self.ros_worker.node_ready())
+        self._emit_log_throttled(
+            "MOVEIT:startup_gate",
+            "[MOVEIT2][STARTUP_GATE] "
+            f"ready={str(bool(ready)).lower()} "
+            f"status={str(bool(status_ready)).lower()} "
+            f"action={str(bool(action_ready)).lower()} "
+            f"moveit_proc={str(bool(self._proc_alive(self.moveit_proc))).lower()} "
+            f"ros_worker_started={str(bool(self._ros_worker_started)).lower()} "
+            f"ros_node_ready={str(bool(ros_node_ready)).lower()} "
+            f"moveit_state={self._moveit_state.value}",
+            min_interval=1.0,
+        )
+        return ready
+
     def _move_group_ready(self) -> bool:
-        return self._moveit_action_ready() and self._moveit_status_ready() and self._follow_joint_traj_ready()
+        return self._move_group_startup_ready() and self._follow_joint_traj_ready()
 
     def _moveit_ready(self) -> bool:
         if self._moveit_bridge_detected():
             return True
-        return self._move_group_ready()
+        return self._move_group_startup_ready()
 
     def _update_moveit_status_label(self) -> None:
         if self.lbl_moveit_status is not None:
@@ -13558,6 +13588,20 @@ class ControlPanelV2(QMainWindow):
         if src.startswith("service:") and "#" in src:
             request_id = src.rsplit("#", 1)[-1].strip()
 
+        def _trace_remote_pick(stage: str, *, ready: bool, reason: str, waitable: bool) -> None:
+            manual_ok, manual_reason = self._manual_control_status()
+            self._emit_log(
+                "[PICK][REMOTE][TRACE] "
+                f"stage={stage} "
+                f"ready={str(bool(ready)).lower()} "
+                f"reason={reason or 'ok'} "
+                f"waitable={str(bool(waitable)).lower()} "
+                f"script_active={str(bool(getattr(self, '_script_motion_active', False))).lower()} "
+                f"manual_inflight={str(bool(getattr(self, '_manual_inflight', False))).lower()} "
+                f"manual_ok={str(bool(manual_ok)).lower()} "
+                f"manual_reason={manual_reason or 'ok'}"
+            )
+
         def _ack(success: bool, message: str) -> None:
             if not request_id:
                 return
@@ -13571,6 +13615,7 @@ class ControlPanelV2(QMainWindow):
                     pass
 
         ready, reason, waitable = self._pick_demo_remote_ready_status()
+        _trace_remote_pick("entry", ready=ready, reason=str(reason or ""), waitable=waitable)
         if request_id and not ready and waitable:
             wait_sec = max(
                 2.0,
@@ -13592,6 +13637,12 @@ class ControlPanelV2(QMainWindow):
                 last_reason = reason
                 while time.time() < deadline:
                     ready_now, reason_now, waitable_now = self._pick_demo_remote_ready_status()
+                    _trace_remote_pick(
+                        "wait_loop",
+                        ready=ready_now,
+                        reason=str(reason_now or ""),
+                        waitable=waitable_now,
+                    )
                     last_reason = reason_now
                     if ready_now:
                         break
@@ -13606,6 +13657,12 @@ class ControlPanelV2(QMainWindow):
 
                 def _run_pick_demo_now() -> None:
                     ready_now, reason_now, _waitable_now = self._pick_demo_remote_ready_status()
+                    _trace_remote_pick(
+                        "before_run_pick_demo",
+                        ready=ready_now,
+                        reason=str(reason_now or ""),
+                        waitable=_waitable_now,
+                    )
                     if not ready_now:
                         self._complete_pending_pick_demo_request(
                             False,
@@ -13615,10 +13672,16 @@ class ControlPanelV2(QMainWindow):
                     # Skip confirm dialog for remote invocations (headless context)
                     self._emit_log("[PICK][REMOTE] Ejecutando pick_demo sin diálogo de confirmación")
                     run_pick_demo(self)
+                    ready_after, reason_after, waitable_after = self._pick_demo_remote_ready_status()
+                    _trace_remote_pick(
+                        "after_run_pick_demo",
+                        ready=ready_after,
+                        reason=str(reason_after or ""),
+                        waitable=waitable_after,
+                    )
                     if bool(getattr(self, "_script_motion_active", False)):
                         self._complete_pending_pick_demo_request(True, "pick_demo_started")
                         return
-                    _ready_after, reason_after, _waitable_after = self._pick_demo_remote_ready_status()
                     self._complete_pending_pick_demo_request(
                         False,
                         str(reason_after or "pick_demo_no_iniciado"),
@@ -13630,17 +13693,24 @@ class ControlPanelV2(QMainWindow):
             return
 
         if request_id and not ready:
+            _trace_remote_pick("immediate_reject", ready=ready, reason=str(reason or ""), waitable=waitable)
             _ack(False, str(reason or "n/a"))
             return
 
         # Skip confirm dialog for remote invocations (headless context)
         self._emit_log("[PICK][REMOTE] Ejecutando pick_demo sin diálogo de confirmación")
         run_pick_demo(self)
+        ready_after, reason_after, waitable_after = self._pick_demo_remote_ready_status()
+        _trace_remote_pick(
+            "after_direct_run_pick_demo",
+            ready=ready_after,
+            reason=str(reason_after or ""),
+            waitable=waitable_after,
+        )
         if request_id:
             if bool(getattr(self, "_script_motion_active", False)):
                 _ack(True, "pick_demo_started")
             else:
-                _ready_after, reason_after, _waitable_after = self._pick_demo_remote_ready_status()
                 _ack(False, str(reason_after or "pick_demo_no_iniciado"))
 
     @pyqtSlot(str)
@@ -16913,7 +16983,6 @@ class ControlPanelV2(QMainWindow):
             success = meta.get("val_success")
             val_loss = meta.get("val_loss")
             selection_basis = str(meta.get("selection_basis") or "val_success").strip()
-            role = str(meta.get("role") or "").strip()
             success_txt = "--"
             try:
                 if success is not None and math.isfinite(float(success)):
@@ -16933,8 +17002,7 @@ class ControlPanelV2(QMainWindow):
             metric_txt = f"acierto {success_txt}"
             if selection_basis == "val_loss":
                 metric_txt = f"val_loss {loss_txt}"
-            role_txt = f" | {role}" if role else ""
-            return f"{exp_name} | mejor {seed_txt} | {metric_txt}{role_txt}"
+            return f"{exp_name} | mejor {seed_txt} | {metric_txt}"
         path = Path(ckpt_path)
         if path.parent.name == "checkpoints" and path.parent.parent.name:
             return f"{path.parent.parent.name}/{path.name}"
@@ -17123,7 +17191,6 @@ class ControlPanelV2(QMainWindow):
             iou = meta.get("val_iou")
             val_loss = meta.get("val_loss")
             selection_basis = str(meta.get("selection_basis") or "").strip()
-            role = str(meta.get("role") or "").strip()
             try:
                 if success is not None and math.isfinite(float(success)):
                     info["val_success_pct"] = f"{float(success) * 100.0:.1f}%"
@@ -17134,10 +17201,6 @@ class ControlPanelV2(QMainWindow):
                     info["val_iou"] = f"{float(iou):.3f}"
             except Exception:
                 pass
-            if role:
-                info["selection_policy"] = f"{info['selection_policy']} | {role}"
-                if role == "auxiliar 4.6.2":
-                    info["experiment"] = f"{info['experiment']} [Aux 4.6.2]"
             if selection_basis == "val_loss":
                 try:
                     if val_loss is not None and math.isfinite(float(val_loss)):
@@ -17967,6 +18030,13 @@ class ControlPanelV2(QMainWindow):
                     float(tcp_pose_base.pose.position.z),
                 )
                 self._last_trace_tcp_ts = time.monotonic()
+                try:
+                    _hdr = tcp_pose_base.header
+                    self._last_trace_tcp_tf_stamp_ns = (
+                        int(_hdr.stamp.sec) * 1_000_000_000 + int(_hdr.stamp.nanosec)
+                    )
+                except Exception:
+                    self._last_trace_tcp_tf_stamp_ns = 0
                 self._last_tcp_base_z = float(tcp_pose_base.pose.position.z)
                 self._last_trace_tcp_rpy_deg = (
                     float(_tcp_rpy[0]),

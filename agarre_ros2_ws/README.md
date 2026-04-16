@@ -89,12 +89,11 @@ Notas importantes:
 
 - El selector trabaja con `EXP1` a `EXP4` y tambien permite usar `EXP1.1` y `EXP1.2` para inferencia.
 - En modo normal, el panel puede autoelegir checkpoints segun `val_success`.
-- Para `EXP1.1` y `EXP1.2`, si `val_success` no discrimina entre seeds, el panel prioriza la seed con mejor `val_loss` para que la inferencia auxiliar no quede fijada de forma arbitraria en la primera epoca.
+- Para `EXP1.1` y `EXP1.2`, si `val_success` no discrimina entre seeds, el panel prioriza la seed con mejor `val_loss`.
 - En modo `--tfm-repro`, fija el caso `EXP3_RESNET18_RGB_AUGMENT / seed_0`.
 - Puede ejecutarse tambien en modo `raw` sin los ajustes heurísticos posteriores del panel.
 - El boton `Caso TFM Memoria` deja activado de una vez `EXP3 seed_0 + raw` y aplica el experimento.
-- `EXP1.1` y `EXP1.2` estan expuestos en el panel como variantes auxiliares de inferencia; no forman parte de la recreacion oficial de resultados del TFM.
-- Cuando se cargan en panel, la ficha del experimento los muestra como `Aux 4.6.2` para reforzar esa distincion.
+- Todos los experimentos disponibles pueden cargarse y usarse desde el panel.
 - La UI y los logs indican ahora tanto la politica de seleccion del checkpoint como si la prediccion ha recibido ajustes posteriores de angulo, centro o tamano.
 
 ## Scripts operativos utiles

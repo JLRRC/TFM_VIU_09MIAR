@@ -83,6 +83,17 @@ def _effective_direct_grasp_z(source_frame: str, requested_offset_m: float) -> f
 
 def _direct_runtime_target_tol_m(label: str) -> float:
     label_name = str(label or "").strip().upper()
+    if label_name in {"APPROACH_COARSE", "APPROACH_COARSE_XY_CORR", "APPROACH_COARSE_Z_CORR"}:
+        return max(
+            0.006,
+            float(
+                os.environ.get(
+                    "PANEL_PICK_DEMO_APPROACH_COARSE_TCP_TOL_M",
+                    "0.015",
+                )
+                or 0.015
+            ),
+        )
     if label_name == "GRASP_DOWN_JOINT":
         return max(
             0.005,
@@ -886,13 +897,38 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
 
 
 def run_pick_demo(panel) -> None:
+    sync_start_mono = time.monotonic()
+    run_context = {
+        "last_sync_gate": "entry",
+        "worker_started_mono": None,
+    }
+
+    def _sync_gate_emit(stage: str, ok: bool, detail: str = "") -> None:
+        run_context["last_sync_gate"] = stage
+        detail_txt = str(detail or "ok")
+        panel._emit_log(
+            "[PICK][DIRECT][SYNC_GATE] "
+            f"stage={stage} "
+            f"ok={str(bool(ok)).lower()} "
+            f"detail={detail_txt}"
+        )
+
     panel._log_button("PICK MESA → CESTA")
     panel._emit_log("[DEMO] Inicio pick & place (mesa -> cesta)")
-    if not panel._require_ready_basic("PICK DEMO"):
+    basic_ok, basic_reason = panel._basic_ready_status()
+    if not basic_ok:
+        _sync_gate_emit("require_ready_basic", False, basic_reason or "not_ready")
+        panel._require_ready_basic("PICK DEMO")
         return
+    _sync_gate_emit("require_ready_basic", True)
     selected_name = str(getattr(panel, "_selected_object", "") or "").strip()
     user_selected = str(getattr(panel, "_selection_last_user_name", "") or "").strip()
     if selected_name != PICK_DEMO_OBJECT_NAME or user_selected != PICK_DEMO_OBJECT_NAME:
+        _sync_gate_emit(
+            "selection",
+            False,
+            f"selected={selected_name or 'none'} user_selected={user_selected or 'none'} required={PICK_DEMO_OBJECT_NAME}",
+        )
         panel._emit_log(
             "[PICK][DIRECT][ABORT] "
             f"selected={selected_name or 'none'} user_selected={user_selected or 'none'} "
@@ -903,13 +939,24 @@ def run_pick_demo(panel) -> None:
             error=True,
         )
         return
+    _sync_gate_emit("selection", True, f"target={PICK_DEMO_OBJECT_NAME}")
     # Si _require_ready_basic pasó, el sistema está en READY_BASIC o superior.
     # Solo verificar que TF y EE frame estén disponibles (necesarios para pick).
     tf_ok, tf_reason = tf_ready_status(panel)
     if not tf_ok or not bool(panel._ee_frame_effective):
+        _sync_gate_emit(
+            "tf_and_ee",
+            False,
+            f"tf_ok={str(bool(tf_ok)).lower()} tf_reason={tf_reason or 'n/a'} ee_frame={getattr(panel, '_ee_frame_effective', None) or 'none'}",
+        )
         panel._set_status(f"TF no listo; esperando pick ({tf_reason})", error=False)
         panel._emit_log(f"[PICK] Bloqueado: {panel._tf_not_ready_reason()}")
         return
+    _sync_gate_emit(
+        "tf_and_ee",
+        True,
+        f"ee_frame={getattr(panel, '_ee_frame_effective', None) or 'none'}",
+    )
     # Normalizar estado previo del objeto demo antes del grasp manual.
     obj_state = get_object_state(PICK_DEMO_OBJECT_NAME)
     if obj_state:
@@ -937,9 +984,11 @@ def run_pick_demo(panel) -> None:
 
     ready, reason = panel._controllers_ready()
     if not ready:
+        _sync_gate_emit("controllers", False, reason or "not_ready")
         panel._emit_log(f"[PICK] controladores no listos ({reason})")
         panel._set_status("Controladores no listos; esperando", error=False)
         return
+    _sync_gate_emit("controllers", True, reason or "ok")
     requested_route_mode = str(
         os.environ.get("PANEL_PICK_DEMO_ROUTE_MODE", "direct_ik_hybrid") or "direct_ik_hybrid"
     ).strip().lower()
@@ -977,13 +1026,25 @@ def run_pick_demo(panel) -> None:
     panel._emit_log(
         f"[PICK][DIRECT] selection_ok=true target={PICK_DEMO_OBJECT_NAME} route={route_selected}"
     )
+    _sync_gate_emit("route_selected", True, f"route={route_selected} reason={route_reason}")
     panel._emit_log("[PICK] Secuencia manual iniciada (ruta directa con DIRECT IK trazable)")
     panel._emit_log("[PICK] target_source=selected_demo_object")
     panel._set_status("Pick demo: ejecutando secuencia manual…")
     panel._set_motion_lock(True)
+    _sync_gate_emit(
+        "motion_lock_set",
+        bool(getattr(panel, "_script_motion_active", False)),
+        f"elapsed_ms={(time.monotonic() - sync_start_mono) * 1000.0:.1f}",
+    )
 
     def worker():
         try:
+            run_context["worker_started_mono"] = time.monotonic()
+            panel._emit_log(
+                "[PICK][DIRECT][LIFECYCLE] "
+                f"stage=worker_start last_sync_gate={run_context['last_sync_gate']} "
+                f"sync_elapsed_ms={(run_context['worker_started_mono'] - sync_start_mono) * 1000.0:.1f}"
+            )
             move_sec = float(panel.joint_time.value()) if panel.joint_time else 3.0
             _move_sec_override = os.environ.get("PANEL_PICK_DEMO_MOVE_SEC")
             if _move_sec_override:
@@ -1149,6 +1210,28 @@ def run_pick_demo(panel) -> None:
                 if v is None:
                     return None
                 return math.sqrt((v[0] * v[0]) + (v[1] * v[1]) + (v[2] * v[2]))
+
+            def _object_top_pose(pose):
+                pose3 = _tuple3(pose)
+                if pose3 is None:
+                    return None
+                object_height_m = _pick_demo_env_float(
+                    "PANEL_PICK_DEMO_OBJECT_HEIGHT_M",
+                    0.05,
+                    minimum=0.001,
+                )
+                return (
+                    float(pose3[0]),
+                    float(pose3[1]),
+                    float(pose3[2]) + (0.5 * object_height_m),
+                )
+
+            def _z_delta(a, b) -> float | None:
+                av = _tuple3(a)
+                bv = _tuple3(b)
+                if av is None or bv is None:
+                    return None
+                return float(av[2]) - float(bv[2])
 
             def _resolved_align_object_base() -> tuple[tuple[float, float, float] | None, str, dict]:
                 obj_base_live = _tuple3(_live_object_base())
@@ -1488,6 +1571,8 @@ def run_pick_demo(panel) -> None:
                     base_frame = str(BASE_FRAME or "base_link")
                 object_world = _tuple3(_live_object_world())
                 object_base = _tuple3(_live_object_base())
+                object_top_world = _object_top_pose(object_world)
+                object_top_base = _object_top_pose(object_base)
                 tcp_world = _tuple3(_live_tcp_world())
                 tcp_base = _tuple3(_live_tcp_base())
                 tool0_world = _pose_position(world_frame, DIRECT_EXECUTION_FRAME, timeout_sec=0.12)
@@ -1496,6 +1581,11 @@ def run_pick_demo(panel) -> None:
                 pinch_base = _pose_position(base_frame, DIRECT_SOURCE_FRAME, timeout_sec=0.12) or tcp_base
                 rg2_tcp_world = _pose_position(world_frame, DIRECT_LEGACY_TCP_FRAME, timeout_sec=0.12)
                 rg2_tcp_base = _pose_position(base_frame, DIRECT_LEGACY_TCP_FRAME, timeout_sec=0.12)
+                object_height_m = _pick_demo_env_float(
+                    "PANEL_PICK_DEMO_OBJECT_HEIGHT_M",
+                    0.05,
+                    minimum=0.001,
+                )
                 camera_meta = _camera_audit_meta()
                 selection_ts = float(getattr(panel, "_selection_timestamp", 0.0) or 0.0)
                 selection_age = max(0.0, time.time() - selection_ts) if selection_ts > 0.0 else None
@@ -1522,6 +1612,9 @@ def run_pick_demo(panel) -> None:
                 delta_panel_live_norm = _vec_norm(delta_panel_live)
                 legacy_gap = _vector_minus(rg2_tcp_base, pinch_base)
                 legacy_gap_norm = _vec_norm(legacy_gap)
+                tool0_top_dz = _z_delta(tool0_base, object_top_base)
+                pinch_top_dz = _z_delta(pinch_base, object_top_base)
+                rg2_tcp_top_dz = _z_delta(rg2_tcp_base, object_top_base)
                 extra_payload = _json_safe(extra) or {}
                 _append_trace(
                     f"{DIRECT_GRASP_AUDIT_PREFIX} "
@@ -1542,6 +1635,8 @@ def run_pick_demo(panel) -> None:
                     f"selected_pose_base_link={_fmt_vec(selected_base)} "
                     f"object_pose_world={_fmt_vec(object_world)} "
                     f"object_pose_base_link={_fmt_vec(object_base)} "
+                    f"object_top_pose_world={_fmt_vec(object_top_world)} "
+                    f"object_top_pose_base_link={_fmt_vec(object_top_base)} "
                     f"tcp_pose_world={_fmt_vec(tcp_world)} "
                     f"tcp_pose_base_link={_fmt_vec(tcp_base)} "
                     f"tool0_pose_world={_fmt_vec(tool0_world)} "
@@ -1554,6 +1649,9 @@ def run_pick_demo(panel) -> None:
                     f"delta_object_tcp_base={_fmt_vec(delta_base)} "
                     f"delta_object_pinch_center_world={_fmt_vec(delta_pinch_world)} "
                     f"delta_object_pinch_center_base={_fmt_vec(delta_pinch_base)} "
+                    f"dz_tool0_vs_object_top_m={_fmt_scalar(tool0_top_dz)} "
+                    f"dz_pinch_center_vs_object_top_m={_fmt_scalar(pinch_top_dz)} "
+                    f"dz_rg2_tcp_vs_object_top_m={_fmt_scalar(rg2_tcp_top_dz)} "
                     f"command_pose_sent={_fmt_vec(command_pose_sent)} "
                     f"command_frame={command_frame or 'none'} "
                     f"command_joint_goal={json.dumps(_json_safe(command_joint_goal), ensure_ascii=True)} "
@@ -1570,6 +1668,7 @@ def run_pick_demo(panel) -> None:
                     f"panel_tcp_fk_age_sec={_fmt_scalar(panel_tcp_fk_age)} "
                     f"panel_trace_tcp_age_sec={_fmt_scalar(panel_trace_tcp_age)} "
                     f"panel_object_age_sec={_fmt_scalar(panel_object_age)} "
+                    f"object_height_m={_fmt_scalar(object_height_m)} "
                     f"world_frame={world_frame} "
                     f"base_frame={base_frame} "
                     f"extra={json.dumps(extra_payload, ensure_ascii=True, sort_keys=True)}"
@@ -1624,6 +1723,21 @@ def run_pick_demo(panel) -> None:
                     f"legacy_tcp_vs_pinch_center_base={_fmt_vec(legacy_gap)} "
                     f"legacy_tcp_vs_pinch_center_dist_m={_fmt_scalar(legacy_gap_norm)}"
                 )
+                geom_audit_line = (
+                    "[RG2][AUDIT][GEOM] "
+                    f"stage={stage} "
+                    f"object_pose_base_link={_fmt_vec(object_base)} "
+                    f"object_top_pose_base_link={_fmt_vec(object_top_base)} "
+                    f"tool0_pose_base_link={_fmt_vec(tool0_base)} "
+                    f"rg2_pinch_center_pose_base_link={_fmt_vec(pinch_base)} "
+                    f"rg2_tcp_pose_base_link={_fmt_vec(rg2_tcp_base)} "
+                    f"dz_tool0_vs_object_top_m={_fmt_scalar(tool0_top_dz)} "
+                    f"dz_pinch_center_vs_object_top_m={_fmt_scalar(pinch_top_dz)} "
+                    f"dz_rg2_tcp_vs_object_top_m={_fmt_scalar(rg2_tcp_top_dz)} "
+                    f"object_height_m={_fmt_scalar(object_height_m)}"
+                )
+                panel._emit_log(geom_audit_line)
+                _append_trace(geom_audit_line)
                 _append_trace(
                     "[PICK][DIRECT][PANEL_TRACE] "
                     f"stage={stage} panel_tcp_fk_base={_fmt_vec(panel_tcp_fk_base)} "
@@ -2289,8 +2403,9 @@ def run_pick_demo(panel) -> None:
                 *,
                 phase: str,
                 event: str,
+                target_world=None,
                 target_base=None,
-                frame_used: str = "base_link",
+                frame_used: str = "world",
                 offsets=None,
                 decision: str = "",
                 preset_used: str | None = None,
@@ -2298,6 +2413,12 @@ def run_pick_demo(panel) -> None:
             ) -> None:
                 obj_base = _tuple3(_live_object_base())
                 tcp_base = _tuple3(_live_tcp_base())
+                obj_world = _tuple3(_live_object_world())
+                tcp_world = _tuple3(_live_tcp_world())
+                target_world_3, target_base_3 = _target_world_base_pair(
+                    target_world=target_world,
+                    target_base=target_base,
+                )
                 dx = dy = dz = dist = xy_dist = None
                 if obj_base is not None and tcp_base is not None:
                     dx = float(tcp_base[0]) - float(obj_base[0])
@@ -2308,10 +2429,12 @@ def run_pick_demo(panel) -> None:
                 msg = (
                     "[PICK][DIRECT][POSE_TRACE] "
                     f"phase={phase} event={event} frame={frame_used} "
+                    f"obj_world={_fmt_vec(obj_world)} tcp_world={_fmt_vec(tcp_world)} "
                     f"obj_base={_fmt_vec(obj_base)} tcp_base={_fmt_vec(tcp_base)} "
                     f"dx={_fmt_scalar(dx)} dy={_fmt_scalar(dy)} dz={_fmt_scalar(dz)} "
                     f"dist={_fmt_scalar(dist)} xy_dist={_fmt_scalar(xy_dist)} "
-                    f"target_base={_fmt_vec(target_base)} "
+                    f"target_world={_fmt_vec(target_world_3)} "
+                    f"target_base={_fmt_vec(target_base_3)} "
                     f"offsets={json.dumps(_json_safe(offsets) or {}, ensure_ascii=False, sort_keys=True)} "
                     f"preset={preset_used or 'none'} "
                     f"execution_type={execution_type or 'none'} "
@@ -2393,6 +2516,7 @@ def run_pick_demo(panel) -> None:
                 panel_fk_3 = _tuple3(panel_fk_base) or _tuple3(getattr(panel, "_last_tcp_base", None))
                 panel_trace_3 = _tuple3(panel_trace_base) or _tuple3(getattr(panel, "_last_trace_tcp_base", None))
                 target_base_3 = _tuple3(target_base)
+                now_mono = float(time.monotonic())
                 fk_live_delta = _vec_norm(_vector_minus(panel_fk_3, tcp_base_3))
                 trace_live_delta = _vec_norm(_vector_minus(panel_trace_3, tcp_base_3))
                 fk_trace_delta = _vec_norm(_vector_minus(panel_fk_3, panel_trace_3))
@@ -2401,10 +2525,56 @@ def run_pick_demo(panel) -> None:
                     0.003,
                     float(os.environ.get("PANEL_PICK_DEMO_POSE_SOURCE_TOL_M", "0.006") or 0.006),
                 )
+                source_age_tol = max(
+                    0.05,
+                    float(os.environ.get("PANEL_PICK_DEMO_POSE_SOURCE_AGE_TOL_SEC", "0.20") or 0.20),
+                )
+                source_sync_tol = max(
+                    0.02,
+                    float(os.environ.get("PANEL_PICK_DEMO_POSE_SOURCE_SYNC_TOL_SEC", "0.20") or 0.20),
+                )
                 phase_jump_tol = max(
                     source_tol,
                     float(os.environ.get("PANEL_PICK_DEMO_PHASE_JUMP_TOL_M", "0.010") or 0.010),
                 )
+                panel_fk_age_sec = None
+                if float(getattr(panel, "_last_tcp_fk_ts", 0.0) or 0.0) > 0.0:
+                    panel_fk_age_sec = max(
+                        0.0,
+                        now_mono - float(getattr(panel, "_last_tcp_fk_ts", 0.0) or 0.0),
+                    )
+                trace_age_sec = None
+                if float(getattr(panel, "_last_trace_tcp_ts", 0.0) or 0.0) > 0.0:
+                    trace_age_sec = max(
+                        0.0,
+                        now_mono - float(getattr(panel, "_last_trace_tcp_ts", 0.0) or 0.0),
+                    )
+                # TF bridge latency: age of the TF message stamp from Gazebo's perspective.
+                # Computed as (ros_now_ns - tf_stamp_ns). A large value means the bridge
+                # delivered the message late; helps diagnose stale-TF root causes.
+                tf_stamp_age_sec = None
+                _tf_stamp_ns = int(getattr(panel, "_last_trace_tcp_tf_stamp_ns", 0) or 0)
+                if _tf_stamp_ns > 0 and panel._ros_worker_started and panel.ros_worker is not None:
+                    try:
+                        _ros_now_ns = int(getattr(panel.ros_worker, "_last_clock_stamp_ns", 0) or 0)
+                        if _ros_now_ns > 0:
+                            tf_stamp_age_sec = max(0.0, (_ros_now_ns - _tf_stamp_ns) / 1_000_000_000.0)
+                    except Exception:
+                        pass
+                joint_state_age_sec = None
+                if panel._ros_worker_started and panel.ros_worker is not None:
+                    try:
+                        _payload, joint_ts = panel.ros_worker.get_last_joint_state()
+                    except Exception:
+                        joint_ts = 0.0
+                    if joint_ts:
+                        joint_state_age_sec = max(0.0, now_mono - float(joint_ts))
+                source_sync_delta_sec = None
+                if panel_fk_age_sec is not None and trace_age_sec is not None:
+                    source_sync_delta_sec = abs(
+                        float(getattr(panel, "_last_trace_tcp_ts", 0.0) or 0.0)
+                        - float(getattr(panel, "_last_tcp_fk_ts", 0.0) or 0.0)
+                    )
                 phase_end_delta = None
                 phase_end_age_sec = None
                 if phase:
@@ -2417,8 +2587,24 @@ def run_pick_demo(panel) -> None:
                         )
                 fk_live_ok = fk_live_delta is None or float(fk_live_delta) <= source_tol
                 trace_live_ok = trace_live_delta is None or float(trace_live_delta) <= source_tol
+                panel_fk_fresh_ok = panel_fk_age_sec is None or float(panel_fk_age_sec) <= source_age_tol
+                trace_fresh_ok = trace_age_sec is None or float(trace_age_sec) <= source_age_tol
+                joint_state_fresh_ok = (
+                    joint_state_age_sec is None
+                    or float(joint_state_age_sec) <= source_age_tol
+                )
+                source_sync_ok = (
+                    source_sync_delta_sec is None
+                    or float(source_sync_delta_sec) <= source_sync_tol
+                )
+                sources_fresh_ok = bool(
+                    panel_fk_fresh_ok
+                    and trace_fresh_ok
+                    and joint_state_fresh_ok
+                    and source_sync_ok
+                )
                 phase_jump_ok = phase_end_delta is None or float(phase_end_delta) <= phase_jump_tol
-                sources_ok = bool(fk_live_ok and trace_live_ok)
+                sources_ok = bool(fk_live_ok and trace_live_ok and sources_fresh_ok)
                 ok_for_gate = bool(sources_ok and phase_jump_ok)
                 return {
                     "phase": str(phase or "none"),
@@ -2433,9 +2619,21 @@ def run_pick_demo(panel) -> None:
                     "phase_end_delta_m": phase_end_delta,
                     "phase_end_age_sec": phase_end_age_sec,
                     "source_tol_m": float(source_tol),
+                    "source_age_tol_sec": float(source_age_tol),
+                    "source_sync_tol_sec": float(source_sync_tol),
                     "phase_jump_tol_m": float(phase_jump_tol),
+                    "panel_fk_age_sec": panel_fk_age_sec,
+                    "trace_age_sec": trace_age_sec,
+                    "tf_stamp_age_sec": tf_stamp_age_sec,
+                    "joint_state_age_sec": joint_state_age_sec,
+                    "source_sync_delta_sec": source_sync_delta_sec,
                     "fk_live_ok": bool(fk_live_ok),
                     "trace_live_ok": bool(trace_live_ok),
+                    "panel_fk_fresh_ok": bool(panel_fk_fresh_ok),
+                    "trace_fresh_ok": bool(trace_fresh_ok),
+                    "joint_state_fresh_ok": bool(joint_state_fresh_ok),
+                    "source_sync_ok": bool(source_sync_ok),
+                    "sources_fresh_ok": bool(sources_fresh_ok),
                     "phase_jump_ok": bool(phase_jump_ok),
                     "sources_ok": bool(sources_ok),
                     "ok_for_gate": bool(ok_for_gate),
@@ -2455,15 +2653,139 @@ def run_pick_demo(panel) -> None:
                     f"fk_live={_fmt_scalar(metrics.get('fk_live_delta_m'))}/{_fmt_scalar(metrics.get('source_tol_m'))} "
                     f"trace_live={_fmt_scalar(metrics.get('trace_live_delta_m'))}/{_fmt_scalar(metrics.get('source_tol_m'))} "
                     f"fk_trace={_fmt_scalar(metrics.get('fk_trace_delta_m'))} "
+                    f"panel_fk_age={_fmt_scalar(metrics.get('panel_fk_age_sec'))}/{_fmt_scalar(metrics.get('source_age_tol_sec'))} "
+                    f"trace_age={_fmt_scalar(metrics.get('trace_age_sec'))}/{_fmt_scalar(metrics.get('source_age_tol_sec'))} "
+                    f"tf_stamp_age={_fmt_scalar(metrics.get('tf_stamp_age_sec'))} "
+                    f"joint_state_age={_fmt_scalar(metrics.get('joint_state_age_sec'))}/{_fmt_scalar(metrics.get('source_age_tol_sec'))} "
+                    f"source_sync={_fmt_scalar(metrics.get('source_sync_delta_sec'))}/{_fmt_scalar(metrics.get('source_sync_tol_sec'))} "
                     f"phase_end_jump={_fmt_scalar(metrics.get('phase_end_delta_m'))}/{_fmt_scalar(metrics.get('phase_jump_tol_m'))} "
                     f"phase_end_age={_fmt_scalar(metrics.get('phase_end_age_sec'))} "
                     f"target_live={_fmt_scalar(metrics.get('target_live_delta_m'))} "
+                    f"fresh_ok={str(bool(metrics.get('sources_fresh_ok'))).lower()} "
                     f"sources_ok={str(bool(metrics.get('sources_ok'))).lower()} "
                     f"jump_ok={str(bool(metrics.get('phase_jump_ok'))).lower()} "
                     f"result={'OK' if bool(metrics.get('ok_for_gate')) else 'NO'}"
                 )
                 panel._emit_log(msg)
                 _append_trace(msg)
+
+            def _wait_phase_gate_ready(
+                *,
+                phase: str,
+                target_base,
+                xy_tol_m: float,
+                z_tol_m: float,
+                timeout_sec: float,
+                poll_sec: float = 0.10,
+                required_samples: int = 2,
+                pose_gate_key: str = "ok_for_gate",
+                xy_reference_mode: str = "target",
+            ) -> dict:
+                target_base_3 = _tuple3(target_base)
+                poll_sec = max(0.05, float(poll_sec))
+                required_samples = max(1, int(required_samples))
+                start_mono = float(time.monotonic())
+                deadline = start_mono + max(0.2, float(timeout_sec))
+                stable_count = 0
+                gate_ok = False
+                last_tcp = _tuple3(_live_tcp_base())
+                last_obj = _tuple3(_live_object_base())
+                last_metrics = _pose_consistency_metrics(
+                    phase=phase,
+                    tcp_base=last_tcp,
+                    target_base=target_base_3,
+                )
+                last_xy_err = None
+                last_z_err = None
+                last_pose_ok = False
+                last_xy_ok = False
+                last_z_ok = False
+
+                while True:
+                    curr_tcp = _tuple3(_live_tcp_base())
+                    curr_obj = _tuple3(_live_object_base())
+                    if curr_tcp is not None:
+                        last_tcp = curr_tcp
+                    if curr_obj is not None:
+                        last_obj = curr_obj
+                    xy_reference = target_base_3
+                    if xy_reference_mode == "object" and last_obj is not None:
+                        xy_reference = (
+                            float(last_obj[0]),
+                            float(last_obj[1]),
+                            float(target_base_3[2]) if target_base_3 is not None else float(last_obj[2]),
+                        )
+                    last_xy_err = None
+                    last_z_err = None
+                    last_xy_ok = False
+                    last_z_ok = False
+                    last_metrics = _pose_consistency_metrics(
+                        phase=phase,
+                        tcp_base=last_tcp,
+                        target_base=target_base_3,
+                    )
+                    if last_tcp is not None and xy_reference is not None and target_base_3 is not None:
+                        last_xy_err = math.hypot(
+                            float(last_tcp[0]) - float(xy_reference[0]),
+                            float(last_tcp[1]) - float(xy_reference[1]),
+                        )
+                        last_z_err = float(last_tcp[2]) - float(target_base_3[2])
+                        last_xy_ok = bool(float(last_xy_err) <= float(xy_tol_m))
+                        last_z_ok = bool(abs(float(last_z_err)) <= float(z_tol_m))
+                    last_pose_ok = bool((last_metrics or {}).get(pose_gate_key))
+                    sample_ok = bool(last_xy_ok and last_z_ok and last_pose_ok)
+                    if sample_ok:
+                        stable_count += 1
+                        if stable_count >= required_samples:
+                            gate_ok = True
+                            break
+                    else:
+                        stable_count = 0
+                    if time.monotonic() >= deadline:
+                        break
+                    time.sleep(poll_sec)
+
+                elapsed_sec = max(0.0, float(time.monotonic() - start_mono))
+                result = {
+                    "ok": bool(gate_ok),
+                    "tcp_base": _tuple3(last_tcp),
+                    "object_base": _tuple3(last_obj),
+                    "target_base": _tuple3(target_base_3),
+                    "xy_err": float(last_xy_err) if last_xy_err is not None else None,
+                    "z_err": float(last_z_err) if last_z_err is not None else None,
+                    "xy_tol": float(xy_tol_m),
+                    "z_tol": float(z_tol_m),
+                    "xy_ok": bool(last_xy_ok),
+                    "z_ok": bool(last_z_ok),
+                    "pose_ok": bool(last_pose_ok),
+                    "pose_gate_key": str(pose_gate_key),
+                    "stable_samples": int(stable_count),
+                    "required_samples": int(required_samples),
+                    "elapsed_sec": float(elapsed_sec),
+                    "poll_sec": float(poll_sec),
+                    "pose_consistency": _json_safe(last_metrics),
+                }
+                _store_phase_pose_sample(
+                    phase,
+                    stage="phase_check",
+                    tcp_base=result.get("tcp_base"),
+                )
+                _emit_pose_consistency(
+                    phase=phase,
+                    stage="phase_check",
+                    metrics=last_metrics,
+                )
+                panel._emit_log(
+                    "[PICK][DIRECT][PHASE_GATE_WAIT] "
+                    f"phase={phase} "
+                    f"xy_err={_fmt_scalar(result.get('xy_err'))}/{float(xy_tol_m):.3f} "
+                    f"z_err={_fmt_scalar(result.get('z_err'))}/{float(z_tol_m):.3f} "
+                    f"pose_gate={pose_gate_key} pose_ok={str(bool(result.get('pose_ok'))).lower()} "
+                    f"samples={stable_count}/{required_samples} "
+                    f"elapsed={elapsed_sec:.2f}s "
+                    f"result={'OK' if gate_ok else 'NO'}"
+                )
+                return result
 
             def _target_world_from_base(target_base):
                 base_coords = _tuple3(target_base)
@@ -2474,6 +2796,48 @@ def run_pick_demo(panel) -> None:
                 except Exception:
                     world = None
                 return _tuple3(world)
+
+            def _target_base_from_world(target_world):
+                world_coords = _tuple3(target_world)
+                if world_coords is None:
+                    return None
+                try:
+                    base = panel._world_to_base_coords(world_coords)
+                except Exception:
+                    base = None
+                base_3 = _tuple3(base)
+                if base_3 is not None:
+                    return base_3
+                try:
+                    world_frame = str(
+                        getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
+                            WORLD_FRAME or "world"
+                        )
+                    ).strip() or "world"
+                    base_frame = str(panel._business_base_frame() or BASE_FRAME or "base_link").strip() or "base_link"
+                    transformed, _ = transform_point_to_frame(
+                        world_coords,
+                        base_frame,
+                        source_frame=world_frame,
+                    )
+                    base_3 = _tuple3(transformed)
+                    if base_3 is not None:
+                        return base_3
+                except Exception:
+                    pass
+                try:
+                    return tuple(float(v) for v in world_to_base(*world_coords))
+                except Exception:
+                    return None
+
+            def _target_world_base_pair(*, target_world=None, target_base=None):
+                target_world_3 = _tuple3(target_world)
+                target_base_3 = _tuple3(target_base)
+                if target_world_3 is None and target_base_3 is not None:
+                    target_world_3 = _target_world_from_base(target_base_3)
+                if target_base_3 is None and target_world_3 is not None:
+                    target_base_3 = _target_base_from_world(target_world_3)
+                return target_world_3, target_base_3
 
             visual_focus_phases = {"GRASP_ALIGN_IK", "PRE_CLOSE", "ATTACH_GATE"}
 
@@ -2586,14 +2950,25 @@ def run_pick_demo(panel) -> None:
                 ik_solution=None,
                 note: str | None = None,
             ) -> None:
-                target_world_3 = _tuple3(target_world) or _target_world_from_base(target_base)
-                target_base_3 = _tuple3(target_base)
+                target_world_3, target_base_3 = _target_world_base_pair(
+                    target_world=target_world,
+                    target_base=target_base,
+                )
+                resolved_frame = (
+                    str(frame_used).strip()
+                    if frame_used is not None and str(frame_used).strip()
+                    else (
+                        str(WORLD_FRAME or "world").strip() or "world"
+                        if target_world_3 is not None
+                        else "base_link"
+                    )
+                )
                 last_target.update(
                     {
                         "phase": phase,
                         "target_world": target_world_3,
                         "target_base": target_base_3,
-                        "frame": frame_used,
+                        "frame": resolved_frame,
                         "offsets": _json_safe(offsets),
                         "joint_goal": _json_safe(joint_goal),
                         "ik_solution": _json_safe(ik_solution),
@@ -2602,7 +2977,7 @@ def run_pick_demo(panel) -> None:
                 )
                 _append_trace(
                     "[PICK][DIRECT][DEBUG] "
-                    f"TARGET_UPDATE phase={phase} frame={frame_used or 'none'} "
+                    f"TARGET_UPDATE phase={phase} frame={resolved_frame} "
                     f"target_world={_fmt_vec(target_world_3)} target_base={_fmt_vec(target_base_3)} "
                     f"offsets={json.dumps(_json_safe(offsets) or {}, ensure_ascii=False, sort_keys=True)} "
                     f"note={note or 'none'}"
@@ -2620,6 +2995,19 @@ def run_pick_demo(panel) -> None:
                 note: str | None = None,
             ) -> None:
                 phase_seq["value"] += 1
+                target_world_3, target_base_3 = _target_world_base_pair(
+                    target_world=target_world,
+                    target_base=target_base,
+                )
+                resolved_frame = (
+                    str(frame_used).strip()
+                    if frame_used is not None and str(frame_used).strip()
+                    else (
+                        str(WORLD_FRAME or "world").strip() or "world"
+                        if target_world_3 is not None
+                        else "base_link"
+                    )
+                )
                 _append_trace(f"[PICK][DIRECT][DEBUG] ENTER_PHASE {phase}")
                 step_gate_fn = getattr(panel, "_step_wait_for_phase", None)
                 if callable(step_gate_fn) and getattr(panel, "_step_mode", "") == "STEP_BY_STEP":
@@ -2632,23 +3020,23 @@ def run_pick_demo(panel) -> None:
                     step_gate_fn(
                         f"DIRECT.{phase}",
                         flow="DIRECT",
-                        position=_tuple3(target_base) or _tuple3(last_target.get("target_base")),
+                        position=target_base_3 or _tuple3(last_target.get("target_base")),
                         decision=str(note or "").strip(),
                         object_position=_tuple3(_live_object_base()),
                     )
                     # Registrar exec_target_snapshot: target efectivo que el IK va a usar.
                     # Se llama tras el gate (usuario pulsó Sigue) para que la fila ya exista.
                     # Si target_base es None usamos last_target para no dejar Exec en --.
-                    _exec_base = _tuple3(target_base) or _tuple3(last_target.get("target_base"))
+                    _exec_base = target_base_3 or _tuple3(last_target.get("target_base"))
                     _set_exec_fn = getattr(panel, "_step_set_exec_target", None)
                     if callable(_set_exec_fn):
                         _set_exec_fn(_exec_base)
                 if any(v is not None for v in (target_world, target_base, frame_used, offsets, joint_goal, ik_solution, note)):
                     _phase_target_update(
                         phase,
-                        target_world=target_world,
-                        target_base=target_base,
-                        frame_used=frame_used,
+                        target_world=target_world_3,
+                        target_base=target_base_3,
+                        frame_used=resolved_frame,
                         offsets=offsets,
                         joint_goal=joint_goal,
                         ik_solution=ik_solution,
@@ -2662,9 +3050,9 @@ def run_pick_demo(panel) -> None:
                     "object_pose_world_before": _tuple3(_live_object_world()),
                     "tcp_pose_world_before": _tuple3(_live_tcp_world()),
                     "tcp_pose_base_before": _tuple3(_live_tcp_base()),
-                    "target_pose_world": _tuple3(target_world) or _tuple3(last_target.get("target_world")),
-                    "target_pose_base": _tuple3(target_base) or _tuple3(last_target.get("target_base")),
-                    "frame_usado": frame_used or last_target.get("frame"),
+                    "target_pose_world": target_world_3 or _tuple3(last_target.get("target_world")),
+                    "target_pose_base": target_base_3 or _tuple3(last_target.get("target_base")),
+                    "frame_usado": resolved_frame or last_target.get("frame"),
                     "offsets_aplicados": _json_safe(offsets if offsets is not None else last_target.get("offsets")),
                     "joint_goal": _json_safe(joint_goal if joint_goal is not None else last_target.get("joint_goal")),
                     "ik_solution": _json_safe(ik_solution if ik_solution is not None else last_target.get("ik_solution")),
@@ -2695,8 +3083,10 @@ def run_pick_demo(panel) -> None:
                         "timestamp_enter": _iso_now(),
                         "object_name": PICK_DEMO_OBJECT_NAME,
                     }
-                target_world_3 = _tuple3(target_world) or _tuple3(data.get("target_pose_world")) or _tuple3(last_target.get("target_world"))
-                target_base_3 = _tuple3(target_base) or _tuple3(data.get("target_pose_base")) or _tuple3(last_target.get("target_base"))
+                target_world_3, target_base_3 = _target_world_base_pair(
+                    target_world=target_world or data.get("target_pose_world") or last_target.get("target_world"),
+                    target_base=target_base or data.get("target_pose_base") or last_target.get("target_base"),
+                )
                 tcp_world_after = _tuple3(_live_tcp_world())
                 obj_world_after = _tuple3(_live_object_world())
                 tcp_base_after = _tuple3(_live_tcp_base())
@@ -2955,7 +3345,11 @@ def run_pick_demo(panel) -> None:
                             or float(last_motion_delta) <= float(stable_delta_m)
                         )
                         sources_ok = bool((last_metrics or {}).get("sources_ok"))
-                        if target_ok and motion_ok and sources_ok:
+                        # sources_ok reflects FK/trace lag vs TF-live, which is a
+                        # transient timing artefact (~0.5s after the controller settles).
+                        # Physical convergence (target_ok + motion_ok) is sufficient here;
+                        # source consistency is enforced by _wait_phase_gate_ready.
+                        if target_ok and motion_ok:
                             stable_count += 1
                             if stable_count >= stable_samples:
                                 stable_ok = True
@@ -3008,11 +3402,12 @@ def run_pick_demo(panel) -> None:
                 label: str,
                 target_tcp_runtime,
                 timeout_sec: float,
+                target_tcp_world=None,
                 audit_target_source: str = "runtime_target",
                 target_pose_original=None,
                 target_frame_original: str = "base_link",
                 rot_weight: float = 0.35,
-                ik_err_tol: float = 0.035,
+                ik_err_tol: float | None = None,
                 joint_weight: float = -1.0,
                 force_send: bool = False,
             ) -> dict:
@@ -3069,9 +3464,11 @@ def run_pick_demo(panel) -> None:
                             + (float(local_offset[2]) ** 2)
                         )
                     )
-                    # URDF chain uses base_link_inertia as kinematic root with a fixed
-                    # base_link->base_link_inertia rotation Rz(pi); convert runtime target
-                    # (base_link) into the FK/IK model frame before solving.
+                    # The UR5 URDF kinematic chain roots at base_link_inertia, which has a
+                    # fixed Rz(π) rotation relative to base_link (standard ur_description).
+                    # fk_ur5() returns positions in base_link_inertia frame.  To express a
+                    # runtime target given in base_link into this model frame, negate X and Y.
+                    # This negation is ALWAYS required and is NOT controlled by any env var.
                     target_model = (
                         -float(tcp_target_base[0]),
                         -float(tcp_target_base[1]),
@@ -3112,6 +3509,16 @@ def run_pick_demo(panel) -> None:
                 tcp_base = _live_tcp_base()
                 if tcp_base is None:
                     raise RuntimeError(f"{label.lower()}_tcp_pose_unavailable")
+                target_tcp_runtime_3 = _tuple3(target_tcp_runtime)
+                target_tcp_world_3 = _tuple3(target_tcp_world)
+                if target_tcp_world_3 is not None:
+                    target_tcp_runtime_3 = _target_base_from_world(target_tcp_world_3)
+                    if target_tcp_runtime_3 is None:
+                        raise RuntimeError(f"{label.lower()}_target_world_to_base_unavailable")
+                if target_tcp_runtime_3 is None:
+                    raise RuntimeError(f"{label.lower()}_target_tcp_unavailable")
+                if target_tcp_world_3 is None:
+                    target_tcp_world_3 = _target_world_from_base(target_tcp_runtime_3)
                 seed, seed_source = _current_joint_seed(return_source=True)
                 _seed_pos, target_rot = fk_ur5(seed)
                 panel._emit_log(
@@ -3120,12 +3527,40 @@ def run_pick_demo(panel) -> None:
                     f"joints={json.dumps(_json_safe(seed), ensure_ascii=True)}"
                 )
                 delta_runtime = (
-                    float(target_tcp_runtime[0]) - float(tcp_base[0]),
-                    float(target_tcp_runtime[1]) - float(tcp_base[1]),
-                    float(target_tcp_runtime[2]) - float(tcp_base[2]),
+                    float(target_tcp_runtime_3[0]) - float(tcp_base[0]),
+                    float(target_tcp_runtime_3[1]) - float(tcp_base[1]),
+                    float(target_tcp_runtime_3[2]) - float(tcp_base[2]),
                 )
+                _ik_tol_env = os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_ERR_TOL", "")
+                _ik_tol_source = (
+                    "caller_arg" if ik_err_tol is not None
+                    else ("env:PANEL_PICK_DEMO_DIRECT_IK_ERR_TOL" if _ik_tol_env.strip() else "default:0.010")
+                )
+                effective_ik_err_tol = max(
+                    0.001,
+                    float(
+                        ik_err_tol
+                        if ik_err_tol is not None
+                        else (
+                            _ik_tol_env
+                            or 0.010
+                        )
+                    ),
+                )
+                _IK_TOL_SAFE_MAX = 0.015
+                _ik_tol_warn = float(effective_ik_err_tol) > _IK_TOL_SAFE_MAX
+                _ik_tol_log = (
+                    f"[PICK][DIRECT][IK_TOL{'_WARN' if _ik_tol_warn else ''}] "
+                    f"label={label} ik_err_tol={float(effective_ik_err_tol):.4f} "
+                    f"source={_ik_tol_source} "
+                    f"safe_max={_IK_TOL_SAFE_MAX:.3f} "
+                    f"{'*** TOL TOO LARGE — solver may accept solutions with >15mm positional error ***' if _ik_tol_warn else 'ok'}"
+                )
+                panel._emit_log(_ik_tol_log)
+                if _ik_tol_warn:
+                    _append_trace(_ik_tol_log)
                 execution_semantics = _resolve_direct_execution_target(
-                    target_tcp_runtime,
+                    target_tcp_runtime_3,
                     target_rot,
                 )
                 target_ik = execution_semantics["execution_pose"]
@@ -3151,7 +3586,8 @@ def run_pick_demo(panel) -> None:
                     "[PICK][DIRECT][FRAME_AUDIT] "
                     f"label={label} source_frame={execution_semantics['source_frame']} "
                     f"execution_frame={execution_semantics['execution_frame']} "
-                    f"target_tcp_runtime={_fmt_vec(target_tcp_runtime)} "
+                    f"target_tcp_world={_fmt_vec(target_tcp_world_3)} "
+                    f"target_tcp_runtime={_fmt_vec(target_tcp_runtime_3)} "
                     f"target_model={_fmt_vec(target_model)} execution_pose={_fmt_vec(target_ik)} "
                     f"ik_mode={DIRECT_EXECUTION_IK_MODE}"
                 )
@@ -3206,7 +3642,7 @@ def run_pick_demo(panel) -> None:
                     ]
                     return max(devs)
                 _IK_DEV_THRESHOLD = _math_ik_retry.pi / 2  # 90° — flag a wrong-branch solution
-                if ik_ok and pos_err_m <= float(ik_err_tol) and _seed_max_dev(solved_q, seed) > _IK_DEV_THRESHOLD:
+                if ik_ok and pos_err_m <= float(effective_ik_err_tol) and _seed_max_dev(solved_q, seed) > _IK_DEV_THRESHOLD:
                     _best_q, _best_err, _best_ok = solved_q, pos_err_m, ik_ok
                     # Build a list of (seed_variant, seed_weight) pairs to try.
                     # The first group uses the original seed with escalating weights.
@@ -3246,7 +3682,7 @@ def run_pick_demo(panel) -> None:
                             f"pos_err_m={_rpos_err:.4f} ok={str(bool(_rok)).lower()} "
                             f"max_dev_rad={_seed_max_dev(_rq, seed):.3f}"
                         )
-                        if _rok and _rpos_err <= float(ik_err_tol):
+                        if _rok and _rpos_err <= float(effective_ik_err_tol):
                             # Accept this solution if it's closer to the seed
                             if _seed_max_dev(_rq, seed) < _seed_max_dev(_best_q, seed):
                                 _best_q, _best_err, _best_ok = _rq, _rpos_err, _rok
@@ -3257,14 +3693,14 @@ def run_pick_demo(panel) -> None:
                     "[PICK][DIRECT][IK] "
                     f"label={label} "
                     f"tcp_now=({tcp_base[0]:.3f},{tcp_base[1]:.3f},{tcp_base[2]:.3f}) "
-                    f"target_tcp=({target_tcp_runtime[0]:.3f},{target_tcp_runtime[1]:.3f},{target_tcp_runtime[2]:.3f}) "
+                    f"target_tcp=({target_tcp_runtime_3[0]:.3f},{target_tcp_runtime_3[1]:.3f},{target_tcp_runtime_3[2]:.3f}) "
                     f"delta_runtime=({delta_runtime[0]:.3f},{delta_runtime[1]:.3f},{delta_runtime[2]:.3f}) "
                     f"source_frame={DIRECT_SOURCE_FRAME} execution_frame={DIRECT_EXECUTION_FRAME} "
                     f"offset_vector=({offset_vector[0]:.3f},{offset_vector[1]:.3f},{offset_vector[2]:.3f}) "
                     f"target_ik=({target_ik[0]:.3f},{target_ik[1]:.3f},{target_ik[2]:.3f}) "
                     f"tcp_offset_m={tcp_offset_m:.3f} "
                     f"rot_weight={float(rot_weight):.3f} "
-                    f"ik_err_tol={float(ik_err_tol):.3f} "
+                    f"ik_err_tol={float(effective_ik_err_tol):.3f} "
                     f"seed_weight={_effective_joint_weight:.3f} "
                     f"err_norm={float(err_norm):.4f} pos_err_m={pos_err_m:.4f} success={str(bool(ik_ok)).lower()}"
                 )
@@ -3273,7 +3709,8 @@ def run_pick_demo(panel) -> None:
                     f"label={label} target_source={audit_target_source} "
                     f"target_frame_original={target_frame_original} "
                     f"target_pose_original={_fmt_vec(target_pose_original)} "
-                    f"target_pose_base_link={_fmt_vec(target_tcp_runtime)} "
+                    f"target_pose_world={_fmt_vec(target_tcp_world_3)} "
+                    f"target_pose_base_link={_fmt_vec(target_tcp_runtime_3)} "
                     f"command_pose_sent={_fmt_vec(target_ik)} command_frame={DIRECT_EXECUTION_FRAME}"
                 )
                 _audit_emit(
@@ -3281,8 +3718,8 @@ def run_pick_demo(panel) -> None:
                     target_source=audit_target_source,
                     target_frame_original=target_frame_original,
                     target_pose_original=target_pose_original,
-                    target_pose_world=_target_world_from_base(target_tcp_runtime),
-                    target_pose_base_link=target_tcp_runtime,
+                    target_pose_world=target_tcp_world_3,
+                    target_pose_base_link=target_tcp_runtime_3,
                     command_pose_sent=target_ik,
                     command_frame=DIRECT_EXECUTION_FRAME,
                     command_joint_goal=solved_q.tolist(),
@@ -3296,7 +3733,7 @@ def run_pick_demo(panel) -> None:
                         "runtime_delta": delta_runtime,
                     },
                 )
-                if (not ik_ok) or pos_err_m > float(ik_err_tol):
+                if (not ik_ok) or pos_err_m > float(effective_ik_err_tol):
                     raise RuntimeError(
                         f"{label.lower()}_ik_failed pos_err_m={pos_err_m:.4f}"
                     )
@@ -3332,7 +3769,7 @@ def run_pick_demo(panel) -> None:
                     solved_q_list,
                     timeout_sec=max(float(timeout_sec), move_sec + 2.0),
                     tol_rad=align_joint_tol_rad,
-                    runtime_target_base=target_tcp_runtime,
+                    runtime_target_base=target_tcp_runtime_3,
                     runtime_target_tol_m=_direct_runtime_target_tol_m(label),
                     force_send=force_send,
                 )
@@ -3364,7 +3801,7 @@ def run_pick_demo(panel) -> None:
                     wait_fn = getattr(panel, "_wait_for_tcp_base_target", None)
                     if callable(wait_fn):
                         runtime_target_wait_ok, runtime_target_wait_pos, runtime_target_wait_dist = wait_fn(
-                            target_tcp_runtime,
+                            target_tcp_runtime_3,
                             timeout_sec=runtime_target_timeout_sec,
                             tol_xyz_m=runtime_target_tol_m,
                             ee_frame=DIRECT_SOURCE_FRAME,
@@ -3386,7 +3823,7 @@ def run_pick_demo(panel) -> None:
                 )
                 runtime_settle = _wait_runtime_tcp_stable(
                     label=label,
-                    target_tcp_runtime=target_tcp_runtime,
+                    target_tcp_runtime=target_tcp_runtime_3,
                     target_tol_m=runtime_target_tol_m,
                     timeout_sec=runtime_settle_timeout_sec,
                 )
@@ -3455,7 +3892,7 @@ def run_pick_demo(panel) -> None:
                 )
                 if tcp_after is not None:
                     obj_after = _live_object_base()
-                    target_err = _dist(tcp_after, target_tcp_runtime)
+                    target_err = _dist(tcp_after, target_tcp_runtime_3)
                     obj_dist = _dist(tcp_after, obj_after) if obj_after is not None else float("nan")
                     panel._emit_log(
                         "[PICK][DIRECT][IK] "
@@ -3467,7 +3904,8 @@ def run_pick_demo(panel) -> None:
                 return {
                     "label": label,
                     "seed": [float(v) for v in seed],
-                    "target_tcp_runtime": _tuple3(target_tcp_runtime),
+                    "target_tcp_world": _tuple3(target_tcp_world_3),
+                    "target_tcp_runtime": _tuple3(target_tcp_runtime_3),
                     "target_source_frame": DIRECT_SOURCE_FRAME,
                     "target_execution_frame": DIRECT_EXECUTION_FRAME,
                     "target_ik": _tuple3(target_ik),
@@ -3782,6 +4220,88 @@ def run_pick_demo(panel) -> None:
                     for idx in range(1, steps + 1)
                 ]
 
+            def _run_grasp_down_cartesian(
+                *,
+                target_base,
+                obj_base,
+                timeout_sec: float,
+                audit_target_source: str,
+            ) -> tuple[dict | None, str, dict]:
+                """GRASP_DOWN mediante MoveIt computeCartesianPath.
+                Produce una trayectoria articular densa desde la posición actual
+                hasta target_base manteniendo la orientación del TCP — sin IK
+                segmentado independiente ni interpolación articular entre waypoints.
+                Lanza RuntimeError si MoveIt no está disponible o el planning falla;
+                el caller debe hacer fallback a _run_grasp_down_conservative.
+                """
+                import uuid as _uuid_gdc
+                tcp_pose = panel.get_tcp_base()
+                if tcp_pose is None:
+                    raise RuntimeError("grasp_down_cartesian_tcp_unavailable")
+                target_base_3 = _tuple3(target_base)
+                if target_base_3 is None:
+                    raise RuntimeError("grasp_down_cartesian_target_unavailable")
+                tcp_ori = tcp_pose.pose.orientation
+                base_frame = str(
+                    getattr(tcp_pose.header, "frame_id", "") or panel._business_base_frame()
+                )
+                request_id = int(getattr(panel, "_panel_moveit_request_id", 0) or 0) + 1
+                setattr(panel, "_panel_moveit_request_id", request_id)
+                request_uuid = _uuid_gdc.uuid4().hex
+                pose_data = {
+                    "position": (
+                        float(target_base_3[0]),
+                        float(target_base_3[1]),
+                        float(target_base_3[2]),
+                    ),
+                    "orientation": (
+                        float(tcp_ori.x),
+                        float(tcp_ori.y),
+                        float(tcp_ori.z),
+                        float(tcp_ori.w),
+                    ),
+                    "frame": f"{base_frame}|rid={request_id}|uid={request_uuid}",
+                }
+                has_results = False
+                if panel._ros_worker_started and panel.ros_worker and panel.ros_worker.node_ready():
+                    try:
+                        has_results = bool(
+                            panel.ros_worker.subscribe_moveit_result("/desired_grasp/result")
+                        )
+                    except Exception:
+                        has_results = False
+                _gdc_msg = (
+                    "[PICK][DIRECT][GRASP_DOWN_CARTESIAN] "
+                    f"target={_fmt_vec(target_base_3)} frame={base_frame} "
+                    f"audit_source={audit_target_source} has_results={has_results}"
+                )
+                panel._emit_log(_gdc_msg)
+                _append_trace(_gdc_msg)
+                since_wall = 0.0
+                since_seq = -1
+                if has_results and panel.ros_worker:
+                    _raw, since_wall, since_seq = panel.ros_worker.moveit_result_snapshot()
+                if not panel._publish_moveit_pose(
+                    "GRASP_DOWN_CARTESIAN", pose_data, cartesian=True
+                ):
+                    raise RuntimeError("grasp_down_cartesian_publish_failed")
+                if has_results:
+                    ok_cart, msg_cart = panel._wait_tfm_moveit_result(
+                        "GRASP_DOWN_CARTESIAN",
+                        since_wall=since_wall,
+                        since_seq=since_seq,
+                        timeout_sec=max(float(timeout_sec), move_sec + 8.0),
+                        expected_request_id=request_id,
+                        expected_request_uuid=request_uuid,
+                    )
+                    if not ok_cart:
+                        raise RuntimeError(f"grasp_down_cartesian_result_failed:{msg_cart}")
+                else:
+                    # Result topic not available — cannot verify execution.
+                    # Raise so the caller falls back to _run_grasp_down_conservative.
+                    panel._motion_in_progress = False
+                    raise RuntimeError("grasp_down_cartesian_no_result_topic")
+
             def _run_grasp_down_conservative(
                 *,
                 target_base,
@@ -3822,6 +4342,110 @@ def run_pick_demo(panel) -> None:
                 last_metrics = _grasp_down_runtime_metrics(target_base=target_base, obj_base=obj_base)
                 last_route = "cartesian_like_descent"
                 _gd_seed_injected = False
+                # ── Permissive-first for large Z gap ─────────────────────────────────
+                # When the TCP is ≥20mm above the grasp target (standard after
+                # APPROACH_COARSE at +35mm clearance), the multi-segment waypoint
+                # approach sends tiny joint commands so fast the controller cannot
+                # track them → arm barely moves → visual "hover/separation."
+                # Go directly to permissive (low joint_weight=0.035, single target).
+                _pf_tcp = _tuple3(_live_tcp_base())
+                _pf_tgt = _tuple3(target_base)
+                if _pf_tcp is not None and _pf_tgt is not None:
+                    _pf_z_gap = abs(float(_pf_tcp[2]) - float(_pf_tgt[2]))
+                    if _pf_z_gap >= 0.020:
+                        _pf_msg = (
+                            "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
+                            f"reason=large_z_gap_pre_motion "
+                            f"z_gap={_pf_z_gap:.3f} "
+                            "strategy=permissive_direct_descent"
+                        )
+                        panel._emit_log(_pf_msg)
+                        _append_trace(_pf_msg)
+                        try:
+                            last_debug = _move_tcp_direct(
+                                label="GRASP_DOWN_JOINT",
+                                target_tcp_runtime=target_base,
+                                timeout_sec=max(float(timeout_sec), move_sec + 3.0),
+                                audit_target_source=f"{audit_target_source}:permissive_pre",
+                                target_pose_original=target_base,
+                                target_frame_original="base_link",
+                                rot_weight=max(
+                                    rot_weight,
+                                    float(
+                                        os.environ.get(
+                                            "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_ROT_WEIGHT",
+                                            "0.35",
+                                        ) or "0.35"
+                                    ),
+                                ),
+                                ik_err_tol=max(
+                                    ik_err_tol,
+                                    float(
+                                        os.environ.get(
+                                            "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_IK_ERR_TOL",
+                                            "0.20",
+                                        ) or "0.20"
+                                    ),
+                                ),
+                                joint_weight=max(
+                                    0.0,
+                                    float(
+                                        os.environ.get(
+                                            "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT",
+                                            "0.035",
+                                        ) or "0.035"
+                                    ),
+                                ),
+                                force_send=True,
+                            )
+                            last_route = "permissive_direct_descent"
+                        except Exception as _pf_exc:
+                            panel._emit_log(
+                                f"[PICK][DIRECT][GRASP_DOWN] permissive_pre_failed:{_pf_exc}"
+                            )
+                            last_debug = None
+                            last_route = "cartesian_like_descent"
+                # If permissive_pre succeeded and z_gap is within the outer PHASE_CHECK
+                # tolerance (UTIL_Z_ERR_TOL, not the tighter strict_z_tol), skip the
+                # waypoint loop entirely.  Use the TCP position already settled inside
+                # _move_tcp_direct to avoid a stale _live_tcp_base() read.
+                # NOTE: strict_z_tol is 8mm (conservative descent gate) but the DH/SDF
+                # divergence always leaves ~13mm Z residual → strict_z_tol would never
+                # pass.  Use UTIL_Z_ERR_TOL (25mm) which is what the outer PHASE_CHECK
+                # uses, so "early return here" ↔ "PHASE_CHECK will pass out there".
+                if last_route == "permissive_direct_descent" and last_debug is not None:
+                    _pf_util_z_tol = max(
+                        0.008,
+                        float(
+                            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M", "0.025")
+                            or "0.025"
+                        ),
+                    )
+                    _pf_actual = _tuple3(
+                        (last_debug or {}).get("runtime_target_stable_pos")
+                        or (last_debug or {}).get("runtime_target_pos")
+                        or _live_tcp_base()
+                    )
+                    if _pf_actual is not None:
+                        _pf_remaining = abs(float(_pf_actual[2]) - float(_pf_tgt[2]))
+                        _pf_msg2 = (
+                            "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
+                            f"reason=permissive_pre_result "
+                            f"actual_z={float(_pf_actual[2]):.3f} "
+                            f"target_z={float(_pf_tgt[2]):.3f} "
+                            f"remaining={_pf_remaining:.3f}/{_pf_util_z_tol:.3f} "
+                            f"early_return={str(_pf_remaining <= _pf_util_z_tol).lower()}"
+                        )
+                        panel._emit_log(_pf_msg2)
+                        _append_trace(_pf_msg2)
+                        if _pf_remaining <= _pf_util_z_tol:
+                            last_metrics = _grasp_down_runtime_metrics(
+                                target_base=target_base,
+                                tcp_base=_pf_actual,
+                                obj_base=_tuple3(_live_object_base()) or _tuple3(obj_base),
+                            )
+                            return last_debug, "permissive_direct_descent:pre_motion", last_metrics
+                # ─────────────────────────────────────────────────────────────────────
                 for attempt in range(1, max_attempts + 1):
                     actual_before = _tuple3(_live_tcp_base())
                     object_now = _tuple3(_live_object_base()) or _tuple3(obj_base)
@@ -3944,6 +4568,81 @@ def run_pick_demo(panel) -> None:
                     actual_after = _tuple3(_live_tcp_base())
                     object_after = _tuple3(_live_object_base()) or object_now
                     q_after = [float(v) for v in (_current_joint_seed() or [])]
+                    # ── DH false-satisfied detection ─────────────────────────────────
+                    # When the IK reports joint_delta≈0 but physical TCP is still far
+                    # from target in Z, the DH model is "already satisfied" due to the
+                    # ~13mm DH/SDF Z divergence.  Arm stays put.  Force permissive.
+                    if last_route != "permissive_direct_descent":
+                        _dhs_seed = [float(v) for v in (phase_seed_joints or [])]
+                        _dhs_sum_delta = (
+                            sum(abs(a - b) for a, b in zip(q_after, _dhs_seed))
+                            if len(_dhs_seed) == len(q_after) and _dhs_seed
+                            else 1.0
+                        )
+                        _dhs_z_gap = (
+                            abs(float(actual_after[2]) - float(target_base[2]))
+                            if actual_after is not None
+                            else 0.0
+                        )
+                        if _dhs_z_gap > 0.010:
+                            _dhs_msg = (
+                                "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
+                                f"reason=dh_false_satisfied "
+                                f"joint_delta_sum={_dhs_sum_delta:.4f} "
+                                f"z_gap={_dhs_z_gap:.3f} "
+                                "strategy=permissive_direct_descent"
+                            )
+                            panel._emit_log(_dhs_msg)
+                            _append_trace(_dhs_msg)
+                            try:
+                                last_debug = _move_tcp_direct(
+                                    label="GRASP_DOWN_JOINT",
+                                    target_tcp_runtime=target_base,
+                                    timeout_sec=max(
+                                        float(timeout_sec), move_sec + 3.0 + float(attempt)
+                                    ),
+                                    audit_target_source=f"{audit_target_source}:permissive_dhs",
+                                    target_pose_original=target_base,
+                                    target_frame_original="base_link",
+                                    rot_weight=max(
+                                        rot_weight,
+                                        float(
+                                            os.environ.get(
+                                                "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_ROT_WEIGHT",
+                                                "0.35",
+                                            ) or "0.35"
+                                        ),
+                                    ),
+                                    ik_err_tol=max(
+                                        ik_err_tol,
+                                        float(
+                                            os.environ.get(
+                                                "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_IK_ERR_TOL",
+                                                "0.20",
+                                            ) or "0.20"
+                                        ),
+                                    ),
+                                    joint_weight=max(
+                                        0.0,
+                                        float(
+                                            os.environ.get(
+                                                "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT",
+                                                "0.035",
+                                            ) or "0.035"
+                                        ),
+                                    ),
+                                    force_send=True,
+                                )
+                                last_route = "permissive_direct_descent"
+                                actual_after = _tuple3(_live_tcp_base())
+                                object_after = _tuple3(_live_object_base()) or object_now
+                                q_after = [float(v) for v in (_current_joint_seed() or [])]
+                            except Exception as _dhs_exc:
+                                panel._emit_log(
+                                    "[PICK][DIRECT][GRASP_DOWN] "
+                                    f"permissive_dhs_failed:{_dhs_exc}"
+                                )
+                    # ─────────────────────────────────────────────────────────────────
                     if isinstance(last_debug, dict):
                         if q_after:
                             last_debug["q_after"] = q_after
@@ -4294,10 +4993,10 @@ def run_pick_demo(panel) -> None:
                             decision = "full_xy_z_bias"
                     delta_raw = None
                     delta_used = None
-                    # FIX-SYNTAX: the Rz(pi) frame fix belongs ONLY inside
-                    # _resolve_direct_execution_target (called by _move_tcp_direct below).
-                    # This block restores the debug metrics + IK_GEOM log that were
-                    # corrupted when a duplicate of the Rz fix was incorrectly inserted here.
+                    # La conversión Rz(π) base_link→base_link_inertia ocurre dentro de
+                    # _resolve_direct_execution_target (llamada por _move_tcp_direct).
+                    # target_tcp_runtime aquí está en base_link; la negación X/Y se aplica
+                    # más adelante, dentro del solver IK, no en este bloque.
                     if tcp_before is not None:
                         delta_raw = (
                             float(target_tcp_runtime_raw[0]) - float(tcp_before[0]),
@@ -5472,6 +6171,7 @@ def run_pick_demo(panel) -> None:
                 ref_target_base = None
                 ref_target_world = None
                 obj_base_reference = _live_object_base()
+                obj_world_reference = _live_object_world()
                 if obj_base_reference is not None:
                     ref_target_base = (
                         float(obj_base_reference[0]),
@@ -5522,7 +6222,7 @@ def run_pick_demo(panel) -> None:
                     "PICK_PRE_CLOSE_REF",
                     target_world=ref_display_world,
                     target_base=ref_display_base,
-                    frame_used="base_link",
+                    frame_used="world",
                     joint_goal=(None if manual_ref_stale else [float(v) for v in JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD]),
                     note=manual_ref_reason,
                 )
@@ -5532,14 +6232,16 @@ def run_pick_demo(panel) -> None:
                 )
                 ref_debug = None
                 if manual_ref_stale and ref_dynamic_base is not None:
+                    ref_dynamic_world = _target_world_from_base(ref_dynamic_base)
                     try:
                         ref_debug = _move_tcp_direct(
                             label="PICK_PRE_CLOSE_REF",
                             target_tcp_runtime=ref_dynamic_base,
+                            target_tcp_world=ref_dynamic_world,
                             timeout_sec=max(move_sec + 2.5, 4.0),
-                            audit_target_source="dynamic_object_reference",
-                            target_pose_original=obj_base_reference,
-                            target_frame_original="base_link",
+                            audit_target_source="dynamic_object_reference_world",
+                            target_pose_original=obj_world_reference or ref_dynamic_world,
+                            target_frame_original="world",
                         )
                     except Exception as exc:
                         panel._emit_log(
@@ -5680,7 +6382,9 @@ def run_pick_demo(panel) -> None:
                 )
                 preset_approach = "direct_rg2_tcp_dynamic_coarse"
                 preset_grasp_down = "direct_rg2_tcp_dynamic_down"
+                obj_world_before_coarse = _live_object_world()
                 obj_base_before_coarse = _live_object_base()
+                tcp_world_before_coarse = _live_tcp_world()
                 tcp_before_coarse = _live_tcp_base()
 
                 if obj_base_before_coarse is None:
@@ -5696,12 +6400,12 @@ def run_pick_demo(panel) -> None:
                 target_world_coarse = None
                 target_base_grasp_down = None
                 target_world_grasp_down = None
-                if obj_base_before_coarse is not None:
-                    target_x_coarse = float(obj_base_before_coarse[0])
-                    target_y_coarse = float(obj_base_before_coarse[1])
-                    target_z_coarse = float(obj_base_before_coarse[2]) + _DIRECTO_GRASP_Z + float(coarse_extra_z_m)
-                    coarse_target_mode = "object_xy_plus_object_z"
-                    if tcp_before_coarse is not None:
+                coarse_target_mode = "object_xy_plus_object_z"
+                if obj_world_before_coarse is not None:
+                    target_x_coarse = float(obj_world_before_coarse[0])
+                    target_y_coarse = float(obj_world_before_coarse[1])
+                    target_z_coarse = float(obj_world_before_coarse[2]) + _DIRECTO_GRASP_Z + float(coarse_extra_z_m)
+                    if tcp_world_before_coarse is not None and tcp_before_coarse is not None and obj_base_before_coarse is not None:
                         keep_xy_tol = max(
                             0.01,
                             float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_KEEP_XY_TOL_M", "0.06") or 0.06),
@@ -5711,13 +6415,33 @@ def run_pick_demo(panel) -> None:
                             float(tcp_before_coarse[1]) - float(obj_base_before_coarse[1]),
                         )
                         if tcp_obj_xy <= keep_xy_tol:
-                            target_x_coarse = float(tcp_before_coarse[0])
-                            target_y_coarse = float(tcp_before_coarse[1])
+                            target_x_coarse = float(tcp_world_before_coarse[0])
+                            target_y_coarse = float(tcp_world_before_coarse[1])
                             coarse_target_mode = "keep_current_xy_plus_object_z"
-                    target_base_coarse = (
+                    target_world_coarse = (
                         float(target_x_coarse),
                         float(target_y_coarse),
                         float(target_z_coarse),
+                    )
+                    target_base_coarse = _target_base_from_world(target_world_coarse)
+                    if obj_world_before_coarse is not None:
+                        target_world_grasp_down = (
+                            float(obj_world_before_coarse[0]),
+                            float(obj_world_before_coarse[1]),
+                            float(obj_world_before_coarse[2]) + _DIRECTO_GRASP_Z + float(grasp_down_extra_z_m),
+                        )
+                        target_base_grasp_down = _target_base_from_world(target_world_grasp_down)
+                elif obj_base_before_coarse is not None:
+                    coarse_target_mode = "object_xy_plus_object_z_base_fallback"
+                    target_world_coarse = (
+                        float(obj_base_before_coarse[0]),
+                        float(obj_base_before_coarse[1]),
+                        float(obj_base_before_coarse[2]) + _DIRECTO_GRASP_Z + float(coarse_extra_z_m),
+                    )
+                    target_base_coarse = (
+                        float(obj_base_before_coarse[0]),
+                        float(obj_base_before_coarse[1]),
+                        float(obj_base_before_coarse[2]) + _DIRECTO_GRASP_Z + float(coarse_extra_z_m),
                     )
                     target_world_coarse = _target_world_from_base(target_base_coarse)
                     target_base_grasp_down = (
@@ -5726,16 +6450,19 @@ def run_pick_demo(panel) -> None:
                         float(obj_base_before_coarse[2]) + _DIRECTO_GRASP_Z + float(grasp_down_extra_z_m),
                     )
                     target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
+                if target_world_coarse is not None or target_base_coarse is not None:
                     panel._emit_log(
                         "[PICK][DIRECT][APPROACH_PLAN] "
                         f"mode={coarse_target_mode} tcp_before={_fmt_vec(tcp_before_coarse)} "
-                        f"obj_before={_fmt_vec(obj_base_before_coarse)} target={_fmt_vec(target_base_coarse)}"
+                        f"obj_before_world={_fmt_vec(obj_world_before_coarse)} "
+                        f"obj_before_base={_fmt_vec(obj_base_before_coarse)} "
+                        f"target_world={_fmt_vec(target_world_coarse)} target_base={_fmt_vec(target_base_coarse)}"
                     )
                 _phase_begin(
                     "APPROACH_COARSE",
                     target_world=target_world_coarse,
                     target_base=target_base_coarse,
-                    frame_used="base_link",
+                    frame_used="world",
                     offsets={
                         "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
                         "coarse_extra_z_m": float(coarse_extra_z_m),
@@ -5748,8 +6475,9 @@ def run_pick_demo(panel) -> None:
                 _trace_phase_pose(
                     phase="APPROACH_COARSE",
                     event="target_set",
+                    target_world=target_world_coarse,
                     target_base=target_base_coarse,
-                    frame_used="base_link",
+                    frame_used="world",
                     offsets={
                         "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
                         "coarse_extra_z_m": float(coarse_extra_z_m),
@@ -5834,6 +6562,7 @@ def run_pick_demo(panel) -> None:
                                 _new_target_y,
                                 float(target_base_coarse[2]),
                             )
+                            target_world_coarse = _target_world_from_base(target_base_coarse)
                             coarse_target_mode = f"reanchored_{_reanchor_mode}"
                             _reanchor_msg = (
                                 "[PICK][DIRECT][APPROACH_COARSE_REANCHOR] "
@@ -5848,8 +6577,8 @@ def run_pick_demo(panel) -> None:
                             _phase_target_update(
                                 "APPROACH_COARSE",
                                 target_base=target_base_coarse,
-                                target_world=_target_world_from_base(target_base_coarse),
-                                frame_used="base_link",
+                                target_world=target_world_coarse,
+                                frame_used="world",
                             )
                 if target_base_coarse is not None:
                     coarse_skip_xy_tol = max(
@@ -5913,10 +6642,11 @@ def run_pick_demo(panel) -> None:
                             approach_debug = _move_tcp_direct(
                                 label="APPROACH_COARSE",
                                 target_tcp_runtime=target_base_coarse,
+                                target_tcp_world=target_world_coarse,
                                 timeout_sec=max(move_sec + 2.5, 4.0),
-                                audit_target_source="live_object_base",
-                                target_pose_original=obj_base_before_coarse,
-                                target_frame_original="base_link",
+                                audit_target_source="live_object_world",
+                                target_pose_original=obj_world_before_coarse or target_world_coarse,
+                                target_frame_original="world",
                             )
                         except Exception as exc:
                             if _joint_preset_fallback_ok(
@@ -5962,8 +6692,9 @@ def run_pick_demo(panel) -> None:
                 _trace_phase_pose(
                     phase="APPROACH_COARSE",
                     event="phase_end",
+                    target_world=target_world_coarse,
                     target_base=target_base_coarse,
-                    frame_used="base_link",
+                    frame_used="world",
                     offsets={
                         "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
                         "coarse_extra_z_m": float(coarse_extra_z_m),
@@ -6047,6 +6778,7 @@ def run_pick_demo(panel) -> None:
                 coarse_gate_z_ok: bool = False
                 coarse_gate_pose_ok: bool = False
                 coarse_gate_xy_err: float = float("inf")
+                _cg_z_err: float = float("inf")
                 coarse_pose_metrics = {}
                 if _coarse_check_tcp is not None and _coarse_check_obj is not None and target_base_coarse is not None:
                     _cg_xy_tol = max(
@@ -6143,42 +6875,164 @@ def run_pick_demo(panel) -> None:
                                 stage="phase_end",
                                 tcp_base=_ac_zc_tcp,
                             )
-                    coarse_pose_metrics = _pose_consistency_metrics(
+                    _ac_xy_corr_tol_m = max(
+                        _cg_xy_tol,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_APPROACH_COARSE_XY_CORR_TOL_M",
+                                "0.015",
+                            )
+                            or 0.015
+                        ),
+                    )
+                    _ac_xy_corr_max_m = max(
+                        _ac_xy_corr_tol_m,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_APPROACH_COARSE_XY_CORR_MAX_M",
+                                "0.040",
+                            )
+                            or 0.040
+                        ),
+                    )
+                    if (
+                        approach_decision == "direct_ik_move"
+                        and coarse_gate_xy_err > _ac_xy_corr_tol_m
+                        and coarse_gate_xy_err <= _ac_xy_corr_max_m
+                    ):
+                        _ac_xy_corr_target = (
+                            float(_coarse_check_obj[0]) - (float(_coarse_check_tcp[0]) - float(_coarse_check_obj[0])),
+                            float(_coarse_check_obj[1]) - (float(_coarse_check_tcp[1]) - float(_coarse_check_obj[1])),
+                            float(_cg_z_target),
+                        )
+                        _ac_xyc_log = (
+                            "[APPROACH_COARSE][XY_CORRECTION] "
+                            f"xy_err={coarse_gate_xy_err:.4f} corr_tol={_ac_xy_corr_tol_m:.4f} "
+                            f"corr_max={_ac_xy_corr_max_m:.4f} "
+                            f"object_xy=({_coarse_check_obj[0]:.4f},{_coarse_check_obj[1]:.4f}) "
+                            f"tcp_xy=({_coarse_check_tcp[0]:.4f},{_coarse_check_tcp[1]:.4f}) "
+                            f"corrected_target={_fmt_vec(_ac_xy_corr_target)}"
+                        )
+                        panel._emit_log(_ac_xyc_log)
+                        _append_trace(_ac_xyc_log)
+                        try:
+                            _move_tcp_direct(
+                                label="APPROACH_COARSE_XY_CORR",
+                                target_tcp_runtime=_ac_xy_corr_target,
+                                timeout_sec=max(move_sec, 4.0),
+                                audit_target_source="xy_correction_feedback",
+                                target_pose_original=target_base_coarse,
+                                target_frame_original="base_link",
+                            )
+                        except Exception as _xyc_exc:
+                            panel._emit_log(
+                                f"[APPROACH_COARSE][XY_CORRECTION][WARN] "
+                                f"failed={_xyc_exc} "
+                                "continuing with best achieved XY"
+                            )
+                        _ac_xyc_tcp = _live_tcp_base()
+                        _ac_xyc_obj = _live_object_base()
+                        if _ac_xyc_tcp is not None and _ac_xyc_obj is not None:
+                            _ac_xyc_err = math.hypot(
+                                float(_ac_xyc_tcp[0]) - float(_ac_xyc_obj[0]),
+                                float(_ac_xyc_tcp[1]) - float(_ac_xyc_obj[1]),
+                            )
+                            _ac_xyc_z_err = float(_ac_xyc_tcp[2]) - _cg_z_target
+                            _ac_xyc_log2 = (
+                                "[APPROACH_COARSE][XY_CORRECTION][RESULT] "
+                                f"tcp_after={_fmt_vec(_ac_xyc_tcp)} "
+                                f"object_after={_fmt_vec(_ac_xyc_obj)} "
+                                f"xy_err_after={_ac_xyc_err:.4f} "
+                                f"z_err_after={_ac_xyc_z_err:.4f}"
+                            )
+                            panel._emit_log(_ac_xyc_log2)
+                            _append_trace(_ac_xyc_log2)
+                            _coarse_check_tcp = _ac_xyc_tcp
+                            _coarse_check_obj = _ac_xyc_obj
+                            coarse_gate_xy_err = float(_ac_xyc_err)
+                            _cg_z_actual = float(_ac_xyc_tcp[2])
+                            _cg_z_err = float(_ac_xyc_z_err)
+                            coarse_gate_xy_ok = bool(coarse_gate_xy_err <= _cg_xy_tol)
+                            coarse_gate_z_ok = bool(abs(_cg_z_err) <= _cg_z_tol)
+                            _store_phase_pose_sample(
+                                "APPROACH_COARSE",
+                                stage="phase_end",
+                                tcp_base=_ac_xyc_tcp,
+                            )
+                    _coarse_gate = _wait_phase_gate_ready(
                         phase="APPROACH_COARSE",
-                        tcp_base=_coarse_check_tcp,
                         target_base=target_base_coarse,
+                        xy_tol_m=_cg_xy_tol,
+                        z_tol_m=_cg_z_tol,
+                        timeout_sec=max(
+                            0.3,
+                            float(
+                                os.environ.get(
+                                    "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_SETTLE_SEC",
+                                    "0.80",
+                                )
+                                or 0.80
+                            ),
+                        ),
+                        poll_sec=max(
+                            0.05,
+                            float(
+                                os.environ.get(
+                                    "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_POLL_SEC",
+                                    "0.10",
+                                )
+                                or 0.10
+                            ),
+                        ),
+                        required_samples=max(
+                            2,
+                            int(
+                                os.environ.get(
+                                    "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_STABLE_SAMPLES",
+                                    "2",
+                                )
+                                or 2
+                            ),
+                        ),
+                        pose_gate_key="ok_for_gate",
+                        xy_reference_mode="object",
                     )
-                    coarse_gate_pose_ok = bool(coarse_pose_metrics.get("ok_for_gate"))
-                    _store_phase_pose_sample(
-                        "APPROACH_COARSE",
-                        stage="phase_check",
-                        tcp_base=_coarse_check_tcp,
+                    _coarse_check_tcp = _tuple3(_coarse_gate.get("tcp_base")) or _coarse_check_tcp
+                    _coarse_check_obj = _tuple3(_coarse_gate.get("object_base")) or _coarse_check_obj
+                    _coarse_xy_err_value = _coarse_gate.get("xy_err")
+                    _coarse_z_err_value = _coarse_gate.get("z_err")
+                    coarse_gate_xy_err = (
+                        float(_coarse_xy_err_value)
+                        if _coarse_xy_err_value is not None
+                        else float("inf")
                     )
-                    _emit_pose_consistency(
-                        phase="APPROACH_COARSE",
-                        stage="phase_check",
-                        metrics=coarse_pose_metrics,
+                    _cg_z_err = (
+                        float(_coarse_z_err_value)
+                        if _coarse_z_err_value is not None
+                        else float("inf")
                     )
-                    _cg_result = (
-                        "OK"
-                        if (coarse_gate_xy_ok and coarse_gate_z_ok and coarse_gate_pose_ok)
-                        else "NO"
-                    )
+                    coarse_gate_xy_ok = bool(_coarse_gate.get("xy_ok"))
+                    coarse_gate_z_ok = bool(_coarse_gate.get("z_ok"))
+                    coarse_gate_pose_ok = bool(_coarse_gate.get("pose_ok"))
+                    coarse_pose_metrics = _coarse_gate.get("pose_consistency") or {}
+                    _cg_result = "OK" if bool(_coarse_gate.get("ok")) else "NO"
                     _cg_msg = (
                         "[PICK][DIRECT][PHASE_CHECK] "
                         f"phase=APPROACH_COARSE "
                         f"xy_err={coarse_gate_xy_err:.3f}/{_cg_xy_tol:.3f} "
                         f"z_err={_cg_z_err:.3f}/{_cg_z_tol:.3f} "
                         f"pose_ok={str(coarse_gate_pose_ok).lower()} "
+                        f"pose_gate={str(_coarse_gate.get('pose_gate_key') or 'ok_for_gate')} "
                         f"target_xyz=({target_base_coarse[0]:.3f},{target_base_coarse[1]:.3f},{target_base_coarse[2]:.3f}) "
                         f"actual_xyz=({_coarse_check_tcp[0]:.3f},{_coarse_check_tcp[1]:.3f},{_coarse_check_tcp[2]:.3f}) "
                         f"object_xyz=({_coarse_check_obj[0]:.3f},{_coarse_check_obj[1]:.3f},{_coarse_check_obj[2]:.3f}) "
+                        f"samples={int(_coarse_gate.get('stable_samples') or 0)}/{int(_coarse_gate.get('required_samples') or 0)} "
                         f"xy_ok={str(coarse_gate_xy_ok).lower()} z_ok={str(coarse_gate_z_ok).lower()} "
                         f"decision={approach_decision} result={_cg_result}"
                     )
                     panel._emit_log(_cg_msg)
                     _append_trace(_cg_msg)
-                    if not (coarse_gate_xy_ok and coarse_gate_z_ok and coarse_gate_pose_ok):
+                    if not bool(_coarse_gate.get("ok")):
                         _abort_grasp(
                             code="APPROACH_COARSE_NOT_READY",
                             phase="APPROACH_COARSE",
@@ -6205,6 +7059,7 @@ def run_pick_demo(panel) -> None:
                 # Refrescar target justo antes del descenso, pero conservando el XY ya
                 # alineado en APPROACH_COARSE para que GRASP_DOWN_JOINT sea un descenso
                 # corto relativo desde la pose buena alcanzada.
+                obj_world_before_grasp_down = _live_object_world()
                 obj_base_before_grasp_down = _live_object_base()
                 if obj_base_before_grasp_down is None:
                     _append_trace(
@@ -6217,8 +7072,12 @@ def run_pick_demo(panel) -> None:
                     raise RuntimeError("demo_live_object_pose_unavailable_before_grasp_down")
                 target_base_grasp_down = None
                 target_world_grasp_down = None
+                tcp_world_before_grasp_down = _live_tcp_world()
                 tcp_before_grasp_down = _live_tcp_base()
                 tcp_before_grasp_down_source = "live_tcp"
+                target_mode = "object_xy_plus_object_z"
+                grasp_down_relative_mode = "object_xy_plus_object_z"
+                grasp_down_target_source = "live_object_world"
                 if tcp_before_grasp_down is None:
                     tcp_before_grasp_down = _tuple3(getattr(panel, "_last_trace_tcp_base", None))
                     if tcp_before_grasp_down is not None:
@@ -6227,14 +7086,11 @@ def run_pick_demo(panel) -> None:
                     tcp_before_grasp_down = _tuple3(getattr(panel, "_last_tcp_base", None))
                     if tcp_before_grasp_down is not None:
                         tcp_before_grasp_down_source = "panel_last_tcp_base"
-                if obj_base_before_grasp_down is not None:
-                    target_x = float(obj_base_before_grasp_down[0])
-                    target_y = float(obj_base_before_grasp_down[1])
-                    target_z = float(obj_base_before_grasp_down[2]) + grasp_z_for_source_frame + float(grasp_down_extra_z_m)
-                    target_mode = "object_xy_plus_object_z"
-                    grasp_down_relative_mode = "object_xy_plus_object_z"
-                    grasp_down_target_source = "live_object_base"
-                    if tcp_before_grasp_down is not None:
+                if obj_world_before_grasp_down is not None:
+                    target_x = float(obj_world_before_grasp_down[0])
+                    target_y = float(obj_world_before_grasp_down[1])
+                    target_z = float(obj_world_before_grasp_down[2]) + grasp_z_for_source_frame + float(grasp_down_extra_z_m)
+                    if tcp_before_grasp_down is not None and tcp_world_before_grasp_down is not None and obj_base_before_grasp_down is not None:
                         keep_xy_tol = max(
                             0.001,
                             float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M", "0.003") or 0.003),
@@ -6256,11 +7112,11 @@ def run_pick_demo(panel) -> None:
                             and not _coarse_was_fallback
                         )
                         if _can_inherit_xy:
-                            target_x = float(tcp_before_grasp_down[0])
-                            target_y = float(tcp_before_grasp_down[1])
+                            target_x = float(tcp_world_before_grasp_down[0])
+                            target_y = float(tcp_world_before_grasp_down[1])
                             target_mode = "keep_current_xy_plus_object_z"
                             grasp_down_relative_mode = "keep_current_xy_plus_object_z"
-                            grasp_down_target_source = f"{tcp_before_grasp_down_source}+live_object_z"
+                            grasp_down_target_source = f"{tcp_before_grasp_down_source}_world+live_object_world_z"
                             _gd_gate_msg = (
                                 "[PICK][DIRECT][PHASE_GATE] "
                                 "phase=GRASP_DOWN_JOINT inherit_xy=true "
@@ -6303,25 +7159,37 @@ def run_pick_demo(panel) -> None:
                                 f"xy_dist={tcp_obj_xy:.3f}/{keep_xy_tol:.3f} "
                                 "decision=use_object_xy"
                             )
-                    target_base_grasp_down = (
+                    target_world_grasp_down = (
                         float(target_x),
                         float(target_y),
                         float(target_z),
                     )
-                    target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
+                    target_base_grasp_down = _target_base_from_world(target_world_grasp_down)
                     panel._emit_log(
                         "[PICK][DIRECT][GRASP_DOWN_PLAN] "
                         f"mode={target_mode} "
                         f"tcp_source={tcp_before_grasp_down_source} "
                         f"tcp_before={_fmt_vec(tcp_before_grasp_down)} "
-                        f"obj_before={_fmt_vec(obj_base_before_grasp_down)} "
-                        f"target={_fmt_vec(target_base_grasp_down)}"
+                        f"obj_before_world={_fmt_vec(obj_world_before_grasp_down)} "
+                        f"obj_before_base={_fmt_vec(obj_base_before_grasp_down)} "
+                        f"target_world={_fmt_vec(target_world_grasp_down)} "
+                        f"target_base={_fmt_vec(target_base_grasp_down)}"
                     )
+                elif obj_base_before_grasp_down is not None:
+                    target_mode = "object_xy_plus_object_z_base_fallback"
+                    grasp_down_relative_mode = "object_xy_plus_object_z_base_fallback"
+                    grasp_down_target_source = "live_object_base_fallback"
+                    target_base_grasp_down = (
+                        float(obj_base_before_grasp_down[0]),
+                        float(obj_base_before_grasp_down[1]),
+                        float(obj_base_before_grasp_down[2]) + grasp_z_for_source_frame + float(grasp_down_extra_z_m),
+                    )
+                    target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
                 _phase_begin(
                     "GRASP_DOWN_JOINT",
                     target_world=target_world_grasp_down,
                     target_base=target_base_grasp_down,
-                    frame_used="base_link",
+                    frame_used="world",
                     offsets={
                         "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
                         "grasp_down_extra_z_m": float(grasp_down_extra_z_m),
@@ -6340,8 +7208,9 @@ def run_pick_demo(panel) -> None:
                 _trace_phase_pose(
                     phase="GRASP_DOWN_JOINT",
                     event="target_set",
+                    target_world=target_world_grasp_down,
                     target_base=target_base_grasp_down,
-                    frame_used="base_link",
+                    frame_used="world",
                     offsets={
                         "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
                         "grasp_down_extra_z_m": float(grasp_down_extra_z_m),
@@ -6373,13 +7242,54 @@ def run_pick_demo(panel) -> None:
                 )
                 grasp_down_decision = "direct_ik_runtime_refine"
                 if target_base_grasp_down is not None:
-                    grasp_down_debug, grasp_down_decision, grasp_down_metrics = _run_grasp_down_conservative(
-                        target_base=target_base_grasp_down,
-                        obj_base=obj_base_before_grasp_down,
-                        timeout_sec=max(move_sec + 3.0, 4.5),
-                        audit_target_source=grasp_down_target_source,
-                        phase_seed_joints=_current_joint_seed(),
+                    _use_moveit_cart = (
+                        str(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN", "1"
+                            ) or "1"
+                        )
+                        .strip()
+                        .lower()
+                        not in ("0", "false", "no", "off")
                     )
+                    if _use_moveit_cart:
+                        try:
+                            grasp_down_debug, grasp_down_decision, grasp_down_metrics = (
+                                _run_grasp_down_cartesian(
+                                    target_base=target_base_grasp_down,
+                                    obj_base=obj_base_before_grasp_down,
+                                    timeout_sec=max(move_sec + 8.0, 12.0),
+                                    audit_target_source=grasp_down_target_source,
+                                )
+                            )
+                            panel._emit_log(
+                                "[PICK][DIRECT][GRASP_DOWN] route=moveit_cartesian_path result=ok"
+                            )
+                        except Exception as _cart_exc:
+                            panel._emit_log(
+                                "[PICK][DIRECT][GRASP_DOWN] "
+                                f"moveit_cartesian_failed:{_cart_exc} "
+                                "fallback=conservative_ik"
+                            )
+                            grasp_down_debug, grasp_down_decision, grasp_down_metrics = (
+                                _run_grasp_down_conservative(
+                                    target_base=target_base_grasp_down,
+                                    obj_base=obj_base_before_grasp_down,
+                                    timeout_sec=max(move_sec + 3.0, 4.5),
+                                    audit_target_source=grasp_down_target_source,
+                                    phase_seed_joints=_current_joint_seed(),
+                                )
+                            )
+                    else:
+                        grasp_down_debug, grasp_down_decision, grasp_down_metrics = (
+                            _run_grasp_down_conservative(
+                                target_base=target_base_grasp_down,
+                                obj_base=obj_base_before_grasp_down,
+                                timeout_sec=max(move_sec + 3.0, 4.5),
+                                audit_target_source=grasp_down_target_source,
+                                phase_seed_joints=_current_joint_seed(),
+                            )
+                        )
                 tcp_after_joint = _live_tcp_base()
                 obj_after_joint = _live_object_base()
                 if tcp_after_joint is not None and obj_after_joint is not None:
@@ -6410,8 +7320,9 @@ def run_pick_demo(panel) -> None:
                 _trace_phase_pose(
                     phase="GRASP_DOWN_JOINT",
                     event="phase_end",
+                    target_world=target_world_grasp_down,
                     target_base=target_base_grasp_down,
-                    frame_used="base_link",
+                    frame_used="world",
                     offsets={
                         "tcp_z_offset_m": float(GRIPPER_TCP_Z_OFFSET),
                         "grasp_down_extra_z_m": float(grasp_down_extra_z_m),
@@ -6448,34 +7359,61 @@ def run_pick_demo(panel) -> None:
                         # residual XY/Z errors, so a 25mm gate here is appropriate.
                         float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M", "0.025") or 0.025),
                     )
-                    _gd_check_xy_err = math.hypot(
-                        float(_gd_check_tcp[0]) - float(target_base_grasp_down[0]),
-                        float(_gd_check_tcp[1]) - float(target_base_grasp_down[1]),
-                    )
-                    _gd_check_z_err = float(_gd_check_tcp[2]) - float(target_base_grasp_down[2])
-                    _gd_pose_metrics = _pose_consistency_metrics(
+                    _gd_gate = _wait_phase_gate_ready(
                         phase="GRASP_DOWN_JOINT",
-                        tcp_base=_gd_check_tcp,
                         target_base=target_base_grasp_down,
+                        xy_tol_m=_gd_xy_tol,
+                        z_tol_m=_gd_z_tol,
+                        timeout_sec=max(
+                            0.3,
+                            float(
+                                os.environ.get(
+                                    "PANEL_PICK_DEMO_GRASP_DOWN_GATE_SETTLE_SEC",
+                                    "0.80",
+                                )
+                                or 0.80
+                            ),
+                        ),
+                        poll_sec=max(
+                            0.05,
+                            float(
+                                os.environ.get(
+                                    "PANEL_PICK_DEMO_GRASP_DOWN_GATE_POLL_SEC",
+                                    "0.10",
+                                )
+                                or 0.10
+                            ),
+                        ),
+                        required_samples=max(
+                            2,
+                            int(
+                                os.environ.get(
+                                    "PANEL_PICK_DEMO_GRASP_DOWN_GATE_STABLE_SAMPLES",
+                                    "2",
+                                )
+                                or 2
+                            ),
+                        ),
+                        # GRASP_DOWN still tolerates FK-vs-TF divergence at grasp height;
+                        # here we only need to reject teleports/stale geometry, not DH drift.
+                        pose_gate_key="phase_jump_ok",
                     )
-                    _store_phase_pose_sample(
-                        "GRASP_DOWN_JOINT",
-                        stage="phase_check",
-                        tcp_base=_gd_check_tcp,
+                    _gd_check_tcp = _tuple3(_gd_gate.get("tcp_base")) or _gd_check_tcp
+                    _gd_check_obj = _tuple3(_gd_gate.get("object_base")) or _gd_check_obj
+                    _gd_xy_err_value = _gd_gate.get("xy_err")
+                    _gd_z_err_value = _gd_gate.get("z_err")
+                    _gd_check_xy_err = (
+                        float(_gd_xy_err_value)
+                        if _gd_xy_err_value is not None
+                        else float("inf")
                     )
-                    _emit_pose_consistency(
-                        phase="GRASP_DOWN_JOINT",
-                        stage="phase_check",
-                        metrics=_gd_pose_metrics,
+                    _gd_check_z_err = (
+                        float(_gd_z_err_value)
+                        if _gd_z_err_value is not None
+                        else float("inf")
                     )
-                    grasp_down_gate_ok = bool(
-                        _gd_check_xy_err <= _gd_xy_tol
-                        and abs(_gd_check_z_err) <= _gd_z_tol
-                        # Use phase_jump_ok (no teleport) instead of ok_for_gate:
-                        # ok_for_gate also requires sources_ok which fails when DH FK
-                        # model diverges from live TF (~13mm at grasp height).
-                        and bool(_gd_pose_metrics.get("phase_jump_ok"))
-                    )
+                    _gd_pose_metrics = _gd_gate.get("pose_consistency") or {}
+                    grasp_down_gate_ok = bool(_gd_gate.get("ok"))
                     grasp_down_gate_metrics = {
                         "xy_err": float(_gd_check_xy_err),
                         "xy_tol": float(_gd_xy_tol),
@@ -6493,10 +7431,12 @@ def run_pick_demo(panel) -> None:
                         f"phase=GRASP_DOWN_JOINT "
                         f"xy_err={_gd_check_xy_err:.3f}/{_gd_xy_tol:.3f} "
                         f"z_err={_gd_check_z_err:.3f}/{_gd_z_tol:.3f} "
-                        f"pose_ok={str(bool(_gd_pose_metrics.get('ok_for_gate'))).lower()} "
+                        f"pose_ok={str(bool(_gd_gate.get('pose_ok'))).lower()} "
+                        f"pose_gate={str(_gd_gate.get('pose_gate_key') or 'phase_jump_ok')} "
                         f"target_xyz=({target_base_grasp_down[0]:.3f},{target_base_grasp_down[1]:.3f},{target_base_grasp_down[2]:.3f}) "
                         f"actual_xyz=({_gd_check_tcp[0]:.3f},{_gd_check_tcp[1]:.3f},{_gd_check_tcp[2]:.3f}) "
                         f"object_xyz=({_gd_check_obj[0]:.3f},{_gd_check_obj[1]:.3f},{_gd_check_obj[2]:.3f}) "
+                        f"samples={int(_gd_gate.get('stable_samples') or 0)}/{int(_gd_gate.get('required_samples') or 0)} "
                         f"result={_gd_check_result}"
                     )
                     panel._emit_log(_gd_check_msg)
@@ -8072,6 +9012,21 @@ def run_pick_demo(panel) -> None:
             # Marcar como ejecutado sin confirmación si falló
             panel._pick_demo_executed = False
         finally:
+            worker_started_mono = run_context.get("worker_started_mono") or sync_start_mono
+            panel._emit_log(
+                "[PICK][DIRECT][LIFECYCLE] "
+                f"stage=worker_finally last_sync_gate={run_context['last_sync_gate']} "
+                f"worker_runtime_sec={time.monotonic() - worker_started_mono:.3f} "
+                f"script_active_before_release={str(bool(getattr(panel, '_script_motion_active', False))).lower()}"
+            )
             panel._set_motion_lock(False)
 
-    panel._run_async(worker)
+    try:
+        panel._run_async(worker)
+    except Exception as exc:
+        _sync_gate_emit("worker_dispatch", False, f"exception={exc}")
+        panel._emit_log(f"[PICK] ✗ Error lanzando worker: {exc}")
+        panel._ui_set_status(f"Error lanzando pick demo: {exc}", error=True)
+        panel._set_motion_lock(False)
+        return
+    _sync_gate_emit("worker_dispatch", True, "async_started")

@@ -276,13 +276,34 @@ def run_pick_object(panel) -> None:
         panel._emit_log(f"[PICK] controladores no listos ({reason})")
         return
 
+    def _world_ready_scope() -> str:
+        raw = str(os.environ.get("PANEL_PICK_OBJECT_WORLD_READY_SCOPE", "target") or "target").strip().lower()
+        if raw in ("all", "strict"):
+            return "all"
+        return "target"
+
+    def _world_ready_tracked_names() -> list[str]:
+        scope = _world_ready_scope()
+        if scope == "all":
+            return sorted(set(DROP_NAME_SET) | set(PICK_DEMO_NAME_SET))
+        tracked: list[str] = []
+        for candidate in (
+            str(getattr(panel, "_selected_object", "") or "").strip(),
+            str(getattr(panel, "_selection_last_user_name", "") or "").strip(),
+        ):
+            if candidate and candidate not in tracked:
+                tracked.append(candidate)
+        if tracked:
+            return tracked
+        return ["pick_demo"]
+
     def _world_ready_pending() -> list[str]:
         pending: list[str] = []
         if not bool(getattr(panel, "_pose_info_ok", False)):
             pending.append("pose_info:not_ready")
             return pending
         positions = get_object_positions() or {}
-        tracked_names = sorted(set(DROP_NAME_SET) | set(PICK_DEMO_NAME_SET))
+        tracked_names = _world_ready_tracked_names()
         for name in tracked_names:
             pose = positions.get(name)
             if pose is None or len(pose) < 3:
@@ -318,9 +339,10 @@ def run_pick_object(panel) -> None:
         while time.time() < deadline:
             pending = _world_ready_pending()
             if not pending:
+                tracked_names = _world_ready_tracked_names()
                 panel._emit_log(
-                    "[PICK_OBJ][WORLD_READY] ready scene=on_table_all "
-                    f"tracked={len(set(DROP_NAME_SET) | set(PICK_DEMO_NAME_SET))}"
+                    "[PICK_OBJ][WORLD_READY] ready "
+                    f"scope={_world_ready_scope()} tracked={','.join(tracked_names)}"
                 )
                 return True
             now = time.time()
@@ -2207,13 +2229,16 @@ def run_pick_object(panel) -> None:
                 except Exception:
                     home_start_dur_sec = 8.0
                 home_start_dur_sec = max(move_sec, home_start_dur_sec)
+                home_start_require_reached = str(
+                    os.environ.get("PANEL_PICK_OBJECT_HOME_START_REQUIRE_REACHED", "0")
+                ).strip().lower() not in ("0", "false", "no", "off")
                 _run_joint_step(
                     "HOME_START",
                     home_pose,
                     timeout_sec=home_start_dur_sec + 3.0,
                     tol_rad=home_tol_rad,
                     duration_sec=home_start_dur_sec,
-                    require_reached=True,
+                    require_reached=home_start_require_reached,
                 )
 
             def _assert_carry_coherence_after_lift(
@@ -3077,8 +3102,10 @@ def run_pick_object(panel) -> None:
                         )
 
                     def _next_panel_request_id() -> int:
-                        seq = int(getattr(panel, "_pick_obj_moveit_request_id", 0) or 0) + 1
-                        setattr(panel, "_pick_obj_moveit_request_id", seq)
+                        # Use the panel-global MoveIt request counter so pick_object
+                        # does not collide with concurrent/previous MoveIt flows.
+                        seq = int(getattr(panel, "_panel_moveit_request_id", 0) or 0) + 1
+                        setattr(panel, "_panel_moveit_request_id", seq)
                         return seq
 
                     def _next_panel_request_uuid(label_key: str = "") -> str:

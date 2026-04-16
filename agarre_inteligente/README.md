@@ -21,7 +21,7 @@ Experimentos base del capitulo 5:
 - `EXP3_RESNET18_RGB_AUGMENT`
 - `EXP4_RESNET18_RGBD`
 
-Experimentos auxiliares conservados en el repo:
+Experimentos adicionales conservados en el repo:
 
 - `EXP1.1_SIMPLEGRASP_RGB` (config: `exp1_1_simplegrasp_rgb.yaml`)
 - `EXP1.2_SIMPLEGRASP_RGBD` (config: `exp1_2_simplegrasp_rgbd.yaml`)
@@ -44,7 +44,7 @@ La diferencia importa porque el apartado `4.6.2` de la memoria distingue entre:
 - el diseño objetivo del modelo ligero documentado en teoria
 - la version finalmente integrada y evaluada en el pipeline experimental
 
-En la propia memoria se indica expresamente que la arquitectura presentada en `4.6.2` recoge el diseño objetivo del modelo ligero, pero que la version finalmente integrada y evaluada se mantuvo en una formulacion mas simple por estabilidad, trazabilidad y coste computacional.
+En la memoria entregada, el apartado `4.6.2` describe el diseño objetivo del modelo ligero. En el workspace actual ese diseño esta implementado en `SimpleGrasp`, mientras que el bloque experimental presentado en resultados se mantiene sobre `EXP1` y `EXP2`.
 
 La lectura correcta para este workspace es la siguiente:
 
@@ -58,9 +58,9 @@ Esto no es una contradiccion, sino una separacion entre:
 
 La justificacion practica es sencilla:
 
-- `EXP1` y `EXP2` son la base reproducible de las figuras, tablas y conclusiones ya publicadas en la memoria
-- sustituirlos retroactivamente por `EXP1.1` y `EXP1.2` mezclaria una implementacion posterior del diseño objetivo con unos resultados que no fueron los que alimentaron el capitulo experimental
-- mantener ambos niveles separados preserva a la vez la fidelidad teorica del apartado `4.6.2` y la honestidad metodologica del bloque de resultados
+- `EXP1` y `EXP2` son la base reproducible de las figuras, tablas y conclusiones publicadas en la memoria
+- `EXP1.1` y `EXP1.2` amplian el workspace sin cambiar el bloque experimental presentado
+- mantener ambos niveles separados preserva a la vez la fidelidad teorica del apartado `4.6.2` y la trazabilidad del bloque de resultados
 
 Resumen practico:
 
@@ -89,8 +89,8 @@ Correspondencia con el codigo:
 Por tanto, a efectos del workspace actual:
 
 - `EXP1` y `EXP2` son la referencia de resultados de la memoria: son los experimentos que sustentan tablas, figuras y comparativas del documento.
-- `EXP1.1` y `EXP1.2` son la referencia de implementacion teorica: materializan en codigo el diseño objetivo descrito en `4.6.2`.
-- Dicho de otro modo: si la pregunta es "que arquitectura recoge la teoria", la respuesta es `EXP1.1` y `EXP1.2`; si la pregunta es "que experimentos respaldan los resultados presentados en la memoria", la respuesta es `EXP1` y `EXP2`.
+- `EXP1.1` y `EXP1.2` materializan en codigo el diseño objetivo descrito en `4.6.2`.
+- Si la pregunta es "que arquitectura recoge la teoria", la respuesta es `EXP1.1` y `EXP1.2`; si la pregunta es "que experimentos respaldan los resultados presentados en la memoria", la respuesta es `EXP1` y `EXP2`.
 
 ## Flujo tipico
 

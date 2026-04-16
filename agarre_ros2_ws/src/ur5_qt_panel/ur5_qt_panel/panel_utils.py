@@ -207,7 +207,56 @@ def _log_tf_transform_warning(context: str, exc: Exception) -> None:
     print(timestamped_line(msg), flush=True)
 
 
+def _transform_xyz_via_tf(
+    coords: Tuple[float, float, float],
+    source_frame: str,
+    target_frame: str,
+    *,
+    timeout_sec: float = 0.05,
+) -> Optional[Tuple[float, float, float]]:
+    """Transform XYZ coordinates via TF when a live transform is available."""
+    helper = get_tf_helper()
+    if helper is None or PointStamped is None or rclpy is None:
+        return None
+    try:
+        point = PointStamped()
+        point.header.frame_id = str(source_frame or "").strip() or "world"
+        if BuiltinTime is not None:
+            point.header.stamp = BuiltinTime(sec=0, nanosec=0)
+        else:
+            point.header.stamp = rclpy.time.Time().to_msg()
+        point.point.x = float(coords[0])
+        point.point.y = float(coords[1])
+        point.point.z = float(coords[2])
+        converted = helper.transform_point(
+            point,
+            str(target_frame or "").strip() or "world",
+            timeout_sec=timeout_sec,
+        )
+        if not converted:
+            return None
+        return (
+            float(converted.point.x),
+            float(converted.point.y),
+            float(converted.point.z),
+        )
+    except Exception as exc:
+        _log_tf_transform_warning(
+            f"transform_xyz {source_frame}->{target_frame}",
+            exc,
+        )
+        return None
+
+
 def base_to_world(x: float, y: float, z: float) -> Tuple[float, float, float]:
+    world_frame = str(WORLD_FRAME or "world").strip() or "world"
+    transformed = _transform_xyz_via_tf(
+        (float(x), float(y), float(z)),
+        "base_link",
+        world_frame,
+    )
+    if transformed is not None:
+        return transformed
     return (x + UR5_BASE_X, y + UR5_BASE_Y, z + UR5_BASE_Z)
 
 def read_world_name(world_path: str) -> str:
@@ -900,6 +949,14 @@ def angle_shortest_diff_rad(current: float, target: float) -> float:
 
 
 def world_to_base(x: float, y: float, z: float) -> Tuple[float, float, float]:
+    world_frame = str(WORLD_FRAME or "world").strip() or "world"
+    transformed = _transform_xyz_via_tf(
+        (float(x), float(y), float(z)),
+        world_frame,
+        "base_link",
+    )
+    if transformed is not None:
+        return transformed
     return (x - UR5_BASE_X, y - UR5_BASE_Y, z - UR5_BASE_Z)
 
 

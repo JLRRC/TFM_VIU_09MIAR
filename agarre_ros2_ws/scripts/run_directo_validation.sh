@@ -14,7 +14,8 @@ set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-AUDIT_DIR="$WS_DIR/../auditoria_spatial_$(date +%Y%m%d)"
+AUDIT_ROOT="${AUDIT_ROOT:-$WS_DIR/../auditoria}"
+AUDIT_DIR="${AUDIT_DIR:-$AUDIT_ROOT/spatial_$(date +%Y%m%d)}"
 RUN_ID="directo_validation_$(date +%Y%m%d_%H%M%S)"
 OUT_DIR="${OUT_DIR:-$AUDIT_DIR/$RUN_ID}"
 

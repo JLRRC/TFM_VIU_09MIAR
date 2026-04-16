@@ -21,7 +21,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from tf2_msgs.msg import TFMessage
-from tf2_ros import TransformBroadcaster
+from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
 
 
 class WorldTfPublisher(Node):
@@ -59,6 +59,10 @@ class WorldTfPublisher(Node):
 
         self._topic = f"/world/{self._world_name}/pose/info"
         self._tf_pub = TransformBroadcaster(self)
+        # Static broadcaster used only for the pre-warm transform when static_grace_sec < 0.
+        # Published once on /tf_static so tf2 consumers have world->base_link immediately,
+        # before Gazebo and /clock are ready.  Overridden by dynamic TF once Gazebo is live.
+        self._static_tf_pub = StaticTransformBroadcaster(self)
 
         self._last_stamp = None
         self._last_warn = 0.0
@@ -92,6 +96,45 @@ class WorldTfPublisher(Node):
             self.get_logger().info("Waiting for /clock before publishing TF.")
         if self._static_grace >= 0.0:
             self._static_pose = self._load_static_pose()
+        elif self._static_grace < 0.0:
+            # static_grace_sec < 0: publish world->base_link immediately on /tf_static
+            # without waiting for /clock or Gazebo.  Eliminates TF-null window at startup.
+            self._static_pose = self._load_static_pose()
+            self._publish_static_prewarm()
+
+    def _publish_static_prewarm(self) -> None:
+        """Publish world->base_link on /tf_static immediately, before clock/Gazebo are ready.
+
+        Uses stamp=0 (the tf2 convention for "always valid") so tf2 consumers can look up
+        world->base_link from the very first second of startup.  The dynamic TF published
+        by _publish_timer will automatically take precedence once Gazebo is live.
+        """
+        if self._static_pose is None or self._is_identity_pose(self._static_pose):
+            self.get_logger().warn(
+                "static_grace_sec<0 pero no hay pose estática disponible en el world file; "
+                "pre-warm /tf_static omitido."
+            )
+            return
+        tx, ty, tz, rx, ry, rz, rw = self._static_pose
+        out = TransformStamped()
+        out.header.stamp.sec = 0
+        out.header.stamp.nanosec = 0
+        out.header.frame_id = self._world_frame or "world"
+        out.child_frame_id = self._base_frame
+        out.transform.translation.x = tx
+        out.transform.translation.y = ty
+        out.transform.translation.z = tz
+        out.transform.rotation.x = rx
+        out.transform.rotation.y = ry
+        out.transform.rotation.z = rz
+        out.transform.rotation.w = rw
+        self._static_tf_pub.sendTransform(out)
+        self.get_logger().info(
+            f"[PRE-WARM] Publicado {self._world_frame}->{self._base_frame} en /tf_static "
+            f"(pose estática del world file: x={tx:.3f} y={ty:.3f} z={tz:.3f}). "
+            "Se actualizará con la pose dinámica de Gazebo cuando esté disponible."
+        )
+        self._static_used = True
 
     def _name_from_tf(self, tf: TransformStamped) -> str:
         child = getattr(tf, "child_frame_id", "") or ""
@@ -240,18 +283,19 @@ class WorldTfPublisher(Node):
         return True
 
     def _score_name(self, name: str) -> int:
-        if name == self._model_name:
-            return 100
-        if name.endswith("::base_link"):
-            return 95
+        if name == f"{self._model_name}::{self._base_frame}":
+            return 120
         if name == self._base_frame:
-            return 90
-        if self._model_name and self._model_name in name:
-            return 80
+            return 110
+        if name.endswith("::base_link"):
+            return 100
+        if name.endswith(f"::{self._base_frame}"):
+            return 95
         if name.endswith(self._base_frame):
-            return 70
-        if self._base_frame and self._base_frame in name:
-            return 60
+            return 85
+        if self._model_name and name == self._model_name:
+            # Gazebo model pose is not guaranteed to coincide with base_link.
+            return 0
         return 0
 
     def _select_transform(self, msg: TFMessage) -> Optional[TransformStamped]:

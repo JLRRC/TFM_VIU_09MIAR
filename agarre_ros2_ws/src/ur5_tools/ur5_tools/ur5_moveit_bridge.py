@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections import deque
 from copy import deepcopy
+import gc
 import json
 import math
 import os
@@ -356,6 +357,7 @@ class UR5MoveItBridge(Node):
         self._moveit_py = None
         self._planning_component = None
         self._move_group = None
+        self._moveit_py_init_thread: threading.Thread | None = None
         self._cartesian_group = None
         self._cartesian_client = None
         self._traj_pub = None
@@ -487,7 +489,12 @@ class UR5MoveItBridge(Node):
             20,
         )
         if self._backend == "moveit_py":
-            threading.Thread(target=self._init_moveit_py, daemon=True).start()
+            self._moveit_py_init_thread = threading.Thread(
+                target=self._init_moveit_py,
+                daemon=True,
+                name="ur5_moveit_py_init",
+            )
+            self._moveit_py_init_thread.start()
         self.create_timer(0.5, self._poll_tf_ready)
         self.create_timer(max(0.05, 1.0 / max(0.2, self._heartbeat_rate_hz)), self._publish_heartbeat)
         self._worker_thread = threading.Thread(target=self._plan_worker, daemon=True)
@@ -1116,8 +1123,6 @@ class UR5MoveItBridge(Node):
             expected,
             f"/{controller}/{action_ns}",
             f"/controller_manager/{controller}/{action_ns}",
-            tol_override: float | None = None,
-            tol_override: float | None = None,
             f"{base_cm_ns}/{controller}/{action_ns}" if base_cm_ns else "",
         ):
             name = str(raw or "").strip()
@@ -4639,7 +4644,7 @@ class UR5MoveItBridge(Node):
         req.group_name = self._group_name
         req.link_name = self._ee_frame
         req.waypoints = [target.pose]
-        req.max_step = 0.01
+        req.max_step = 0.005
         req.jump_threshold = 0.0
         req.avoid_collisions = True
         start_state_msg, start_state_reason = self._build_start_robot_state_msg()
@@ -4822,10 +4827,59 @@ class UR5MoveItBridge(Node):
         # FASE 8: Join worker thread to avoid zombie/orphan threads.
         if hasattr(self, "_worker_thread") and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=3.0)
+        if (
+            self._moveit_py_init_thread is not None
+            and self._moveit_py_init_thread.is_alive()
+        ):
+            self._moveit_py_init_thread.join(timeout=3.0)
+        try:
+            if self._fjt_prime_timer is not None:
+                self._fjt_prime_timer.cancel()
+        except Exception:
+            pass
         self._destroy_fjt_action_client()
+        self._release_moveit_backend()
+
+    def _release_moveit_backend(self) -> None:
+        """Release MoveIt objects while the ROS context is still alive."""
+        try:
+            if self._move_group is not None:
+                try:
+                    self._move_group.stop()
+                except Exception:
+                    pass
+                try:
+                    self._move_group.clear_pose_targets()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self._planning_component = None
+        self._move_group = None
+        self._cartesian_group = None
+        self._moveit_py_ready = False
+        self._moveit_py_init_error = None
+        if self._moveit_py is not None:
+            self.get_logger().info(
+                "[BRIDGE] liberando backend MoveItPy antes de destroy_node/shutdown."
+            )
+            try:
+                self._moveit_py.shutdown()
+            except Exception as exc:
+                self.get_logger().warning(
+                    "[BRIDGE] MoveItPy shutdown() fallo: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+        self._moveit_py = None
+        try:
+            gc.collect()
+        except Exception:
+            pass
 
 
 def main(args=None) -> None:
+    node: UR5MoveItBridge | None = None
+    fast_exit_on_sigint = False
     rclpy.init(args=args)
     if MoveItPy is None and moveit_commander is None:
         raise SystemExit("MoveIt Python no disponible. Instala ros-jazzy-moveit-py.")
@@ -4836,6 +4890,12 @@ def main(args=None) -> None:
         rclpy.spin(node)
     except KeyboardInterrupt:
         node.get_logger().info("[BRIDGE] detenido por usuario.")
+        fast_exit_on_sigint = bool(getattr(node, "_backend", "") == "moveit_py")
+        if fast_exit_on_sigint:
+            node.get_logger().warning(
+                "[BRIDGE] fast-exit en SIGINT para evitar segfault conocido "
+                "de MoveItPy durante teardown."
+            )
     except Exception as exc:
         # External shutdown paths can raise executor/context exceptions; keep
         # process exit clean while leaving evidence in log.
@@ -4844,8 +4904,16 @@ def main(args=None) -> None:
             f"type={type(exc).__name__} err={exc}\n{traceback.format_exc()}"
         )
     finally:
-        node.shutdown()
-        node.destroy_node()
+        if fast_exit_on_sigint:
+            try:
+                sys.stdout.flush()
+                sys.stderr.flush()
+            except Exception:
+                pass
+            os._exit(0)
+        if node is not None:
+            node.shutdown()
+            node.destroy_node()
         if moveit_commander is not None:
             moveit_commander.roscpp_shutdown()
         try:

@@ -27,6 +27,8 @@ from tf2_msgs.msg import TFMessage
 
 
 PRE_GRASP_RE = re.compile(r"\[PICK\]\[DIRECT\]\[TRANSITION\] from=PRE_CLOSE to=CLOSE ")
+APPROACH_PREGRASP_RE = re.compile(r"\[PICK\]\[DIRECT\]\[DEBUG\] phase=APPROACH_COARSE result=ok ")
+APPROACH_FAILURE_RE = re.compile(r"\[PICK\]\[DIRECT\]\[ANALYSIS\] code=(?P<code>[A-Z0-9_]+) phase=(?P<phase>[A-Z_]+) ")
 BASKET_OK_RE = re.compile(r"\[PICK\]\[DEMO\] confirmacion cesta OK ")
 SUCCESS_RE = re.compile(r"\[PICK\]\[DIRECT\] SECUENCIA COMPLETADA EXITOSAMENTE route=basket")
 
@@ -138,6 +140,13 @@ class DirectoVisualCapture(Node):
     def _handle_helper_line(self, line: str) -> None:
         if PRE_GRASP_RE.search(line) and "pre_grasp" not in self._manifest:
             self._queue_snapshot("pre_grasp", "pre_close_to_close_transition")
+        elif APPROACH_PREGRASP_RE.search(line) and "pre_grasp" not in self._manifest:
+            self._queue_snapshot("pre_grasp", "approach_coarse_result_ok")
+        failure_match = APPROACH_FAILURE_RE.search(line)
+        if failure_match and "approach_failure" not in self._manifest:
+            code = str(failure_match.group("code") or "UNKNOWN")
+            phase = str(failure_match.group("phase") or "UNKNOWN")
+            self._queue_snapshot("approach_failure", f"{phase}:{code}")
         if BASKET_OK_RE.search(line) and "basket_drop" not in self._manifest:
             self._queue_snapshot("basket_drop", "basket_confirmation", delay_sec=self._args.basket_delay_sec)
         elif SUCCESS_RE.search(line) and "basket_drop" not in self._manifest:
@@ -186,6 +195,7 @@ class DirectoVisualCapture(Node):
             "pre_grasp": "pre_grasp.png",
             "grasp_confirmed": "grasp_confirmed.png",
             "lift_with_object": "lift_with_object.png",
+            "approach_failure": "approach_failure.png",
             "basket_drop": "basket_drop.png",
         }[name]
         file_path = self._output_dir / file_name

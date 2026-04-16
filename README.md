@@ -6,7 +6,7 @@ Workspace principal del TFM de percepcion e inferencia de agarre para UR5 con RO
 
 - `agarre_inteligente/`: bloque de vision, entrenamiento, evaluacion y resultados por experimento.
 - `agarre_ros2_ws/`: workspace ROS 2 del panel, simulacion, planificacion e integracion del bloque TFM.
-- `reports/`: artefactos curados de memoria, metricas validadas, evidencias y exportaciones.
+- `reports/`: artefactos curados de memoria, metricas validadas, evidencias y exportaciones, incluyendo el PDF final actualmente tomado como referencia.
 
 ## Flujos principales
 
@@ -49,13 +49,13 @@ Regenerar la tabla de latencia de inferencia:
 En vision conviven dos familias ligeras:
 
 - `EXP1` y `EXP2`: referencia de resultados de la memoria; son los experimentos realmente usados en tablas, figuras y comparativas.
-- `EXP1.1` y `EXP1.2`: referencia de implementacion teorica; materializan en codigo el diseño objetivo descrito en `4.6.2`.
+- `EXP1.1` y `EXP1.2`: experimentos adicionales que materializan en codigo el diseño objetivo descrito en `4.6.2`.
 
 Notas de rigor:
 
 - La recreacion oficial del TFM se mantiene sobre `EXP1..EXP4`.
-- `EXP1.1` y `EXP1.2` se conservan para trazabilidad teorica e inferencia en panel, sin reinterpretar retroactivamente los resultados ya presentados en la memoria.
-- El split Cornell operativo actual del workspace es `3541/1569`, coherente con los CSV activos y con la validacion interna del pipeline.
+- El PDF de referencia del TFM en este workspace es `reports/TFM_Lozano_Rodriguez-Jesus.pdf`.
+- Todos los experimentos disponibles pueden cargarse y usarse desde el panel de inferencia.
 
 ## Convenciones utiles
 

@@ -4,7 +4,7 @@ Directorio curado del documento del TFM y de los artefactos que respaldan la mem
 
 ## Que hay aqui
 
-- `09MIAR_10_Z_2025-26.TFM..DEFINITIVO.pdf`: memoria final de referencia.
+- `TFM_Lozano_Rodriguez-Jesus.pdf`: memoria final de referencia actualmente usada en este workspace.
 - `figures/`: figuras finales organizadas por capitulo.
 - `tables/`: tablas finales organizadas por capitulo.
 - `metrics/raw/`: metricas copiadas desde los experimentos para trazabilidad.
@@ -39,11 +39,10 @@ Directorio curado del documento del TFM y de los artefactos que respaldan la mem
 
 ## Notas de rigor del workspace
 
-- El split Cornell operativo actual queda fijado en `3541` muestras de entrenamiento y `1569` de validacion.
-- Esta cifra sustituye a recuentos historicos mas altos porque el `train.csv` activo se saneo para eliminar una fila corrupta con valores no finitos; el objetivo es que el CSV y el dataset realmente cargado coincidan sin ambiguedad.
-- La recreacion oficial del TFM sigue referida a `EXP1`, `EXP2`, `EXP3` y `EXP4`.
-- `EXP1.1` y `EXP1.2` quedan en el workspace como implementacion en codigo del diseño teorico descrito en `4.6.2`, pero no forman parte de las tablas y figuras oficiales del documento.
-- En el panel pueden usarse para inferencia como variantes auxiliares, sin mezclar su uso con la reproduccion oficial del bloque experimental de la memoria.
+- El PDF de referencia del TFM en este workspace es `TFM_Lozano_Rodriguez-Jesus.pdf`.
+- La recreacion del bloque experimental presentado en la memoria sigue apoyandose en `EXP1`, `EXP2`, `EXP3` y `EXP4`.
+- `EXP1.1` y `EXP1.2` se conservan en el repo como experimentos adicionales asociados a la implementacion del diseño ligero descrito en `4.6.2`.
+- En el panel pueden cargarse y usarse todos los experimentos disponibles sin distincion visual entre ellos.
 
 ## Uso esperado
 

@@ -37,6 +37,9 @@ FORCE_STEP_MODE = str(os.environ.get("DIRECTO_FORCE_STEP_MODE", "0") or "0").str
 )
 STEP_POLL_MS = int(os.environ.get("DIRECTO_STEP_POLL_MS", "120") or "120")
 STEP_MAX_CONTINUES = int(os.environ.get("DIRECTO_STEP_MAX_CONTINUES", "1") or "1")
+AUTO_ACCEPT_CONFIRM = str(
+    os.environ.get("DIRECTO_AUTO_ACCEPT_CONFIRM", "1") or "1"
+).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _fmt_xyz(vec: Optional[Tuple[float, float, float]]) -> str:
@@ -96,6 +99,15 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     panel = ControlPanelV2()
+    if AUTO_ACCEPT_CONFIRM:
+        def _auto_confirm(_parent, btn_label: str, frame: str, pose_str: str) -> bool:
+            panel._emit_log(
+                "[AUDIT][DIRECTO] offscreen helper auto-accepting confirm dialog "
+                f"button={btn_label} frame={frame} pose={pose_str}"
+            )
+            return True
+
+        panel._pick_confirm_dialog = _auto_confirm
     panel.show()
     print(f"[{_stamp()}] [SHUTDOWN][HELPER] app_started", flush=True)
     retry_timer = QTimer(panel)
@@ -109,6 +121,7 @@ def main() -> int:
         "triggered": False,
         "confirmed": False,    # True once the run has been running > TRIGGER_SETTLE_SEC
         "trigger_ts": 0.0,     # monotonic time when the last ok=true was recorded
+        "start_all_requested": False,
         "gz_requested": False,
         "gz_stop_requested": False,  # True after clicking btn_gz_stop to clear DEGRADED
         "gz_stop_attempt": 0,        # counts how many times we tried to stop Gazebo
@@ -177,6 +190,7 @@ def main() -> int:
             gz_state = str(panel._gazebo_state())
         except Exception:
             gz_state = "UNKNOWN"
+        start_enabled = bool(getattr(panel, "btn_star", None) and panel.btn_star.isEnabled())
         bridge_running = bool(getattr(panel, "_bridge_running", False))
         gz_enabled = bool(getattr(panel, "btn_gz_start", None) and panel.btn_gz_start.isEnabled())
         bridge_enabled = bool(getattr(panel, "btn_bridge_start", None) and panel.btn_bridge_start.isEnabled())
@@ -221,6 +235,14 @@ def main() -> int:
         remote_reason_norm = str(remote_reason or "").strip().lower()
         selected = str(getattr(panel, "_selected_object", None) or "none")
         user_selected = str(getattr(panel, "_selection_last_user_name", None) or "none")
+        remote_pick_demo = getattr(panel, "_on_remote_pick_demo_request", None)
+        can_bypass_button_gate = bool(
+            ready
+            and remote_ready
+            and callable(remote_pick_demo)
+            and selected == "pick_demo"
+            and user_selected == "pick_demo"
+        )
         print(
             f"[{_stamp()}] [AUDIT][DIRECTO] attempt={state['attempts']} "
             f"ready={str(bool(ready)).lower()} "
@@ -229,6 +251,7 @@ def main() -> int:
             f"remote_reason={remote_reason or 'ok'} "
             f"remote_waitable={str(bool(remote_waitable)).lower()} "
             f"gz_state={gz_state} "
+            f"start_enabled={str(start_enabled).lower()} "
             f"bridge_running={str(bridge_running).lower()} "
             f"gz_enabled={str(gz_enabled).lower()} "
             f"bridge_enabled={str(bridge_enabled).lower()} "
@@ -262,7 +285,25 @@ def main() -> int:
                 flush=True,
             )
             remote_ready = True
-        if (not ready) or (not remote_ready) or (not btn_enabled):
+        if (not ready) or (not remote_ready) or ((not btn_enabled) and (not can_bypass_button_gate)):
+            if (
+                gz_state in ("GAZEBO_OFF", "UNKNOWN")
+                and start_enabled
+                and not state["start_all_requested"]
+            ):
+                panel._emit_log("[AUDIT][DIRECTO] offscreen helper clicking btn_star")
+                panel.btn_star.click()
+                state["start_all_requested"] = True
+                state["gz_requested"] = True
+                state["bridge_requested"] = True
+                return
+            if state["start_all_requested"] and not ready:
+                # Dejar que StartSequence del propio panel complete Gazebo/bridge/MoveIt.
+                # Mezclar aquí clicks manuales de Gazebo/bridge introduce carreras y deja
+                # el helper en un estado parcial de arranque.
+                if state["attempts"] >= MAX_ATTEMPTS:
+                    retry_timer.stop()
+                return
             if (
                 ready
                 and gz_state == "GAZEBO_READY"
@@ -323,10 +364,19 @@ def main() -> int:
                 retry_timer.stop()
             return
         try:
-            if btn_enabled:
-                panel._emit_log("[AUDIT][DIRECTO] offscreen helper clicking btn_pick_demo")
+            request_source = ""
+            if btn_enabled or can_bypass_button_gate:
+                request_source = f"service:offscreen_helper#{int(time.time() * 1000)}"
+                panel._emit_log(
+                    "[AUDIT][DIRECTO] offscreen helper invoking remote pick_demo request "
+                    f"source={request_source}"
+                )
             before = bool(getattr(panel, "_script_motion_active", False))
-            panel.btn_pick_demo.click()
+            if callable(remote_pick_demo):
+                remote_pick_demo(request_source or "offscreen_helper")
+            else:
+                panel.btn_pick_demo.click()
+            app.processEvents()
             ok = bool(getattr(panel, "_script_motion_active", False)) and not before
             message = "started" if ok else "no_script_motion_active"
             print(
