@@ -947,6 +947,19 @@ def generate_launch_description():
         0.0,
         _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TOL_RAD", 0.20),
     )
+    # FIX-VELOCITY-SCALING: wire up PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE /
+    # PANEL_MOVEIT_BRIDGE_ACCEL_SCALE env vars (set in start_panel_v2.sh) to the
+    # bridge node parameters.  Previously these were exported but never read by the
+    # bridge, so it silently used the hard-coded default of 0.30.  Default kept at
+    # 0.30 here; set to 0.15 in start_panel_v2.sh for a more conservative profile.
+    bridge_velocity_scale = max(
+        0.05,
+        min(1.0, _env_float("PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE", 0.30)),
+    )
+    bridge_accel_scale = max(
+        0.05,
+        min(1.0, _env_float("PANEL_MOVEIT_BRIDGE_ACCEL_SCALE", 0.30)),
+    )
     moveit_bridge = Node(
         package="ur5_tools",
         executable="ur5_moveit_bridge",
@@ -973,6 +986,8 @@ def generate_launch_description():
             {"controller_expected_goal_time_sec": bridge_controller_expected_goal_time},
             {"controller_path_tolerance_rad": bridge_controller_path_tol},
             {"controller_goal_tolerance_rad": bridge_controller_goal_tol},
+            {"max_velocity_scaling_factor": bridge_velocity_scale},
+            {"max_acceleration_scaling_factor": bridge_accel_scale},
         ],
         condition=IfCondition(LaunchConfiguration("launch_moveit_bridge")),
     )
