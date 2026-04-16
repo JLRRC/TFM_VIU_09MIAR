@@ -11029,6 +11029,27 @@ class ControlPanelV2(QMainWindow):
                 grasp_semantics = str(
                     grasp_base.get("grasp_semantics", "projection_surface") or "projection_surface"
                 )
+                pretable_enabled = str(
+                    os.environ.get("PANEL_TFM_EXECUTE_PRETABLE", "1")
+                ).strip().lower() not in ("0", "false", "no", "off")
+                if pretable_enabled:
+                    move_sec = float(self.joint_time.value()) if self.joint_time else 3.0
+                    self._emit_log(
+                        "[TFM][PRETABLE] yendo a MESA antes de ejecutar grasp"
+                    )
+                    ok_table, info_table = self._publish_joint_trajectory(JOINT_TABLE_POSE_RAD, move_sec)
+                    if not ok_table:
+                        raise RuntimeError(f"pretable_publish_failed:{info_table}")
+                    table_reached = self._wait_for_joint_target(
+                        JOINT_TABLE_POSE_RAD,
+                        timeout_sec=max(6.0, move_sec + 4.0),
+                        tol_rad=0.08,
+                    )
+                    if not table_reached:
+                        raise RuntimeError("pretable_target_not_reached")
+                    self._emit_log(
+                        "[TFM][PRETABLE] MESA alcanzada; continuando con ejecución MoveIt"
+                    )
                 table_top_world = float(self._resolve_table_top_z())
                 table_top_base = z_raw
                 table_base = self._ensure_base_coords(

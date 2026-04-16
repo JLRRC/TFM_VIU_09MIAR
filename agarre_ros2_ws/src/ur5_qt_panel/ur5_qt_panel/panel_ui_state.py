@@ -102,12 +102,11 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         panel.btn_camera_top.setEnabled(camera_enabled)
     if getattr(panel, "btn_camera_wrist", None) is not None:
         panel.btn_camera_wrist.setEnabled(camera_enabled)
-    calib_ok, calib_reason = panel._calibration_action_status()
     if getattr(panel, "btn_calibrate", None) is not None:
         panel._set_btn_state(
             panel.btn_calibrate,
-            camera_enabled and not system_error and calib_ok,
-            "" if (camera_enabled and not system_error and calib_ok) else (calib_reason or "Calibración no lista"),
+            True,
+            "",
         )
     if getattr(panel, "btn_release_objects", None) is not None:
         if panel._detach_inflight:
