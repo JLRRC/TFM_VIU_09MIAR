@@ -1196,6 +1196,11 @@ def run_pick_demo(panel) -> None:
             grasp_contact_z_offset_m = float(
                 os.environ.get("GRASP_CONTACT_Z_OFFSET_M", "0.0") or "0.0"
             )
+            panel._emit_log(
+                f"[GRASP_Z_FIX] configured_offset={grasp_contact_z_offset_m:.4f} "
+                f"env_name=GRASP_CONTACT_Z_OFFSET_M "
+                f"source={'env' if os.environ.get('GRASP_CONTACT_Z_OFFSET_M', '').strip() else 'default:0.0'}"
+            )
 
             def _fmt_vec(vec) -> str:
                 return _pick_demo_fmt_vec(vec)

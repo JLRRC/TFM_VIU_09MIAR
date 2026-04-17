@@ -354,6 +354,15 @@ def _prepare_runtime(context, *_args) -> List[object]:
         SetEnvironmentVariable("PANEL_CAMERA_REQUIRED", camera_required_env),
         SetEnvironmentVariable("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "0.175"),
         SetEnvironmentVariable(
+            # Offset en Z (metros) para subir el brazo y llevar la geometría física
+            # de la pinza al nivel del cilindro. rg2_pinch_center está 0.162 m sobre
+            # las yemas; un valor positivo sube el brazo para que éstas alcancen el
+            # objeto. 0.0 = sin cambio (comportamiento anterior).
+            # Valor inicial recomendado: 0.13 (lleva las yemas al borde inferior del cilindro).
+            "GRASP_CONTACT_Z_OFFSET_M",
+            os.environ.get("GRASP_CONTACT_Z_OFFSET_M", "0.0"),
+        ),
+        SetEnvironmentVariable(
             # Default Z step is 0.025m → 2 segments over 35mm descent.
             # With 17mm jumps the IK can switch solution branch → 48mm Y deviation.
             # 5mm steps → 7 segments; each IK seeds from the previous (close) joints
