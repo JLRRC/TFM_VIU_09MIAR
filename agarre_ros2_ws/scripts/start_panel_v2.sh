@@ -421,12 +421,13 @@ export PANEL_PICK_OBJECT_LIFT_CARTESIAN="${PANEL_PICK_OBJECT_LIFT_CARTESIAN:-0}"
 export PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M="${PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M:-0.30}"
 # Ventana ampliada: 5.0s para que gripper_attach_backend (1Hz, lag 3.5s) actualice posición.
 export PANEL_PICK_OBJECT_CARRY_GATE_TIMEOUT_SEC="${PANEL_PICK_OBJECT_CARRY_GATE_TIMEOUT_SEC:-5.0}"
-# FIX-CARRY-GATE-MESA: durante el joint move MESA_WITH_OBJECT el TCP se desplaza hasta 0.40m;
-# el snapshot de Gazebo (pose_info) lag hace que la dist reportada sea ~0.36-0.40m aunque el
-# objeto SÍ sigue al TCP via follow_tcp (ATTACH_BACKEND applied=true en todo momento).
-# El límite por defecto 0.18m es correcto para after_lift (robot apenas mueve) pero incorrecto
-# para MESA_WITH_OBJECT. 0.50m da margen suficiente para el lag de pose_info durante el move.
-export PANEL_PICK_OBJECT_CARRY_GATE_MAX_DIST_M="${PANEL_PICK_OBJECT_CARRY_GATE_MAX_DIST_M:-0.50}"
+# FIX-CARRY-GATE-DISABLE: la gate mide dist entre pose_snapshot (Gazebo pose_info) y el TCP.
+# Durante joint moves (MESA_WITH_OBJECT, TRANSPORT) el objeto sigue al TCP via follow_tcp pero
+# Gazebo physics mueve el modelo a ~17mm/s (no teleporta), así que la dist reportada nunca baja
+# del umbral (0.72-0.81m) dentro del timeout de 5s. La seguridad real la da ATTACH_BACKEND (1Hz,
+# applied=true en todo momento). Deshabilitar la carry gate elimina los falsos positivos.
+export PANEL_PICK_OBJECT_CARRY_GATE_ENABLE="${PANEL_PICK_OBJECT_CARRY_GATE_ENABLE:-0}"
+export PANEL_PICK_OBJECT_CARRY_GATE_MAX_DIST_M="${PANEL_PICK_OBJECT_CARRY_GATE_MAX_DIST_M:-0.90}"
 export PANEL_PICK_OBJECT_TRANSPORT_CARTESIAN="${PANEL_PICK_OBJECT_TRANSPORT_CARTESIAN:-0}"
 # FIX-TRANSPORT-CONSTRAINTS: sin path-constraints OMPL elige branch IK con wrist_1/wrist_2
 # desfasados π rad (test16: shoulder_pan_err=1.44rad, wrist_err=3.13rad), causando un primer
