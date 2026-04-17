@@ -4268,6 +4268,7 @@ def run_pick_object(panel) -> None:
                     z_clearance_m=attach_z_clearance,
                     tcp_stamp_ns=tcp_attach_stamp_ns,
                     obj_stamp_ns=obj_base_stamp_ns,
+                    tcp_z_correction_m=0.0,  # rg2_pinch_center ya es el frame de contacto
                 )
                 attach_result["ok"] = bool(attach_ok)
                 if attach_ok:
