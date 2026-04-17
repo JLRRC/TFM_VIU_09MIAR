@@ -3631,6 +3631,19 @@ def run_pick_object(panel) -> None:
                         f"xy_tol={xy_tol:.3f} z_tol={z_tol:.3f}"
                     )
 
+            # SECUENCIA GLOBAL: ir a MESA antes de HOME_START y del preflight
+            # Regla de negocio: todos los modos arrancan siempre desde MESA.
+            # HOME_START sigue ejecutándose después para garantizar planificación MoveIt.
+            _run_joint_step(
+                "MESA_GLOBAL",
+                JOINT_TABLE_POSE_RAD,
+                timeout_sec=move_sec + 5.0,
+                tol_rad=0.06,
+            )
+            panel._emit_log(
+                "[PICK_OBJ] FASE 0: MESA_GLOBAL alcanzada — secuencia MESA→pick→MESA→CESTA activa"
+            )
+
             _ensure_home_start()
 
             # Start from MESA by default so the approach always begins from

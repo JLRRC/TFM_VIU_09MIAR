@@ -670,6 +670,7 @@ class UR5MoveItBridge(Node):
         "shoulder_pan_joint",
         "shoulder_lift_joint",
         "elbow_joint",
+        "wrist_1_joint",
         "wrist_2_joint",
     )
 
