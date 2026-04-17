@@ -180,6 +180,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
                 "moveit_mode=bridge: desactivando launch_moveit para evitar doble backend."
             )
         launch_moveit_eff = "false"
+    launch_scene_sync_eff = "true" if moveit_mode == "move_group" else "false"
     moveit_start_ros2_control_eff = moveit_start_ros2_control_val
     if str(launch_gazebo_val).lower() in ("1", "true", "yes"):
         if str(moveit_start_ros2_control_val).lower() in ("1", "true", "yes"):
@@ -565,6 +566,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
         SetLaunchConfiguration("panel_auto_bridge", panel_auto_bridge_eff),
         SetLaunchConfiguration("launch_ros2_control", launch_ros2_control_eff),
         SetLaunchConfiguration("launch_attach_backend", launch_attach_backend_eff),
+        SetLaunchConfiguration("launch_scene_sync", launch_scene_sync_eff),
         SetLaunchConfiguration(
             "moveit_start_ros2_control", moveit_start_ros2_control_eff
         ),
