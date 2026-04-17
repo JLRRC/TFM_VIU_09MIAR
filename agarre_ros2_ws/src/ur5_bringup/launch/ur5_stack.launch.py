@@ -879,6 +879,8 @@ def generate_launch_description():
                 "attach_backend_max_dist_m"
             )
         },
+        {"gz_service_timeout_ms": int(os.environ.get("ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS", "2000"))},
+        {"gz_cmd_timeout_sec": float(os.environ.get("ATTACH_BACKEND_GZ_CMD_TIMEOUT_SEC", "3.0"))},
         # For the demo object we prefer deterministic transport once the grasp
         # geometry gate has been passed. Leaving the list empty keeps the default
         # follow_tcp behavior for the rest of the objects.
