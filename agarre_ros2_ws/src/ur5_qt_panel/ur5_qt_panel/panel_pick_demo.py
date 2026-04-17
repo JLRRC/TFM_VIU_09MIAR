@@ -2021,7 +2021,7 @@ def run_pick_demo(panel) -> None:
                     ),
                 )
                 close_min_delta_sum = max(
-                    0.02,
+                    0.005,
                     float(
                         os.environ.get(
                             "PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM",
@@ -2052,12 +2052,20 @@ def run_pick_demo(panel) -> None:
                     f"opening_ref_sum={opening_ref_sum}"
                 )
                 _last_cmd_retry_ts = time.monotonic()
+                _cmd_retry_count = 0
                 while (time.monotonic() - start) <= timeout_sec:
                     if cmd_fn is not None:
                         _now_retry = time.monotonic()
                         if (_now_retry - _last_cmd_retry_ts) >= cmd_retry_sec:
+                            _cmd_retry_count += 1
                             panel.signal_run_ui.emit(cmd_fn)
                             _last_cmd_retry_ts = _now_retry
+                            _append_trace(
+                                "[PICK][DIRECT][GRIPPER] "
+                                f"cmd_retry #{_cmd_retry_count} "
+                                f"target={'closed' if closed else 'open'} "
+                                f"elapsed={_now_retry - start:.2f}s"
+                            )
                     _monitor_alcance(trigger=f"GRIPPER_WAIT_{'CLOSE' if closed else 'OPEN'}")
                     state = _read_gripper_state(expected_closed=closed)
                     last_state = state
