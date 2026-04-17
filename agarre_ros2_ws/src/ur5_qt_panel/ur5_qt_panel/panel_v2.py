@@ -4956,6 +4956,12 @@ class ControlPanelV2(QMainWindow):
         btn_cart_debug = QPushButton("Depurador cartesiano")
         btn_cart_debug.setToolTip("Abrir ventana auxiliar para mover rg2_pinch_center en XYZ (base_link).")
         btn_cart_debug.clicked.connect(self._show_step_cart_debug_window)
+        btn_cart_debug.setEnabled(False)
+        from PyQt5.QtWidgets import QCheckBox
+        chk_cart_debug = QCheckBox("Depuración cartesiana")
+        chk_cart_debug.setChecked(False)
+        chk_cart_debug.setToolTip("Activa para habilitar el depurador cartesiano manual.")
+        chk_cart_debug.toggled.connect(btn_cart_debug.setEnabled)
         lbl_continue_help = QLabel("Pulsa '▶ Ejecutar fase' para que el robot ejecute la fase que aparece arriba. Al terminar, la siguiente fase quedará en espera hasta que vuelvas a pulsar el botón.")
         lbl_continue_help.setWordWrap(True)
         lbl_continue_help.setStyleSheet("color:#475569; font-size:12px;")
@@ -4979,6 +4985,7 @@ class ControlPanelV2(QMainWindow):
         bottom_row = QHBoxLayout()
         bottom_row.setContentsMargins(0, 0, 0, 0)
         bottom_row.addWidget(btn_continue)
+        bottom_row.addWidget(chk_cart_debug)
         bottom_row.addWidget(btn_cart_debug)
         layout.addLayout(bottom_row)
         layout.addWidget(lbl_continue_help)
@@ -5557,13 +5564,13 @@ class ControlPanelV2(QMainWindow):
             ],
             "DIRECT2": ["MESA_1", "POSE_BUENA", "MESA_2", "CESTA"],
             "PICK_OBJECT": [
+                "INICIO",
                 "APPROACH",
                 "PRE_GRASP",
                 "GRASP_DOWN",
                 "GRASP_ATTACH",
                 "LIFT",
                 "MESA_WITH_OBJECT",
-                "HOME_WITH_OBJECT",
                 "TRANSPORT",
                 "DROP",
                 "RELEASE",
@@ -5618,15 +5625,17 @@ class ControlPanelV2(QMainWindow):
                 "CESTA": "Ir a la cesta para dejar el objeto.",
             },
             "PICK_OBJECT": {
+                "INICIO": "Confirmar inicio — robot irá a MESA.",
+                "MESA": "Ir a pose MESA (punto de partida estándar).",
                 "APPROACH": "Acercarse al objeto con MoveIt.",
-                "PRE_GRASP": "Colocarse en pre-agarre.",
-                "GRASP_DOWN": "Descender hasta la altura de agarre.",
-                "GRASP_ATTACH": "Cerrar y validar el agarre.",
-                "LIFT": "Levantar el objeto.",
-                "MESA_WITH_OBJECT": "Retirarse de la mesa con el objeto.",
-                "HOME_WITH_OBJECT": "Pasar por HOME manteniendo el objeto.",
-                "TRANSPORT": "Transportar el objeto hacia la cesta.",
-                "DROP": "Bajar para dejar el objeto.",
+                "PRE_GRASP": "Colocarse en pre-agarre con MoveIt.",
+                "GRASP_DOWN": "Descender hasta la altura de agarre con MoveIt.",
+                "GRASP_ATTACH": "Cerrar pinza y validar el agarre.",
+                "LIFT": "Levantar el objeto con MoveIt.",
+                "MESA_WITH_OBJECT": "Retirarse a MESA con el objeto (joint).",
+                "HOME_WITH_OBJECT": "Pasar por HOME manteniendo el objeto (joint).",
+                "TRANSPORT": "Transportar el objeto hacia la cesta con MoveIt.",
+                "DROP": "Bajar para dejar el objeto con MoveIt.",
                 "RELEASE": "Abrir la pinza y liberar el objeto.",
                 "HOME_FINAL": "Volver a la pose final segura.",
             },
@@ -5997,14 +6006,30 @@ class ControlPanelV2(QMainWindow):
             # Retry hasta 3 veces con 80ms de espera si TF devuelve None.
             # Siempre se usa TF live para reflejar la posición real del robot
             # cuando abre el gate, independientemente de la fase anterior.
+            # Override: si existe _step_origin_override_for_next_gate (capturado antes
+            # de un HOME silencioso), usarlo como ORG para reflejar la pose real pre-HOME.
             _origin_snap = None
             _snap_source = "unavailable_after_3_retries"
-            for _snap_attempt in range(3):
-                _origin_snap = self._step_fetch_live_pose(_op_frame_snap)
-                if _origin_snap is not None:
-                    _snap_source = f"tf_live_attempt_{_snap_attempt + 1}"
-                    break
-                time.sleep(0.08)
+            _override_snap = getattr(self, "_step_origin_override_for_next_gate", None)
+            if _override_snap is not None:
+                _origin_snap = _override_snap
+                _snap_source = "origin_override_pre_home"
+                try:
+                    delattr(self, "_step_origin_override_for_next_gate")
+                except AttributeError:
+                    pass
+                self._emit_log(
+                    f"[STEP][ORG_OVERRIDE] phase={phase_name} "
+                    f"xyz={self._step_format_inline_xyz(_origin_snap)} "
+                    f"source={_snap_source}"
+                )
+            else:
+                for _snap_attempt in range(3):
+                    _origin_snap = self._step_fetch_live_pose(_op_frame_snap)
+                    if _origin_snap is not None:
+                        _snap_source = f"tf_live_attempt_{_snap_attempt + 1}"
+                        break
+                    time.sleep(0.08)
             # Fallback si TF falló: usar el actual de la fila anterior.
             if _origin_snap is None and self._step_history_rows:
                 _prev_actual = self._step_history_rows[-1].get("actual")
@@ -6052,6 +6077,7 @@ class ControlPanelV2(QMainWindow):
         pos_actual,
         target_pos,
         obj_pos=None,
+        flow_name: str = "DIRECT",
     ) -> None:
         """Pre-inserta la fila INICIO en la tabla STEP_BY_STEP desde el hilo principal,
         ANTES del diálogo de confirmación, para que sea visible antes de pulsar Siguiente.
@@ -6070,7 +6096,6 @@ class ControlPanelV2(QMainWindow):
         """
         if self._step_mode != "STEP_BY_STEP":
             return
-        flow_name = "DIRECT"
         first_phase = "INICIO"
 
         # Reset del flow para este nuevo ciclo
@@ -6357,7 +6382,6 @@ class ControlPanelV2(QMainWindow):
     def _step_window_set_waiting(self) -> None:
         self._ensure_step_window()
         self._step_window_refresh()
-        self._show_step_cart_debug_window()
         if self._step_continue_btn is not None:
             self._step_continue_btn.setEnabled(True)
         if self._step_window is not None:
@@ -15949,6 +15973,31 @@ class ControlPanelV2(QMainWindow):
         """Ejecuta pick & place del objeto seleccionado hacia la cesta."""
         self._log_button("Agarre Objeto (MoveIT)")
         self._step_capture_start_pose("Agarre Objeto (MoveIT)")
+        _op_frame = self._step_operational_frame_name()
+        _fresh_xyz = self._step_fetch_live_pose(_op_frame)
+        if _fresh_xyz is not None:
+            _px, _py, _pz = _fresh_xyz
+            _pose_str = f"({_px:.4f}, {_py:.4f}, {_pz:.4f})"
+        else:
+            _pose_str = "no disponible (TF no listo)"
+        self._emit_log(
+            f"[BOTON] Pulsado: Agarre Objeto (MoveIT) | "
+            f"frame={_op_frame} | Pose pinza ahora: {_pose_str}"
+        )
+        if self._step_mode == "STEP_BY_STEP":
+            self._step_pre_insert_inicio_row(
+                _fresh_xyz,
+                target_pos=None,
+                obj_pos=None,
+                flow_name="PICK_OBJECT",
+            )
+        if not self._pick_confirm_dialog(self, "Agarre Objeto (MoveIT)", _op_frame, _pose_str):
+            self._emit_log("[BOTON] Inicio cancelado por el usuario")
+            if self._step_mode == "STEP_BY_STEP":
+                self._step_history_rows = []
+                self._step_history_flow = ""
+                self._step_window_refresh()
+            return
         run_pick_object(self)
     
     def _get_object_world_position(self, obj_name: str) -> Optional[tuple]:

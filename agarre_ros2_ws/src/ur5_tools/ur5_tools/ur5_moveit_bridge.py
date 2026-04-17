@@ -676,7 +676,10 @@ class UR5MoveItBridge(Node):
 
     _APPROACH_PATH_CONSTRAINT_JOINTS = (
         "shoulder_pan_joint",
-        "wrist_2_joint",
+        # wrist_2_joint removed: MESA has wrist_2≈-1.58 rad but APPROACH IK needs
+        # wrist_2≈0; the ±0.35 rad window doesn't span the gap, causing OMPL to fall
+        # back to no-constraint planning and pick a wrong IK branch. shoulder_pan
+        # alone is sufficient to prevent the wrong-side flip (pan≈π vs pan≈0).
     )
 
     _START_STATE_JOINTS = (
@@ -3925,6 +3928,165 @@ class UR5MoveItBridge(Node):
             f"finalized={str(bool(success) or (not bool(plan_ok) or not bool(exec_ok))).lower()}"
         )
 
+    # HOME joint values (elbow-down reference for IK seeding)
+    _HOME_JOINTS_SEED = {
+        "shoulder_pan_joint": 0.0,
+        "shoulder_lift_joint": -math.pi / 2,
+        "elbow_joint": 0.0,
+        "wrist_1_joint": -math.pi / 2,
+        "wrist_2_joint": 0.0,
+        "wrist_3_joint": 0.0,
+    }
+
+    @staticmethod
+    def _pose_to_matrix(pose: "Pose") -> "np.ndarray":
+        """Convert geometry_msgs.msg.Pose to 4x4 homogeneous transform (numpy)."""
+        q = pose.orientation
+        x, y, z, w = float(q.x), float(q.y), float(q.z), float(q.w)
+        R = np.array([
+            [1 - 2*(y*y + z*z), 2*(x*y - w*z),     2*(x*z + w*y)],
+            [2*(x*y + w*z),     1 - 2*(x*x + z*z), 2*(y*z - w*x)],
+            [2*(x*z - w*y),     2*(y*z + w*x),     1 - 2*(x*x + y*y)],
+        ], dtype=float)
+        T = np.eye(4, dtype=float)
+        T[:3, :3] = R
+        T[0, 3] = float(pose.position.x)
+        T[1, 3] = float(pose.position.y)
+        T[2, 3] = float(pose.position.z)
+        return T
+
+    @staticmethod
+    def _matrix_to_pose(T: "np.ndarray") -> "Any":
+        """Convert 4x4 numpy homogeneous transform to geometry_msgs.msg.Pose."""
+        from geometry_msgs.msg import Pose as _Pose
+        R = T[:3, :3]
+        trace = R[0, 0] + R[1, 1] + R[2, 2]
+        if trace > 0:
+            s = 0.5 / math.sqrt(trace + 1.0)
+            w = 0.25 / s
+            x = (R[2, 1] - R[1, 2]) * s
+            y = (R[0, 2] - R[2, 0]) * s
+            z = (R[1, 0] - R[0, 1]) * s
+        elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+            s = 2.0 * math.sqrt(max(0.0, 1.0 + R[0, 0] - R[1, 1] - R[2, 2]))
+            w = (R[2, 1] - R[1, 2]) / s if s > 1e-9 else 1.0
+            x = 0.25 * s
+            y = (R[0, 1] + R[1, 0]) / s if s > 1e-9 else 0.0
+            z = (R[0, 2] + R[2, 0]) / s if s > 1e-9 else 0.0
+        elif R[1, 1] > R[2, 2]:
+            s = 2.0 * math.sqrt(max(0.0, 1.0 + R[1, 1] - R[0, 0] - R[2, 2]))
+            w = (R[0, 2] - R[2, 0]) / s if s > 1e-9 else 1.0
+            x = (R[0, 1] + R[1, 0]) / s if s > 1e-9 else 0.0
+            y = 0.25 * s
+            z = (R[1, 2] + R[2, 1]) / s if s > 1e-9 else 0.0
+        else:
+            s = 2.0 * math.sqrt(max(0.0, 1.0 + R[2, 2] - R[0, 0] - R[1, 1]))
+            w = (R[1, 0] - R[0, 1]) / s if s > 1e-9 else 1.0
+            x = (R[0, 2] + R[2, 0]) / s if s > 1e-9 else 0.0
+            y = (R[1, 2] + R[2, 1]) / s if s > 1e-9 else 0.0
+            z = 0.25 * s
+        pose = _Pose()
+        pose.position.x = float(T[0, 3])
+        pose.position.y = float(T[1, 3])
+        pose.position.z = float(T[2, 3])
+        pose.orientation.x = float(x)
+        pose.orientation.y = float(y)
+        pose.orientation.z = float(z)
+        pose.orientation.w = float(w)
+        return pose
+
+    def _compute_approach_ik_seeded(
+        self,
+        target: "PoseStamped",
+    ) -> "MoveItRobotState | None":
+        """
+        Compute IK for APPROACH seeded from HOME joints to force the elbow-down branch.
+
+        Strategy:
+        - The SRDF kinematic chain tip is 'rg2_tcp', not 'rg2_pinch_center'.
+        - set_from_ik only works with the registered chain tip.
+        - We compute the rg2_tcp pose that places rg2_pinch_center at the target,
+          using the fixed T_tcp→pinch offset obtained from FK at the HOME seed.
+        - Then solve IK with tip='rg2_tcp' seeded from HOME → KDL finds elbow-down.
+        """
+        if MoveItRobotState is None or self._moveit_py is None:
+            return None
+        try:
+            robot_model = self._moveit_py.get_robot_model()
+            if robot_model is None:
+                return None
+            joint_model_group = robot_model.get_joint_model_group(self._group_name)
+            if joint_model_group is None:
+                return None
+            group_joint_names = list(
+                getattr(joint_model_group, "active_joint_model_names", None)
+                or getattr(joint_model_group, "joint_model_names", None)
+                or self._START_STATE_JOINTS
+            )
+            seed_positions = np.asarray(
+                [self._HOME_JOINTS_SEED.get(n, 0.0) for n in group_joint_names],
+                dtype=float,
+            )
+            ik_state = MoveItRobotState(robot_model)
+            ik_state.set_joint_group_positions(self._group_name, seed_positions)
+            ik_state.update()
+
+            # Find the IK chain tip registered in the SRDF/kinematics (rg2_tcp).
+            # Use get_frame_transform to find the fixed offset T_tcp→ee_frame.
+            ik_tip = "rg2_tcp"
+            T_base_tcp = ik_state.get_frame_transform(ik_tip)
+            T_base_ee = ik_state.get_frame_transform(self._ee_frame)
+            if T_base_tcp is None or T_base_ee is None:
+                self.get_logger().warning(
+                    f"[APPROACH_IK_SEED] get_frame_transform failed for {ik_tip} or {self._ee_frame}"
+                )
+                return None
+            # Fixed offset: T_tcp→ee (constant, independent of joint config)
+            T_tcp_ee = np.linalg.inv(T_base_tcp) @ T_base_ee
+
+            # Compute the required tcp pose so that ee_frame reaches the target
+            T_base_ee_target = self._pose_to_matrix(target.pose)
+            T_base_tcp_target = T_base_ee_target @ np.linalg.inv(T_tcp_ee)
+            tcp_target_pose = self._matrix_to_pose(T_base_tcp_target)
+
+            ok = ik_state.set_from_ik(
+                self._group_name,
+                tcp_target_pose,
+                ik_tip,
+                1.0,
+            )
+            if not ok:
+                self.get_logger().warning(
+                    f"[APPROACH_IK_SEED] IK solve failed for APPROACH target "
+                    f"tip={ik_tip} tcp_target=({T_base_tcp_target[0,3]:.3f},"
+                    f"{T_base_tcp_target[1,3]:.3f},{T_base_tcp_target[2,3]:.3f})"
+                )
+                return None
+            ik_state.update()
+            solved = ik_state.get_joint_group_positions(self._group_name)
+            solved_map = dict(zip(group_joint_names, solved))
+            elbow_val = solved_map.get("elbow_joint", None)
+            # Validate elbow-down branch: elbow should be near 0, not ±60°+
+            elbow_bad = elbow_val is not None and abs(float(elbow_val)) > (math.pi / 3)
+            _elbow_str = f"{elbow_val:.3f}" if elbow_val is not None else "n/a"
+            _branch_str = "elbow_down" if not elbow_bad else "elbow_UP_rejected"
+            _joints_str = " ".join(f"{n}={solved_map[n]:.3f}" for n in group_joint_names if n in solved_map)
+            self.get_logger().info(
+                f"[APPROACH_IK_SEED] ok=true elbow={_elbow_str} branch={_branch_str} {_joints_str}"
+            )
+            if elbow_bad:
+                self.get_logger().warning(
+                    f"[APPROACH_IK_SEED] elbow_down validation FAILED: elbow={_elbow_str} rad > π/3; "
+                    "falling back to Cartesian goal"
+                )
+                return None
+            return ik_state
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[APPROACH_IK_SEED] exception during IK seed compute: {type(exc).__name__}: {exc}"
+            )
+            return None
+
     def _plan_with_moveit_py(
         self,
         target: PoseStamped,
@@ -3955,14 +4117,25 @@ class UR5MoveItBridge(Node):
                     f"detail={start_state_reason}; fallback=current_state_monitor"
                 )
                 self._planning_component.set_start_state_to_current_state()
-            try:
-                self._planning_component.set_goal_state(
-                    pose_stamped_msg=target,
-                    pose_link=self._ee_frame,
+            phase_upper_goal = str(phase_label or "").strip().upper()
+            _approach_ik_state = None
+            if phase_upper_goal == "APPROACH":
+                _approach_ik_state = self._compute_approach_ik_seeded(target)
+            if _approach_ik_state is not None:
+                # Joint-space goal: no IK branch ambiguity, OMPL plans to explicit joints.
+                self._planning_component.set_goal_state(robot_state=_approach_ik_state)
+                self.get_logger().info(
+                    "[APPROACH_IK_SEED] Using joint-space goal (elbow-down IK seed) for APPROACH"
                 )
-            except TypeError:
-                # Fallback for older MoveItPy bindings.
-                self._planning_component.set_goal_state(target, self._ee_frame)
+            else:
+                try:
+                    self._planning_component.set_goal_state(
+                        pose_stamped_msg=target,
+                        pose_link=self._ee_frame,
+                    )
+                except TypeError:
+                    # Fallback for older MoveItPy bindings.
+                    self._planning_component.set_goal_state(target, self._ee_frame)
             path_constraints = self._build_joint_path_constraints(
                 request_uuid=request_uuid,
                 phase_label=phase_label,

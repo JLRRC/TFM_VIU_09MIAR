@@ -3019,6 +3019,9 @@ def run_pick_object(panel) -> None:
                     decision=f"moveit_step:{label_up}",
                     object_position=(bx, by, bz) if 'bx' in locals() else None,
                 )
+                _set_exec_fn = getattr(panel, "_step_set_exec_target", None)
+                if callable(_set_exec_fn):
+                    _set_exec_fn(pose_data.get("position"))
                 _moveit2_log("STEP", f"label={label_up} state=start")
                 if deterministic_joint_after_approach and label_up != "APPROACH":
                     panel._emit_log(
@@ -3634,6 +3637,13 @@ def run_pick_object(panel) -> None:
             # SECUENCIA GLOBAL: ir a MESA antes de HOME_START y del preflight
             # Regla de negocio: todos los modos arrancan siempre desde MESA.
             # HOME_START sigue ejecutándose después para garantizar planificación MoveIt.
+            # En STEP_BY_STEP, gate INICIO bloquea aquí mostrando TARGET=MESA; al pulsar
+            # Siguiente el robot se desplaza a MESA y luego el gate HOME aparece.
+            # Para fases de movimiento articular no usamos target Cartesiano porque
+            # fk_ur5 computa tool0 mientras TF-live mide rg2_pinch_center: frames
+            # distintos → delta siempre grande → reached=NO falso. position=None
+            # hace que reached quede como PEND (neutro) en vez de NO.
+            _step_phase_gate("INICIO", position=None, decision="Pulse Siguiente → robot irá a pose MESA (joint) — punto de partida del agarre")
             _run_joint_step(
                 "MESA_GLOBAL",
                 JOINT_TABLE_POSE_RAD,
@@ -3643,6 +3653,28 @@ def run_pick_object(panel) -> None:
             panel._emit_log(
                 "[PICK_OBJ] FASE 0: MESA_GLOBAL alcanzada — secuencia MESA→pick→MESA→CESTA activa"
             )
+
+            # Capturar pose EE en MESA antes del HOME silencioso, para que el
+            # gate de APPROACH muestre MESA como ORG aunque el robot esté en HOME.
+            _op_frame_pre_home = panel._step_operational_frame_name() if panel._step_mode == "STEP_BY_STEP" else ""
+            if _op_frame_pre_home:
+                _mesa_ee_pos = None
+                for _ovr_attempt in range(5):
+                    _mesa_ee_pos = panel._step_fetch_live_pose(_op_frame_pre_home)
+                    if _mesa_ee_pos is not None:
+                        break
+                    import time as _time_mod
+                    _time_mod.sleep(0.10)
+                if _mesa_ee_pos is not None:
+                    setattr(panel, "_step_origin_override_for_next_gate", _mesa_ee_pos)
+                    panel._emit_log(
+                        f"[PICK_OBJ][STEP] origin_override_captured frame={_op_frame_pre_home} "
+                        f"xyz=({_mesa_ee_pos[0]:.3f},{_mesa_ee_pos[1]:.3f},{_mesa_ee_pos[2]:.3f})"
+                    )
+                else:
+                    panel._emit_log(
+                        f"[PICK_OBJ][STEP] origin_override_FAILED — TF timeout tras 5 intentos, APPROACH ORG usará live TF"
+                    )
 
             _ensure_home_start()
 
