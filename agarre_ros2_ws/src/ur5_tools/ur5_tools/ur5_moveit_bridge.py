@@ -2137,11 +2137,18 @@ class UR5MoveItBridge(Node):
                         getattr(goal_handle, "status", GoalStatus.STATUS_UNKNOWN)
                         or GoalStatus.STATUS_UNKNOWN
                     )
-                    if gh_status in (
-                        GoalStatus.STATUS_SUCCEEDED,
-                        GoalStatus.STATUS_ABORTED,
-                        GoalStatus.STATUS_CANCELED,
-                    ):
+                    if gh_status == GoalStatus.STATUS_SUCCEEDED:
+                        self.get_logger().info(
+                            "[BRIDGE_EXEC] FJT succeeded via goal_handle.status; retorno directo "
+                            f"action={action_name} gh_status={gh_status} "
+                            f"elapsed={now_mono - result_wait_started:.1f}s"
+                        )
+                        return True, f"fjt_gh_status_succeeded:{action_name}", {
+                            "action": action_name,
+                            "status_text": "GH_STATUS_SUCCEEDED",
+                            "elapsed_sec": round(now_mono - result_wait_started, 1),
+                        }
+                    if gh_status in (GoalStatus.STATUS_ABORTED, GoalStatus.STATUS_CANCELED):
                         self.get_logger().info(
                             "[BRIDGE_EXEC] FJT terminal via goal_handle.status; saliendo loop "
                             f"action={action_name} gh_status={gh_status} "
