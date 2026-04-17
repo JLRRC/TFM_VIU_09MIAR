@@ -7202,6 +7202,30 @@ def run_pick_demo(panel) -> None:
                         float(obj_base_before_grasp_down[2]) + grasp_z_for_source_frame + float(grasp_down_extra_z_m),
                     )
                     target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
+                # [ALIGN_DEBUG] Snapshot de frames antes de GRASP_DOWN_JOINT
+                try:
+                    _adb_tool0_w = _pose_position(world_frame, "tool0", timeout_sec=0.15)
+                    _adb_pinch_w = _pose_position(world_frame, DIRECT_SOURCE_FRAME, timeout_sec=0.15)
+                    _adb_obj_w = _live_object_world()
+                    _adb_anchor_w = _pose_position(world_frame, "pick_demo_anchor", timeout_sec=0.10)
+                    panel._emit_log(
+                        "[ALIGN_DEBUG] phase=GRASP_DOWN_JOINT "
+                        f"tool0_world={_fmt_vec(_adb_tool0_w)} "
+                        f"rg2_pinch_center_world={_fmt_vec(_adb_pinch_w)} "
+                        f"object_world={_fmt_vec(_adb_obj_w)} "
+                        f"pick_demo_anchor_world={_fmt_vec(_adb_anchor_w)} "
+                        f"target_world={_fmt_vec(target_world_grasp_down)} "
+                        f"dz_tool0_pinch="
+                        f"{f'{float(_adb_tool0_w[2])-float(_adb_pinch_w[2]):.4f}' if _adb_tool0_w and _adb_pinch_w else '--'} "
+                        f"dz_pinch_obj="
+                        f"{f'{float(_adb_pinch_w[2])-float(_adb_obj_w[2]):.4f}' if _adb_pinch_w and _adb_obj_w else '--'} "
+                        f"dz_tool0_obj="
+                        f"{f'{float(_adb_tool0_w[2])-float(_adb_obj_w[2]):.4f}' if _adb_tool0_w and _adb_obj_w else '--'} "
+                        f"dz_anchor_obj="
+                        f"{f'{float(_adb_anchor_w[2])-float(_adb_obj_w[2]):.4f}' if _adb_anchor_w and _adb_obj_w else '--'}"
+                    )
+                except Exception as _adb_exc:
+                    panel._emit_log(f"[ALIGN_DEBUG] phase=GRASP_DOWN_JOINT exception={_adb_exc}")
                 _phase_begin(
                     "GRASP_DOWN_JOINT",
                     target_world=target_world_grasp_down,
@@ -7881,6 +7905,29 @@ def run_pick_demo(panel) -> None:
                     f"obj=({obj_base_pre_close[0]:.3f},{obj_base_pre_close[1]:.3f},{obj_base_pre_close[2]:.3f}) "
                     f"tcp_obj_dist={_dist(tcp_base_pre_close, obj_base_pre_close):.3f}"
                 )
+            # [ALIGN_DEBUG] Snapshot completo en world justo antes de cerrar la pinza
+            try:
+                _adb_tool0_pc = _pose_position(world_frame, "tool0", timeout_sec=0.15)
+                _adb_pinch_pc = _pose_position(world_frame, DIRECT_SOURCE_FRAME, timeout_sec=0.15)
+                _adb_obj_pc = _live_object_world()
+                _adb_anchor_pc = _pose_position(world_frame, "pick_demo_anchor", timeout_sec=0.10)
+                panel._emit_log(
+                    "[ALIGN_DEBUG] phase=PRE_CLOSE "
+                    f"tool0_world={_fmt_vec(_adb_tool0_pc)} "
+                    f"rg2_pinch_center_world={_fmt_vec(_adb_pinch_pc)} "
+                    f"object_world={_fmt_vec(_adb_obj_pc)} "
+                    f"pick_demo_anchor_world={_fmt_vec(_adb_anchor_pc)} "
+                    f"dz_tool0_pinch="
+                    f"{f'{float(_adb_tool0_pc[2])-float(_adb_pinch_pc[2]):.4f}' if _adb_tool0_pc and _adb_pinch_pc else '--'} "
+                    f"dz_pinch_obj="
+                    f"{f'{float(_adb_pinch_pc[2])-float(_adb_obj_pc[2]):.4f}' if _adb_pinch_pc and _adb_obj_pc else '--'} "
+                    f"dz_tool0_obj="
+                    f"{f'{float(_adb_tool0_pc[2])-float(_adb_obj_pc[2]):.4f}' if _adb_tool0_pc and _adb_obj_pc else '--'} "
+                    f"dz_anchor_obj="
+                    f"{f'{float(_adb_anchor_pc[2])-float(_adb_obj_pc[2]):.4f}' if _adb_anchor_pc and _adb_obj_pc else '--'}"
+                )
+            except Exception as _adb_exc_pc:
+                panel._emit_log(f"[ALIGN_DEBUG] phase=PRE_CLOSE exception={_adb_exc_pc}")
             pre_close_wait_sec = max(
                 0.4,
                 float(

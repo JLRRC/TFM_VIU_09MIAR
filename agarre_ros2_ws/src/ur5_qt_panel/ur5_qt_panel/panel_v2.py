@@ -6262,9 +6262,25 @@ class ControlPanelV2(QMainWindow):
             self._step_live_operational_label.setText(
                 self._step_live_pose_text("XYZ actual de la pinza (world)", world_frame, operational_live_display)
             )
-        visual_frame = "tool0"
+        # FIX: visual_frame usaba "tool0" (base del gripper) en vez del TCP real
+        # (rg2_pinch_center está 0.175 m en Z por encima de tool0 → desfase sistemático).
+        # Ahora ambos labels usan el mismo frame operacional.
+        visual_frame = operational_frame
         visual_live = self._step_fetch_live_pose(visual_frame)
         visual_live_display = self._step_display_position(visual_live)
+        # Log [PINZA_ALIGN]: diferencia entre frame visual y frame actual para validación
+        if operational_live is not None and visual_live is not None:
+            _dz = float(visual_live[2]) - float(operational_live[2]) if (
+                len(visual_live) > 2 and len(operational_live) > 2
+            ) else None
+            self._emit_log(
+                f"[PINZA_ALIGN] "
+                f"actual_frame={operational_frame} "
+                f"visual_frame={visual_frame} "
+                f"actual_xyz={self._step_format_inline_xyz(operational_live)} "
+                f"visual_xyz={self._step_format_inline_xyz(visual_live)} "
+                f"dz={f'{_dz:.4f}' if _dz is not None else '--'}"
+            )
         if self._step_live_visual_label is not None:
             self._step_live_visual_label.setText(
                 self._step_live_pose_text("XYZ visual de la pinza (world)", world_frame, visual_live_display)
