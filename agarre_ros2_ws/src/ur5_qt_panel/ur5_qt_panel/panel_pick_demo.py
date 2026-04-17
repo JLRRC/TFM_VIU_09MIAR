@@ -1189,6 +1189,14 @@ def run_pick_demo(panel) -> None:
                     "note=legacy_vertical_offset_suppressed_for_pinch_center"
                 )
 
+            # Offset en Z para llevar la geometría física de la pinza al nivel del objeto.
+            # rg2_pinch_center está 0.162 m POR ENCIMA de las yemas; el valor positivo
+            # sube el brazo para que las yemas alcancen el cilindro.
+            # GRASP_CONTACT_Z_OFFSET_M=0.0 → sin cambio (comportamiento anterior).
+            grasp_contact_z_offset_m = float(
+                os.environ.get("GRASP_CONTACT_Z_OFFSET_M", "0.0") or "0.0"
+            )
+
             def _fmt_vec(vec) -> str:
                 return _pick_demo_fmt_vec(vec)
 
@@ -2224,7 +2232,7 @@ def run_pick_demo(panel) -> None:
                     float(tcp_base[1]) - float(obj_base[1]),
                 )
                 z_gap = float(tcp_base[2]) - float(obj_base[2])
-                z_error = abs(z_gap - _DIRECTO_GRASP_Z)
+                z_error = abs(z_gap - (_DIRECTO_GRASP_Z + grasp_contact_z_offset_m))
                 tcp_obj_dist = _dist(tcp_base, obj_base)
                 xy_tol = max(
                     0.006,
@@ -2288,7 +2296,7 @@ def run_pick_demo(panel) -> None:
                     float(tcp_base[1]) - float(obj_base[1]),
                 )
                 z_gap = float(tcp_base[2]) - float(obj_base[2])
-                z_error = abs(z_gap - _DIRECTO_GRASP_Z)
+                z_error = abs(z_gap - (_DIRECTO_GRASP_Z + grasp_contact_z_offset_m))
                 tcp_obj_dist = _dist(tcp_base, obj_base)
                 xy_tol = max(
                     0.004,
@@ -4883,7 +4891,14 @@ def run_pick_demo(panel) -> None:
                     obj_base, align_target_source, _align_target_extra = _resolved_align_object_base()
                     if obj_base is None:
                         raise RuntimeError("demo_object_pose_unavailable_before_align")
-                    target_z_expected = float(obj_base[2]) + _DIRECTO_GRASP_Z
+                    target_z_expected = float(obj_base[2]) + _DIRECTO_GRASP_Z + grasp_contact_z_offset_m
+                    if abs(grasp_contact_z_offset_m) > 1e-9:
+                        panel._emit_log(
+                            "[GRASP_Z_FIX] phase=GRASP_ALIGN_IK "
+                            f"obj_z_base={float(obj_base[2]):.4f} "
+                            f"offset_applied={grasp_contact_z_offset_m:.4f} "
+                            f"target_z_corrected={target_z_expected:.4f}"
+                        )
                     target_tcp_runtime_raw = (
                         float(obj_base[0]),
                         float(obj_base[1]),
@@ -7965,6 +7980,14 @@ def run_pick_demo(panel) -> None:
             pre_close_ok = False
             pre_close_metrics = {}
             pre_close_attempt = 0
+            if abs(grasp_contact_z_offset_m) > 1e-9:
+                _gzf_obj = _live_object_base()
+                panel._emit_log(
+                    "[GRASP_Z_FIX] phase=PRE_CLOSE "
+                    f"obj_z_base={f'{float(_gzf_obj[2]):.4f}' if _gzf_obj else 'N/A'} "
+                    f"expected_z_gap={(_DIRECTO_GRASP_Z + grasp_contact_z_offset_m):.4f} "
+                    f"offset_applied={grasp_contact_z_offset_m:.4f}"
+                )
             _final_phase_trace(
                 "PRE_CLOSE",
                 event="wait_start",
