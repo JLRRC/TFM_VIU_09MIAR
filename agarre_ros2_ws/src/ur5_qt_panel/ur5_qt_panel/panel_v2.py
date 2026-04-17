@@ -6281,6 +6281,52 @@ class ControlPanelV2(QMainWindow):
                 f"visual_xyz={self._step_format_inline_xyz(visual_live)} "
                 f"dz={f'{_dz:.4f}' if _dz is not None else '--'}"
             )
+        # [MESH_ALIGN] Log de diagnóstico comparando todos los frames relevantes
+        # en el MISMO ciclo de refresco para detectar desfases entre UI y geometría.
+        try:
+            _ma_tool0_base = self._step_fetch_live_pose("tool0")
+            _ma_pinch_base = operational_live  # ya calculado arriba (base_link)
+            _ma_obj_world = self._step_fetch_object_world()  # world directo de pose/info
+            # Convertir todo a world para comparación unificada
+            _ma_tool0_world = self._step_display_position(_ma_tool0_base)
+            _ma_pinch_world = operational_live_display  # ya es world
+            # Org de la tabla STEP (primera fila de la fase activa, en base_link)
+            _ma_step_org_world = None
+            _ma_step_org_raw = None
+            if self._step_history_rows:
+                _active_row = next(
+                    (r for r in reversed(self._step_history_rows)
+                     if str(r.get("phase", "")).strip().upper()
+                     == str(self._step_current_phase or "").strip().upper()),
+                    None,
+                )
+                if _active_row is not None:
+                    _ma_step_org_raw = _active_row.get("origin_snapshot")
+                    _ma_step_org_world = self._step_display_position(_ma_step_org_raw)
+            def _maz(a, b):
+                """Z diff (a - b), both world tuples."""
+                if a is None or b is None:
+                    return "--"
+                try:
+                    return f"{float(a[2]) - float(b[2]):.4f}"
+                except Exception:
+                    return "--"
+            self._emit_log(
+                f"[MESH_ALIGN] "
+                f"phase={self._step_current_phase or '--'} "
+                f"tool0_world={self._step_format_inline_xyz(_ma_tool0_world)} "
+                f"rg2_pinch_center_world={self._step_format_inline_xyz(_ma_pinch_world)} "
+                f"obj_root_world={self._step_format_inline_xyz(_ma_obj_world)} "
+                f"step_org_world={self._step_format_inline_xyz(_ma_step_org_world)} "
+                f"header_label_world={self._step_format_inline_xyz(_ma_pinch_world)} "
+                f"dz_tool0_pinch={_maz(_ma_tool0_world, _ma_pinch_world)} "
+                f"dz_pinch_obj={_maz(_ma_pinch_world, _ma_obj_world)} "
+                f"dz_tool0_obj={_maz(_ma_tool0_world, _ma_obj_world)} "
+                f"dz_org_header={_maz(_ma_step_org_world, _ma_pinch_world)} "
+                f"dz_org_obj={_maz(_ma_step_org_world, _ma_obj_world)}"
+            )
+        except Exception as _ma_exc:
+            self._emit_log(f"[MESH_ALIGN] exception={_ma_exc}")
         if self._step_live_visual_label is not None:
             self._step_live_visual_label.setText(
                 self._step_live_pose_text("XYZ visual de la pinza (world)", world_frame, visual_live_display)
@@ -6343,7 +6389,10 @@ class ControlPanelV2(QMainWindow):
                 cierre3_display = self._step_display_position(cierre3)
                 pos3_display = self._step_display_position(pos3)
                 exec3_display = self._step_display_position(exec3)
-                obj_world3_display = self._step_display_position(obj_world3)
+                # obj_world3 ya es world (guardado por _step_fetch_object_world que devuelve
+                # pose/info en world frame). No pasar por _step_display_position (base→world)
+                # porque produciría una doble conversión y valores erróneos en la tabla.
+                obj_world3_display = obj_world3
                 dist_txt = f"{dist_tcp_obj:.3f}" if dist_tcp_obj is not None else "--"
                 display_phase = f"{phase_name} - {self._step_phase_intent(self._step_history_flow, phase_name)}"
                 expected_gripper = self._step_phase_gripper_state(self._step_history_flow, phase_name)
@@ -6445,9 +6494,17 @@ class ControlPanelV2(QMainWindow):
             last_row["object_world_snapshot"] = obj_world
             if actual_pose is not None and obj_world is not None:
                 import math as _math
-                last_row["dist_tcp_obj_snapshot"] = _math.sqrt(
-                    sum((actual_pose[i] - obj_world[i]) ** 2 for i in range(3))
-                )
+                # actual_pose es base_link; obj_world es world. Convertir obj_world a
+                # base_link para que ambos estén en el mismo frame antes de calcular distancia.
+                try:
+                    obj_base_for_dist = world_to_base(
+                        float(obj_world[0]), float(obj_world[1]), float(obj_world[2])
+                    )
+                    last_row["dist_tcp_obj_snapshot"] = _math.sqrt(
+                        sum((actual_pose[i] - obj_base_for_dist[i]) ** 2 for i in range(3))
+                    )
+                except Exception:
+                    last_row["dist_tcp_obj_snapshot"] = None
             else:
                 last_row["dist_tcp_obj_snapshot"] = None
         except Exception:
