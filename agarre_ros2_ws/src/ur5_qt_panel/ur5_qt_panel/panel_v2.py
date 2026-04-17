@@ -4930,16 +4930,25 @@ class ControlPanelV2(QMainWindow):
         lbl_gripper_live = QLabel("Pinza live: --")
         lbl_object = QLabel("Objeto XYZ: --")
         lbl_start_pose = QLabel("Pose inicial robot: --")
-        lbl_history_frame_help = QLabel("Tabla STEP: Org/Cierre/Target/Exec en el frame operacional actual.")
+        lbl_history_frame_help = QLabel(
+            "Tabla STEP: Org=pose al abrir la fase | TCP-TF=TCP real por TF al cerrar | "
+            "Target=destino planificado | Exec=target realmente enviado | "
+            "Obj World=pose objeto en world | D TCP-Obj=dist TCP↔objeto | Razón=motivo del check."
+        )
         lbl_history_frame_help.setWordWrap(True)
         lbl_history_frame_help.setStyleSheet("color:#475569; font-size:12px;")
-        history_table = QTableWidget(0, 15)
+        # Columnas: Fase | Pinza | Org(3) | TCP TF Live/Cierre(3) | Target(3) | Exec(3) |
+        #           Obj World(3) | D TCP-Obj | Razón | Check  → total 20
+        history_table = QTableWidget(0, 20)
         history_table.setHorizontalHeaderLabels([
             "Fase", "Pinza",
             "Xw Org", "Yw Org", "Zw Org",
-            "Xw Cierre", "Yw Cierre", "Zw Cierre",
+            "Xw TCP-TF", "Yw TCP-TF", "Zw TCP-TF",
             "Xw Target", "Yw Target", "Zw Target",
             "Xw Exec", "Yw Exec", "Zw Exec",
+            "Xw Obj", "Yw Obj", "Zw Obj",
+            "D TCP-Obj",
+            "Razón",
             "Check",
         ])
         history_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -4948,8 +4957,10 @@ class ControlPanelV2(QMainWindow):
         history_header = history_table.horizontalHeader()
         if history_header is not None:
             history_header.setSectionResizeMode(0, QHeaderView.Stretch)
-            for _col in range(1, 15):
-                history_header.setSectionResizeMode(_col, QHeaderView.ResizeToContents)
+            history_header.setSectionResizeMode(18, QHeaderView.Stretch)
+            for _col in range(1, 20):
+                if _col not in (0, 18):
+                    history_header.setSectionResizeMode(_col, QHeaderView.ResizeToContents)
         history_table.verticalHeader().setVisible(False)
         btn_continue = QPushButton("▶ Ejecutar fase")
         btn_continue.clicked.connect(self._on_step_continue_clicked)
@@ -6051,10 +6062,13 @@ class ControlPanelV2(QMainWindow):
                 {
                     "phase": phase_name,
                     "target": pos3,
-                    "actual": None,
+                    "actual": None,            # TCP TF live al cerrar la fase (columna TCP-TF)
                     "origin_snapshot": _origin_snap,  # pose robot al abrir la gate (congelada)
-                    "exec_target_snapshot": None,      # fijado por _step_set_exec_target tras _phase_begin
+                    "exec_target_snapshot": None,     # fijado por _step_set_exec_target
                     "reached": None,
+                    "object_world_snapshot": None,    # pose objeto world al cerrar la fase
+                    "dist_tcp_obj_snapshot": None,    # distancia TCP↔objeto al cerrar la fase
+                    "check_reason": None,             # texto corto del motivo de check
                 }
             )
             self._emit_log(f"[STEP][PREPARED_PHASE] phase={phase_name} started=false")
@@ -6128,6 +6142,9 @@ class ControlPanelV2(QMainWindow):
             "origin_snapshot": pos3_actual,  # ← congelado: pose robot al abrir la gate
             "exec_target_snapshot": pos3_target,
             "reached": None,                 # ← PEND hasta captura
+            "object_world_snapshot": None,
+            "dist_tcp_obj_snapshot": None,
+            "check_reason": None,
         })
         self._emit_log(f"[STEP][PREPARED_PHASE] phase={first_phase} started=false")
         self._emit_log(
@@ -6276,10 +6293,10 @@ class ControlPanelV2(QMainWindow):
             )
         if getattr(self, "_step_history_frame_help_label", None) is not None:
             self._step_history_frame_help_label.setText(
-                "Tabla STEP: "
-                f"Org/Cierre/Target/Exec mostrados en {world_frame}. "
-                f"Internamente se calculan en {operational_frame}@{self._business_base_frame()}. "
-                "Org=pose al abrir la fase, Cierre=pose al terminar, Target=destino planificado, Exec=destino realmente enviado."
+                f"Tabla STEP (frame operacional: {world_frame} | interno: {operational_frame}@{self._business_base_frame()}). "
+                "Org=pose robot al abrir la fase | TCP-TF=TCP real por TF al cerrar | "
+                "Target=destino planificado | Exec=target realmente enviado | "
+                "Obj World=pose objeto en world | D TCP-Obj=dist TCP↔objeto | Razón=motivo del check."
             )
         if self._step_history_table is not None:
             self._step_history_table.setRowCount(len(self._step_history_rows))
@@ -6296,16 +6313,22 @@ class ControlPanelV2(QMainWindow):
                     org3 = row_data.get("actual")
                     if org3 is None and phase_name == str(self._step_current_phase or "").strip().upper():
                         org3 = operational_live  # fallback: TF en vivo si no hay snapshot aún
-                # Cierre: pose real del robot al cerrar la fase (capturada en transición).
+                # TCP-TF (columna Cierre renombrada): pose real del TCP por TF al cerrar la fase.
                 # Es None (PEND) mientras la fase no haya concluido.
                 cierre3 = row_data.get("actual")
-                # Target: destino teórico de la fase (calculado al planificar).
-                # Exec: target efectivo enviado al IK/movimiento (fijado por _step_set_exec_target).
+                # Target: destino teórico (calculado al planificar).
+                # Exec: target efectivo enviado al IK (fijado por _step_set_exec_target).
                 exec3 = row_data.get("exec_target_snapshot")
+                # Objeto world y distancia TCP↔objeto al cerrar la fase.
+                obj_world3 = row_data.get("object_world_snapshot")
+                dist_tcp_obj = row_data.get("dist_tcp_obj_snapshot")
+                check_reason = row_data.get("check_reason") or ""
                 org3_display = self._step_display_position(org3)
                 cierre3_display = self._step_display_position(cierre3)
                 pos3_display = self._step_display_position(pos3)
                 exec3_display = self._step_display_position(exec3)
+                obj_world3_display = self._step_display_position(obj_world3)
+                dist_txt = f"{dist_tcp_obj:.3f}" if dist_tcp_obj is not None else "--"
                 display_phase = f"{phase_name} - {self._step_phase_intent(self._step_history_flow, phase_name)}"
                 expected_gripper = self._step_phase_gripper_state(self._step_history_flow, phase_name)
                 values = (
@@ -6314,13 +6337,63 @@ class ControlPanelV2(QMainWindow):
                     + self._step_format_xyz(cierre3_display)
                     + self._step_format_xyz(pos3_display)
                     + self._step_format_xyz(exec3_display)
+                    + self._step_format_xyz(obj_world3_display)
+                    + (dist_txt,)
+                    + (check_reason,)
                 )
                 for col_idx, value in enumerate(values):
                     item = QTableWidgetItem(value)
-                    if col_idx != 0:
+                    if col_idx not in (0, len(values) - 1):
                         item.setTextAlignment(Qt.AlignCenter)
                     self._step_history_table.setItem(row_idx, col_idx, item)
+                # Check (columna final: índice 19)
                 self._step_history_table.setItem(row_idx, len(values), self._step_status_item(reached))
+
+    def _step_update_phase_result(
+        self,
+        *,
+        phase: str,
+        tcp_tf_actual: Optional[Tuple[float, float, float]],
+        object_world: Optional[Tuple[float, float, float]],
+        dist_tcp_obj: Optional[float],
+        check_reason: str,
+        ok: Optional[bool],
+        tf_visual_gap: Optional[float] = None,
+    ) -> None:
+        """Actualiza la fila de una fase con datos de un evaluador externo.
+
+        Se llama desde el hilo UI (via signal_run_ui.emit).  Busca la fila de la
+        fase indicada (de atrás hacia delante) y sobreescribe los campos de resultado,
+        asegurando que el invariante Cierre[N]=Org[N+1] en _step_wait_for_phase
+        no vuelva a pisarlos (porque 'actual' ya no será None).
+        """
+        target_phase = str(phase).strip().upper()
+        for row in reversed(self._step_history_rows):
+            if str(row.get("phase", "")).strip().upper() == target_phase:
+                if tcp_tf_actual is not None:
+                    row["actual"] = tuple(float(v) for v in tcp_tf_actual)
+                if object_world is not None:
+                    row["object_world_snapshot"] = tuple(float(v) for v in object_world)
+                if dist_tcp_obj is not None:
+                    row["dist_tcp_obj_snapshot"] = float(dist_tcp_obj)
+                row["check_reason"] = str(check_reason)
+                row["reached"] = ok
+                if tf_visual_gap is not None:
+                    row["tf_visual_gap"] = float(tf_visual_gap)
+                break
+        if self._step_history_table is not None:
+            self._step_window_refresh()
+
+    def _step_fetch_object_world(self) -> Optional[Tuple[float, float, float]]:
+        """Lee la pose del objeto activo en world desde el estado global."""
+        try:
+            positions = get_object_positions() or {}
+            for _name, _pos in positions.items():
+                if isinstance(_pos, (list, tuple)) and len(_pos) >= 3:
+                    return (float(_pos[0]), float(_pos[1]), float(_pos[2]))
+        except Exception:
+            pass
+        return None
 
     def _step_record_current_phase_actual(self) -> None:
         if not self._step_history_rows:
@@ -6347,7 +6420,40 @@ class ControlPanelV2(QMainWindow):
         )
         # Sin fallback a caché stale: si TF no disponible, actual queda None → PEND
         last_row["actual"] = actual_pose
-        last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
+        reached = self._step_assess_target_reached(last_row.get("target"), actual_pose)
+        last_row["reached"] = reached
+
+        # Capturar pose del objeto y distancia TCP↔objeto al cerrar la fase
+        try:
+            obj_world = self._step_fetch_object_world()
+            last_row["object_world_snapshot"] = obj_world
+            if actual_pose is not None and obj_world is not None:
+                import math as _math
+                last_row["dist_tcp_obj_snapshot"] = _math.sqrt(
+                    sum((actual_pose[i] - obj_world[i]) ** 2 for i in range(3))
+                )
+            else:
+                last_row["dist_tcp_obj_snapshot"] = None
+        except Exception:
+            last_row["object_world_snapshot"] = None
+            last_row["dist_tcp_obj_snapshot"] = None
+
+        # Razón legible del check
+        if actual_pose is None:
+            last_row["check_reason"] = "tcp_tf_unavailable"
+        elif reached is True:
+            last_row["check_reason"] = "ok"
+        elif reached is False:
+            tgt = last_row.get("target")
+            if tgt is not None and actual_pose is not None:
+                import math as _math
+                _err = _math.sqrt(sum((actual_pose[i] - tgt[i]) ** 2 for i in range(3)))
+                last_row["check_reason"] = f"pos_not_reached err={_err:.3f}m"
+            else:
+                last_row["check_reason"] = "pos_not_reached"
+        else:
+            last_row["check_reason"] = "pending"
+
         if self._step_history_table is not None:
             self._step_window_refresh()
 
@@ -6447,12 +6553,27 @@ class ControlPanelV2(QMainWindow):
             if len(self._step_history_rows) >= 2:
                 _prev_row = self._step_history_rows[-2]
                 _curr_snap = self._step_history_rows[-1].get("origin_snapshot")
-                if _curr_snap is not None:
-                    # Invariante Cierre[N] == Origen[N+1] para el resto de fases.
+                if _curr_snap is not None and _prev_row.get("actual") is None:
+                    # Invariante Cierre[N] == Origen[N+1].
+                    # Solo aplica si la fila anterior NO fue ya rellenada por un evaluador
+                    # (e.g. AttachGateEvaluator via _step_update_phase_result).
                     _prev_row["actual"] = _curr_snap
                     _prev_row["reached"] = self._step_assess_target_reached(
                         _prev_row.get("target"), _curr_snap
                     )
+                    if not _prev_row.get("check_reason"):
+                        _rv = _prev_row.get("reached")
+                        import math as _math
+                        _tgt = _prev_row.get("target")
+                        if _rv is True:
+                            _prev_row["check_reason"] = "ok"
+                        elif _rv is False and _tgt is not None:
+                            _e = _math.sqrt(sum(
+                                (_curr_snap[i] - _tgt[i]) ** 2 for i in range(3)
+                            ))
+                            _prev_row["check_reason"] = f"pos_not_reached err={_e:.3f}m"
+                        else:
+                            _prev_row["check_reason"] = "pos_not_reached"
             self._step_wait_active = True
             self._step_wait_event.clear()
 

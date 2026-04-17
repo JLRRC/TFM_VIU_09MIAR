@@ -403,6 +403,53 @@ def _prepare_runtime(context, *_args) -> List[object]:
             "PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M",
             os.environ.get("PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M", "0.040"),
         ),
+        # AttachGateEvaluator: ventana temporal de estabilidad objeto-TCP
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M",
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M", "0.012"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC",
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC", "0.35"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES",
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES", "5"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M",
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M", "0.020"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M",
+            os.environ.get("PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M", "0.020"),
+        ),
+        # CLOSE: tolerancias y reintento de confirmación de pinza
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC",
+            os.environ.get("PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC", "3.0"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM",
+            os.environ.get("PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM", "0.01"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M",
+            os.environ.get("PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M", "0.12"),
+        ),
+        # GRASP_DOWN: confirmación de estabilidad TF post-movimiento
+        SetEnvironmentVariable(
+            "PANEL_PICK_OBJECT_GRASP_TF_STABLE_TOL_M",
+            os.environ.get("PANEL_PICK_OBJECT_GRASP_TF_STABLE_TOL_M", "0.045"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_OBJECT_GRASP_TF_STABLE_SAMPLES",
+            os.environ.get("PANEL_PICK_OBJECT_GRASP_TF_STABLE_SAMPLES", "5"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK",
+            os.environ.get("PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK", "4"),
+        ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M",
             os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.035"),

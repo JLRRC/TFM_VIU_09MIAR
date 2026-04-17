@@ -4072,6 +4072,72 @@ def run_pick_object(panel) -> None:
                 grasp_joint_fallback_applied = True
             time.sleep(0.3)  # Permitir que brazo se estabilice en posición
 
+            # ── GRASP_DOWN confirmación de estabilidad TF ─────────────────────
+            # Lee TF N veces y verifica que el TCP se mantenga dentro de la
+            # tolerancia antes de aprobar la fase. Evita falsos positivos cuando
+            # el resultado de bridge=OK llega justo en el límite de tolerancia.
+            _grasp_target_pos = grasp_pose_send.get("position", (bx, by, bz))
+            try:
+                _grasp_stable_tol = float(
+                    os.environ.get(
+                        "PANEL_PICK_OBJECT_GRASP_TF_STABLE_TOL_M",
+                        os.environ.get("PANEL_PICK_OBJECT_GRASP_STEP_TOL_M", "0.045"),
+                    )
+                )
+            except Exception:
+                _grasp_stable_tol = 0.045
+            try:
+                _grasp_stable_n = int(
+                    os.environ.get("PANEL_PICK_OBJECT_GRASP_TF_STABLE_SAMPLES", "5")
+                )
+                _grasp_stable_n = max(2, min(_grasp_stable_n, 10))
+            except Exception:
+                _grasp_stable_n = 5
+            try:
+                _grasp_stable_min_ok = int(
+                    os.environ.get("PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK", "4")
+                )
+                _grasp_stable_min_ok = max(1, min(_grasp_stable_min_ok, _grasp_stable_n))
+            except Exception:
+                _grasp_stable_min_ok = 4
+
+            _stable_dists = []
+            _stable_ok_count = 0
+            for _s_idx in range(_grasp_stable_n):
+                _s_tcp, _ = _read_tcp_in_frame(base_frame, measured_ee_frame, timeout_sec=0.15)
+                if _s_tcp is not None:
+                    _s_d = math.sqrt(sum(
+                        (float(_s_tcp[i]) - float(_grasp_target_pos[i])) ** 2
+                        for i in range(3)
+                    ))
+                    _stable_dists.append(_s_d)
+                    if _s_d <= _grasp_stable_tol:
+                        _stable_ok_count += 1
+                else:
+                    _stable_dists.append(None)
+                if _s_idx < _grasp_stable_n - 1:
+                    time.sleep(0.06)
+
+            _grasp_stable_pass = _stable_ok_count >= _grasp_stable_min_ok
+            _dists_txt = "[" + ", ".join(
+                f"{d:.3f}" if d is not None else "none" for d in _stable_dists
+            ) + "]"
+            panel._emit_log(
+                f"[GRASP_DOWN][STABLE_CONFIRM] "
+                f"frame={base_frame} ee={measured_ee_frame} "
+                f"target=({float(_grasp_target_pos[0]):.3f},{float(_grasp_target_pos[1]):.3f},{float(_grasp_target_pos[2]):.3f}) "
+                f"samples={_grasp_stable_n} ok_count={_stable_ok_count} "
+                f"min_ok={_grasp_stable_min_ok} tol={_grasp_stable_tol:.3f} "
+                f"dists={_dists_txt} stable={str(_grasp_stable_pass).lower()}"
+            )
+            if not _grasp_stable_pass:
+                raise RuntimeError(
+                    f"grasp_down_unstable_tf "
+                    f"ok_count={_stable_ok_count} min_ok={_grasp_stable_min_ok} "
+                    f"samples={_grasp_stable_n} tol={_grasp_stable_tol:.3f} "
+                    f"dists={_dists_txt}"
+                )
+
             tcp_base, _tcp_tf = _read_tcp_in_frame(base_frame, measured_ee_frame, timeout_sec=0.3)
             if tcp_base is None:
                 raise RuntimeError(f"no se pudo leer TCP en {base_frame}")

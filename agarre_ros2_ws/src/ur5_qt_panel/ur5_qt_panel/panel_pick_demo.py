@@ -59,6 +59,7 @@ from .panel_utils import (
     table_xy_to_pixel_float,
 )
 from .ur5_kinematics import fk_ur5, ik_ur5
+from .attach_gate_evaluator import AttachGateEvaluator, AttachGateConfig
 
 DIRECT_ROUTE_MODE = "direct_rg2_pinch_center"
 DIRECT_SOURCE_FRAME = "rg2_pinch_center"
@@ -1996,6 +1997,8 @@ def run_pick_demo(panel) -> None:
                 *,
                 timeout_sec: float = 1.8,
                 opening_ref_sum: Optional[float] = None,
+                cmd_fn=None,
+                cmd_retry_sec: float = 0.5,
             ):
                 required_hits = max(
                     1,
@@ -2048,7 +2051,13 @@ def run_pick_demo(panel) -> None:
                     f"target_mag={last_state.get('target_mag')} timeout={timeout_sec:.2f}s stable_hits={required_hits} "
                     f"opening_ref_sum={opening_ref_sum}"
                 )
+                _last_cmd_retry_ts = time.monotonic()
                 while (time.monotonic() - start) <= timeout_sec:
+                    if cmd_fn is not None:
+                        _now_retry = time.monotonic()
+                        if (_now_retry - _last_cmd_retry_ts) >= cmd_retry_sec:
+                            panel.signal_run_ui.emit(cmd_fn)
+                            _last_cmd_retry_ts = _now_retry
                     _monitor_alcance(trigger=f"GRIPPER_WAIT_{'CLOSE' if closed else 'OPEN'}")
                     state = _read_gripper_state(expected_closed=closed)
                     last_state = state
@@ -8016,7 +8025,7 @@ def run_pick_demo(panel) -> None:
                 f"closed_flag={bool(close_state_pre_cmd.get('closed_flag'))}"
             )
             panel.signal_run_ui.emit(_close_only)
-            time.sleep(0.1)
+            time.sleep(0.3)
             close_confirm_timeout_sec = max(
                 0.8,
                 float(
@@ -8040,6 +8049,8 @@ def run_pick_demo(panel) -> None:
                 True,
                 timeout_sec=close_confirm_timeout_sec,
                 opening_ref_sum=close_state_pre_cmd.get("opening_sum"),
+                cmd_fn=_close_only,
+                cmd_retry_sec=0.4,
             )
             panel._emit_log(
                 "[PICK][DIRECT][CLOSE] "
@@ -8319,40 +8330,149 @@ def run_pick_demo(panel) -> None:
                 raise RuntimeError("demo_attach_failed")
             demo_attach_published = True
 
+            # ── ATTACH_GATE: leer parámetros configurables ─────────────────────
             attach_follow_timeout_sec = max(
                 1.2,
                 float(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_ATTACH_SETTLE_SEC",
-                        "1.8",
-                    )
-                    or 1.8
+                    os.environ.get("PANEL_PICK_DEMO_ATTACH_SETTLE_SEC", "1.8") or 1.8
                 ),
             )
             attach_follow_max_tcp_dist_m = max(
                 0.02,
                 float(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M",
-                        "0.040",
-                    )
+                    os.environ.get("PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M", "0.040")
                     or 0.040
                 ),
             )
+            try:
+                _ag_max_rel_drift_m = float(
+                    os.environ.get("PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M", "0.012") or 0.012
+                )
+            except Exception:
+                _ag_max_rel_drift_m = 0.012
+            try:
+                _ag_stable_window_sec = float(
+                    os.environ.get("PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC", "0.35") or 0.35
+                )
+            except Exception:
+                _ag_stable_window_sec = 0.35
+            try:
+                _ag_min_stable_samples = int(
+                    os.environ.get("PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES", "5") or 5
+                )
+            except Exception:
+                _ag_min_stable_samples = 5
+            try:
+                _ag_gripper_closed_thr = float(
+                    os.environ.get("PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M", "0.020") or 0.020
+                )
+            except Exception:
+                _ag_gripper_closed_thr = 0.020
+            try:
+                _ag_max_tf_visual_gap_m = float(
+                    os.environ.get("PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M", "0.020") or 0.020
+                )
+            except Exception:
+                _ag_max_tf_visual_gap_m = 0.020
+
+            _ag_cfg = AttachGateConfig(
+                max_tcp_obj_dist_m=attach_follow_max_tcp_dist_m,
+                max_rel_drift_m=_ag_max_rel_drift_m,
+                max_tf_visual_gap_m=_ag_max_tf_visual_gap_m,
+                stable_window_sec=_ag_stable_window_sec,
+                min_stable_samples=_ag_min_stable_samples,
+                gripper_closed_threshold_m=_ag_gripper_closed_thr,
+                sample_interval_sec=0.06,
+                timeout_sec=attach_follow_timeout_sec,
+            )
+
             _final_phase_trace(
                 "ATTACH_GATE",
                 event="wait_start",
-                expected="follow_confirmed",
+                expected="follow_confirmed_stable_window",
                 received="pending",
                 timeout_sec=f"{attach_follow_timeout_sec:.2f}",
-                reason="wait_demo_attach_follow",
+                reason="attach_gate_evaluator",
                 request_state="attach_follow",
             )
 
-            _wait_demo_attach_follow(
-                timeout_sec=attach_follow_timeout_sec,
-                max_tcp_dist_m=attach_follow_max_tcp_dist_m,
+            panel._emit_log(
+                "[ATTACH_GATE][CONFIG] "
+                f"max_tcp_obj_dist_m={_ag_cfg.max_tcp_obj_dist_m:.4f} "
+                f"max_rel_drift_m={_ag_cfg.max_rel_drift_m:.4f} "
+                f"max_tf_visual_gap_m={_ag_cfg.max_tf_visual_gap_m:.4f} "
+                f"stable_window_sec={_ag_cfg.stable_window_sec:.3f} "
+                f"min_stable_samples={_ag_cfg.min_stable_samples} "
+                f"gripper_closed_threshold_m={_ag_cfg.gripper_closed_threshold_m:.4f} "
+                f"timeout_sec={_ag_cfg.timeout_sec:.2f}"
             )
+
+            # Nota sobre "XYZ visual vs XYZ actual" en la UI:
+            # "actual" = rg2_pinch_center (TCP de contacto), "visual" = tool0.
+            # La diferencia Z sistemática (~0.175 m) es el offset fijo de la pinza,
+            # no una divergencia de error. tcp_visual_world=None para evitar falsos
+            # warnings en el evaluador.
+            panel._emit_log(
+                "[ATTACH_GATE][TCP_FRAMES] "
+                f"frame_actual=rg2_pinch_center frame_visual=tool0 "
+                f"expected_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f}m "
+                f"tcp_actual_base={_live_tcp_base()} "
+                "nota=diferencia_sistematica_no_error"
+            )
+
+            _ag_evaluator = AttachGateEvaluator(
+                config=_ag_cfg,
+                emit_log=panel._emit_log,
+                tcp_tf_world_fn=_live_tcp_world,
+                tcp_tf_base_fn=_live_tcp_base,
+                object_world_fn=_live_object_world,
+                object_base_fn=_live_object_base,
+                gripper_opening_fn=lambda: (
+                    _read_gripper_state(expected_closed=True) or {}
+                ).get("opening_sum"),
+                attach_backend_ok=bool(attach_ok),
+                tcp_command_base=tuple(tcp_base_grasp) if tcp_base_grasp is not None else None,
+                tcp_visual_world=None,  # tool0 difiere 0.175 m por offset sistematico
+            )
+            _ag_result = _ag_evaluator.evaluate()
+
+            # ── Actualizar fila ATTACH_GATE en la tabla STEP ───────────────────
+            # Siempre (pass y fail), antes de cualquier raise.
+            # Al fijar 'actual' en el row, el invariante Cierre[N]=Org[N+1] de
+            # _step_wait_for_phase (para LIFT) no sobreescribirá estos valores.
+            _ag_tcp_for_table = _ag_result.tcp_tf_world or _ag_result.tcp_tf_base
+            _ag_obj_for_table = _ag_result.object_world or _ag_result.object_base
+            _ag_reason_for_table = "ok" if _ag_result.ok else f"FAIL:{_ag_result.reason}"
+
+            def _emit_ag_update(
+                _tcp=_ag_tcp_for_table,
+                _obj=_ag_obj_for_table,
+                _dist=_ag_result.tcp_obj_dist,
+                _reason=_ag_reason_for_table,
+                _ok=_ag_result.ok,
+            ) -> None:
+                _fn = getattr(panel, "_step_update_phase_result", None)
+                if callable(_fn):
+                    _fn(
+                        phase="ATTACH_GATE",
+                        tcp_tf_actual=_tcp,
+                        object_world=_obj,
+                        dist_tcp_obj=_dist,
+                        check_reason=_reason,
+                        ok=_ok,
+                    )
+
+            panel.signal_run_ui.emit(_emit_ag_update)
+
+            if not _ag_result.ok:
+                raise RuntimeError(
+                    "demo_attach_follow_not_confirmed "
+                    f"reason={_ag_result.reason} "
+                    f"tcp_obj_dist={_ag_result.tcp_obj_dist:.4f if _ag_result.tcp_obj_dist is not None else 'none'} "
+                    f"rel_drift={_ag_result.rel_drift:.4f if _ag_result.rel_drift is not None else 'none'} "
+                    f"stable_samples={_ag_result.stable_samples} "
+                    f"gripper_opening_m={_ag_result.gripper_opening_m:.4f if _ag_result.gripper_opening_m is not None else 'none'}"
+                )
             demo_follow_confirmed = True
             _clear_cycle_object_reference(reason="attach_follow_confirmed")
             if not mark_object_grasped(PICK_DEMO_OBJECT_NAME, reason="demo_attach_follow_confirmed"):
