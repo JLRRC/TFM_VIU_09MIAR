@@ -5,6 +5,7 @@
 """Startup orchestration helpers for the panel."""
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -45,7 +46,7 @@ class StartSequence:
     bridge_timeout_sec: float = 30.0
     controllers_timeout_sec: float = 20.0
     controllers_stable_sec: float = 2.0
-    moveit_timeout_sec: float = 40.0
+    moveit_timeout_sec: float = float(os.environ.get("PANEL_MOVEIT_STARTUP_TIMEOUT_SEC", "40.0") or "40.0")
     clock_timeout_sec: float = 12.0
     pose_timeout_sec: float = 20.0
     tf_timeout_sec: float = 12.0
