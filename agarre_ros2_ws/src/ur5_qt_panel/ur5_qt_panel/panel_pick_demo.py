@@ -3628,6 +3628,16 @@ def run_pick_demo(panel) -> None:
                     f"offset_vector={_fmt_vec(offset_vector)} "
                     f"offset_m={tcp_offset_m:.4f} offset_mode={execution_semantics['offset_mode']}"
                 )
+                if label == "GRASP_ALIGN_IK":
+                    _sp = execution_semantics.get("source_pose")
+                    panel._emit_log(
+                        "[GRASP_Z_TRACE] stage=execution_semantics "
+                        f"source_pose_z={f'{float(_sp[2]):.4f}' if _sp else 'N/A'} "
+                        f"target_model_z={f'{float(target_model[2]):.4f}' if target_model else 'N/A'} "
+                        f"offset_vector_z={f'{float(offset_vector[2]):.4f}' if offset_vector else 'N/A'} "
+                        f"execution_pose_z={f'{float(target_ik[2]):.4f}' if target_ik else 'N/A'} "
+                        f"offset_source={execution_semantics.get('offset_source', '?')}"
+                    )
                 _effective_joint_weight = (
                     float(joint_weight)
                     if float(joint_weight) >= 0.0
@@ -3904,6 +3914,19 @@ def run_pick_demo(panel) -> None:
                     f"runtime_stable_elapsed={_fmt_scalar(runtime_target_stable_elapsed)} "
                     f"runtime_stable_motion={_fmt_scalar(runtime_target_stable_motion)}"
                 )
+                if label == "GRASP_ALIGN_IK":
+                    _tcp_aft = _tuple3(tcp_after)
+                    panel._emit_log(
+                        "[GRASP_Z_TRACE] stage=post_exec "
+                        f"target_ik_z={float(target_ik[2]):.4f} "
+                        f"fk_after_z={float(fk_after_pos[2]):.4f} "
+                        f"model_target_err={model_target_err:.4f} "
+                        f"model_move_delta={model_live_delta:.4f} "
+                        f"tcp_after_z={f'{float(_tcp_aft[2]):.4f}' if _tcp_aft else 'N/A'} "
+                        f"runtime_target_ok={runtime_target_ok} "
+                        f"pos_err_m={pos_err_m:.4f} "
+                        f"ik_ok={str(bool(ik_ok)).lower()}"
+                    )
                 panel._emit_log(
                     "[PICK][DIRECT][EXEC_RESULT] "
                     f"label={label} ik_ok={str(bool(ik_ok)).lower()} "
@@ -4911,6 +4934,15 @@ def run_pick_demo(panel) -> None:
                     )
                     target_tcp_runtime = target_tcp_runtime_raw
                     tcp_before = _live_tcp_base()
+                    panel._emit_log(
+                        f"[GRASP_Z_TRACE] attempt={attempt} "
+                        f"obj_base_z={float(obj_base[2]):.4f} "
+                        f"grasp_contact_z_offset_m={grasp_contact_z_offset_m:.4f} "
+                        f"_DIRECTO_GRASP_Z={_DIRECTO_GRASP_Z:.4f} "
+                        f"target_z_expected={target_z_expected:.4f} "
+                        f"target_tcp_runtime_raw_z={float(target_tcp_runtime_raw[2]):.4f} "
+                        f"tcp_before_z={f'{float(tcp_before[2]):.4f}' if tcp_before else 'N/A'}"
+                    )
                     pre_metrics = _pre_close_alignment_metrics()
                     xy_lock_factor = max(
                         1.0,
@@ -5172,6 +5204,13 @@ def run_pick_demo(panel) -> None:
                     except Exception as _exc_cmp:
                         panel._emit_log(f"[COMPARE][DIVERGENCE] error={_exc_cmp}")
                     # ----------------------------------------------------------
+                    panel._emit_log(
+                        f"[GRASP_Z_TRACE] pre_move attempt={attempt} decision={decision} "
+                        f"target_tcp_runtime_z={float(target_tcp_runtime[2]):.4f} "
+                        f"target_tcp_runtime_raw_z={float(target_tcp_runtime_raw[2]):.4f} "
+                        f"z_bias_cmd={z_bias_cmd:.4f} "
+                        f"keep_xy={str(keep_xy).lower()}"
+                    )
                     try:
                         last_debug = _move_tcp_direct(
                             label="GRASP_ALIGN_IK",
@@ -7518,6 +7557,15 @@ def run_pick_demo(panel) -> None:
                             note="grasp_down left the TCP too far from the pre-grasp corridor; refusing to start fine align from a bad descent",
                             metrics=grasp_down_gate_metrics,
                         )
+            _tcp_after_gd = _live_tcp_base()
+            _obj_after_gd = _live_object_base()
+            panel._emit_log(
+                "[GRASP_Z_TRACE] phase_snapshot=GRASP_DOWN_end "
+                f"tcp_z={f'{float(_tcp_after_gd[2]):.4f}' if _tcp_after_gd else 'N/A'} "
+                f"obj_z={f'{float(_obj_after_gd[2]):.4f}' if _obj_after_gd else 'N/A'} "
+                f"z_gap={f'{float(_tcp_after_gd[2])-float(_obj_after_gd[2]):.4f}' if _tcp_after_gd and _obj_after_gd else 'N/A'} "
+                f"expected_z_gap_after_align={(_DIRECTO_GRASP_Z + grasp_contact_z_offset_m):.4f}"
+            )
             obj_base_align, obj_base_align_source, _align_base_extra = _resolved_align_object_base()
             target_base_align = None
             target_world_align = None
@@ -7723,6 +7771,16 @@ def run_pick_demo(panel) -> None:
                     ik_solution=align_debug.get("ik_solution") if isinstance(align_debug, dict) else None,
                     note=json.dumps(_json_safe(align_metrics), ensure_ascii=False, sort_keys=True),
                     result="ok" if bool(align_metrics.get("ok")) else "partial",
+                )
+                _tcp_after_align = _live_tcp_base()
+                _obj_after_align = _live_object_base()
+                panel._emit_log(
+                    "[GRASP_Z_TRACE] phase_snapshot=GRASP_ALIGN_IK_end "
+                    f"tcp_z={f'{float(_tcp_after_align[2]):.4f}' if _tcp_after_align else 'N/A'} "
+                    f"obj_z={f'{float(_obj_after_align[2]):.4f}' if _obj_after_align else 'N/A'} "
+                    f"z_gap={f'{float(_tcp_after_align[2])-float(_obj_after_align[2]):.4f}' if _tcp_after_align and _obj_after_align else 'N/A'} "
+                    f"expected_z_gap={(_DIRECTO_GRASP_Z + grasp_contact_z_offset_m):.4f} "
+                    f"align_ok={str(bool(align_metrics.get('ok'))).lower()}"
                 )
                 _trace_phase_pose(
                     phase="GRASP_ALIGN_IK",
