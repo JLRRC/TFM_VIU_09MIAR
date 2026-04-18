@@ -47,6 +47,11 @@ DEFAULT_OBJECTS = [
     "cyl_purple",
 ]
 
+TCP_FALLBACKS = {
+    "rg2_pinch_center": ("tool0", (0.0, 0.0, 0.175)),
+    "rg2_tcp": ("tool0", (0.0, 0.0, 0.175)),
+}
+
 
 @dataclass
 class PoseSample:
@@ -1025,6 +1030,29 @@ class GripperAttachBackend(Node):
             stamp_ns=max(int(parent_pose.stamp_ns), int(child_pose.stamp_ns)),
         )
 
+    def _fallback_tcp_pose(self) -> Optional[PoseSample]:
+        fallback = TCP_FALLBACKS.get(self._tcp_frame)
+        if not fallback:
+            return None
+        parent_frame, offset = fallback
+        parent_pose = self._lookup_pose(parent_frame)
+        if parent_pose is None:
+            return None
+        child_pose = PoseSample(
+            x=float(offset[0]),
+            y=float(offset[1]),
+            z=float(offset[2]),
+            qx=0.0,
+            qy=0.0,
+            qz=0.0,
+            qw=1.0,
+            stamp_ns=int(parent_pose.stamp_ns),
+        )
+        try:
+            return self._compose_pose(parent_pose, child_pose)
+        except Exception:
+            return None
+
     def _lookup_tcp_pose(self) -> Optional[PoseSample]:
         tf_pose = self._lookup_tf_pose(self._world_frame, self._tcp_frame)
         base_chain_pose: Optional[PoseSample] = None
@@ -1043,10 +1071,12 @@ class GripperAttachBackend(Node):
                 except Exception:
                     base_chain_pose = None
         cached_pose = self._lookup_pose(self._tcp_frame)
+        tool_fallback_pose = self._fallback_tcp_pose()
         named_candidates = [
             ("base_chain", base_chain_pose),
             ("world_tcp", tf_pose),
             ("cache_pose", cached_pose),
+            ("tool_fallback", tool_fallback_pose),
         ]
         candidates = [(name, pose) for name, pose in named_candidates if pose is not None]
         diag: Dict[str, float | str | bool] = {
@@ -1384,6 +1414,7 @@ class GripperAttachBackend(Node):
                     f"base_chain_ok={diag.get('base_chain_ok')} base_chain_age={diag.get('base_chain_age')} "
                     f"world_tcp_ok={diag.get('world_tcp_ok')} world_tcp_age={diag.get('world_tcp_age')} "
                     f"cache_ok={diag.get('cache_pose_ok')} cache_age={diag.get('cache_pose_age')} "
+                    f"tool_fallback_ok={diag.get('tool_fallback_ok')} tool_fallback_age={diag.get('tool_fallback_age')} "
                     f"world_base_ok={diag.get('world_base_ok')} base_tcp_ok={diag.get('base_tcp_ok')}"
                 )
                 self.get_logger().warning(
