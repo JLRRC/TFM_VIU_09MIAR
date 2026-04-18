@@ -4395,32 +4395,50 @@ def run_pick_demo(panel) -> None:
                 last_metrics = _grasp_down_runtime_metrics(target_base=target_base, obj_base=obj_base)
                 last_route = "cartesian_like_descent"
                 _gd_seed_injected = False
-                # ── Permissive-first for large Z gap ─────────────────────────────────
+                panel._emit_log(
+                    "[DIAG][GD_CONSERVATIVE_ENTRY] "
+                    f"tcp_base={_fmt_vec(_tuple3(_live_tcp_base()))} "
+                    f"target_base={_fmt_vec(_tuple3(target_base))}"
+                )
+                # ── Permissive-first for large Z gap (Z-only) ────────────────────────
                 # When the TCP is ≥20mm above the grasp target (standard after
                 # APPROACH_COARSE at +35mm clearance), the multi-segment waypoint
                 # approach sends tiny joint commands so fast the controller cannot
                 # track them → arm barely moves → visual "hover/separation."
-                # Go directly to permissive (low joint_weight=0.035, single target).
+                # XY se congela al TCP actual para evitar drift lateral: permissive-first
+                # solo desciende en Z. La corrección XY residual queda para el loop
+                # segmentado con joint_weight=0.45, que la ejecuta en pasos controlados.
                 _pf_tcp = _tuple3(_live_tcp_base())
                 _pf_tgt = _tuple3(target_base)
                 if _pf_tcp is not None and _pf_tgt is not None:
                     _pf_z_gap = abs(float(_pf_tcp[2]) - float(_pf_tgt[2]))
+                    _pf_xy_gap = math.hypot(
+                        float(_pf_tcp[0]) - float(_pf_tgt[0]),
+                        float(_pf_tcp[1]) - float(_pf_tgt[1]),
+                    )
                     if _pf_z_gap >= 0.020:
+                        _pf_z_only_target = (
+                            float(_pf_tcp[0]),
+                            float(_pf_tcp[1]),
+                            float(_pf_tgt[2]),
+                        )
                         _pf_msg = (
                             "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
                             f"reason=large_z_gap_pre_motion "
-                            f"z_gap={_pf_z_gap:.3f} "
-                            "strategy=permissive_direct_descent"
+                            f"z_gap={_pf_z_gap:.3f} xy_gap={_pf_xy_gap:.3f} "
+                            f"strategy=permissive_z_only_descent "
+                            f"pf_target={_fmt_vec(_pf_z_only_target)} "
+                            f"full_target={_fmt_vec(_pf_tgt)}"
                         )
                         panel._emit_log(_pf_msg)
                         _append_trace(_pf_msg)
                         try:
                             last_debug = _move_tcp_direct(
                                 label="GRASP_DOWN_JOINT",
-                                target_tcp_runtime=target_base,
+                                target_tcp_runtime=_pf_z_only_target,
                                 timeout_sec=max(float(timeout_sec), move_sec + 3.0),
                                 audit_target_source=f"{audit_target_source}:permissive_pre",
-                                target_pose_original=target_base,
+                                target_pose_original=_pf_z_only_target,
                                 target_frame_original="base_link",
                                 rot_weight=max(
                                     rot_weight,
@@ -4481,12 +4499,16 @@ def run_pick_demo(panel) -> None:
                     )
                     if _pf_actual is not None:
                         _pf_remaining = abs(float(_pf_actual[2]) - float(_pf_tgt[2]))
+                        _pf_xy_after = math.hypot(
+                            float(_pf_actual[0]) - float(_pf_tgt[0]),
+                            float(_pf_actual[1]) - float(_pf_tgt[1]),
+                        )
                         _pf_msg2 = (
-                            "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                            f"reason=permissive_pre_result "
-                            f"actual_z={float(_pf_actual[2]):.3f} "
-                            f"target_z={float(_pf_tgt[2]):.3f} "
-                            f"remaining={_pf_remaining:.3f}/{_pf_util_z_tol:.3f} "
+                            "[DIAG][PERMISSIVE_RESULT] "
+                            f"actual={_fmt_vec(_pf_actual)} "
+                            f"target={_fmt_vec(_pf_tgt)} "
+                            f"xy_err_after={_pf_xy_after:.4f} "
+                            f"z_remaining={_pf_remaining:.4f}/{_pf_util_z_tol:.3f} "
                             f"early_return={str(_pf_remaining <= _pf_util_z_tol).lower()}"
                         )
                         panel._emit_log(_pf_msg2)
@@ -4502,6 +4524,12 @@ def run_pick_demo(panel) -> None:
                 for attempt in range(1, max_attempts + 1):
                     actual_before = _tuple3(_live_tcp_base())
                     object_now = _tuple3(_live_object_base()) or _tuple3(obj_base)
+                    panel._emit_log(
+                        "[DIAG][GD_WAYPOINT_LOOP] "
+                        f"attempt={attempt} "
+                        f"actual={_fmt_vec(actual_before)} "
+                        f"target={_fmt_vec(_tuple3(target_base))}"
+                    )
                     step_divider = float(2 ** (attempt - 1))
                     waypoint_xy_step = max(
                         0.008,
