@@ -7165,7 +7165,14 @@ def run_pick_demo(panel) -> None:
                 if obj_world_before_grasp_down is not None:
                     target_x = float(obj_world_before_grasp_down[0])
                     target_y = float(obj_world_before_grasp_down[1])
-                    target_z = float(obj_world_before_grasp_down[2]) + grasp_z_for_source_frame + float(grasp_down_extra_z_m)
+                    target_z = float(obj_world_before_grasp_down[2]) + grasp_z_for_source_frame + float(grasp_down_extra_z_m) + grasp_contact_z_offset_m
+                    if abs(grasp_contact_z_offset_m) > 1e-9:
+                        panel._emit_log(
+                            "[GRASP_Z_FIX] phase=GRASP_DOWN "
+                            f"obj_z_world={float(obj_world_before_grasp_down[2]):.4f} "
+                            f"offset_applied={grasp_contact_z_offset_m:.4f} "
+                            f"target_z_corrected={target_z:.4f}"
+                        )
                     if tcp_before_grasp_down is not None and tcp_world_before_grasp_down is not None and obj_base_before_grasp_down is not None:
                         keep_xy_tol = max(
                             0.001,
