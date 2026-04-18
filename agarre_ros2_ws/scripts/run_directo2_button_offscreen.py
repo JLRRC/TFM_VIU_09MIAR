@@ -58,6 +58,7 @@ def main() -> int:
     state = {
         "attempts": 0,
         "triggered": False,
+        "start_all_requested": False,
         "gz_requested": False,
         "bridge_requested": False,
     }
@@ -97,7 +98,18 @@ def main() -> int:
             flush=True,
         )
         if not ready:
-            if gz_state == "GAZEBO_OFF" and gz_enabled and not state["gz_requested"]:
+            if gz_state in ("GAZEBO_OFF", "UNKNOWN") and start_enabled and not state["start_all_requested"]:
+                panel._emit_log("[AUDIT][DIRECTO2] offscreen helper clicking btn_star (Start All)")
+                panel.btn_star.click()
+                state["start_all_requested"] = True
+                state["gz_requested"] = True
+                state["bridge_requested"] = True
+            elif state["start_all_requested"] and not ready:
+                # Let the full stack startup sequence complete on its own.
+                if state["attempts"] >= MAX_ATTEMPTS:
+                    retry_timer.stop()
+                return
+            elif gz_state == "GAZEBO_OFF" and gz_enabled and not state["gz_requested"]:
                 panel._emit_log("[AUDIT][DIRECTO2] offscreen helper clicking btn_gz_start")
                 panel.btn_gz_start.click()
                 state["gz_requested"] = True
