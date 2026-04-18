@@ -7728,32 +7728,38 @@ def run_pick_demo(panel) -> None:
                 )
             else:
                 # ── [FIX] Inyectar joints reales como seed IK para GRASP_ALIGN_IK ──
-                # _current_joint_seed() siempre devuelve el PRESET, que dista mucho
-                # de la pose real cuando el brazo ya está cerca del objeto.
-                # Resultado: IK converge en rama incorrecta → pos_err_m≈0.12 > 0.08 → fallo.
-                # Solución: usar los joints reales (panel._last_joint_positions) como
-                # semilla, que ya están próximos al target → IK converge correctamente.
+                # Prioridad 1: usar ik_solution del último GRASP_DOWN (last_debug).
+                # Estos joints son la configuración que el brazo acaba de ejecutar,
+                # por lo que son la mejor semilla para GRASP_ALIGN_IK.
+                # Prioridad 2: _last_joint_positions del topic (a veces da ceros en
+                # modo offscreen porque el spin de ROS no procesa callbacks a tiempo).
                 try:
-                    _live_jp = dict(getattr(panel, "_last_joint_positions", {}) or {})
-                    _align_seed_live = [
-                        float(_live_jp[n])
-                        for n in UR5_JOINT_NAMES
-                        if n in _live_jp
-                    ]
+                    _gd_ik_sol = (last_debug or {}).get("ik_solution")
+                    if _gd_ik_sol and len(list(_gd_ik_sol)) == 6:
+                        _align_seed_live = [float(v) for v in _gd_ik_sol]
+                        _seed_source = "grasp_down_ik_solution"
+                    else:
+                        _live_jp = dict(getattr(panel, "_last_joint_positions", {}) or {})
+                        _align_seed_live = [
+                            float(_live_jp[n])
+                            for n in UR5_JOINT_NAMES
+                            if n in _live_jp
+                        ]
+                        _seed_source = "live_joints"
                     if len(_align_seed_live) == 6:
                         os.environ["PANEL_PICK_DEMO_IK_SEED_JOINTS"] = ",".join(
                             f"{v:.8f}" for v in _align_seed_live
                         )
                         _align_seed_injected = True
                         panel._emit_log(
-                            "[GRASP_ALIGN_IK][SEED_INJECT] "
-                            f"source=live_joints "
+                            "[PICK][GRASP_ALIGN_IK][SEED_INJECT] "
+                            f"source={_seed_source} "
                             f"joints={json.dumps(_json_safe(_align_seed_live), ensure_ascii=True)}"
                         )
                 except Exception as _seed_exc:
                     panel._emit_log(
-                        f"[GRASP_ALIGN_IK][SEED_INJECT][WARN] failed={_seed_exc} "
-                        "falling back to preset seed"
+                        "[PICK][GRASP_ALIGN_IK][SEED_INJECT][WARN] "
+                        f"failed={_seed_exc} falling back to preset seed"
                     )
                 # ── [/FIX] ─────────────────────────────────────────────────────────
                 _phase_begin(
