@@ -4501,6 +4501,14 @@ def run_pick_demo(panel) -> None:
                         ),
                     )
 
+                grasp_down_disable_permissive_fallback = str(
+                    os.environ.get(
+                        "PANEL_PICK_DEMO_GRASP_DOWN_DISABLE_PERMISSIVE_FALLBACK",
+                        "0",
+                    )
+                    or "0"
+                ).strip().lower() in {"1", "true", "yes", "on"}
+
                 last_debug = None
                 last_metrics = _grasp_down_runtime_metrics(target_base=target_base, obj_base=obj_base)
                 last_route = "cartesian_like_descent"
@@ -4526,7 +4534,16 @@ def run_pick_demo(panel) -> None:
                         float(_pf_tcp[0]) - float(_pf_tgt[0]),
                         float(_pf_tcp[1]) - float(_pf_tgt[1]),
                     )
-                    if _pf_z_gap >= 0.020:
+                    if _pf_z_gap >= 0.020 and grasp_down_disable_permissive_fallback:
+                        _pf_msg = (
+                            "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
+                            "reason=large_z_gap_pre_motion "
+                            f"z_gap={_pf_z_gap:.3f} xy_gap={_pf_xy_gap:.3f} "
+                            "strategy=permissive_z_only_descent_disabled"
+                        )
+                        panel._emit_log(_pf_msg)
+                        _append_trace(_pf_msg)
+                    elif _pf_z_gap >= 0.020:
                         _pf_z_only_target = (
                             float(_pf_tcp[0]),
                             float(_pf_tcp[1]),
@@ -4658,6 +4675,46 @@ def run_pick_demo(panel) -> None:
                         last_route = route
                     except Exception as exc:
                         previous_xy_err = last_metrics.get("xy_err_target")
+                        if grasp_down_disable_permissive_fallback:
+                            if attempt < max_attempts:
+                                _fb_msg = (
+                                    "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
+                                    f"reason=direct_ik_exception:{exc} "
+                                    f"previous_xy_err={_fmt_scalar(previous_xy_err)} "
+                                    f"strategy=retry_segmented_refine_without_permissive segments={len(waypoints)}"
+                                )
+                                panel._emit_log(_fb_msg)
+                                _append_trace(_fb_msg)
+                                continue
+                            if _joint_preset_fallback_ok(
+                                "GRASP_DOWN_JOINT",
+                                JOINT_GRASP_DOWN_POSE_RAD,
+                                target_base=target_base,
+                                obj_base=obj_base,
+                            ):
+                                last_route = "joint_preset_last_resort"
+                                _fb_msg = (
+                                    "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
+                                    f"reason=direct_ik_exception:{exc} "
+                                    f"previous_xy_err={_fmt_scalar(previous_xy_err)} "
+                                    "strategy=joint_preset_last_resort"
+                                )
+                                panel._emit_log(_fb_msg)
+                                _append_trace(_fb_msg)
+                                _run_joint_step(
+                                    "GRASP_DOWN_JOINT_FALLBACK",
+                                    JOINT_GRASP_DOWN_POSE_RAD,
+                                    timeout_sec=move_sec + 6.0,
+                                    tol_rad=0.08,
+                                )
+                                last_debug = {
+                                    "ik_solution": [float(v) for v in JOINT_GRASP_DOWN_POSE_RAD],
+                                    "runtime_target_ok": False,
+                                    "runtime_target_dist": None,
+                                }
+                            else:
+                                raise
+                            continue
                         permissive_rot_weight = _grasp_down_permissive_rot_weight()
                         permissive_ik_err_tol = _grasp_down_permissive_ik_err_tol()
                         permissive_joint_weight = _grasp_down_permissive_joint_weight()
@@ -4742,7 +4799,17 @@ def run_pick_demo(panel) -> None:
                             if actual_after is not None
                             else 0.0
                         )
-                        if _dhs_z_gap > 0.010:
+                        if _dhs_z_gap > 0.010 and grasp_down_disable_permissive_fallback:
+                            _dhs_msg = (
+                                "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
+                                f"reason=dh_false_satisfied "
+                                f"joint_delta_sum={_dhs_sum_delta:.4f} "
+                                f"z_gap={_dhs_z_gap:.3f} "
+                                "strategy=permissive_direct_descent_disabled"
+                            )
+                            panel._emit_log(_dhs_msg)
+                            _append_trace(_dhs_msg)
+                        elif _dhs_z_gap > 0.010:
                             _dhs_msg = (
                                 "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
                                 f"reason=dh_false_satisfied "
@@ -7277,12 +7344,19 @@ def run_pick_demo(panel) -> None:
                         # si (a) la distancia XY está dentro de tolerancia, (b) APPROACH_COARSE
                         # superó su propio check geométrico y (c) no fue un fallback de preset.
                         _coarse_was_fallback = "fallback" in str(approach_decision).lower()
+                        _force_inherit_xy = str(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_GRASP_DOWN_FORCE_INHERIT_XY",
+                                "0",
+                            )
+                            or "0"
+                        ).strip().lower() in {"1", "true", "yes", "on"}
                         _can_inherit_xy = (
-                            tcp_obj_xy <= keep_xy_tol
-                            and coarse_gate_xy_ok
+                            coarse_gate_xy_ok
                             and coarse_gate_z_ok
                             and coarse_gate_pose_ok
                             and not _coarse_was_fallback
+                            and (_force_inherit_xy or tcp_obj_xy <= keep_xy_tol)
                         )
                         if _can_inherit_xy:
                             target_x = float(tcp_world_before_grasp_down[0])
@@ -7290,10 +7364,15 @@ def run_pick_demo(panel) -> None:
                             target_mode = "keep_current_xy_plus_object_z"
                             grasp_down_relative_mode = "keep_current_xy_plus_object_z"
                             grasp_down_target_source = f"{tcp_before_grasp_down_source}_world+live_object_world_z"
+                            _gd_reason = (
+                                "approach_coarse_forced"
+                                if _force_inherit_xy and tcp_obj_xy > keep_xy_tol
+                                else "approach_coarse_valid"
+                            )
                             _gd_gate_msg = (
                                 "[PICK][DIRECT][PHASE_GATE] "
                                 "phase=GRASP_DOWN_JOINT inherit_xy=true "
-                                "reason=approach_coarse_valid "
+                                f"reason={_gd_reason} "
                                 f"xy_err={tcp_obj_xy:.3f}/{keep_xy_tol:.3f} "
                                 f"dz={tcp_obj_dz_gate:.3f} "
                                 f"coarse_xy_ok={str(coarse_gate_xy_ok).lower()} "

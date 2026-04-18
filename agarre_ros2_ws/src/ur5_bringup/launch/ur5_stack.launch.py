@@ -398,6 +398,19 @@ def _prepare_runtime(context, *_args) -> List[object]:
             "PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M",
             os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M", "0.005"),
         ),
+        SetEnvironmentVariable(
+            # Second-step runtime guard: when APPROACH_COARSE already validated the XY,
+            # keep that XY in GRASP_DOWN even if a later live TCP sample momentarily
+            # drifts outside KEEP_XY_TOL_M.
+            "PANEL_PICK_DEMO_GRASP_DOWN_FORCE_INHERIT_XY",
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_FORCE_INHERIT_XY", "1"),
+        ),
+        SetEnvironmentVariable(
+            # Disable the permissive local GRASP_DOWN fallback that can reintroduce a
+            # wrong IK branch mid-descent. The waypoint/joint-preset path remains.
+            "PANEL_PICK_DEMO_GRASP_DOWN_DISABLE_PERMISSIVE_FALLBACK",
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_DISABLE_PERMISSIVE_FALLBACK", "1"),
+        ),
         # Keep the direct pick gates aligned with the tighter panel defaults so
         # CLOSE/ATTACH only succeed when the object is really centered in the gripper.
         SetEnvironmentVariable(
