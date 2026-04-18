@@ -2505,7 +2505,7 @@ def run_pick_demo(panel) -> None:
                 dz = float(tcp_base[2]) - float(obj_base[2])
                 dist = math.sqrt(dx * dx + dy * dy + dz * dz)
                 xy_dist = math.hypot(dx, dy)
-                z_error = abs(float(dz) - _DIRECTO_GRASP_Z)
+                z_error = abs(float(dz) - (_DIRECTO_GRASP_Z + grasp_contact_z_offset_m))
                 return {
                     "ok": True,
                     "obj_base": obj_base,
@@ -5179,7 +5179,7 @@ def run_pick_demo(panel) -> None:
                         )
                         _div_xy = _cmp_xy
                         _div_dz = (
-                            abs(_cmp_dz - _DIRECTO_GRASP_Z)
+                            abs(_cmp_dz - (_DIRECTO_GRASP_Z + grasp_contact_z_offset_m))
                             if _cmp_dz is not None else None
                         )
                         panel._emit_log(
@@ -5309,7 +5309,15 @@ def run_pick_demo(panel) -> None:
                     tcp_final_z = None
                     z_expected_after = None
                     if obj_after is not None:
-                        z_expected_after = float(obj_after[2]) + _DIRECTO_GRASP_Z
+                        z_expected_after = float(obj_after[2]) + _DIRECTO_GRASP_Z + grasp_contact_z_offset_m
+                        if abs(grasp_contact_z_offset_m) > 1e-9:
+                            panel._emit_log(
+                                "[GRASP_Z_FIX] phase=GRASP_ALIGN_IK_convergence "
+                                f"obj_z={float(obj_after[2]):.4f} "
+                                f"_DIRECTO_GRASP_Z={_DIRECTO_GRASP_Z:.4f} "
+                                f"grasp_contact_z_offset_m={grasp_contact_z_offset_m:.4f} "
+                                f"z_expected_after={z_expected_after:.4f}"
+                            )
                     if tcp_after is not None:
                         tcp_final_z = float(tcp_after[2])
                     if z_expected_after is not None and tcp_final_z is not None:
@@ -7165,14 +7173,15 @@ def run_pick_demo(panel) -> None:
                 if obj_world_before_grasp_down is not None:
                     target_x = float(obj_world_before_grasp_down[0])
                     target_y = float(obj_world_before_grasp_down[1])
-                    target_z = float(obj_world_before_grasp_down[2]) + grasp_z_for_source_frame + float(grasp_down_extra_z_m) + grasp_contact_z_offset_m
-                    if abs(grasp_contact_z_offset_m) > 1e-9:
-                        panel._emit_log(
-                            "[GRASP_Z_FIX] phase=GRASP_DOWN "
-                            f"obj_z_world={float(obj_world_before_grasp_down[2]):.4f} "
-                            f"offset_applied={grasp_contact_z_offset_m:.4f} "
-                            f"target_z_corrected={target_z:.4f}"
-                        )
+                    target_z = float(obj_world_before_grasp_down[2]) + grasp_z_for_source_frame + float(grasp_down_extra_z_m)
+                    panel._emit_log(
+                        "[GRASP_Z_FIX] phase=GRASP_DOWN "
+                        f"obj_z_world={float(obj_world_before_grasp_down[2]):.4f} "
+                        f"grasp_z_for_source={grasp_z_for_source_frame:.4f} "
+                        f"extra_z={float(grasp_down_extra_z_m):.4f} "
+                        f"target_z_no_offset={target_z:.4f} "
+                        f"contact_offset_reserved_for_align={grasp_contact_z_offset_m:.4f}"
+                    )
                     if tcp_before_grasp_down is not None and tcp_world_before_grasp_down is not None and obj_base_before_grasp_down is not None:
                         keep_xy_tol = max(
                             0.001,
@@ -7268,6 +7277,12 @@ def run_pick_demo(panel) -> None:
                         float(obj_base_before_grasp_down[2]) + grasp_z_for_source_frame + float(grasp_down_extra_z_m),
                     )
                     target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
+                    panel._emit_log(
+                        "[GRASP_Z_FIX] phase=GRASP_DOWN_fallback "
+                        f"obj_z_base={float(obj_base_before_grasp_down[2]):.4f} "
+                        f"target_z_no_offset={float(target_base_grasp_down[2]):.4f} "
+                        f"contact_offset_reserved_for_align={grasp_contact_z_offset_m:.4f}"
+                    )
                 # [ALIGN_DEBUG] Snapshot de frames antes de GRASP_DOWN_JOINT
                 try:
                     _adb_tool0_w = _pose_position(world_frame, "tool0", timeout_sec=0.15)
@@ -7580,8 +7595,16 @@ def run_pick_demo(panel) -> None:
                 target_base_align = (
                     float(obj_base_align[0]),
                     float(obj_base_align[1]),
-                    float(obj_base_align[2]) + grasp_z_for_source_frame,
+                    float(obj_base_align[2]) + grasp_z_for_source_frame + grasp_contact_z_offset_m,
                 )
+                if abs(grasp_contact_z_offset_m) > 1e-9:
+                    panel._emit_log(
+                        "[GRASP_Z_FIX] phase=GRASP_ALIGN_IK_target "
+                        f"obj_z_base={float(obj_base_align[2]):.4f} "
+                        f"grasp_z_for_source={grasp_z_for_source_frame:.4f} "
+                        f"grasp_contact_z_offset_m={grasp_contact_z_offset_m:.4f} "
+                        f"target_base_align_z={float(target_base_align[2]):.4f}"
+                    )
                 target_world_align = _target_world_from_base(target_base_align)
             # SKIP_ALIGN_IF_REACHABLE activo por defecto: GRASP_DOWN_DIRECT fue
             # eliminado; ahora GRASP_DOWN_JOINT ya centra el XY correctamente.
@@ -7605,6 +7628,16 @@ def run_pick_demo(panel) -> None:
             )
             panel._emit_log(_pa_entry_msg)
             _append_trace(_pa_entry_msg)
+            panel._emit_log(
+                "[GRASP_Z_FIX] phase=GRASP_ALIGN_IK_entry "
+                f"skip_align_if_reachable={str(skip_align_if_reachable).lower()} "
+                f"pre_close_ok={str(bool(pre_align_metrics.get('ok'))).lower()} "
+                f"will_execute={str(not (skip_align_if_reachable and bool(pre_align_metrics.get('ok')))).lower()} "
+                f"target_base_align_z={float(target_base_align[2]) if target_base_align else float('nan'):.4f} "
+                f"grasp_contact_z_offset_m={grasp_contact_z_offset_m:.4f} "
+                f"z_error_pre={_fmt_scalar(pre_align_metrics.get('z_error'))} "
+                f"z_gap_pre={_fmt_scalar(pre_align_metrics.get('z_gap'))}"
+            )
             if skip_align_if_reachable and bool(pre_align_metrics.get("ok")):
                 _phase_begin(
                     "GRASP_ALIGN_IK",
@@ -7969,8 +8002,16 @@ def run_pick_demo(panel) -> None:
                 target_base_pre = (
                     float(obj_base_pre[0]),
                     float(obj_base_pre[1]),
-                    float(obj_base_pre[2]) + grasp_z_for_source_frame,
+                    float(obj_base_pre[2]) + grasp_z_for_source_frame + grasp_contact_z_offset_m,
                 )
+                if abs(grasp_contact_z_offset_m) > 1e-9:
+                    panel._emit_log(
+                        "[GRASP_Z_FIX] phase=PRE_CLOSE_target "
+                        f"obj_z_base={float(obj_base_pre[2]):.4f} "
+                        f"grasp_z_for_source={grasp_z_for_source_frame:.4f} "
+                        f"grasp_contact_z_offset_m={grasp_contact_z_offset_m:.4f} "
+                        f"target_base_pre_z={float(target_base_pre[2]):.4f}"
+                    )
                 target_world_pre = _target_world_from_base(target_base_pre)
             _phase_begin(
                 "PRE_CLOSE",

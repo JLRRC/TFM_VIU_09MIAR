@@ -360,7 +360,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
             # objeto. 0.0 = sin cambio (comportamiento anterior).
             # Valor inicial recomendado: 0.13 (lleva las yemas al borde inferior del cilindro).
             "GRASP_CONTACT_Z_OFFSET_M",
-            os.environ.get("GRASP_CONTACT_Z_OFFSET_M", "0.0"),
+            os.environ.get("GRASP_CONTACT_Z_OFFSET_M", "0.13"),
         ),
         SetEnvironmentVariable(
             # Default Z step is 0.025m → 2 segments over 35mm descent.
