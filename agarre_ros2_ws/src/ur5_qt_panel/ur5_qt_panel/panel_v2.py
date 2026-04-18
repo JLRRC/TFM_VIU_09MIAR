@@ -9628,6 +9628,7 @@ class ControlPanelV2(QMainWindow):
             set_led(self.led_moveit, "off")
         set_led(self.led_moveit_bridge, "on" if moveit_bridge_ok else "off")
         prev_bridge = self._bridge_running
+        prev_gz = self._gz_running
         self._gz_running = gz_ok
         self._bridge_running = br_ok
         self._bag_running = bag_ok
@@ -9636,6 +9637,9 @@ class ControlPanelV2(QMainWindow):
         if (not self._moveit_required) and moveit_ok:
             self._moveit_required = True
             self._emit_log("[MOVEIT] move_group detectado; habilitando moveit_required automáticamente")
+        if gz_ok and not prev_gz and not self._objects_settled and not self._settle_worker_active:
+            self._emit_log("[PHYSICS][SETTLE] Gazebo READY: triggering settle watch")
+            self.signal_start_objects_settle_watch.emit()
         if br_ok and not prev_bridge:
             # Selective init without critical TF deadlines (same as panel_launchers.py)
             self._ensure_pose_subscription()

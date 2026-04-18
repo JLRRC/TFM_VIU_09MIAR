@@ -183,6 +183,10 @@ class PanelPhysics:
         if p._closing:
             return
         if p._settle_worker_active:
+            now = time.monotonic()
+            if (now - getattr(p, "_last_settle_active_log", 0.0)) > 5.0:
+                p._emit_log("[PHYSICS][SETTLE] gating: settle_worker_already_active, skipping")
+                p._last_settle_active_log = now
             return
         if not p._pose_info_ok:
             now = time.monotonic()
@@ -201,7 +205,16 @@ class PanelPhysics:
                         and p.signal_start_objects_settle_watch.emit()
                     ),
                 )
+            else:
+                p._emit_log(
+                    f"[PHYSICS][SETTLE] gating: gz_running={p._gz_running} closing={p._closing} "
+                    "→ no retry scheduled"
+                )
             return
+        p._emit_log(
+            f"[PHYSICS][SETTLE] starting worker: pose_info_ok={p._pose_info_ok} "
+            f"gz_running={p._gz_running} settled={p._objects_settled}"
+        )
         p._ensure_pose_subscription()
         p._objects_settled = False
         p._objects_seen_fall = False
