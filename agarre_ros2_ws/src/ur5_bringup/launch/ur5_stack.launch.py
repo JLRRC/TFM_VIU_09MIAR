@@ -391,12 +391,12 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetEnvironmentVariable(
             # threshold for inherit_xy: if approach TCP-to-object XY < this, GRASP_DOWN
-            # inherits the approach XY instead of targeting the object center directly.
-            # 0.003 (code default): approach XY error is consistently ~4mm → exceed threshold
-            # → inherit_xy=FALSE → GRASP_DOWN targets object center (0.430,0,0.025), not
-            # approach XY (0.426,0,0.025).  This eliminates the 4mm visual offset.
+            # inherits the validated APPROACH_COARSE XY instead of reanchoring to the
+            # object center. 3 mm was too tight for the observed coarse residuals and
+            # was flipping GRASP_DOWN into unnecessary XY reanchors right on the
+            # boundary, even after a successful APPROACH_COARSE gate.
             "PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M",
-            "0.003",  # hard-coded: use object center XY, not approach XY
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M", "0.005"),
         ),
         # Keep the direct pick gates aligned with the tighter panel defaults so
         # CLOSE/ATTACH only succeed when the object is really centered in the gripper.

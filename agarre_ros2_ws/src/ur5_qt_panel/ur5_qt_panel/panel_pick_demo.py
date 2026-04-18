@@ -3675,12 +3675,18 @@ def run_pick_demo(panel) -> None:
                 # seed configuration.  Stop as soon as we get a valid solution that is
                 # nearer to the seed OR once we've exhausted the retry schedule.
                 _TWO_PI_R = 2.0 * _math_ik_retry.pi
-                def _seed_max_dev(q_arr, s_arr):
-                    devs = [
+                def _seed_devs(q_arr, s_arr):
+                    return [
                         abs(float(q) + _TWO_PI_R * round((float(s) - float(q)) / _TWO_PI_R) - float(s))
                         for q, s in zip(q_arr, s_arr)
                     ]
-                    return max(devs)
+
+                def _seed_max_dev(q_arr, s_arr):
+                    return max(_seed_devs(q_arr, s_arr))
+
+                def _seed_sum_dev(q_arr, s_arr):
+                    return sum(_seed_devs(q_arr, s_arr))
+
                 _IK_DEV_THRESHOLD = _math_ik_retry.pi / 2  # 90° — flag a wrong-branch solution
                 if ik_ok and pos_err_m <= float(effective_ik_err_tol) and _seed_max_dev(solved_q, seed) > _IK_DEV_THRESHOLD:
                     _best_q, _best_err, _best_ok = solved_q, pos_err_m, ik_ok
@@ -3736,6 +3742,8 @@ def run_pick_demo(panel) -> None:
                             if _seed_max_dev(_best_q, seed) <= _IK_DEV_THRESHOLD:
                                 break  # Good enough — stop retrying
                     solved_q, pos_err_m, ik_ok = _best_q, _best_err, _best_ok
+                _seed_max_dev_rad = _seed_max_dev(solved_q, seed)
+                _seed_sum_dev_rad = _seed_sum_dev(solved_q, seed)
                 panel._emit_log(
                     "[PICK][DIRECT][IK] "
                     f"label={label} "
@@ -3760,6 +3768,69 @@ def run_pick_demo(panel) -> None:
                     f"target_pose_base_link={_fmt_vec(target_tcp_runtime_3)} "
                     f"command_pose_sent={_fmt_vec(target_ik)} command_frame={DIRECT_EXECUTION_FRAME}"
                 )
+                _branch_guard_xy_tol = max(
+                    0.003,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_XY_TOL_M",
+                            "0.010",
+                        )
+                        or 0.010
+                    ),
+                )
+                _branch_guard_z_min = max(
+                    0.010,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_Z_MIN_M",
+                            "0.015",
+                        )
+                        or 0.015
+                    ),
+                )
+                _branch_guard_max_dev = max(
+                    0.20,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_MAX_DEV_RAD",
+                            "0.35",
+                        )
+                        or 0.35
+                    ),
+                )
+                _branch_guard_sum_dev = max(
+                    _branch_guard_max_dev,
+                    float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_SUM_DEV_RAD",
+                            "0.75",
+                        )
+                        or 0.75
+                    ),
+                )
+                _is_local_grasp_down_descent = (
+                    label == "GRASP_DOWN_JOINT"
+                    and math.hypot(float(delta_runtime[0]), float(delta_runtime[1])) <= _branch_guard_xy_tol
+                    and abs(float(delta_runtime[2])) >= _branch_guard_z_min
+                )
+                if _is_local_grasp_down_descent and (
+                    _seed_max_dev_rad > _branch_guard_max_dev
+                    or _seed_sum_dev_rad > _branch_guard_sum_dev
+                ):
+                    _guard_msg = (
+                        "[PICK][DIRECT][IK_BRANCH_GUARD] "
+                        f"label={label} reason=seed_deviation_for_local_descent "
+                        f"delta_runtime=({_pick_demo_fmt_scalar(delta_runtime[0])},{_pick_demo_fmt_scalar(delta_runtime[1])},{_pick_demo_fmt_scalar(delta_runtime[2])}) "
+                        f"max_dev_rad={_seed_max_dev_rad:.3f}/{_branch_guard_max_dev:.3f} "
+                        f"sum_dev_rad={_seed_sum_dev_rad:.3f}/{_branch_guard_sum_dev:.3f} "
+                        "action=reject_before_execution"
+                    )
+                    panel._emit_log(_guard_msg)
+                    _append_trace(_guard_msg)
+                    raise RuntimeError(
+                        f"{label.lower()}_branch_guard max_dev_rad={_seed_max_dev_rad:.3f} "
+                        f"sum_dev_rad={_seed_sum_dev_rad:.3f}"
+                    )
                 _audit_emit(
                     "BEFORE_EXECUTION",
                     target_source=audit_target_source,
@@ -4396,8 +4467,40 @@ def run_pick_demo(panel) -> None:
                 )
                 joint_weight = max(
                     0.0,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT", "0.45") or 0.45),
+                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT", "0.65") or 0.65),
                 )
+
+                def _grasp_down_permissive_rot_weight() -> float:
+                    return max(
+                        rot_weight,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_ROT_WEIGHT",
+                                "0.35",
+                            ) or 0.35
+                        ),
+                    )
+
+                def _grasp_down_permissive_ik_err_tol() -> float:
+                    requested = float(
+                        os.environ.get(
+                            "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_IK_ERR_TOL",
+                            "0.015",
+                        ) or 0.015
+                    )
+                    return min(0.025, max(0.010, requested))
+
+                def _grasp_down_permissive_joint_weight() -> float:
+                    return max(
+                        joint_weight,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT",
+                                "0.65",
+                            ) or 0.65
+                        ),
+                    )
+
                 last_debug = None
                 last_metrics = _grasp_down_runtime_metrics(target_base=target_base, obj_base=obj_base)
                 last_route = "cartesian_like_descent"
@@ -4447,33 +4550,9 @@ def run_pick_demo(panel) -> None:
                                 audit_target_source=f"{audit_target_source}:permissive_pre",
                                 target_pose_original=_pf_z_only_target,
                                 target_frame_original="base_link",
-                                rot_weight=max(
-                                    rot_weight,
-                                    float(
-                                        os.environ.get(
-                                            "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_ROT_WEIGHT",
-                                            "0.35",
-                                        ) or "0.35"
-                                    ),
-                                ),
-                                ik_err_tol=max(
-                                    ik_err_tol,
-                                    float(
-                                        os.environ.get(
-                                            "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_IK_ERR_TOL",
-                                            "0.20",
-                                        ) or "0.20"
-                                    ),
-                                ),
-                                joint_weight=max(
-                                    0.0,
-                                    float(
-                                        os.environ.get(
-                                            "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT",
-                                            "0.035",
-                                        ) or "0.035"
-                                    ),
-                                ),
+                                rot_weight=_grasp_down_permissive_rot_weight(),
+                                ik_err_tol=_grasp_down_permissive_ik_err_tol(),
+                                joint_weight=_grasp_down_permissive_joint_weight(),
                                 force_send=True,
                             )
                             last_route = "permissive_direct_descent"
@@ -4544,8 +4623,8 @@ def run_pick_demo(panel) -> None:
                         / step_divider,
                     )
                     waypoint_z_step = max(
-                        0.010,
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M", "0.025") or 0.025)
+                        0.005,
+                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M", "0.005") or 0.005)
                         / step_divider,
                     )
                     waypoints = _grasp_down_waypoints(
@@ -4579,18 +4658,9 @@ def run_pick_demo(panel) -> None:
                         last_route = route
                     except Exception as exc:
                         previous_xy_err = last_metrics.get("xy_err_target")
-                        permissive_rot_weight = max(
-                            rot_weight,
-                            float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_ROT_WEIGHT", "0.35") or 0.35),
-                        )
-                        permissive_ik_err_tol = max(
-                            ik_err_tol,
-                            float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_IK_ERR_TOL", "0.20") or 0.20),
-                        )
-                        permissive_joint_weight = max(
-                            0.0,
-                            float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT", "0.035") or 0.035),
-                        )
+                        permissive_rot_weight = _grasp_down_permissive_rot_weight()
+                        permissive_ik_err_tol = _grasp_down_permissive_ik_err_tol()
+                        permissive_joint_weight = _grasp_down_permissive_joint_weight()
                         try:
                             _fb_msg = (
                                 "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
@@ -4692,33 +4762,9 @@ def run_pick_demo(panel) -> None:
                                     audit_target_source=f"{audit_target_source}:permissive_dhs",
                                     target_pose_original=target_base,
                                     target_frame_original="base_link",
-                                    rot_weight=max(
-                                        rot_weight,
-                                        float(
-                                            os.environ.get(
-                                                "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_ROT_WEIGHT",
-                                                "0.35",
-                                            ) or "0.35"
-                                        ),
-                                    ),
-                                    ik_err_tol=max(
-                                        ik_err_tol,
-                                        float(
-                                            os.environ.get(
-                                                "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_IK_ERR_TOL",
-                                                "0.20",
-                                            ) or "0.20"
-                                        ),
-                                    ),
-                                    joint_weight=max(
-                                        0.0,
-                                        float(
-                                            os.environ.get(
-                                                "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT",
-                                                "0.035",
-                                            ) or "0.035"
-                                        ),
-                                    ),
+                                    rot_weight=_grasp_down_permissive_rot_weight(),
+                                    ik_err_tol=_grasp_down_permissive_ik_err_tol(),
+                                    joint_weight=_grasp_down_permissive_joint_weight(),
                                     force_send=True,
                                 )
                                 last_route = "permissive_direct_descent"
@@ -7220,7 +7266,7 @@ def run_pick_demo(panel) -> None:
                     if tcp_before_grasp_down is not None and tcp_world_before_grasp_down is not None and obj_base_before_grasp_down is not None:
                         keep_xy_tol = max(
                             0.001,
-                            float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M", "0.003") or 0.003),
+                            float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M", "0.005") or 0.005),
                         )
                         tcp_obj_xy = math.hypot(
                             float(tcp_before_grasp_down[0]) - float(obj_base_before_grasp_down[0]),
