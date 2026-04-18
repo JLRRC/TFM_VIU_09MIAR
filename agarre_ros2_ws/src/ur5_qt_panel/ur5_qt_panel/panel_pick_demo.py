@@ -8821,6 +8821,29 @@ def run_pick_demo(panel) -> None:
                 reason="move_tcp_direct",
                 request_state="post_grasp_lift",
             )
+            # Inject grasp joint config as LIFT IK seed to prevent wrist_3 wrapping.
+            # Without this, the home-position seed can find a solution with wrist_3
+            # at -3.08 rad instead of +3.08 rad (same orientation mod 2pi) causing
+            # the controller to travel ~6 rad and time out.
+            _lift_seed_prev = os.environ.get("PANEL_PICK_DEMO_IK_SEED_JOINTS")
+            _lift_seed_injected = False
+            try:
+                _lift_ik_src = (grasp_down_debug or {}).get("ik_solution") or (
+                    grasp_down_debug or {}
+                ).get("q_after")
+                if _lift_ik_src and len(list(_lift_ik_src)) == 6:
+                    os.environ["PANEL_PICK_DEMO_IK_SEED_JOINTS"] = ",".join(
+                        f"{v:.8f}" for v in _lift_ik_src
+                    )
+                    _lift_seed_injected = True
+                    panel._emit_log(
+                        "[PICK][LIFT][SEED_INJECT] using grasp joints as LIFT IK seed "
+                        f"joints={json.dumps([round(v, 4) for v in _lift_ik_src], ensure_ascii=True)}"
+                    )
+            except Exception as _lift_seed_exc:
+                panel._emit_log(
+                    f"[PICK][LIFT][SEED_INJECT][WARN] failed={_lift_seed_exc} using default seed"
+                )
             tcp_base_before_lift = _live_tcp_base()
             obj_world_before_lift = _live_object_world()
             obj_base_before_lift = _live_object_base()
@@ -8836,6 +8859,11 @@ def run_pick_demo(panel) -> None:
                     ),
                 )
             )
+            if _lift_seed_injected:
+                if _lift_seed_prev is not None:
+                    os.environ["PANEL_PICK_DEMO_IK_SEED_JOINTS"] = _lift_seed_prev
+                else:
+                    os.environ.pop("PANEL_PICK_DEMO_IK_SEED_JOINTS", None)
             tcp_base_after_lift = _live_tcp_base()
             obj_world_after_lift = _live_object_world()
             obj_base_after_lift = _live_object_base()
