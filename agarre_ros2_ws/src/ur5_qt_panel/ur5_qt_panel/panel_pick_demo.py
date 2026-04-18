@@ -7728,13 +7728,13 @@ def run_pick_demo(panel) -> None:
                 )
             else:
                 # ── [FIX] Inyectar joints reales como seed IK para GRASP_ALIGN_IK ──
-                # Prioridad 1: usar ik_solution del último GRASP_DOWN (last_debug).
+                # Prioridad 1: usar ik_solution del último GRASP_DOWN (grasp_down_debug).
                 # Estos joints son la configuración que el brazo acaba de ejecutar,
                 # por lo que son la mejor semilla para GRASP_ALIGN_IK.
                 # Prioridad 2: _last_joint_positions del topic (a veces da ceros en
                 # modo offscreen porque el spin de ROS no procesa callbacks a tiempo).
                 try:
-                    _gd_ik_sol = (last_debug or {}).get("ik_solution")
+                    _gd_ik_sol = (grasp_down_debug or {}).get("ik_solution")
                     if _gd_ik_sol and len(list(_gd_ik_sol)) == 6:
                         _align_seed_live = [float(v) for v in _gd_ik_sol]
                         _seed_source = "grasp_down_ik_solution"

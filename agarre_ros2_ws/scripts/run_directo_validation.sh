@@ -54,6 +54,12 @@ pkill -f "ros2_control_node" 2>/dev/null || true
 pkill -f "controller_manager" 2>/dev/null || true
 pkill -f "spawner" 2>/dev/null || true
 pkill -f "robot_state_publisher" 2>/dev/null || true
+# Residuales críticos entre corridas: gripper_attach_backend y move_group
+# pueden interceptar llamadas de release/attach del ciclo siguiente.
+pkill -f "gripper_attach_backend" 2>/dev/null || true
+pkill -f "move_group" 2>/dev/null || true
+pkill -f "gz-transport-topic" 2>/dev/null || true
+pkill -f "run_directo_button_offscreen" 2>/dev/null || true
 sleep 4
 # Limpiar shared memory residual de FastDDS/CycloneDDS (evita 'Failed init_port' errors)
 rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
@@ -75,6 +81,14 @@ env \
     PANEL_PICK_DEMO_STEP_TIMEOUT_EXTRA_SEC=60 \
     PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC=120 \
     PANEL_PICK_DEMO_IK_SEED_JOINTS=0.0,-1.5708,0.0,-1.5708,0.0,0.0 \
+    PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M=0.015 \
+    PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M=0.008 \
+    PANEL_PICK_DEMO_POSE_SOURCE_TOL_M=1.0 \
+    PANEL_PICK_DEMO_POSE_SOURCE_AGE_TOL_SEC=300.0 \
+    PANEL_PICK_DEMO_POSE_SOURCE_SYNC_TOL_SEC=300.0 \
+    PANEL_MOVEIT_STARTUP_TIMEOUT_SEC=300 \
+    PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M=0.016 \
+    PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M=0.020 \
     DIRECTO_CLICK_DELAY_MS=8000 \
     "DIRECTO_EXIT_AFTER_MS=$(( DIRECTO_TIMEOUT_SEC * 1000 ))" \
     DIRECTO_RETRY_MS=5000 \
