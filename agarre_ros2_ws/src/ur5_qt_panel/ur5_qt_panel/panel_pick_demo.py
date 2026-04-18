@@ -8695,13 +8695,14 @@ def run_pick_demo(panel) -> None:
             panel.signal_run_ui.emit(_emit_ag_update)
 
             if not _ag_result.ok:
+                _fmts4 = lambda v: f"{v:.4f}" if v is not None else "none"
                 raise RuntimeError(
                     "demo_attach_follow_not_confirmed "
                     f"reason={_ag_result.reason} "
-                    f"tcp_obj_dist={_ag_result.tcp_obj_dist:.4f if _ag_result.tcp_obj_dist is not None else 'none'} "
-                    f"rel_drift={_ag_result.rel_drift:.4f if _ag_result.rel_drift is not None else 'none'} "
+                    f"tcp_obj_dist={_fmts4(_ag_result.tcp_obj_dist)} "
+                    f"rel_drift={_fmts4(_ag_result.rel_drift)} "
                     f"stable_samples={_ag_result.stable_samples} "
-                    f"gripper_opening_m={_ag_result.gripper_opening_m:.4f if _ag_result.gripper_opening_m is not None else 'none'}"
+                    f"gripper_opening_m={_fmts4(_ag_result.gripper_opening_m)}"
                 )
             demo_follow_confirmed = True
             _clear_cycle_object_reference(reason="attach_follow_confirmed")

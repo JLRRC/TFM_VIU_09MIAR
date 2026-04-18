@@ -178,6 +178,7 @@ def start_gz_pose_bridge(panel, world_name: str) -> None:
         cmd_core = with_line_buffer(
             "ros2 run ur5_tools gz_pose_bridge "
             f"--ros-args -p world_name:={shlex.quote(world_name)}{sim_arg}"
+            " -p startup_timeout_sec:=120.0"
         )
         cmd = bash_preamble(panel.ws_dir) + f"{cmd_core} > '{pose_log}' 2>&1"
         panel.gz_pose_proc = subprocess.Popen(

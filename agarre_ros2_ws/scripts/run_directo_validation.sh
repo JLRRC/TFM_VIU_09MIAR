@@ -59,6 +59,8 @@ pkill -f "robot_state_publisher" 2>/dev/null || true
 pkill -f "gripper_attach_backend" 2>/dev/null || true
 pkill -f "move_group" 2>/dev/null || true
 pkill -f "gz-transport-topic" 2>/dev/null || true
+pkill -f "gz_pose_bridge" 2>/dev/null || true
+pkill -f "grasp_audit_trace_capture" 2>/dev/null || true
 pkill -f "run_directo_button_offscreen" 2>/dev/null || true
 sleep 4
 # Limpiar shared memory residual de FastDDS/CycloneDDS (evita 'Failed init_port' errors)
@@ -89,6 +91,12 @@ env \
     PANEL_MOVEIT_STARTUP_TIMEOUT_SEC=300 \
     PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M=0.016 \
     PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M=0.020 \
+    PANEL_PICK_DEMO_ATTACH_XY_TOL_M=0.020 \
+    PANEL_PICK_DEMO_ATTACH_SETTLE_SEC=4.0 \
+    PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M=0.050 \
+    PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M=0.080 \
+    PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES=3 \
+    PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC=0.25 \
     DIRECTO_CLICK_DELAY_MS=8000 \
     "DIRECTO_EXIT_AFTER_MS=$(( DIRECTO_TIMEOUT_SEC * 1000 ))" \
     DIRECTO_RETRY_MS=5000 \
