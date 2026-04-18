@@ -92,7 +92,7 @@ JOINT_GRASP_DOWN_POSE_RAD = [
     math.radians(110.0),
     math.radians(-17.5),
     math.radians(-88.8),
-    math.radians(0.9),
+    math.radians(-90.0),
 ]
 # Historical "golden" poses kept as a diagnostic reference for direct pick tuning.
 JOINT_PICK_DEMO_GOLDEN_GRASP_POSE_RAD = [

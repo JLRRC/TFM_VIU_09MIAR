@@ -289,31 +289,37 @@ class PanelPhysics:
 
     def objects_settle_worker(self) -> None:
         p = self._panel
-        settled = self.wait_for_objects_to_settle(
-            timeout=OBJECT_SETTLE_TIMEOUT_SEC,
-            log_snapshot=p._settle_log_snapshot_active,
-        )
-        if not settled:
-            self.log_settle_snapshot("fail/timeout")
-            p._emit_log("[PHYSICS][SETTLE][DIAG] Snapshot automático por fallo de settle.")
-        if not settled and ALLOW_UNSETTLED_ON_TIMEOUT:
-            p._emit_log("[PHYSICS][SETTLE] Continuando sin estabilizar (override).")
-            settled = True
-        p._objects_settled = settled
-        if settled:
-            p._emit_log("[PHYSICS][SETTLE] OK")
-            p.signal_handle_objects_settled.emit()
-            p.signal_status.emit("Objetos estabilizados", False)
-        else:
-            p._emit_log("[PHYSICS][SETTLE] Timeout: objetos no estabilizados.")
-            p.signal_status.emit("Timeout: objetos no estabilizados", True)
-        p._settle_worker_active = False
-        p.signal_refresh_controls.emit()
+        p._emit_log("[PHYSICS][SETTLE] worker start")
+        try:
+            settled = self.wait_for_objects_to_settle(
+                timeout=OBJECT_SETTLE_TIMEOUT_SEC,
+                log_snapshot=p._settle_log_snapshot_active,
+            )
+            if not settled:
+                self.log_settle_snapshot("fail/timeout")
+                p._emit_log("[PHYSICS][SETTLE][DIAG] Snapshot automático por fallo de settle.")
+            if not settled and ALLOW_UNSETTLED_ON_TIMEOUT:
+                p._emit_log("[PHYSICS][SETTLE] Continuando sin estabilizar (override).")
+                settled = True
+            p._objects_settled = settled
+            if settled:
+                p._emit_log("[PHYSICS][SETTLE] OK")
+                p.signal_handle_objects_settled.emit()
+                p.signal_status.emit("Objetos estabilizados", False)
+            else:
+                p._emit_log("[PHYSICS][SETTLE] Timeout: objetos no estabilizados.")
+                p.signal_status.emit("Timeout: objetos no estabilizados", True)
+        except Exception as exc:
+            p._emit_log(f"[PHYSICS][SETTLE] ERROR en worker: {exc}")
+            import traceback
+            p._emit_log(f"[PHYSICS][SETTLE] TRACE: {traceback.format_exc()}")
+        finally:
+            p._settle_worker_active = False
+            p.signal_refresh_controls.emit()
 
     def log_settle_snapshot(self, reason: str) -> None:
         p = self._panel
-        world_path = p.world_combo.currentText().strip()
-        world_name = p._gz_world_name or (read_world_name(world_path) if world_path else GZ_WORLD)
+        world_name = p._gz_world_name or GZ_WORLD
         targets = p._settle_targets()
         if not targets:
             return
@@ -348,11 +354,10 @@ class PanelPhysics:
     ) -> bool:
         p = self._panel
         p._log_calib_blocked("esperando caída/estabilidad de objetos")
-        world_path = p.world_combo.currentText().strip()
-        world_name = p._gz_world_name or (read_world_name(world_path) if world_path else GZ_WORLD)
+        world_name = p._gz_world_name or GZ_WORLD
         targets = p._settle_targets()
         if not targets:
-            p._log("[PHYSICS][SETTLE] No hay objetos dinámicos configurados para monitorizar.")
+            p._emit_log("[PHYSICS][SETTLE] No hay objetos dinámicos configurados para monitorizar.")
             return False
         start: Optional[float] = None
         pose_wait_start = time.time()
@@ -565,9 +570,7 @@ class PanelPhysics:
 
     def check_physics_runtime(self) -> None:
         p = self._panel
-        world_path = p.world_combo.currentText().strip()
-        world_name = self.detect_world_name() or (read_world_name(world_path) if world_path else GZ_WORLD)
-        p._gz_world_name = world_name
+        world_name = p._gz_world_name or GZ_WORLD
         p._ensure_pose_subscription()
         if not p._pose_info_ok:
             return

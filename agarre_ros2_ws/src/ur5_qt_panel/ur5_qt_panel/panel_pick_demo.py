@@ -1901,12 +1901,6 @@ def run_pick_demo(panel) -> None:
                 panel._emit_log(f"[COMPARE][DIRECT2][GOOD_REF] error={_exc_compare}")
 
             def _current_joint_seed(*, return_source: bool = False):
-                # Semilla IK adaptativa:
-                #   - Desde MESA (shoulder_lift_joint ≈ 0°): usamos JOINT_GRASP_DOWN_POSE_RAD
-                #     porque el IK con estado vivo converge al branch incorrecto sin descender.
-                #   - Post-APPROACH (shoulder_lift_joint < -0.05 rad): usamos las articulaciones
-                #     vivas. El arm ya está en el branch correcto y el IK estricto (joint_weight=0.45)
-                #     necesita una semilla cercana al estado actual para converger sin driftar en XY.
                 _seed_override_str = os.environ.get("PANEL_PICK_DEMO_IK_SEED_JOINTS", "").strip()
                 if _seed_override_str:
                     try:
@@ -1915,31 +1909,6 @@ def run_pick_demo(panel) -> None:
                             return (_override, "env_override") if return_source else _override
                     except Exception:
                         pass
-
-                # Umbral: si J1 (shoulder_lift_joint) < -0.05 rad el robot ya no está en MESA
-                _POST_APPROACH_J1_THRESHOLD = -0.05
-                try:
-                    snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
-                    _live_j1 = snapshot.get("shoulder_lift_joint")
-                    if _live_j1 is not None and float(_live_j1) < _POST_APPROACH_J1_THRESHOLD:
-                        # Construir semilla viva en el orden de UR5_JOINT_NAMES
-                        live_seed = [
-                            float(snapshot.get(jn, JOINT_GRASP_DOWN_POSE_RAD[i]))
-                            for i, jn in enumerate(UR5_JOINT_NAMES)
-                        ]
-                        panel._emit_log(
-                            f"[PICK][DIRECT][IK_SEED] live_j1={float(_live_j1):.4f} < "
-                            f"{_POST_APPROACH_J1_THRESHOLD} → using live joints as IK seed"
-                        )
-                        return (live_seed, "live_post_approach") if return_source else live_seed
-                    # Diagnóstico cuando se usa preset
-                    if _live_j1 is not None:
-                        panel._emit_log(
-                            f"[PICK][DIRECT][IK_SEED] live_j1={float(_live_j1):.4f} ≥ "
-                            f"{_POST_APPROACH_J1_THRESHOLD} → using preset_grasp_down"
-                        )
-                except Exception:
-                    pass
 
                 preset_seed = list(JOINT_GRASP_DOWN_POSE_RAD)
                 return (preset_seed, "preset_grasp_down_mesa") if return_source else preset_seed

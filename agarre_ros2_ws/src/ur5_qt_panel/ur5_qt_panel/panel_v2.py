@@ -4693,6 +4693,10 @@ class ControlPanelV2(QMainWindow):
             return True
         if msg.startswith("[GRASP_Z_FIX]"):
             return True
+        if msg.startswith("[PHYSICS]"):
+            return True
+        if msg.startswith("[CALIB]"):
+            return True
         return False
 
     def _set_motion_lock(self, active: bool):
