@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Launch the real panel offscreen and trigger DIRECTO2 through the real UI path.
 
-This helper is observational/non-invasive: it does not patch production code.
-If the stack is not already running, it clicks the panel's normal START button,
-waits until manual control is really ready, and then clicks the real DIRECTO2
-button.
+Analogous to run_directo_button_offscreen.py but for the DIRECTO2 button.
+Patches _pick_confirm_dialog to auto-accept (no blocking modal) and calls
+_direct2_controller.request_run() directly to bypass the dialog path.
 """
 
 from __future__ import annotations
@@ -24,6 +23,9 @@ CLICK_DELAY_MS = int(os.environ.get("DIRECTO2_CLICK_DELAY_MS", "5000") or "5000"
 EXIT_AFTER_MS = int(os.environ.get("DIRECTO2_EXIT_AFTER_MS", "120000") or "120000")
 RETRY_MS = int(os.environ.get("DIRECTO2_RETRY_MS", "1500") or "1500")
 MAX_ATTEMPTS = int(os.environ.get("DIRECTO2_MAX_ATTEMPTS", "60") or "60")
+AUTO_ACCEPT_CONFIRM = str(
+    os.environ.get("DIRECTO2_AUTO_ACCEPT_CONFIRM", "1") or "1"
+).strip().lower() in ("1", "true", "yes", "on")
 
 
 def main() -> int:
@@ -31,18 +33,34 @@ def main() -> int:
     os.environ.setdefault("PANEL_FORCE_OFFSCREEN", "1")
     os.environ.setdefault("PANEL_START_STACK", "0")
 
+    def _stamp() -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%S")
+
     app = QApplication(sys.argv)
     panel = ControlPanelV2()
+
+    if AUTO_ACCEPT_CONFIRM:
+        def _auto_confirm(_parent, btn_label: str, frame: str, pose_str: str) -> bool:
+            panel._emit_log(
+                "[AUDIT][DIRECTO2] offscreen helper auto-accepting confirm dialog "
+                f"button={btn_label} frame={frame} pose={pose_str}"
+            )
+            return True
+        panel._pick_confirm_dialog = _auto_confirm
+
     panel.show()
+    print(f"[{_stamp()}] [SHUTDOWN][HELPER] app_started", flush=True)
+
+    retry_timer = QTimer(panel)
+    retry_timer.setInterval(RETRY_MS)
+    retry_timer.setSingleShot(False)
+
     state = {
         "attempts": 0,
         "triggered": False,
         "gz_requested": False,
         "bridge_requested": False,
     }
-
-    def _stamp() -> str:
-        return time.strftime("%Y-%m-%dT%H:%M:%S")
 
     def _trigger() -> None:
         if state["triggered"]:
@@ -87,38 +105,54 @@ def main() -> int:
                 panel._emit_log("[AUDIT][DIRECTO2] offscreen helper clicking btn_bridge_start")
                 panel.btn_bridge_start.click()
                 state["bridge_requested"] = True
-            if state["attempts"] < MAX_ATTEMPTS:
-                QTimer.singleShot(RETRY_MS, _trigger)
+            if state["attempts"] >= MAX_ATTEMPTS:
+                retry_timer.stop()
             return
         try:
-            if enabled:
-                panel._emit_log("[AUDIT][DIRECTO2] offscreen helper clicking btn_pick_demo2")
-            else:
-                panel._emit_log("[AUDIT][DIRECTO2] offscreen helper invoking _run_pick_demo2 (button disabled)")
             before = bool(getattr(panel, "_script_motion_active", False))
-            if enabled:
-                panel.btn_pick_demo2.click()
+            direct2 = getattr(panel, "_direct2_controller", None)
+            if direct2 is not None:
+                panel._emit_log("[AUDIT][DIRECTO2] offscreen helper invoking _direct2_controller.request_run")
+                ok_run, msg_run = direct2.request_run(source="offscreen_helper")
             else:
+                panel._emit_log("[AUDIT][DIRECTO2] offscreen helper invoking _run_pick_demo2 (no direct2 controller)")
                 panel._run_pick_demo2()
+                ok_run = True
+                msg_run = "via_run_pick_demo2"
+            app.processEvents()
             ok = bool(getattr(panel, "_script_motion_active", False)) and not before
-            message = "started" if ok else "no_script_motion_active"
+            if not ok and direct2 is not None:
+                ok = bool(getattr(direct2, "_inflight", False))
+            message = "started" if ok else f"no_script_motion_active({msg_run})"
             print(
                 f"[{_stamp()}] [AUDIT][DIRECTO2] request_run ok={str(bool(ok)).lower()} "
-                f"message={message or 'n/a'} script_active={str(bool(getattr(panel, '_script_motion_active', False))).lower()}",
+                f"message={message or 'n/a'} "
+                f"controller_ok={str(bool(ok_run)).lower()} "
+                f"script_active={str(bool(getattr(panel, '_script_motion_active', False))).lower()}",
                 flush=True,
             )
             if ok:
                 state["triggered"] = True
-            elif state["attempts"] < MAX_ATTEMPTS:
-                QTimer.singleShot(RETRY_MS, _trigger)
+                retry_timer.stop()
+            elif state["attempts"] >= MAX_ATTEMPTS:
+                retry_timer.stop()
         except Exception as exc:
             print(f"[{_stamp()}] [AUDIT][DIRECTO2] invoke_error={exc}", flush=True)
-            if state["attempts"] < MAX_ATTEMPTS:
-                QTimer.singleShot(RETRY_MS, _trigger)
+            if state["attempts"] >= MAX_ATTEMPTS:
+                retry_timer.stop()
+
+    def _trigger_safe() -> None:
+        try:
+            _trigger()
+        except Exception as exc:
+            print(f"[{_stamp()}] [AUDIT][DIRECTO2] trigger_error={exc}", flush=True)
 
     def _close() -> None:
+        retry_timer.stop()
+        print(f"[{_stamp()}] [SHUTDOWN][HELPER] close_begin", flush=True)
         panel._emit_log("[AUDIT][DIRECTO2] offscreen helper closing panel")
         panel.close()
+        QTimer.singleShot(250, app.quit)
 
     def _handle_signal(_signum, _frame) -> None:
         QTimer.singleShot(0, _close)
@@ -127,9 +161,14 @@ def main() -> int:
         if sig is not None:
             signal.signal(sig, _handle_signal)
 
-    QTimer.singleShot(CLICK_DELAY_MS, _trigger)
+    retry_timer.timeout.connect(_trigger_safe)
+    QTimer.singleShot(CLICK_DELAY_MS, lambda: (retry_timer.start(), _trigger_safe()))
     QTimer.singleShot(EXIT_AFTER_MS, _close)
-    return app.exec_()
+    rc = app.exec_()
+    print(f"[{_stamp()}] [SHUTDOWN][HELPER] app_exec_end rc={rc}", flush=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(rc)
 
 
 if __name__ == "__main__":
