@@ -3723,8 +3723,15 @@ def run_pick_demo(panel) -> None:
                             f"max_dev_rad={_seed_max_dev(_rq, seed):.3f}"
                         )
                         if _rok and _rpos_err <= float(effective_ik_err_tol):
-                            # Accept this solution if it's closer to the seed
-                            if _seed_max_dev(_rq, seed) < _seed_max_dev(_best_q, seed):
+                            # Prefer a solution that is dramatically more accurate
+                            # (≥5× better pos_err) over one closer to the home seed.
+                            # Without this, a 74 mm home-seed solution beats a 4.8 mm
+                            # diverse-seed solution because the latter has higher joint
+                            # deviation from home — even though it places the TCP correctly.
+                            _pos_much_better = _rpos_err < _best_err * 0.20
+                            _dev_better = _seed_max_dev(_rq, seed) < _seed_max_dev(_best_q, seed)
+                            _pos_similar = _rpos_err <= _best_err * 2.0
+                            if _pos_much_better or (_dev_better and _pos_similar):
                                 _best_q, _best_err, _best_ok = _rq, _rpos_err, _rok
                             if _seed_max_dev(_best_q, seed) <= _IK_DEV_THRESHOLD:
                                 break  # Good enough — stop retrying
