@@ -2173,10 +2173,11 @@ class RosWorker(QObject):
             return
         with self._lock:
             reason = self._system_diag_reason
-            if state == self._system_state_last and not reason:
-                return
             self._system_state_last = state
         try:
+            # Always emit (even if state unchanged) so _external_state_last
+            # stays fresh. Deduplication here would starve the 2-second
+            # liveness window and block managed-mode pick readiness.
             self.system_state.emit(state, reason or "")
         except RuntimeError:
             pass
