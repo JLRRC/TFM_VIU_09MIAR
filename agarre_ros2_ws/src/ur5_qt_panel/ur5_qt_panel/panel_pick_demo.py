@@ -9388,7 +9388,11 @@ def run_pick_demo(panel) -> None:
                 timeout_sec=1.2,
                 min_obj_move_m=0.080,
                 min_lift_delta_m=0.060,
-                max_tcp_dist_m=0.200,
+                max_tcp_dist_m=float(
+                    os.environ.get(
+                        "PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M", "0.200"
+                    )
+                ),
                 live_world_fn=_fresh_gazebo_object_world,
             )
             _run_joint_step(

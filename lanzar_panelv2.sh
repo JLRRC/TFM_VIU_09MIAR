@@ -131,6 +131,9 @@ export PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M=0.050
 export PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M=0.080
 export PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES=3
 export PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC=0.25
+# Gazebo GUI (headless:=false) añade ~0.3 m de lag en pose_info durante HOME:
+# la validación home_with_object necesita tolerancia mayor que en modo headless.
+export PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M=0.500
 
 # ── Lanzar stack en background ────────────────────────────────────────────────
 STACK_LOG="$LOG_DIR/stack_manual_$(date +%Y%m%d_%H%M%S).log"
