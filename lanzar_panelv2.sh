@@ -10,16 +10,17 @@ LOG_DIR="$SCRIPT_DIR/historico"
 mkdir -p "$LOG_DIR"
 
 # ── Entorno gráfico ───────────────────────────────────────────────────────────
-if [[ -n "${SSH_CONNECTION:-}" ]]; then
-  export HEADLESS=true
-  export PANEL_GZ_GUI=0
-else
+# Detectar headless por DISPLAY, no por SSH_CONNECTION (que puede estar
+# definida en terminales locales que iniciaron sesión SSH previamente).
+if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]]; then
   export HEADLESS=false
   export PANEL_GZ_GUI=1
+else
+  export HEADLESS=true
+  export PANEL_GZ_GUI=0
 fi
 
-if [[ "${HEADLESS}" != "true" && -z "${DISPLAY:-}" && \
-      "${PANEL_FORCE_OFFSCREEN:-0}" != "1" && \
+if [[ "${HEADLESS}" == "true" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" && \
       "${QT_QPA_PLATFORM:-}" != "offscreen" ]]; then
   echo "[ERROR] No está definida la variable DISPLAY. Abre una terminal gráfica (no TTY/SSH)."
   echo "[INFO]  Alternativa sin GUI: export PANEL_FORCE_OFFSCREEN=1"
@@ -68,6 +69,8 @@ pkill -f "world_tf_publisher"  2>/dev/null || true
 pkill -f "start_panel_v2"      2>/dev/null || true
 pkill -f "pick_demo_panel"     2>/dev/null || true
 pkill -f "ur5_stack"           2>/dev/null || true
+pkill -f "run_directo_button_offscreen" 2>/dev/null || true
+pkill -f "pick_demo_panel"     2>/dev/null || true
 sleep 3
 # SIGKILL para procesos que sobrevivan (incluidos los suspendidos con Ctrl+Z)
 pkill -9 -f "gz sim"           2>/dev/null || true
@@ -95,6 +98,14 @@ export PANEL_MOVEIT_MODE=move_group
 export PANEL_SKIP_CLEANUP=1
 export PANEL_COLD_BOOT=0          # el stack ya está arriba: no matar al abrir panel
 export PANEL_DIRECT_DEBUG_ROOT="$LOG_DIR"
+
+# Timeouts de movimiento: sin estos el APPROACH_COARSE expira en 4.5s (insuficiente)
+export PANEL_PICK_DEMO_MOVE_SEC=15
+export PANEL_PICK_DEMO_STEP_TIMEOUT_EXTRA_SEC=60
+export PANEL_TF_INIT_GRACE_SEC=300
+export PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL=0.035
+export PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL=0.035
+export PANEL_PICK_DEMO_IK_SEED_JOINTS="0.0,-1.5708,0.0,-1.5708,0.0,-3.07"
 
 # ── Lanzar stack en background ────────────────────────────────────────────────
 STACK_LOG="$LOG_DIR/stack_manual_$(date +%Y%m%d_%H%M%S).log"
@@ -174,6 +185,13 @@ done
 
 # Extra grace: system_state_manager necesita tiempo para publicar GAZEBO_READY
 sleep 5
+
+# Matar zombis/detenidos antes de abrir el panel (PANEL_COLD_BOOT=0 omite esto en start_panel_v2.sh)
+# Los zombis no se pueden matar directamente (ya están muertos); hay que matar al padre.
+echo "[LAUNCH] Limpiando procesos zombis/detenidos..."
+ps aux | awk '$8 ~ /T/ {print $2}' | xargs -r kill -9 2>/dev/null || true
+ps -eo pid,ppid,stat | awk '$3 ~ /Z/ {print $2}' | sort -u | xargs -r kill -SIGCHLD 2>/dev/null || true
+
 echo "[LAUNCH] Entorno listo. Abriendo panel (GZ_PARTITION=$GZ_PARTITION)..."
 
 # ── Abrir panel ───────────────────────────────────────────────────────────────
