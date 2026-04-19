@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# lanzar_panelv2.sh
-# Script para lanzar el panelv2 asegurando entorno gráfico y plugins Qt correctos
+# lanzar_panelv2.sh — Limpia residuales, lanza el stack completo y abre el panel.
+# Uso: ./lanzar_panelv2.sh
 
-set -e
+set -eo pipefail
 
-# Detectar ejecución remota (SSH) para forzar modo headless
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS_DIR="$SCRIPT_DIR/agarre_ros2_ws"
+LOG_DIR="$SCRIPT_DIR/historico"
+mkdir -p "$LOG_DIR"
+
+# ── Entorno gráfico ───────────────────────────────────────────────────────────
 if [[ -n "${SSH_CONNECTION:-}" ]]; then
   export HEADLESS=true
   export PANEL_GZ_GUI=0
@@ -13,28 +18,145 @@ else
   export PANEL_GZ_GUI=1
 fi
 
-# Comprobar entorno gráfico solo en modo no headless
-if [[ "${HEADLESS}" != "true" && -z "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" && "${QT_QPA_PLATFORM:-}" != "offscreen" ]]; then
-  echo "[ERROR] No está definida la variable DISPLAY. Abre una terminal gráfica (no TTY/SSH) y vuelve a intentarlo."
-  echo "[INFO] Alternativa sin GUI: export PANEL_FORCE_OFFSCREEN=1"
+if [[ "${HEADLESS}" != "true" && -z "${DISPLAY:-}" && \
+      "${PANEL_FORCE_OFFSCREEN:-0}" != "1" && \
+      "${QT_QPA_PLATFORM:-}" != "offscreen" ]]; then
+  echo "[ERROR] No está definida la variable DISPLAY. Abre una terminal gráfica (no TTY/SSH)."
+  echo "[INFO]  Alternativa sin GUI: export PANEL_FORCE_OFFSCREEN=1"
   exit 1
 fi
 
-# Configurar plugins Qt del sistema
 export QT_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt5/plugins
 export QT_QPA_PLATFORM_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt5/plugins/platforms
 
-# Activar entorno virtual si existe
+# ── Activar venv ──────────────────────────────────────────────────────────────
 for venv_dir in \
   "/home/laboratorio/TFM/agarre_inteligente/.venv-tfm" \
   "/home/laboratorio/TFM/agarre_inteligente/venv" \
   "/home/laboratorio/TFM/agarre_inteligente/.venv"; do
   if [[ -f "$venv_dir/bin/activate" ]]; then
+    # shellcheck disable=SC1090
     source "$venv_dir/bin/activate"
     break
   fi
 done
 
-# Lanzar el panelv2
-cd /home/laboratorio/TFM/agarre_ros2_ws
+# ── Cargar ROS 2 y overlay del workspace ──────────────────────────────────────
+if [[ -f /opt/ros/jazzy/setup.bash ]]; then
+    # shellcheck disable=SC1091
+    source /opt/ros/jazzy/setup.bash
+fi
+if [[ -f "$WS_DIR/install/setup.bash" ]]; then
+    # shellcheck disable=SC1091
+    source "$WS_DIR/install/setup.bash"
+fi
+
+# ── Limpiar procesos residuales ───────────────────────────────────────────────
+echo "[LAUNCH] Limpiando procesos residuales..."
+pkill -f "gz sim"              2>/dev/null || true
+pkill -f "gz_server"           2>/dev/null || true
+pkill -f "ros_gz_bridge"       2>/dev/null || true
+pkill -f "parameter_bridge"    2>/dev/null || true
+pkill -f "ros2_control_node"   2>/dev/null || true
+pkill -f "controller_manager"  2>/dev/null || true
+pkill -f "spawner"             2>/dev/null || true
+pkill -f "robot_state_publisher" 2>/dev/null || true
+pkill -f "gripper_attach_backend" 2>/dev/null || true
+pkill -f "move_group"          2>/dev/null || true
+pkill -f "world_tf_publisher"  2>/dev/null || true
+pkill -f "start_panel_v2"      2>/dev/null || true
+pkill -f "pick_demo_panel"     2>/dev/null || true
+sleep 4
+rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
+echo "[LAUNCH] Limpieza completada"
+
+# ── GZ_PARTITION único para esta sesión ──────────────────────────────────────
+export GZ_PARTITION="ur5pro_manual_$(date +%s)"
+echo "[LAUNCH] GZ_PARTITION=$GZ_PARTITION"
+mkdir -p "$WS_DIR/log"
+echo "$GZ_PARTITION" > "$WS_DIR/log/gz_partition.txt"
+
+# ── Variables exportadas al panel ─────────────────────────────────────────────
+export PANEL_MANAGED=1
+export PANEL_START_STACK=0
+export PANEL_AUTO_BRIDGE=1
+export PANEL_CAMERA_REQUIRED=0
+export PANEL_MOVEIT_REQUIRED=1
+export PANEL_MOVEIT_MODE=move_group
+export PANEL_SKIP_CLEANUP=1
+export PANEL_DIRECT_DEBUG_ROOT="$LOG_DIR"
+
+# ── Lanzar stack en background ────────────────────────────────────────────────
+STACK_LOG="$LOG_DIR/stack_manual_$(date +%Y%m%d_%H%M%S).log"
+echo "[LAUNCH] Lanzando stack (Gazebo + MoveIt2 + controllers)..."
+echo "[LAUNCH] Stack log: $STACK_LOG"
+
+ros2 launch ur5_bringup ur5_stack.launch.py \
+    headless:=true \
+    launch_panel:=false \
+    launch_moveit:=true \
+    moveit_mode:=move_group \
+    camera_required:=false \
+    >"$STACK_LOG" 2>&1 &
+STACK_PID=$!
+echo "[LAUNCH] Stack PID=$STACK_PID"
+
+# Matar el stack cuando el script termine (cierre del panel, Ctrl+C o error)
+trap 'echo "[LAUNCH] Cerrando stack PID=$STACK_PID..."; kill "$STACK_PID" 2>/dev/null || true; wait "$STACK_PID" 2>/dev/null || true; echo "[LAUNCH] Stack cerrado."' EXIT
+
+# ── Esperar move_group ────────────────────────────────────────────────────────
+MOVEIT_WAIT_SEC=300
+MOVEIT_WAIT_START=$(date +%s)
+echo "[LAUNCH] Esperando /move_group (timeout=${MOVEIT_WAIT_SEC}s)..."
+until ros2 node list 2>/dev/null | grep -q "/move_group"; do
+    NOW=$(date +%s)
+    ELAPSED=$(( NOW - MOVEIT_WAIT_START ))
+    if (( ELAPSED >= MOVEIT_WAIT_SEC )); then
+        echo "[ERROR] Timeout: /move_group no apareció en ${MOVEIT_WAIT_SEC}s. Abortando."
+        exit 1
+    fi
+    sleep 3
+done
+echo "[LAUNCH] /move_group listo ($(( $(date +%s) - MOVEIT_WAIT_START ))s)"
+
+# ── Esperar pose/info activo ──────────────────────────────────────────────────
+WORLD="${GZ_WORLD:-ur5_mesa_objetos}"
+POSE_TOPIC="/world/${WORLD}/pose/info"
+GAZEBO_WAIT_SEC=120
+GAZEBO_WAIT_START=$(date +%s)
+echo "[LAUNCH] Esperando datos en $POSE_TOPIC (timeout=${GAZEBO_WAIT_SEC}s)..."
+until ros2 topic hz "$POSE_TOPIC" --window 5 2>/dev/null | grep -qE "average rate|average"; do
+    NOW=$(date +%s)
+    ELAPSED=$(( NOW - GAZEBO_WAIT_START ))
+    if (( ELAPSED >= GAZEBO_WAIT_SEC )); then
+        echo "[WARN]  Gazebo pose/info sin datos tras ${GAZEBO_WAIT_SEC}s — continuando"
+        break
+    fi
+    sleep 5
+done
+echo "[LAUNCH] Gazebo pose/info activo ($(( $(date +%s) - GAZEBO_WAIT_START ))s)"
+
+# ── Verificar nodos críticos ──────────────────────────────────────────────────
+NODE_WAIT_SEC=30
+NODE_WAIT_START=$(date +%s)
+echo "[LAUNCH] Verificando nodos críticos..."
+for NODE in "/gripper_attach_backend" "/world_tf_publisher"; do
+    until ros2 node list 2>/dev/null | grep -q "$NODE"; do
+        NOW=$(date +%s)
+        ELAPSED=$(( NOW - NODE_WAIT_START ))
+        if (( ELAPSED >= NODE_WAIT_SEC )); then
+            echo "[ERROR] Nodo $NODE no apareció tras ${NODE_WAIT_SEC}s. Abortando."
+            exit 1
+        fi
+        sleep 2
+    done
+    echo "[LAUNCH] $NODE OK"
+done
+
+# Extra grace: system_state_manager necesita tiempo para publicar GAZEBO_READY
+sleep 5
+echo "[LAUNCH] Entorno listo. Abriendo panel (GZ_PARTITION=$GZ_PARTITION)..."
+
+# ── Abrir panel ───────────────────────────────────────────────────────────────
+cd "$WS_DIR"
 ./scripts/start_panel_v2.sh "$@"

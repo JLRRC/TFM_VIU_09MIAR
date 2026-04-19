@@ -294,8 +294,8 @@ class WorldTfPublisher(Node):
         if name.endswith(self._base_frame):
             return 85
         if self._model_name and name == self._model_name:
-            # Gazebo model pose is not guaranteed to coincide with base_link.
-            return 0
+            # model-level pose accepted as fallback when link-level (::base_link) unavailable
+            return 50
         return 0
 
     def _select_transform(self, msg: TFMessage) -> Optional[TransformStamped]:
