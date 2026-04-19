@@ -354,6 +354,10 @@ def _prepare_runtime(context, *_args) -> List[object]:
         SetEnvironmentVariable("PANEL_CAMERA_REQUIRED", camera_required_env),
         SetEnvironmentVariable("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "0.175"),
         SetEnvironmentVariable(
+            "PANEL_DIRECT_DEBUG_ROOT",
+            os.environ.get("PANEL_DIRECT_DEBUG_ROOT", "/home/laboratorio/TFM/historico"),
+        ),
+        SetEnvironmentVariable(
             # Offset en Z (metros) para subir el brazo y llevar la geometría física
             # de la pinza al nivel del cilindro. rg2_pinch_center está 0.162 m sobre
             # las yemas; un valor positivo sube el brazo para que éstas alcancen el
@@ -425,7 +429,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
         # CLOSE/ATTACH only succeed when the object is really centered in the gripper.
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_ATTACH_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.008"),
+            os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.020"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_ATTACH_Z_TOL_M",
@@ -490,7 +494,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
             # PRE_CLOSE xy tolerance. TCP arrives at ~6.35mm from object after
             # GRASP_ALIGN_IK; 10mm accepts this without losing grasp reliability.
             "PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "0.010"),
+            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "0.016"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M",
