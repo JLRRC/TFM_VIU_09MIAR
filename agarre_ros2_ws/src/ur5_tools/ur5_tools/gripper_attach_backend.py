@@ -1393,7 +1393,10 @@ class GripperAttachBackend(Node):
             self._attach_mode == "follow_tcp"
             or (self._attach_mode == "detachable_joint" and self._detachable_shadow_follow)
         )
-        if not shadow_follow:
+        # Demo-transport objects must be updated regardless of shadow_follow:
+        # detachable_shadow_follow=False disables the physics-joint shadow path but
+        # must not prevent the kinematic-entity follow loop from running.
+        if not shadow_follow and not self._demo_transport_active:
             return
         if not self._attached:
             return
