@@ -1076,22 +1076,14 @@ class GripperAttachBackend(Node):
                     base_chain_pose = self._compose_pose(world_base, base_tcp)
                 except Exception:
                     base_chain_pose = None
-        # pose_info_chain: Gazebo world→base_link (always fresh, base doesn't move) +
-        # TF base_link→rg2_pinch_center (robot_state_publisher, always available).
-        # Avoids DH/SDF divergence H2/H3: Gazebo arm-link positions are wrong by ~174mm z.
-        # Also avoids tool_fallback (Gazebo SDF for tool0) for the same reason.
-        # base_tcp is already computed above via _lookup_tf_pose(base_frame, tcp_frame).
-        base_link_from_pose_info = self._lookup_pose(self._base_frame) if self._base_frame else None
-        pose_info_chain: Optional[PoseSample] = None
-        if base_link_from_pose_info is not None and base_tcp is not None:
-            try:
-                pose_info_chain = self._compose_pose(base_link_from_pose_info, base_tcp)
-            except Exception:
-                pose_info_chain = None
+        # pose_info_chain removed: Gazebo places ur5_rg2::base_link at world origin (0,0,0)
+        # with SDF-specific rotation that is incompatible with URDF-frame base_tcp offset.
+        # _compose_pose(base_link_world≈identity, base_tcp) returns base_link-frame TCP,
+        # not world-frame TCP — systematically wrong due to DH/SDF divergence H2/H3.
+        # world_tcp (from world_tf_publisher TF) gives the correct Gazebo world TCP.
         named_candidates = [
             ("base_chain", base_chain_pose),
             ("world_tcp", tf_pose),
-            ("pose_info_chain", pose_info_chain),
         ]
         cached_pose = self._lookup_pose(self._tcp_frame)  # kept for diag only
         candidates = [(name, pose) for name, pose in named_candidates if pose is not None]
