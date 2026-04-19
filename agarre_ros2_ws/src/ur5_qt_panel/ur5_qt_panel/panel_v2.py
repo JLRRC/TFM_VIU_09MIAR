@@ -10093,6 +10093,11 @@ class ControlPanelV2(QMainWindow):
             f"[AUTO_PICK_DEMO] trigger intento {attempt}/{self._auto_pick_demo_attempts}"
         )
         self._auto_pick_demo_done = attempt
+        # Auto-select pick_demo so the SYNC_GATE selection check passes.
+        if not self._selected_object:
+            self._selected_object = PICK_DEMO_OBJECT_NAME
+        if not self._selection_last_user_name:
+            self._selection_last_user_name = PICK_DEMO_OBJECT_NAME
         self._run_pick_demo()
 
     def _wait_for_state_change(self, timeout_sec: float) -> bool:
