@@ -90,10 +90,10 @@ echo "$GZ_PARTITION" > "$WS_DIR/log/gz_partition.txt"
 export PANEL_MANAGED=1
 export PANEL_START_STACK=0
 export PANEL_AUTO_BRIDGE=1
-export PANEL_CAMERA_REQUIRED=0
 export PANEL_MOVEIT_REQUIRED=1
 export PANEL_MOVEIT_MODE=move_group
 export PANEL_SKIP_CLEANUP=1
+export PANEL_COLD_BOOT=0          # el stack ya está arriba: no matar al abrir panel
 export PANEL_DIRECT_DEBUG_ROOT="$LOG_DIR"
 
 # ── Lanzar stack en background ────────────────────────────────────────────────
