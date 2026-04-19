@@ -124,8 +124,16 @@ def _prepare_runtime(context, *_args) -> List[object]:
         plugin_path = f"{plugin_path}:{existing_plugin}"
     render_engine = os.environ.get("GZ_RENDER_ENGINE", "").strip() or "ogre2"
     fastdds_profile = os.path.join(ws_dir, "scripts", "fastdds_no_shm.xml")
+    # Prefer the explicit launch argument (camera_required:="0/1") over the env var,
+    # because env var propagation via SetEnvironmentVariable is unreliable for
+    # ExecuteProcess (panel) when DISPLAY is not usable (offscreen mode).
+    launch_arg_camera = LaunchConfiguration("camera_required").perform(context).strip()
     camera_required_env = os.environ.get("PANEL_CAMERA_REQUIRED", "").strip()
-    if not camera_required_env:
+    if launch_arg_camera in ("0", "false", "False", "no", "off"):
+        camera_required_env = "0"
+    elif launch_arg_camera in ("1", "true", "True", "yes", "on"):
+        camera_required_env = "1"
+    elif not camera_required_env:
         camera_required_env = "1"
     camera_required = camera_required_env in ("1", "true", "True")
     control_backend = (
@@ -1096,6 +1104,7 @@ def generate_launch_description():
     panel = ExecuteProcess(
         cmd=panel_cmd,
         output="screen",
+        additional_env={"PANEL_CAMERA_REQUIRED": LaunchConfiguration("camera_required")},
         condition=IfCondition(launch_panel),
     )
 

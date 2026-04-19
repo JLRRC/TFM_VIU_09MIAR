@@ -99,6 +99,7 @@ export WS_DIR
 if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]] && ! display_is_usable; then
   log "DISPLAY=${DISPLAY} no es usable; activando modo offscreen"
   export PANEL_FORCE_OFFSCREEN=1
+  export PANEL_CAMERA_REQUIRED=0
 fi
 if [[ -z "${PANEL_GZ_GUI+x}" ]]; then
   if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]]; then

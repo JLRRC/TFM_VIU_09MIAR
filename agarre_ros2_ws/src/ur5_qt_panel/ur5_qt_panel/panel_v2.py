@@ -1581,6 +1581,13 @@ class ControlPanelV2(QMainWindow):
                 self._emit_log(
                     "[STARTUP] CAMERA_REQUIRED=false; auto-connect y health-check de cámara deshabilitados."
                 )
+        # Override: when running offscreen (no real display), camera frames are
+        # structurally impossible — disable the requirement regardless of env var.
+        if self._camera_required and os.environ.get("PANEL_FORCE_OFFSCREEN", "0") == "1":
+            self._camera_required = False
+            self._emit_log(
+                "[STARTUP] camera_required overridden → False (PANEL_FORCE_OFFSCREEN=1)"
+            )
         self._system_state = SystemState.BOOT
         self._system_state_reason = "boot"
         self._fatal_latched = False
