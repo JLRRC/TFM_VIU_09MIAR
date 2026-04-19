@@ -16033,6 +16033,10 @@ class ControlPanelV2(QMainWindow):
         Devuelve True si el usuario pulsa Siguiente, False si cancela.
         Se ejecuta en el GUI thread antes de que el worker arranque.
         """
+        # Auto-accept in offscreen/automated modes — no one can click the dialog.
+        if os.environ.get("PANEL_FORCE_OFFSCREEN", "0") == "1" or \
+                os.environ.get("PANEL_AUTO_RUN_PICK_DEMO", "0") in ("1", "true", "yes", "on"):
+            return True
         from PyQt5.QtWidgets import QMessageBox, QPushButton
         dlg = QMessageBox(parent)
         dlg.setWindowTitle(f"Confirmar: {btn_label}")
