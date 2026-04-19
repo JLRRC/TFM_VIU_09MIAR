@@ -102,6 +102,7 @@ echo "[ORCH] move_group listo ($(( $(date +%s) - MOVEIT_WAIT_START ))s desde sta
 # --- Lanzar el runner del panel offscreen ---
 env \
     GZ_PARTITION="$GZ_PARTITION" \
+    PANEL_DIRECT_DEBUG_ROOT="/home/laboratorio/TFM/historico" \
     QT_QPA_PLATFORM=offscreen \
     PANEL_FORCE_OFFSCREEN=1 \
     PANEL_START_STACK=0 \
