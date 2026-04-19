@@ -3782,23 +3782,35 @@ def run_pick_demo(panel) -> None:
                     and math.hypot(float(delta_runtime[0]), float(delta_runtime[1])) <= _branch_guard_xy_tol
                     and abs(float(delta_runtime[2])) >= _branch_guard_z_min
                 )
+                # Branch guard reference: prefer live joints over IK seed.
+                # Using seed (HOME) as reference is wrong when the arm is already
+                # at APPROACH_COARSE position — deviation from HOME is large but valid.
+                _bg_live_jp = dict(getattr(panel, "_last_joint_positions", {}) or {})
+                _bg_live_q = [float(_bg_live_jp.get(n, seed[i])) for i, n in enumerate(UR5_JOINT_NAMES)]
+                _bg_has_live = len(_bg_live_jp) >= 6
+                _bg_ref_q = _bg_live_q if _bg_has_live else seed
+                _bg_ref_label = "live" if _bg_has_live else "seed"
+                _bg_max_dev = _seed_max_dev(solved_q, _bg_ref_q)
+                _bg_sum_dev = _seed_sum_dev(solved_q, _bg_ref_q)
                 if _is_local_grasp_down_descent and (
-                    _seed_max_dev_rad > _branch_guard_max_dev
-                    or _seed_sum_dev_rad > _branch_guard_sum_dev
+                    _bg_max_dev > _branch_guard_max_dev
+                    or _bg_sum_dev > _branch_guard_sum_dev
                 ):
                     _guard_msg = (
                         "[PICK][DIRECT][IK_BRANCH_GUARD] "
-                        f"label={label} reason=seed_deviation_for_local_descent "
+                        f"label={label} reason=live_deviation_for_local_descent "
                         f"delta_runtime=({_pick_demo_fmt_scalar(delta_runtime[0])},{_pick_demo_fmt_scalar(delta_runtime[1])},{_pick_demo_fmt_scalar(delta_runtime[2])}) "
-                        f"max_dev_rad={_seed_max_dev_rad:.3f}/{_branch_guard_max_dev:.3f} "
-                        f"sum_dev_rad={_seed_sum_dev_rad:.3f}/{_branch_guard_sum_dev:.3f} "
+                        f"ref={_bg_ref_label} "
+                        f"max_dev_rad={_bg_max_dev:.3f}/{_branch_guard_max_dev:.3f} "
+                        f"sum_dev_rad={_bg_sum_dev:.3f}/{_branch_guard_sum_dev:.3f} "
+                        f"seed_max_dev_rad={_seed_max_dev_rad:.3f} "
                         "action=reject_before_execution"
                     )
                     panel._emit_log(_guard_msg)
                     _append_trace(_guard_msg)
                     raise RuntimeError(
-                        f"{label.lower()}_branch_guard max_dev_rad={_seed_max_dev_rad:.3f} "
-                        f"sum_dev_rad={_seed_sum_dev_rad:.3f}"
+                        f"{label.lower()}_branch_guard max_dev_rad={_bg_max_dev:.3f} "
+                        f"sum_dev_rad={_bg_sum_dev:.3f} ref={_bg_ref_label}"
                     )
                 _audit_emit(
                     "BEFORE_EXECUTION",
