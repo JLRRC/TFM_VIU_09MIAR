@@ -360,7 +360,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
             # objeto. 0.0 = sin cambio (comportamiento anterior).
             # Valor inicial recomendado: 0.13 (lleva las yemas al borde inferior del cilindro).
             "GRASP_CONTACT_Z_OFFSET_M",
-            os.environ.get("GRASP_CONTACT_Z_OFFSET_M", "0.13"),
+            os.environ.get("GRASP_CONTACT_Z_OFFSET_M", "0.0"),
         ),
         SetEnvironmentVariable(
             # Default Z step is 0.025m → 2 segments over 35mm descent.
@@ -522,7 +522,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
             # (real value 0.00635). 10mm clears the boundary and aligns with
             # the z-exit tolerance and PRE_CLOSE tolerances.
             "PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M", "0.010"),
+            os.environ.get("PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M", "0.020"),
         ),
         SetEnvironmentVariable(
             # Exit z-tolerance for GRASP_ALIGN_IK. The DH/SDF divergence at
