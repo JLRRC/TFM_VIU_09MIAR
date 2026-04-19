@@ -6788,9 +6788,18 @@ class ControlPanelV2(QMainWindow):
         state = (state or "").strip().upper()
         if not state:
             return
+        prev = self._external_state
         self._external_state = state
         self._external_state_reason = reason or ""
         self._external_state_last = time.time()
+        # Trigger a state resolution pass so _system_state reflects the
+        # external state immediately (without waiting for the next
+        # _refresh_controls call, which may only fire on demand).
+        if prev != state or self._system_state in (SystemState.BOOT, SystemState.WAITING_GAZEBO):
+            try:
+                self.signal_refresh_controls.emit()
+            except RuntimeError:
+                pass
 
     def _external_state_active(self) -> bool:
         return external_state_active(self)
