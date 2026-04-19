@@ -463,9 +463,10 @@ def mark_object_grasped(name: str, *, reason: str = "", read_only: bool = False)
     if state and state.logical_state not in (
         ObjectLogicalState.ON_TABLE,
         ObjectLogicalState.SELECTED,
+        ObjectLogicalState.RELEASED,
     ):
         _log_state(
-            f"[OBJECTS][INVARIANT] GRASPED requires ON_TABLE/SELECTED ({name})",
+            f"[OBJECTS][INVARIANT] GRASPED requires ON_TABLE/SELECTED/RELEASED ({name})",
             key=f"grasp_gate:{name}",
         )
         return False
