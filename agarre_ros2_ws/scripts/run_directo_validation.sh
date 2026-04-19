@@ -67,11 +67,47 @@ sleep 4
 rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
 echo "[ORCH] Limpieza completada"
 
+# --- Fijar GZ_PARTITION para que stack y runner offscreen usen el mismo bus gz-transport ---
+export GZ_PARTITION="${GZ_PARTITION:-ur5pro_validation}"
+export PANEL_CAMERA_REQUIRED=0
+STACK_LOG="$OUT_DIR/stack.log"
+
+echo "[ORCH] Lanzando stack completo (Gazebo + MoveIt2 + controllers) GZ_PARTITION=$GZ_PARTITION"
+ros2 launch ur5_bringup ur5_stack.launch.py \
+    headless:=true \
+    launch_panel:=false \
+    launch_moveit:=true \
+    moveit_mode:=move_group \
+    camera_required:=false \
+    >"$STACK_LOG" 2>&1 &
+STACK_PID=$!
+echo "[ORCH] Stack PID=$STACK_PID log=$STACK_LOG"
+
+# --- Esperar a que move_group esté vivo (max 300 s) ---
+MOVEIT_WAIT_SEC=300
+MOVEIT_WAIT_START=$(date +%s)
+echo "[ORCH] Esperando /move_group en ros2 node list (timeout=${MOVEIT_WAIT_SEC}s)..."
+until ros2 node list 2>/dev/null | grep -q "/move_group"; do
+    NOW=$(date +%s)
+    ELAPSED=$(( NOW - MOVEIT_WAIT_START ))
+    if (( ELAPSED >= MOVEIT_WAIT_SEC )); then
+        echo "[ORCH][ERROR] Timeout: move_group no apareció en ${MOVEIT_WAIT_SEC}s. Abortando."
+        kill "$STACK_PID" 2>/dev/null || true
+        exit 1
+    fi
+    sleep 3
+done
+echo "[ORCH] move_group listo ($(( $(date +%s) - MOVEIT_WAIT_START ))s desde stack launch)"
+
 # --- Lanzar el runner del panel offscreen ---
 env \
+    GZ_PARTITION="$GZ_PARTITION" \
     QT_QPA_PLATFORM=offscreen \
     PANEL_FORCE_OFFSCREEN=1 \
     PANEL_START_STACK=0 \
+    PANEL_MOVEIT_REQUIRED=1 \
+    PANEL_MOVEIT_MODE=move_group \
+    PANEL_AUTO_BRIDGE=0 \
     PANEL_SKIP_CLEANUP=1 \
     PANEL_CAMERA_REQUIRED=0 \
     PANEL_FATAL_STOPS_ALL=0 \
@@ -136,6 +172,12 @@ wait "$CAPTURE_PID" && CAPTURE_RC=0 || CAPTURE_RC=$?
 echo "[ORCH][SHUTDOWN] capture_stop_end rc=$CAPTURE_RC"
 echo "[ORCH] Capture terminó rc=$CAPTURE_RC"
 
+# --- Apagar stack ---
+echo "[ORCH][SHUTDOWN] stack_stop_begin pid=$STACK_PID"
+kill "$STACK_PID" 2>/dev/null || true
+wait "$STACK_PID" && STACK_RC=0 || STACK_RC=$?
+echo "[ORCH][SHUTDOWN] stack_stop_end rc=$STACK_RC"
+
 # --- Ejecutar el benchmark ---
 python3 "$SCRIPT_DIR/grasp_audit_benchmark.py" \
     --run "DIRECTO:directo:$TRACE_FILE" \
@@ -148,9 +190,10 @@ echo "[ORCH] Benchmark rc=$BENCHMARK_RC"
     echo "helper_final_rc=$HELPER_RC"
     echo "capture_rc=$CAPTURE_RC"
     echo "benchmark_rc=$BENCHMARK_RC"
+    echo "stack_rc=${STACK_RC:-n/a}"
 } > "$SUMMARY"
 
 echo "[ORCH] Resumen guardado en $SUMMARY"
 echo "[ORCH] Logs: $OUT_DIR"
 echo "[ORCH][SHUTDOWN] final_rc=$HELPER_RC"
-echo "helper_final_rc=$HELPER_RC capture_rc=$CAPTURE_RC benchmark_rc=$BENCHMARK_RC"
+echo "helper_final_rc=$HELPER_RC capture_rc=$CAPTURE_RC benchmark_rc=$BENCHMARK_RC stack_rc=${STACK_RC:-n/a}"
