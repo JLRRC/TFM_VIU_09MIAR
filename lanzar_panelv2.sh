@@ -30,6 +30,14 @@ fi
 export QT_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt5/plugins
 export QT_QPA_PLATFORM_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt5/plugins/platforms
 
+# Si el DISPLAY está definido pero xdpyinfo falla (X11 no usable desde subprocesos),
+# el panel irá a offscreen automáticamente. En ese caso desactivamos camera_required
+# para no bloquear el pick esperando una cámara que no puede visualizarse.
+if [[ "${HEADLESS}" == "false" ]] && ! xdpyinfo >/dev/null 2>&1; then
+  echo "[LAUNCH] DISPLAY=${DISPLAY} definido pero no usable; desactivando camera_required"
+  export PANEL_CAMERA_REQUIRED=0
+fi
+
 # ── Activar venv ──────────────────────────────────────────────────────────────
 for venv_dir in \
   "/home/laboratorio/TFM/agarre_inteligente/.venv-tfm" \
