@@ -53,6 +53,7 @@ fi
 
 # ── Limpiar procesos residuales ───────────────────────────────────────────────
 echo "[LAUNCH] Limpiando procesos residuales..."
+# SIGTERM primero
 pkill -f "gz sim"              2>/dev/null || true
 pkill -f "gz_server"           2>/dev/null || true
 pkill -f "ros_gz_bridge"       2>/dev/null || true
@@ -66,7 +67,16 @@ pkill -f "move_group"          2>/dev/null || true
 pkill -f "world_tf_publisher"  2>/dev/null || true
 pkill -f "start_panel_v2"      2>/dev/null || true
 pkill -f "pick_demo_panel"     2>/dev/null || true
-sleep 4
+pkill -f "ur5_stack"           2>/dev/null || true
+sleep 3
+# SIGKILL para procesos que sobrevivan (incluidos los suspendidos con Ctrl+Z)
+pkill -9 -f "gz sim"           2>/dev/null || true
+pkill -9 -f "gz_server"        2>/dev/null || true
+pkill -9 -f "move_group"       2>/dev/null || true
+pkill -9 -f "gripper_attach_backend" 2>/dev/null || true
+pkill -9 -f "world_tf_publisher" 2>/dev/null || true
+pkill -9 -f "ros_gz_bridge"    2>/dev/null || true
+sleep 2
 rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
 echo "[LAUNCH] Limpieza completada"
 
@@ -91,12 +101,20 @@ STACK_LOG="$LOG_DIR/stack_manual_$(date +%Y%m%d_%H%M%S).log"
 echo "[LAUNCH] Lanzando stack (Gazebo + MoveIt2 + controllers)..."
 echo "[LAUNCH] Stack log: $STACK_LOG"
 
+# En SSH/headless no hay GPU para renderizar cámaras; en local sí.
+if [[ "${HEADLESS}" == "true" ]]; then
+    EXTRA_LAUNCH_ARGS="headless:=true camera_required:=false"
+    export PANEL_CAMERA_REQUIRED=0
+else
+    EXTRA_LAUNCH_ARGS="headless:=false"
+fi
+
+# shellcheck disable=SC2086
 ros2 launch ur5_bringup ur5_stack.launch.py \
-    headless:=true \
+    $EXTRA_LAUNCH_ARGS \
     launch_panel:=false \
     launch_moveit:=true \
     moveit_mode:=move_group \
-    camera_required:=false \
     >"$STACK_LOG" 2>&1 &
 STACK_PID=$!
 echo "[LAUNCH] Stack PID=$STACK_PID"
@@ -120,19 +138,20 @@ done
 echo "[LAUNCH] /move_group listo ($(( $(date +%s) - MOVEIT_WAIT_START ))s)"
 
 # ── Esperar pose/info activo ──────────────────────────────────────────────────
-# timeout 8 evita que ros2 topic hz bloquee indefinidamente cuando no hay datos
+# Usamos ros2 topic list (no bloqueante) en lugar de ros2 topic hz
 WORLD="${GZ_WORLD:-ur5_mesa_objetos}"
 POSE_TOPIC="/world/${WORLD}/pose/info"
 GAZEBO_WAIT_SEC=120
 GAZEBO_WAIT_START=$(date +%s)
-echo "[LAUNCH] Esperando datos en $POSE_TOPIC (timeout=${GAZEBO_WAIT_SEC}s)..."
-until timeout 8 ros2 topic hz "$POSE_TOPIC" --window 3 2>/dev/null | grep -qE "average rate|average"; do
+echo "[LAUNCH] Esperando $POSE_TOPIC en ros2 topic list (timeout=${GAZEBO_WAIT_SEC}s)..."
+until ros2 topic list 2>/dev/null | grep -q "pose/info"; do
     NOW=$(date +%s)
     ELAPSED=$(( NOW - GAZEBO_WAIT_START ))
     if (( ELAPSED >= GAZEBO_WAIT_SEC )); then
         echo "[WARN]  Gazebo pose/info sin datos tras ${GAZEBO_WAIT_SEC}s — continuando"
         break
     fi
+    sleep 5
 done
 echo "[LAUNCH] Gazebo pose/info activo ($(( $(date +%s) - GAZEBO_WAIT_START ))s)"
 
