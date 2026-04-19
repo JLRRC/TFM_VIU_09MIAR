@@ -120,19 +120,19 @@ done
 echo "[LAUNCH] /move_group listo ($(( $(date +%s) - MOVEIT_WAIT_START ))s)"
 
 # ── Esperar pose/info activo ──────────────────────────────────────────────────
+# timeout 8 evita que ros2 topic hz bloquee indefinidamente cuando no hay datos
 WORLD="${GZ_WORLD:-ur5_mesa_objetos}"
 POSE_TOPIC="/world/${WORLD}/pose/info"
 GAZEBO_WAIT_SEC=120
 GAZEBO_WAIT_START=$(date +%s)
 echo "[LAUNCH] Esperando datos en $POSE_TOPIC (timeout=${GAZEBO_WAIT_SEC}s)..."
-until ros2 topic hz "$POSE_TOPIC" --window 5 2>/dev/null | grep -qE "average rate|average"; do
+until timeout 8 ros2 topic hz "$POSE_TOPIC" --window 3 2>/dev/null | grep -qE "average rate|average"; do
     NOW=$(date +%s)
     ELAPSED=$(( NOW - GAZEBO_WAIT_START ))
     if (( ELAPSED >= GAZEBO_WAIT_SEC )); then
         echo "[WARN]  Gazebo pose/info sin datos tras ${GAZEBO_WAIT_SEC}s — continuando"
         break
     fi
-    sleep 5
 done
 echo "[LAUNCH] Gazebo pose/info activo ($(( $(date +%s) - GAZEBO_WAIT_START ))s)"
 
