@@ -682,7 +682,12 @@ case "$MOVEIT_MODE" in
     ;;
 esac
 if [[ "$MOVEIT_MODE" == "move_group" ]]; then
-  LAUNCH_MOVEIT="true"
+  # Solo forzar move_group si el stack lo gestiona este script (PANEL_START_STACK=1).
+  # Con PANEL_START_STACK=0 el stack externo ya tiene move_group; lanzar uno nuevo
+  # crea un segundo move_group y un segundo bridge que compiten por FJT (dual-bridge bug).
+  if [[ "${PANEL_START_STACK}" == "1" ]]; then
+    LAUNCH_MOVEIT="true"
+  fi
   export PANEL_AUTO_BRIDGE="0"
 elif [[ "$MOVEIT_MODE" == "bridge" ]]; then
   LAUNCH_MOVEIT="false"

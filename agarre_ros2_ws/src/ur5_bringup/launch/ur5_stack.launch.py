@@ -168,7 +168,11 @@ def _prepare_runtime(context, *_args) -> List[object]:
     launch_moveit_eff = LaunchConfiguration("launch_moveit").perform(context)
     panel_auto_bridge_eff = LaunchConfiguration("panel_auto_bridge").perform(context)
     if moveit_mode == "move_group":
-        launch_moveit_eff = "true"
+        # Solo forzar launch_moveit si no se pasó explícitamente como false.
+        # Con PANEL_START_STACK=0 (stack externo), start_panel_v2.sh pasa launch_moveit:=false
+        # para evitar un segundo move_group que causaría el dual-bridge bug.
+        if str(launch_moveit_eff).lower() not in ("0", "false", "no"):
+            launch_moveit_eff = "true"
         if str(panel_auto_bridge_eff).lower() in ("1", "true", "yes"):
             logger.warning(
                 "moveit_mode=move_group: desactivando panel_auto_bridge para evitar doble backend."
