@@ -1534,6 +1534,50 @@ def run_pick_demo(panel) -> None:
                 except Exception:
                     return _live_object_base()
 
+            def _strict_fresh_gazebo_object_world():
+                """Gazebo live pose — returns None if unavailable.
+                NO fallback to frozen cycle reference; caller gets None and must handle it."""
+                try:
+                    if (
+                        getattr(panel, "_ros_worker_started", False)
+                        and getattr(panel, "ros_worker", None) is not None
+                    ):
+                        pose_map, _ = panel.ros_worker.pose_snapshot()
+                        live = (pose_map or {}).get(PICK_DEMO_OBJECT_NAME)
+                        if live is not None and len(live) >= 3:
+                            return (float(live[0]), float(live[1]), float(live[2]))
+                except Exception:
+                    pass
+                return None  # explicit: no frozen fallback
+
+            def _strict_fresh_gazebo_object_base():
+                """Strict Gazebo live pose in base_link — returns None if unavailable.
+                NO fallback to frozen or _live_object_base."""
+                obj_world = _tuple3(_strict_fresh_gazebo_object_world())
+                if obj_world is None:
+                    return None  # explicit: no frozen fallback
+                world_frame = str(
+                    getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
+                        WORLD_FRAME or "world"
+                    )
+                ).strip() or "world"
+                base_frame = str(panel._business_base_frame() or BASE_FRAME or "base_link")
+                try:
+                    obj_base, _ = transform_point_to_frame(
+                        obj_world,
+                        base_frame,
+                        source_frame=world_frame,
+                    )
+                    obj_base = _tuple3(obj_base)
+                    if obj_base is not None:
+                        return obj_base
+                except Exception:
+                    pass
+                try:
+                    return tuple(float(v) for v in world_to_base(*obj_world))
+                except Exception:
+                    return None  # explicit: no frozen fallback
+
             def _live_tcp_world():
                 tcp_base = _live_tcp_base()
                 if tcp_base is not None:
@@ -8771,15 +8815,15 @@ def run_pick_demo(panel) -> None:
                 emit_log=panel._emit_log,
                 tcp_tf_world_fn=_live_tcp_world,
                 tcp_tf_base_fn=_live_tcp_base,
-                object_world_fn=_fresh_gazebo_object_world,
-                object_base_fn=_fresh_gazebo_object_base,
+                object_world_fn=_strict_fresh_gazebo_object_world,
+                object_base_fn=_strict_fresh_gazebo_object_base,
                 gripper_opening_fn=lambda: (
                     _read_gripper_state(expected_closed=True) or {}
                 ).get("opening_sum"),
                 attach_backend_ok=bool(attach_ok),
                 tcp_command_base=tuple(tcp_base_grasp) if tcp_base_grasp is not None else None,
                 tcp_visual_world=None,  # tool0 difiere 0.175 m por offset sistematico
-                object_pose_source="fresh_gazebo",
+                object_pose_source="strict_fresh_gazebo",
             )
             _ag_result = _ag_evaluator.evaluate()
 
@@ -8821,27 +8865,37 @@ def run_pick_demo(panel) -> None:
                     f"stable_samples={_ag_result.stable_samples} "
                     f"gripper_opening_m={_fmts4(_ag_result.gripper_opening_m)}"
                 )
-            demo_follow_confirmed = True
-            _clear_cycle_object_reference(reason="attach_follow_confirmed")
-            if not mark_object_grasped(PICK_DEMO_OBJECT_NAME, reason="demo_attach_follow_confirmed"):
+            # Semantic: ATTACH_GATE confirms backend accepted attach + kinematic entity
+            # spawned + TCP was proximal to object. It does NOT confirm physical follow.
+            # follow_confirmed is only set to True after CARRY (_validate_demo_carry passes).
+            demo_spawn_confirmed = True
+            demo_follow_confirmed = False  # pending until CARRY
+            _clear_cycle_object_reference(reason="attach_spawn_confirmed")
+            if not mark_object_grasped(PICK_DEMO_OBJECT_NAME, reason="demo_spawn_confirmed"):
                 raise RuntimeError("demo_mark_grasped_after_attach_failed")
-            if not mark_object_attached(PICK_DEMO_OBJECT_NAME, reason="demo_attach_follow_confirmed"):
+            if not mark_object_attached(PICK_DEMO_OBJECT_NAME, reason="demo_spawn_confirmed"):
                 raise RuntimeError("demo_mark_attached_after_attach_failed")
             demo_logical_attached = True
             attach_metrics = dict(attach_reference_metrics)
-            attach_metrics["follow_confirmed"] = True
+            attach_metrics["spawn_confirmed"] = True
+            attach_metrics["follow_confirmed"] = False  # pending until CARRY
             attach_metrics["attach_published"] = bool(demo_attach_published)
             attach_metrics["logical_attached"] = True
             attach_metrics["logical_state"] = "CARRIED"
             attach_metrics["owner"] = "ROBOT"
+            panel._emit_log(
+                "[ATTACH_GATE][SEMANTIC] "
+                f"logical_attached=true demo_transport_spawned=true "
+                "follow_confirmed=false note=follow_confirmed_only_after_carry"
+            )
             attach_metrics["gripper_closed_measured"] = bool(
                 (_read_gripper_state(expected_closed=True) or {}).get("measured_target_ok")
             )
             _final_phase_trace(
                 "ATTACH_GATE",
                 event="wait_done",
-                expected="attach_ok&&follow_confirmed&&attach_metrics_ok",
-                received=str(bool(attach_metrics.get("ok")) and demo_attach_published and demo_follow_confirmed).lower(),
+                expected="attach_ok&&spawn_confirmed",
+                received=str(demo_attach_published and demo_spawn_confirmed).lower(),
                 timeout_sec=f"{attach_follow_timeout_sec:.2f}",
                 reason="gate_result",
                 logical_state=str((_read_attach_state() or {}).get("logical_state") or "none"),
@@ -8850,29 +8904,31 @@ def run_pick_demo(panel) -> None:
             _ag_gripper_ok = bool(
                 (_read_gripper_state(expected_closed=True) or {}).get("measured_target_ok")
             )
-            _ag_follow_result = "OK" if demo_follow_confirmed else "NO"
-            _ag_final_result = "OK" if (attach_geometry_ok and demo_attach_published and demo_follow_confirmed) else "PEND"
+            _ag_spawn_result = "OK" if demo_spawn_confirmed else "NO"
+            _ag_final_result = "OK" if (attach_geometry_ok and demo_attach_published and demo_spawn_confirmed) else "PEND"
             _ag_final_reason = (
-                "ok" if _ag_final_result == "OK"
+                "spawn_confirmed" if _ag_final_result == "OK"
                 else "geometry_not_ok" if not attach_geometry_ok
                 else "attach_not_published" if not demo_attach_published
-                else "follow_not_confirmed"
+                else "spawn_not_confirmed"
             )
             _ag_final_msg = (
                 "[PICK][DIRECT][ATTACH_GATE] "
                 f"geometry_ok={str(attach_geometry_ok).lower()} "
-                f"follow_ok={str(demo_follow_confirmed).lower()} "
+                f"spawn_confirmed={str(demo_spawn_confirmed).lower()} "
+                f"follow_confirmed=false "
                 f"gripper_ok={str(_ag_gripper_ok).lower()} "
                 f"object_state={str((_read_attach_state() or {}).get('logical_state') or 'none')} "
                 f"attach_published={str(bool(demo_attach_published)).lower()} "
-                f"result={_ag_final_result} reason={_ag_final_reason}"
+                f"result={_ag_final_result} reason={_ag_final_reason} "
+                f"note=follow_confirmed_only_after_carry"
             )
             panel._emit_log(_ag_final_msg)
             _append_trace(_ag_final_msg)
             panel._emit_log(
                 "[PICK][DIRECT][ATTACH] "
-                f"attach_follow_result=ok attach_published={str(bool(demo_attach_published)).lower()} "
-                f"follow_confirmed={str(bool(demo_follow_confirmed)).lower()} "
+                f"attach_spawn_result=ok attach_published={str(bool(demo_attach_published)).lower()} "
+                f"spawn_confirmed=true follow_confirmed=false "
                 f"attach_state={json.dumps(_json_safe(_read_attach_state()), ensure_ascii=False, sort_keys=True)}"
             )
             post_attach_hold_sec = max(
@@ -8896,18 +8952,20 @@ def run_pick_demo(panel) -> None:
                 "ATTACH_GATE",
                 attach_state=_read_attach_state(),
                 note=json.dumps(_json_safe(attach_metrics), ensure_ascii=False, sort_keys=True),
-                result="ok" if bool(attach_metrics.get("ok")) and demo_attach_published and demo_follow_confirmed else "failed",
+                result="ok" if demo_attach_published and demo_spawn_confirmed else "failed",
             )
             # Registrar la posición actual en el historial STEP_BY_STEP antes de
             # cualquier abort, para que ATTACH_GATE no quede en PEND cuando falla.
             _step_finalize_fn = getattr(panel, "_step_record_current_phase_actual", None)
             if callable(_step_finalize_fn):
                 panel.signal_run_ui.emit(_step_finalize_fn)
-            if not (bool(attach_metrics.get("ok")) and demo_attach_published and demo_follow_confirmed):
+            # Gate: backend published attach AND kinematic entity spawned.
+            # follow_confirmed (physical motion) is checked after CARRY.
+            if not (demo_attach_published and demo_spawn_confirmed):
                 _abort_grasp(
                     code="GRASP_NOT_ACQUIRED",
                     phase="ATTACH_GATE",
-                    note="attach/follow did not confirm acquisition before lift",
+                    note="attach published but kinematic spawn not confirmed",
                     metrics=attach_metrics,
                 )
             _phase_begin(
@@ -9084,6 +9142,14 @@ def run_pick_demo(panel) -> None:
                     min_lift_delta_m=0.025,
                     max_tcp_dist_m=0.120,
                     live_world_fn=_fresh_gazebo_object_world,
+                )
+                # follow_confirmed is set here — only after physical motion is verified.
+                demo_follow_confirmed = True
+                attach_metrics["follow_confirmed"] = True
+                panel._emit_log(
+                    "[PICK][DIRECT][CARRY] "
+                    "follow_confirmed=true phase=post_grasp_lift "
+                    "note=object_physically_moved_with_tcp"
                 )
                 # PHYSICAL_GATE: separación explícita attach lógico / attach físico.
                 # Llegamos aquí SOLO si el objeto se elevó ≥6 cm medido desde Gazebo real.

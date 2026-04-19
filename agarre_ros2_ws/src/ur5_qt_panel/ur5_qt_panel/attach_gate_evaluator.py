@@ -179,6 +179,9 @@ class AttachGateEvaluator:
         self._tcp_command_base = tcp_command_base
         self._tcp_visual_world = tcp_visual_world
         self._object_pose_source = str(object_pose_source or "live_object_world")
+        # When strict, object_world=None is treated as a source failure, not a missing sample.
+        self._strict_pose_source = (self._object_pose_source == "strict_fresh_gazebo")
+        self._got_live_pose_sample = False
         self._window: Deque[PoseSample] = deque()
 
     # ------------------------------------------------------------------
@@ -266,6 +269,23 @@ class AttachGateEvaluator:
         while time.time() < deadline:
             s = self._sample()
             last = s
+
+            # Strict source enforcement: if the caller requires a live Gazebo pose and
+            # both object_world and object_base are None, the source has degraded (e.g.
+            # pose_snapshot unavailable, entity not yet on pose/info after spawn).
+            # Do NOT add this sample to the window and do NOT allow approval.
+            if self._strict_pose_source and s.object_world is None and s.object_base is None:
+                self._log(
+                    "[ATTACH_GATE][WARN] degraded_pose_source "
+                    f"attach_gate_live_pose_source={self._object_pose_source} "
+                    "object_world=none object_base=none "
+                    "strict_source=true sample_rejected=true"
+                )
+                time.sleep(cfg.sample_interval_sec)
+                continue
+            if s.object_world is not None or s.object_base is not None:
+                self._got_live_pose_sample = True
+
             self._window.append(s)
             self._prune(s.timestamp)
 
@@ -394,7 +414,9 @@ class AttachGateEvaluator:
         )
         result.rel_drift = self._drift()
 
-        if result.tcp_obj_dist is not None and result.tcp_obj_dist > cfg.max_tcp_obj_dist_m:
+        if self._strict_pose_source and not self._got_live_pose_sample:
+            result.reason = "degraded_pose_source"
+        elif result.tcp_obj_dist is not None and result.tcp_obj_dist > cfg.max_tcp_obj_dist_m:
             result.reason = "timeout_tcp_object_too_far"
         elif len(self._window) < cfg.min_stable_samples:
             result.reason = "timeout_insufficient_samples"
