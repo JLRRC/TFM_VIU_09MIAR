@@ -1076,14 +1076,17 @@ class GripperAttachBackend(Node):
                     base_chain_pose = self._compose_pose(world_base, base_tcp)
                 except Exception:
                     base_chain_pose = None
-        cached_pose = self._lookup_pose(self._tcp_frame)
         tool_fallback_pose = self._fallback_tcp_pose()
+        # cache_pose (Gazebo pose_info for the TCP link) is intentionally excluded:
+        # the SDF kinematics diverge from URDF/DH by ~174mm in z (H2/H3 divergence),
+        # causing demo_transport to track the wrong height. TF is always authoritative
+        # for the TCP frame; pose_info is only reliable for free-standing objects.
         named_candidates = [
             ("base_chain", base_chain_pose),
             ("world_tcp", tf_pose),
-            ("cache_pose", cached_pose),
             ("tool_fallback", tool_fallback_pose),
         ]
+        cached_pose = self._lookup_pose(self._tcp_frame)  # kept for diag only
         candidates = [(name, pose) for name, pose in named_candidates if pose is not None]
         diag: Dict[str, float | str | bool] = {
             "world_base_ok": world_base is not None,

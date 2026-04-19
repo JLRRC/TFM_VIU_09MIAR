@@ -99,16 +99,34 @@ until ros2 node list 2>/dev/null | grep -q "/move_group"; do
 done
 echo "[ORCH] move_group listo ($(( $(date +%s) - MOVEIT_WAIT_START ))s desde stack launch)"
 
+# --- Esperar a que Gazebo tenga datos de poses (hz > 0 en pose/info) ---
+GAZEBO_WAIT_SEC=120
+GAZEBO_WAIT_START=$(date +%s)
+echo "[ORCH] Esperando datos en /world/${WORLD}/pose/info (timeout=${GAZEBO_WAIT_SEC}s)..."
+until ros2 topic hz "/world/${WORLD}/pose/info" --window 5 2>/dev/null | grep -qE "average rate|average"; do
+    NOW=$(date +%s)
+    ELAPSED=$(( NOW - GAZEBO_WAIT_START ))
+    if (( ELAPSED >= GAZEBO_WAIT_SEC )); then
+        echo "[ORCH][WARN] Gazebo pose/info sin datos tras ${GAZEBO_WAIT_SEC}s — continuando de todos modos"
+        break
+    fi
+    sleep 5
+done
+echo "[ORCH] Gazebo pose/info activo ($(( $(date +%s) - GAZEBO_WAIT_START ))s)"
+# Extra grace para que system_state_manager publique GAZEBO_READY
+sleep 15
+
 # --- Lanzar el runner del panel offscreen ---
 env \
     GZ_PARTITION="$GZ_PARTITION" \
     PANEL_DIRECT_DEBUG_ROOT="/home/laboratorio/TFM/historico" \
+    PANEL_MANAGED=1 \
     QT_QPA_PLATFORM=offscreen \
     PANEL_FORCE_OFFSCREEN=1 \
     PANEL_START_STACK=0 \
     PANEL_MOVEIT_REQUIRED=1 \
     PANEL_MOVEIT_MODE=move_group \
-    PANEL_AUTO_BRIDGE=0 \
+    PANEL_AUTO_BRIDGE=1 \
     PANEL_SKIP_CLEANUP=1 \
     PANEL_CAMERA_REQUIRED=0 \
     PANEL_FATAL_STOPS_ALL=0 \
