@@ -5811,10 +5811,20 @@ def run_pick_demo(panel) -> None:
                 fail_reason_keys = [
                     key for key, count in fail_reasons.items() if int(count) > 0
                 ] or ["unknown"]
+                carry_detail = "carry_follow_lost" if best_obj_move > 0 else "object_not_updated"
+                if best_obj_move == 0.0:
+                    panel._emit_log(
+                        "[PICK][DIRECT][PHYSICS] "
+                        f"phase={phase} carry_follow_lost=true "
+                        f"detail=object_never_moved best_obj_move=0.000 "
+                        f"hint=check_demo_transport_set_pose_ok_in_backend_logs "
+                        f"last_obj_world={obj_txt}"
+                    )
                 raise RuntimeError(
                     "demo_carry_validation_failed "
                     f"phase={phase} best_obj_move={best_obj_move:.3f} best_lift_delta={best_lift:.3f} "
                     f"best_tcp_dist={best_tcp_dist:.3f} fail_reasons={','.join(fail_reason_keys)} "
+                    f"carry_detail={carry_detail} "
                     f"last_obj_world={obj_txt} last_obj_base={obj_base_txt} last_tcp_base={tcp_txt}"
                 )
 
@@ -8761,14 +8771,15 @@ def run_pick_demo(panel) -> None:
                 emit_log=panel._emit_log,
                 tcp_tf_world_fn=_live_tcp_world,
                 tcp_tf_base_fn=_live_tcp_base,
-                object_world_fn=_live_object_world,
-                object_base_fn=_live_object_base,
+                object_world_fn=_fresh_gazebo_object_world,
+                object_base_fn=_fresh_gazebo_object_base,
                 gripper_opening_fn=lambda: (
                     _read_gripper_state(expected_closed=True) or {}
                 ).get("opening_sum"),
                 attach_backend_ok=bool(attach_ok),
                 tcp_command_base=tuple(tcp_base_grasp) if tcp_base_grasp is not None else None,
                 tcp_visual_world=None,  # tool0 difiere 0.175 m por offset sistematico
+                object_pose_source="fresh_gazebo",
             )
             _ag_result = _ag_evaluator.evaluate()
 

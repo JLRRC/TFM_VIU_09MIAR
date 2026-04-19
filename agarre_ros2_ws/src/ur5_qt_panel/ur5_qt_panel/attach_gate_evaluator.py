@@ -165,6 +165,7 @@ class AttachGateEvaluator:
         tcp_fk_base: Optional[Vec3] = None,
         tcp_command_base: Optional[Vec3] = None,
         tcp_visual_world: Optional[Vec3] = None,
+        object_pose_source: str = "live_object_world",
     ) -> None:
         self._cfg = config
         self._log = emit_log
@@ -177,6 +178,7 @@ class AttachGateEvaluator:
         self._tcp_fk_base = tcp_fk_base
         self._tcp_command_base = tcp_command_base
         self._tcp_visual_world = tcp_visual_world
+        self._object_pose_source = str(object_pose_source or "live_object_world")
         self._window: Deque[PoseSample] = deque()
 
     # ------------------------------------------------------------------
@@ -230,6 +232,7 @@ class AttachGateEvaluator:
             f"tcp_command_base={_fmt3(self._tcp_command_base)} "
             f"object_world={_fmt3(sample.object_world)} "
             f"object_base={_fmt3(sample.object_base)} "
+            f"attach_gate_live_pose_source={self._object_pose_source} "
             f"tcp_obj_dist={_fmts(tcp_obj_dist)} "
             f"rel_drift={_fmts(drift)} "
             f"tf_visual_gap={_fmts(tf_visual_gap)} "
@@ -361,6 +364,7 @@ class AttachGateEvaluator:
                 f"tcp_command_base={_fmt3(self._tcp_command_base)} "
                 f"object_world={_fmt3(s.object_world)} "
                 f"object_base={_fmt3(s.object_base)} "
+                f"attach_gate_live_pose_source={self._object_pose_source} "
                 f"tcp_obj_dist={_fmts(tcp_obj_dist)} "
                 f"rel_drift={_fmts(drift)} "
                 f"tf_visual_gap={_fmts(tf_visual_gap)} "

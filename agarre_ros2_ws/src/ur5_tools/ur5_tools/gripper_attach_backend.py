@@ -702,9 +702,15 @@ class GripperAttachBackend(Node):
         if ok:
             state.last_pose = pose
             state.last_spawn_ts = now
+            if (now - self._last_demo_transport_log_ts) >= 2.0:
+                self.get_logger().info(
+                    "[ATTACH_BACKEND] demo_transport_set_pose_ok "
+                    f"object={name} pose=({pose.x:.3f},{pose.y:.3f},{pose.z:.3f})"
+                )
+                self._last_demo_transport_log_ts = now
         elif (now - self._last_demo_transport_log_ts) >= 0.5:
             self.get_logger().warning(
-                "[ATTACH_BACKEND] demo_transport_update_failed "
+                "[ATTACH_BACKEND] demo_transport_set_pose_fail "
                 f"object={name} pose=({pose.x:.3f},{pose.y:.3f},{pose.z:.3f}) "
                 "detail=set_pose_queue_failed"
             )
@@ -1389,14 +1395,15 @@ class GripperAttachBackend(Node):
             self._last_apply_log_ts = now
 
     def _follow_attached_objects(self) -> None:
-        shadow_follow = (
+        has_shadow_follow = (
             self._attach_mode == "follow_tcp"
             or (self._attach_mode == "detachable_joint" and self._detachable_shadow_follow)
         )
-        # Demo-transport objects must be updated regardless of shadow_follow:
-        # detachable_shadow_follow=False disables the physics-joint shadow path but
-        # must not prevent the kinematic-entity follow loop from running.
-        if not shadow_follow and not self._demo_transport_active:
+        has_demo_work = bool(self._demo_transport_active)
+        # detachable_shadow_follow=False disables the physics-joint/shadow path only.
+        # It must NOT prevent the demo_transport kinematic follow loop from running;
+        # those are two orthogonal mechanisms.
+        if not has_shadow_follow and not has_demo_work:
             return
         if not self._attached:
             return
@@ -1427,6 +1434,10 @@ class GripperAttachBackend(Node):
                 self._last_stale_warn_ts = now
         for name, target in list(self._attached.items()):
             demo_transport_active = name in self._demo_transport_active
+            # Non-demo objects must not receive pose updates when shadow_follow is
+            # disabled; only demo_transport objects bypass that restriction.
+            if not demo_transport_active and not has_shadow_follow:
+                continue
             obj_pose = self._lookup_pose(name)
             if demo_transport_active:
                 target.coherence_breach_count = 0
@@ -1481,6 +1492,15 @@ class GripperAttachBackend(Node):
                     desired.qy = float(demo_state.world_qy)
                     desired.qz = float(demo_state.world_qz)
                     desired.qw = float(demo_state.world_qw)
+                    now = time.time()
+                    if (now - self._last_demo_transport_log_ts) >= 1.0:
+                        self.get_logger().info(
+                            "[ATTACH_BACKEND] demo_transport_follow_tick "
+                            f"object={name} mode=world_locked "
+                            f"desired=({desired.x:.3f},{desired.y:.3f},{desired.z:.3f}) "
+                            f"tcp=({tcp_pose.x:.3f},{tcp_pose.y:.3f},{tcp_pose.z:.3f})"
+                        )
+                        self._last_demo_transport_log_ts = now
                     self._demo_transport_update(name, desired)
                     continue
             tcp_q = _quat_normalize(
@@ -1502,6 +1522,15 @@ class GripperAttachBackend(Node):
             desired.qz = float(rel_q_world[2])
             desired.qw = float(rel_q_world[3])
             if demo_transport_active:
+                now = time.time()
+                if (now - self._last_demo_transport_log_ts) >= 1.0:
+                    self.get_logger().info(
+                        "[ATTACH_BACKEND] demo_transport_follow_tick "
+                        f"object={name} mode=relative_offset "
+                        f"desired=({desired.x:.3f},{desired.y:.3f},{desired.z:.3f}) "
+                        f"tcp=({tcp_pose.x:.3f},{tcp_pose.y:.3f},{tcp_pose.z:.3f})"
+                    )
+                    self._last_demo_transport_log_ts = now
                 self._demo_transport_update(name, desired)
                 continue
             if self._queue_set_pose(name, desired):

@@ -964,12 +964,10 @@ def generate_launch_description():
         },
         {"gz_service_timeout_ms": int(os.environ.get("ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS", "2000"))},
         {"gz_cmd_timeout_sec": float(os.environ.get("ATTACH_BACKEND_GZ_CMD_TIMEOUT_SEC", "3.0"))},
-        # Route pick_demo through the native Gazebo DetachableJoint plugin instead of
-        # the unreliable set_pose (follow_tcp) mechanism. The plugin+bridge+anchor are
-        # already wired (model.sdf pick_demo_anchor, bridge_runtime.yaml). Shadow-follow
-        # must be False: when True the backend rolls back the physics joint if set_pose
-        # fails, which defeats the purpose of using the joint in the first place.
-        {"prefer_tool_anchor_objects": ["pick_demo"]},
+        # detachable_shadow_follow=False: disables the physics-joint shadow path for
+        # non-demo-transport objects. pick_demo goes through demo_transport exclusively
+        # (demo_transport_objects check fires first in _on_gripper_attach), so this
+        # flag only affects other objects that use detachable_joint mode.
         {"detachable_shadow_follow": False},
         # For the demo object we prefer deterministic transport once the grasp
         # geometry gate has been passed. Leaving the list empty keeps the default
