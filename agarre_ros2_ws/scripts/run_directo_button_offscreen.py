@@ -167,6 +167,8 @@ def main() -> int:
                 flush=True,
             )
             state["triggered"] = False
+            if state["attempts"] < MAX_ATTEMPTS and not retry_timer.isActive():
+                retry_timer.start()
 
     def _trigger() -> None:
         if state["triggered"]:
