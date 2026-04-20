@@ -408,6 +408,10 @@ class GripperAttachBackend(Node):
         self._gz_delete_service: Optional[str] = None
         self._last_tcp_pose_source = "none"
         self._last_tcp_pose_diag: Dict[str, float | str | bool] = {}
+        # In this workspace the UR5 base is fixed to world. Keep the last fresh
+        # world->base pose so carry-follow can remain geometrically coherent even
+        # if the local TF buffer momentarily stops refreshing that dynamic edge.
+        self._stable_world_base_pose: Optional[PoseSample] = None
         self._startup_detach_attempts_left = int(self._startup_detach_max_attempts)
         self._startup_detach_sent = 0
         self._demo_transport_active: Dict[str, DemoTransportState] = {}
@@ -1054,6 +1058,18 @@ class GripperAttachBackend(Node):
             stamp_ns=max(int(parent_pose.stamp_ns), int(child_pose.stamp_ns)),
         )
 
+    def _pose_with_stamp(self, pose: PoseSample, stamp_ns: int) -> PoseSample:
+        return PoseSample(
+            x=float(pose.x),
+            y=float(pose.y),
+            z=float(pose.z),
+            qx=float(pose.qx),
+            qy=float(pose.qy),
+            qz=float(pose.qz),
+            qw=float(pose.qw),
+            stamp_ns=int(stamp_ns),
+        )
+
     def _fallback_tcp_pose(self) -> Optional[PoseSample]:
         fallback = TCP_FALLBACKS.get(self._tcp_frame)
         if not fallback:
@@ -1085,6 +1101,9 @@ class GripperAttachBackend(Node):
         base_chain_pose: Optional[PoseSample] = None
         world_base: Optional[PoseSample] = None
         base_tcp: Optional[PoseSample] = None
+        world_base_age = float("inf")
+        base_tcp_age = float("inf")
+        stable_world_base_mode = "none"
         if (
             self._base_frame
             and self._base_frame != self._world_frame
@@ -1092,9 +1111,28 @@ class GripperAttachBackend(Node):
         ):
             world_base = self._lookup_tf_pose(self._world_frame, self._base_frame)
             base_tcp = self._lookup_tf_pose(self._base_frame, self._tcp_frame)
-            if world_base is not None and base_tcp is not None:
+            if world_base is not None:
+                world_base_age = float(self._pose_age_sec(world_base))
+                if self._pose_age_ok(world_base):
+                    self._stable_world_base_pose = world_base
+                    stable_world_base_mode = "live"
+            stable_world_base = None
+            if world_base is not None and self._pose_age_ok(world_base):
+                stable_world_base = world_base
+            elif self._stable_world_base_pose is not None and base_tcp is not None:
+                # world->base_link is fixed in the loaded world, so a last-known-good
+                # base anchor remains geometrically valid while base_link->tcp keeps
+                # providing the live manipulator motion.
+                stable_world_base = self._pose_with_stamp(
+                    self._stable_world_base_pose,
+                    int(base_tcp.stamp_ns),
+                )
+                stable_world_base_mode = "cached_fixed_base"
+            if base_tcp is not None:
+                base_tcp_age = float(self._pose_age_sec(base_tcp))
+            if stable_world_base is not None and base_tcp is not None:
                 try:
-                    base_chain_pose = self._compose_pose(world_base, base_tcp)
+                    base_chain_pose = self._compose_pose(stable_world_base, base_tcp)
                 except Exception:
                     base_chain_pose = None
         tool_fallback_pose = self._fallback_tcp_pose()
@@ -1109,6 +1147,16 @@ class GripperAttachBackend(Node):
             "world_base_ok": world_base is not None,
             "base_tcp_ok": base_tcp is not None,
             "pose_cache_policy": "disabled_for_tcp_lookup",
+            "world_base_age": world_base_age,
+            "base_tcp_age": base_tcp_age,
+            "stable_world_base_ok": self._stable_world_base_pose is not None,
+            "stable_world_base_age": (
+                float("inf")
+                if self._stable_world_base_pose is None
+                else float(self._pose_age_sec(self._stable_world_base_pose))
+            ),
+            "stable_world_base_mode": stable_world_base_mode,
+            "world_base_policy": "reuse_fixed_base_cache_when_live_stale",
         }
         for name, pose in named_candidates:
             diag[f"{name}_ok"] = pose is not None
@@ -1465,6 +1513,10 @@ class GripperAttachBackend(Node):
                     f"src={self._last_tcp_pose_source} "
                     f"base_chain_ok={diag.get('base_chain_ok')} base_chain_age={diag.get('base_chain_age')} "
                     f"world_tcp_ok={diag.get('world_tcp_ok')} world_tcp_age={diag.get('world_tcp_age')} "
+                    f"world_base_age={diag.get('world_base_age')} base_tcp_age={diag.get('base_tcp_age')} "
+                    f"stable_world_base_ok={diag.get('stable_world_base_ok')} "
+                    f"stable_world_base_age={diag.get('stable_world_base_age')} "
+                    f"stable_world_base_mode={diag.get('stable_world_base_mode')} "
                     f"cache_ok={diag.get('cache_pose_ok')} cache_age={diag.get('cache_pose_age')} "
                     f"tool_fallback_ok={diag.get('tool_fallback_ok')} tool_fallback_age={diag.get('tool_fallback_age')} "
                     f"world_base_ok={diag.get('world_base_ok')} base_tcp_ok={diag.get('base_tcp_ok')}"

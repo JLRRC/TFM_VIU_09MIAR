@@ -1852,10 +1852,10 @@ class ControlPanelV2(QMainWindow):
         self._camera_ready_frames = max(1, CAMERA_READY_FRAMES)
         self._required_ee_frame = (
             str(
-                os.environ.get("PANEL_REQUIRED_EE_FRAME", "rg2_pinch_center")
-                or "rg2_pinch_center"
+                os.environ.get("PANEL_REQUIRED_EE_FRAME", "rg2_tcp")
+                or "rg2_tcp"
             ).strip()
-            or "rg2_pinch_center"
+            or "rg2_tcp"
         )
         self._auto_calib_from_camera = bool(AUTO_CALIB_FROM_CAMERA)
         self._calibrating = False
@@ -18138,7 +18138,7 @@ class ControlPanelV2(QMainWindow):
         effective_ee = detected_ee or self._ee_frame_effective
         if not effective_ee:
             helper = get_tf_helper()
-            for candidate in ("rg2_pinch_center", "tool0", "flange"):
+            for candidate in ("rg2_tcp", "rg2_pinch_center", "tool0", "flange"):
                 if helper and _can_transform_between(helper, effective_base, candidate, timeout_sec=0.05):
                     effective_ee = candidate
                     self._ee_frame_effective = candidate
