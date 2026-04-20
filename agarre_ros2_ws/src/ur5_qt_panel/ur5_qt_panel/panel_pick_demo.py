@@ -9118,6 +9118,24 @@ def run_pick_demo(panel) -> None:
                 },
                 note="carry validation after lift",
             )
+            # Post-lift backend settle: the gripper_attach_backend follow_tcp updates
+            # at ~1Hz in headless Gazebo. After the arm moves up, the backend needs
+            # time to propagate the new TCP position to the kinematic object. Without
+            # this wait the CARRY validation samples the object at the stale respawn
+            # position (tcp + demo_world_offset at grasp time) rather than the lifted
+            # position. 3s matches the observed backend TCP-staleness lag.
+            _carry_settle_sec = max(
+                0.0,
+                float(
+                    os.environ.get("PANEL_PICK_DEMO_CARRY_SETTLE_SEC", "3.0") or "3.0"
+                ),
+            )
+            if _carry_settle_sec > 0:
+                panel._emit_log(
+                    f"[PICK][DIRECT][CARRY_SETTLE] waiting {_carry_settle_sec:.1f}s "
+                    "for backend follow_tcp to update kinematic object after lift"
+                )
+                time.sleep(_carry_settle_sec)
             # DIAG-CARRY: Mostrar posición actual del objeto en Gazebo al entrar en CARRY.
             # Esto permite ver si el objeto ha sido levantado físicamente antes de la
             # validación, sin depender del ciclo de referencia congelado.

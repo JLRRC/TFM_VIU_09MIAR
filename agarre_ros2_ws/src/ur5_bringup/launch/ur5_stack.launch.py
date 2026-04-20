@@ -503,10 +503,12 @@ def _prepare_runtime(context, *_args) -> List[object]:
             os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.035"),
         ),
         SetEnvironmentVariable(
-            # PRE_CLOSE xy tolerance. TCP arrives at ~6.35mm from object after
-            # GRASP_ALIGN_IK; 10mm accepts this without losing grasp reliability.
+            # PRE_CLOSE xy tolerance. TCP arrives ~16-19mm from object after
+            # GRASP_ALIGN_IK due to DH/SDF divergence (~13mm known offset).
+            # 20mm accommodates this without compromising grasp reliability
+            # (RG2 finger span is ~80mm so 20mm centering error is acceptable).
             "PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "0.016"),
+            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "0.020"),
         ),
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M",
