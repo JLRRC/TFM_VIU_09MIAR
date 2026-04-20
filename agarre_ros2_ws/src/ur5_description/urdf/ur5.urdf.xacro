@@ -59,9 +59,10 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <!-- Visual TCP: coincide con rg2_pinch_center (0.175m desde tool0) gracias al offset
-       SDF ur5_hand_joint=0.237456 que alinea las yemas del mesh con el TCP operacional.
-       Con SDF=0.237456: fingertip_wrist3 = 0.237456+0.213 = 0.450m = rg2_pinch_center. -->
+  <!-- Virtual TCP frame at the operational grasp center (0.175m from tool0).
+       SDF ur5_hand_joint=0.0823 places the rg2_hand mesh at the physical flange;
+       the visual fingertips in Gazebo appear at tool0+0.020m (cosmetic offset),
+       but this frame defines the semantic grasp point used by planning/attach. -->
   <link name="rg2_tcp">
     <inertial>
       <mass value="0.01"/>
