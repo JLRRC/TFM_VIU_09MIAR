@@ -110,11 +110,11 @@ until grep -q "You can start planning now" "$STACK_LOG" 2>/dev/null; do
 done
 echo "[ORCH] move_group listo ($(( $(date +%s) - MOVEIT_WAIT_START ))s desde stack launch)"
 
-# --- Esperar a que Gazebo tenga datos de poses (hz > 0 en pose/info) ---
+# --- Esperar a que Gazebo tenga datos de poses (al menos un mensaje en pose/info) ---
 GAZEBO_WAIT_SEC=120
 GAZEBO_WAIT_START=$(date +%s)
 echo "[ORCH] Esperando datos en /world/${WORLD}/pose/info (timeout=${GAZEBO_WAIT_SEC}s)..."
-until ros2 topic hz "/world/${WORLD}/pose/info" --window 5 2>/dev/null | grep -qE "average rate|average"; do
+until timeout 8s ros2 topic echo --once "/world/${WORLD}/pose/info" >/dev/null 2>&1; do
     NOW=$(date +%s)
     ELAPSED=$(( NOW - GAZEBO_WAIT_START ))
     if (( ELAPSED >= GAZEBO_WAIT_SEC )); then

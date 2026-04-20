@@ -29,6 +29,7 @@ MAX_ATTEMPTS = int(os.environ.get("DIRECTO_MAX_ATTEMPTS", "90") or "90")
 # trigger as "accepted".  Aborts due to cycle_reference_unavailable happen in
 # ~2 s; a real DIRECTO run stays active for tens of seconds.
 TRIGGER_SETTLE_SEC = float(os.environ.get("DIRECTO_TRIGGER_SETTLE_SEC", "10") or "10")
+COMPLETE_IDLE_SEC = float(os.environ.get("DIRECTO_COMPLETE_IDLE_SEC", "2.0") or "2.0")
 FORCE_STEP_MODE = str(os.environ.get("DIRECTO_FORCE_STEP_MODE", "0") or "0").strip().lower() in (
     "1",
     "true",
@@ -113,6 +114,9 @@ def main() -> int:
     retry_timer = QTimer(panel)
     retry_timer.setInterval(RETRY_MS)
     retry_timer.setSingleShot(False)
+    completion_timer = QTimer(panel)
+    completion_timer.setInterval(max(300, min(RETRY_MS, 1000)))
+    completion_timer.setSingleShot(False)
     step_timer = QTimer(panel)
     step_timer.setInterval(STEP_POLL_MS)
     step_timer.setSingleShot(False)
@@ -137,6 +141,8 @@ def main() -> int:
         "step_last_continue_ts": 0.0,
         "step_inicio_actual": None,
         "step_inicio_target": None,
+        "completion_idle_since": 0.0,
+        "completion_logged": False,
     }
 
     def _check_trigger_confirmed() -> None:
@@ -510,6 +516,43 @@ def main() -> int:
         except Exception as exc:
             print(f"[{_stamp()}] [AUDIT][STEP] step_drive_error={exc}", flush=True)
 
+    def _maybe_close_after_completion() -> None:
+        if not state["confirmed"]:
+            state["completion_idle_since"] = 0.0
+            state["completion_logged"] = False
+            return
+        script_active = bool(getattr(panel, "_script_motion_active", False))
+        manual_inflight = bool(getattr(panel, "_manual_inflight", False))
+        detach_inflight = bool(getattr(panel, "_detach_inflight", False))
+        demo_done = bool(getattr(panel, "_pick_demo_executed", False))
+        if script_active or manual_inflight or detach_inflight:
+            state["completion_idle_since"] = 0.0
+            state["completion_logged"] = False
+            return
+        now = time.monotonic()
+        if not state["completion_idle_since"]:
+            state["completion_idle_since"] = now
+            print(
+                f"[{_stamp()}] [AUDIT][DIRECTO] completion_idle_begin "
+                f"demo_done={str(demo_done).lower()} "
+                f"script_active=false manual_inflight={str(manual_inflight).lower()} "
+                f"detach_inflight={str(detach_inflight).lower()}",
+                flush=True,
+            )
+            return
+        idle_sec = now - float(state["completion_idle_since"] or now)
+        if idle_sec < COMPLETE_IDLE_SEC:
+            return
+        if not state["completion_logged"]:
+            state["completion_logged"] = True
+            print(
+                f"[{_stamp()}] [AUDIT][DIRECTO] completion_idle_confirmed "
+                f"idle_sec={idle_sec:.3f} demo_done={str(demo_done).lower()} "
+                "closing_helper=true",
+                flush=True,
+            )
+        _close()
+
     def _start_polling() -> None:
         _trigger_safe()
         if not state["confirmed"] and state["attempts"] < MAX_ATTEMPTS and not retry_timer.isActive():
@@ -517,6 +560,7 @@ def main() -> int:
 
     def _close() -> None:
         retry_timer.stop()
+        completion_timer.stop()
         step_timer.stop()
         print(f"[{_stamp()}] [SHUTDOWN][HELPER] close_begin", flush=True)
         panel._emit_log("[AUDIT][DIRECTO] offscreen helper closing panel")
@@ -534,9 +578,11 @@ def main() -> int:
             signal.signal(sig, _handle_signal)
 
     retry_timer.timeout.connect(_trigger_safe)
+    completion_timer.timeout.connect(_maybe_close_after_completion)
     step_timer.timeout.connect(_step_drive)
     app.aboutToQuit.connect(_about_to_quit)
     QTimer.singleShot(CLICK_DELAY_MS, _start_polling)
+    completion_timer.start()
     if FORCE_STEP_MODE:
         step_timer.start()
     QTimer.singleShot(EXIT_AFTER_MS, _close)
