@@ -20,6 +20,16 @@ class EnvEntry:
     source_file: Path
 
 
+@dataclass(frozen=True)
+class ResolvedEnv:
+    name: str
+    group: str
+    launch_default: str
+    runtime_override: str
+    panel_default: str
+    historical_default: str
+
+
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
@@ -227,6 +237,18 @@ def collect_env_entries(text: str, source_label: str, source_file: Path) -> list
     return entries
 
 
+def dedupe_env_entries(entries: list[EnvEntry]) -> list[EnvEntry]:
+    unique: list[EnvEntry] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for entry in entries:
+        key = (entry.name, entry.default.strip(), entry.source_label, str(entry.source_file))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(EnvEntry(entry.name, entry.default.strip(), entry.source_label, entry.source_file))
+    return unique
+
+
 def parse_historical_env_defaults(text: str) -> dict[str, str]:
     defaults: dict[str, str] = {}
     for line in text.splitlines():
@@ -320,16 +342,10 @@ def env_risk(group: str) -> str:
 
 
 def env_inventory_markdown(entries: list[EnvEntry], historical_defaults: dict[str, str]) -> str:
-    filtered = [
-        entry
-        for entry in entries
-        if entry.name.startswith(("PANEL_PICK_DEMO_", "ATTACH_BACKEND_", "PANEL_MOVEIT_BRIDGE_", "GRASP_CONTACT_"))
-    ]
-    grouped: dict[str, list[EnvEntry]] = {}
-    by_name: dict[str, list[EnvEntry]] = {}
-    for entry in filtered:
-        grouped.setdefault(env_group(entry.name), []).append(entry)
-        by_name.setdefault(entry.name, []).append(entry)
+    resolved = resolve_env_entries(entries, historical_defaults)
+    grouped: dict[str, list[ResolvedEnv]] = {}
+    for entry in resolved:
+        grouped.setdefault(entry.group, []).append(entry)
 
     blocks: list[str] = []
     for group in [
@@ -347,50 +363,133 @@ def env_inventory_markdown(entries: list[EnvEntry], historical_defaults: dict[st
         "backend attach/transporte",
         "otros",
     ]:
-        rows = sorted({entry.name for entry in grouped.get(group, [])})
+        rows = sorted(grouped.get(group, []), key=lambda item: item.name)
         if not rows:
             continue
         lines = [
-            f"### 7.{len(blocks) + 1} {group}",
+            f"#### {group}",
             "",
-            "| Variable | Valor actual / runtime | Archivo fuente | Fase | Unidades | Efecto | Riesgo | Estado | Discrepancia |",
-            "|---|---|---|---|---|---|---|---|---|",
+            "| Variable | Launch | Runtime wrapper | Fallback panel | Histórico | Estado | Discrepancia |",
+            "|---|---|---|---|---|---|---|",
         ]
-        for name in rows:
-            entries_for_name = by_name[name]
-            current_values = []
-            source_refs = []
-            distinct_values: list[str] = []
-            for item in entries_for_name:
-                current_values.append(f"{item.source_label}={item.default}")
-                source_refs.append(rel(ROOT, item.source_file))
-                if item.default not in distinct_values:
-                    distinct_values.append(item.default)
-            hist_value = historical_defaults.get(name)
-            discrepancy_parts = []
-            if len(distinct_values) > 1:
-                discrepancy_parts.append("fuentes actuales difieren: " + ", ".join(current_values))
-            if hist_value and hist_value not in distinct_values:
-                discrepancy_parts.append(f"histórico 2026-04-18={hist_value}")
-            current_repr = " / ".join(current_values)
-            state = "actual confirmado"
-            if hist_value and hist_value not in distinct_values:
-                state = "actual confirmado + histórico distinto"
+        for item in rows:
+            state, discrepancy = env_state_and_discrepancy(item)
             lines.append(
-                "| {name} | {value} | {source} | {phase} | {units} | {effect} | {risk} | {state} | {disc} |".format(
-                    name=name,
-                    value=current_repr or "no extraído",
-                    source="; ".join(sorted(set(source_refs))),
-                    phase=group,
-                    units=env_units(name, entries_for_name[0].default),
-                    effect=env_effect(group),
-                    risk=env_risk(group),
+                "| {name} | {launch} | {runtime} | {panel} | {historical} | {state} | {disc} |".format(
+                    name=item.name,
+                    launch=item.launch_default or "-",
+                    runtime=item.runtime_override or "-",
+                    panel=item.panel_default or "-",
+                    historical=item.historical_default or "-",
                     state=state,
-                    disc="; ".join(discrepancy_parts) if discrepancy_parts else "sin discrepancia relevante extraída",
+                    disc=discrepancy,
                 )
             )
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
+
+
+def resolve_env_entries(entries: list[EnvEntry], historical_defaults: dict[str, str]) -> list[ResolvedEnv]:
+    filtered = [
+        entry
+        for entry in dedupe_env_entries(entries)
+        if entry.name.startswith(("PANEL_PICK_DEMO_", "ATTACH_BACKEND_", "PANEL_MOVEIT_BRIDGE_", "GRASP_CONTACT_"))
+    ]
+    names = sorted({entry.name for entry in filtered})
+    resolved: list[ResolvedEnv] = []
+    for name in names:
+        launch_default = ""
+        runtime_override = ""
+        panel_default = ""
+        for entry in filtered:
+            if entry.name != name:
+                continue
+            if entry.source_label == "launch" and entry.default:
+                launch_default = entry.default
+            elif entry.source_label == "start_panel" and entry.default:
+                runtime_override = entry.default
+            elif entry.source_label == "panel" and entry.default:
+                panel_default = entry.default
+        resolved.append(
+            ResolvedEnv(
+                name=name,
+                group=env_group(name),
+                launch_default=launch_default,
+                runtime_override=runtime_override,
+                panel_default=panel_default,
+                historical_default=historical_defaults.get(name, ""),
+            )
+        )
+    return resolved
+
+
+def env_state_and_discrepancy(entry: ResolvedEnv) -> tuple[str, str]:
+    current_values = [value for value in [entry.launch_default, entry.runtime_override, entry.panel_default] if value]
+    distinct_values = list(dict.fromkeys(current_values))
+    discrepancies: list[str] = []
+    if len(distinct_values) > 1:
+        discrepancies.append("actual difiere entre fuentes")
+    if entry.historical_default and entry.historical_default not in distinct_values:
+        discrepancies.append(f"histórico={entry.historical_default}")
+    if entry.runtime_override and entry.launch_default and entry.runtime_override != entry.launch_default:
+        discrepancies.append("wrapper pisa launch")
+    if entry.panel_default and entry.launch_default and entry.panel_default != entry.launch_default:
+        discrepancies.append("panel usa fallback distinto")
+    state = "alineado"
+    if discrepancies:
+        state = "discrepancia abierta"
+    elif entry.runtime_override:
+        state = "override runtime activo"
+    elif entry.launch_default:
+        state = "default launch"
+    elif entry.panel_default:
+        state = "fallback local panel"
+    return state, "; ".join(dict.fromkeys(discrepancies)) if discrepancies else "sin discrepancia relevante"
+
+
+def env_source_markdown(resolved: list[ResolvedEnv], title: str, names: list[str]) -> str:
+    rows = [entry for entry in resolved if entry.name in names]
+    if not rows:
+        return f"### {title}\n\n- Sin variables extraídas para este bloque."
+    lines = [
+        f"### {title}",
+        "",
+        "| Variable | Launch | Runtime wrapper | Fallback panel | Histórico | Estado |",
+        "|---|---|---|---|---|---|",
+    ]
+    for entry in rows:
+        state, _ = env_state_and_discrepancy(entry)
+        lines.append(
+            "| {name} | {launch} | {runtime} | {panel} | {historical} | {state} |".format(
+                name=entry.name,
+                launch=entry.launch_default or "-",
+                runtime=entry.runtime_override or "-",
+                panel=entry.panel_default or "-",
+                historical=entry.historical_default or "-",
+                state=state,
+            )
+        )
+    return "\n".join(lines)
+
+
+def env_discrepancy_markdown(resolved: list[ResolvedEnv]) -> str:
+    rows = []
+    for entry in resolved:
+        _, discrepancy = env_state_and_discrepancy(entry)
+        if discrepancy == "sin discrepancia relevante":
+            continue
+        rows.append((entry.name, entry.group, entry.launch_default or "-", entry.runtime_override or "-", entry.panel_default or "-", entry.historical_default or "-", discrepancy))
+    if not rows:
+        return "### 7.4 Discrepancias de parámetros\n\n- No se detectaron discrepancias de parámetros."
+    lines = [
+        "### 7.4 Discrepancias de parámetros",
+        "",
+        "| Variable | Grupo | Launch | Runtime wrapper | Fallback panel | Histórico | Lectura |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        lines.append("| " + " | ".join(row) + " |")
+    return "\n".join(lines)
 
 
 def markdown_table(rows: list[tuple[str, ...]], headers: tuple[str, ...]) -> str:
@@ -1018,6 +1117,7 @@ def main() -> None:
     env_entries.extend(collect_env_entries(launch_text, "launch", files["launch"]))
     env_entries.extend(collect_env_entries(start_panel_text, "start_panel", files["start_panel"]))
     env_entries.extend(collect_env_entries(panel_text, "panel", files["panel"]))
+    resolved_env = resolve_env_entries(env_entries, hist_env_defaults)
 
     package_rows = []
     for key in [
@@ -1336,9 +1436,90 @@ def main() -> None:
 
     parts.append("## 7. Variables de Entorno y Parámetros Críticos")
     parts.append("")
-    parts.append("### 7.0 Inventario actual consolidado desde launch, wrapper runtime y panel")
+    parts.extend(
+        [
+            "### 7.0 Cómo leer esta sección",
+            "",
+            "- `Launch`: default declarado en `ur5_stack.launch.py`.",
+            "- `Runtime wrapper`: override exportado por `start_panel_v2.sh` antes de lanzar el panel/stack.",
+            "- `Fallback panel`: valor local que usa `panel_pick_demo.py` si lee la variable directamente y no recibe otra cosa.",
+            "- El inventario exhaustivo completo se conserva en el apéndice 15.5; aquí se muestran sólo parámetros de alto impacto operativo.",
+        ]
+    )
     parts.append("")
-    parts.append(env_inventory_markdown(env_entries, hist_env_defaults))
+    parts.append(
+        env_source_markdown(
+            resolved_env,
+            "7.1 Geometría, descenso y alineación",
+            [
+                "GRASP_CONTACT_Z_OFFSET_M",
+                "PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M",
+                "PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M",
+                "PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M",
+                "PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN",
+                "PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT",
+                "PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL",
+                "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M",
+                "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M",
+                "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M",
+                "PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL",
+                "PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M",
+                "PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M",
+                "PANEL_PICK_DEMO_ALIGN_Z_RESIDUAL_TOL_M",
+                "PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M",
+                "PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M",
+            ],
+        )
+    )
+    parts.append("")
+    parts.append(
+        env_source_markdown(
+            resolved_env,
+            "7.2 Cierre, attach y carry",
+            [
+                "PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC",
+                "PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM",
+                "PANEL_PICK_DEMO_CLOSE_XY_TOL_M",
+                "PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M",
+                "PANEL_PICK_DEMO_ATTACH_XY_TOL_M",
+                "PANEL_PICK_DEMO_ATTACH_Z_TOL_M",
+                "PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M",
+                "PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M",
+                "PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC",
+                "PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES",
+                "PANEL_PICK_DEMO_CARRY_SETTLE_SEC",
+                "PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M",
+                "ATTACH_BACKEND_MODE",
+                "ATTACH_BACKEND_MAX_POSE_AGE_SEC",
+                "ATTACH_BACKEND_FOLLOW_RATE_HZ",
+                "ATTACH_BACKEND_FOLLOW_BREAK_DIST_M",
+                "ATTACH_BACKEND_MAX_DIST_M",
+                "ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS",
+            ],
+        )
+    )
+    parts.append("")
+    parts.append(
+        env_source_markdown(
+            resolved_env,
+            "7.3 Frescura de pose y MoveIt bridge",
+            [
+                "PANEL_PICK_DEMO_POSE_SOURCE_AGE_TOL_SEC",
+                "PANEL_PICK_DEMO_POSE_SOURCE_TOL_M",
+                "PANEL_PICK_DEMO_PHASE_JUMP_TOL_M",
+                "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SEC",
+                "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_DELTA_M",
+                "PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC",
+                "PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC",
+                "PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC",
+                "PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC",
+                "PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE",
+                "PANEL_MOVEIT_BRIDGE_ACCEL_SCALE",
+            ],
+        )
+    )
+    parts.append("")
+    parts.append(env_discrepancy_markdown(resolved_env))
     parts.append("")
     parts.append("### 7.98 Discrepancias explícitas que no deben perderse")
     parts.append("")
@@ -1351,7 +1532,10 @@ def main() -> None:
         ]
     )
     parts.append("")
-    parts.append(preserved_block("Detalle histórico recuperado (2026-04-18)", historical_sections.get("6. Variables de Entorno y Parámetros Críticos", ""), shift=1).strip())
+    parts.append("### 7.99 Nota sobre trazabilidad histórica")
+    parts.append("")
+    parts.append("- El bloque histórico extenso de variables ya no se inserta entero en el cuerpo principal para evitar ruido operativo.")
+    parts.append("- Su contenido queda absorbido en la columna `Histórico` y en la columna `Discrepancia` del apéndice 15.5, donde se conserva el inventario exhaustivo actual con trazabilidad de overrides y defaults previos.")
     parts.append("")
 
     parts.append("## 8. Validación Física Post-Grasp / Carry")
@@ -1516,6 +1700,11 @@ def main() -> None:
         parts.append(shift_headings(strip_first_heading(current_seed_text), 1))
     else:
         parts.append("- No se pudo cargar una semilla vigente versionada para preservación íntegra.")
+    parts.append("")
+
+    parts.append("### 15.5 Inventario exhaustivo de variables actuales")
+    parts.append("")
+    parts.append(env_inventory_markdown(env_entries, hist_env_defaults))
     parts.append("")
 
     main_md = "\n".join(part.rstrip() for part in parts if part is not None).strip() + "\n"
