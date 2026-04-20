@@ -67,3 +67,26 @@ Notas de rigor:
 - `agarre_inteligente/README.md`
 - `agarre_ros2_ws/README.md`
 - `reports/README.md`
+
+## Nota final sobre el split Cornell
+
+- El TFM documenta el split final como `3542/1569`.
+- En el workspace actual se asume como estado operativo real `3541/1569`.
+- La causa es una anotacion corrupta en `agarre_inteligente/data/raw/cornell/01/pcd0165cpos.txt`, donde aparece un rectangulo con vertices `NaN NaN`.
+- El generador de CSV puede volver a materializar `3542` filas en `train.csv`, pero una de ellas queda no finita y el dataset efectivo la descarta al cargar.
+- Mientras no aparezca una version valida de esa anotacion dentro del propio workspace o de una copia externa fiable, la referencia tecnica real del repo debe considerarse `3541/1569`.
+
+## Nota final sobre el panel
+
+- En la memoria se cita `main_panel.py` como artefacto principal del panel.
+- En el workspace actual el panel operativo y mantenido es `agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_v2.py`.
+- `main_panel.py` no existe ya en el arbol actual del repositorio.
+- Se asume esta discrepancia como una diferencia literal entre la redaccion del TFM y la evolucion posterior del workspace, sin impacto sobre los resultados presentados.
+
+## Nota final sobre los desajustes metodologicos no aplicados
+
+- Se reconocen tres desajustes metodologicos pendientes respecto a la memoria: la IoU Cornell con rectangulos orientados, el calculo de `grasp success` por imagen y una posible funcion de perdida mas alineada con la formulacion teorica.
+- No se aplican cambios sobre esos puntos en este workspace porque dejarian de ser estrictamente comparables los resultados ya presentados en el TFM.
+- Ajustar la IoU y el criterio de `grasp success` obligaria como minimo a reevaluar `EXP1..EXP4`.
+- Cambiar la funcion de perdida obligaria a reentrenar los experimentos oficiales.
+- Por tanto, el estado actual del repositorio conserva deliberadamente la base experimental ya consolidada en la memoria, y estos puntos quedan solo anotados como trabajo pendiente no ejecutado.
