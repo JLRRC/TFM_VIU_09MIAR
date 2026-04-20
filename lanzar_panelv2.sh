@@ -109,8 +109,6 @@ export PANEL_DIRECT_DEBUG_ROOT="$LOG_DIR"
 # El stack lanza world_tf y system_state: no duplicar en el panel.
 export PANEL_LAUNCH_WORLD_TF=0
 export PANEL_LAUNCH_SYSTEM_STATE=0
-# Auto-disparo del botón DIRECTO cuando el sistema esté listo.
-export PANEL_AUTO_RUN_PICK_DEMO=1
 
 # Timeouts de movimiento: sin estos el APPROACH_COARSE expira en 4.5s (insuficiente)
 export PANEL_PICK_DEMO_MOVE_SEC=15

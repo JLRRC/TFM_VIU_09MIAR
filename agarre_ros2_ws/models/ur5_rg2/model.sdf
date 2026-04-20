@@ -404,7 +404,9 @@
         </joint>
         <!-- Arm-Hand Fixed Joint -->
         <joint name="ur5_hand_joint" type="fixed">
-            <pose relative_to="wrist_3_link">0 0.0823 0 1.570796325 0 1.570796325</pose>
+            <!-- Shift the rendered RG2 assembly so the fingertip midpoint aligns
+                 with the semantic tool0/pick_demo_anchor TCP used by TF/runtime. -->
+            <pose relative_to="wrist_3_link">0 0.237456 0 1.570796325 0 1.570796325</pose>
             <parent>wrist_3_link</parent>
             <child>rg2_hand</child>
         </joint>
