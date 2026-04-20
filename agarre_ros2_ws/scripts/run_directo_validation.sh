@@ -91,14 +91,18 @@ STACK_PID=$!
 echo "[ORCH] Stack PID=$STACK_PID log=$STACK_LOG"
 
 # --- Esperar a que move_group esté vivo (max 300 s) ---
+# Detecta readiness directamente del stack log: "You can start planning now!" es
+# emitido por move_group solo cuando todos los servicios y controladores están activos.
+# Esto es más fiable que ros2 service list (lenta descubrimiento DDS) y evita
+# falsos positivos de procesos stale de corridas anteriores.
 MOVEIT_WAIT_SEC=300
 MOVEIT_WAIT_START=$(date +%s)
-echo "[ORCH] Esperando /move_group en ros2 node list (timeout=${MOVEIT_WAIT_SEC}s)..."
-until ros2 node list 2>/dev/null | grep -q "/move_group"; do
+echo "[ORCH] Esperando 'You can start planning now!' en stack.log (timeout=${MOVEIT_WAIT_SEC}s)..."
+until grep -q "You can start planning now" "$STACK_LOG" 2>/dev/null; do
     NOW=$(date +%s)
     ELAPSED=$(( NOW - MOVEIT_WAIT_START ))
     if (( ELAPSED >= MOVEIT_WAIT_SEC )); then
-        echo "[ORCH][ERROR] Timeout: move_group no apareció en ${MOVEIT_WAIT_SEC}s. Abortando."
+        echo "[ORCH][ERROR] Timeout: move_group no publicó readiness en ${MOVEIT_WAIT_SEC}s. Abortando."
         kill "$STACK_PID" 2>/dev/null || true
         exit 1
     fi
