@@ -7323,11 +7323,35 @@ def run_pick_demo(panel) -> None:
                         "phase=APPROACH_COARSE result=PEND reason=pose_unavailable"
                     )
 
-                # Refrescar target justo antes del descenso, pero conservando el XY ya
-                # alineado en APPROACH_COARSE para que GRASP_DOWN_JOINT sea un descenso
-                # corto relativo desde la pose buena alcanzada.
-                obj_world_before_grasp_down = _live_object_world()
-                obj_base_before_grasp_down = _live_object_base()
+                # Refrescar target desde Gazebo ground truth justo antes del descenso.
+                # _fresh_gazebo_object_world() ignora el cycle reference congelado y lee
+                # directamente de /world/.../pose/info — crítico si el objeto se movió
+                # después de que el ciclo comenzó (ej: cilindro rodando al caer en spawn).
+                # Si Gazebo no está disponible cae de vuelta al cycle reference.
+                _fresh_gd_world = _fresh_gazebo_object_world()
+                _fresh_gd_base = _fresh_gazebo_object_base() if _fresh_gd_world is not None else None
+                if _fresh_gd_base is not None:
+                    _cycle_world_frozen = _tuple3(_pick_demo_cycle_object_world)
+                    if _cycle_world_frozen is not None:
+                        _drift_m = math.sqrt(
+                            (_fresh_gd_world[0] - _cycle_world_frozen[0]) ** 2
+                            + (_fresh_gd_world[1] - _cycle_world_frozen[1]) ** 2
+                            + (_fresh_gd_world[2] - _cycle_world_frozen[2]) ** 2
+                        )
+                    else:
+                        _drift_m = 0.0
+                    _append_trace(
+                        "[PICK][DIRECT][GRASP_DOWN_REFRESH] "
+                        f"cycle_world={_fmt_vec(_cycle_world_frozen)} "
+                        f"fresh_gazebo_world={_fmt_vec(_fresh_gd_world)} "
+                        f"drift_m={_fmt_scalar(_drift_m)} "
+                        "using=fresh_gazebo"
+                    )
+                    obj_world_before_grasp_down = _fresh_gd_world
+                    obj_base_before_grasp_down = _fresh_gd_base
+                else:
+                    obj_world_before_grasp_down = _live_object_world()
+                    obj_base_before_grasp_down = _live_object_base()
                 if obj_base_before_grasp_down is None:
                     _append_trace(
                         "[PICK][DIRECT][CYCLE_REF][ABORT] tag=[DIRECT][CYCLE_REF][ABORT] "
