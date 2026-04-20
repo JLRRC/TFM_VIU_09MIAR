@@ -452,10 +452,10 @@
 
     <model name="camera_debug_top">
       <static>true</static>
-      <!-- Cenital: centrada sobre la zona de trabajo (robot base x=-0.85, pick x=-0.42).
-           x=-0.50 centra el encuadre entre ambos puntos; FOV 1.2 rad (~69°) cubre
-           ~2.1 m de anchura a 1.5 m sobre la mesa. -->
-      <pose>-0.50 0.00 2.35 0 -1.5708 0</pose>
+       <!-- Cenital fija para depuracion: Gazebo usa el eje +X del sensor como forward,
+         asi que pitch positivo mira hacia abajo. Se sesga ligeramente hacia el robot
+         y se gana altura para encuadrar mesa completa, UR5 entero y pick_demo. -->
+       <pose>-0.60 0.00 2.55 0 1.5708 0</pose>
       <link name="link">
         <sensor name="camera_debug_top_rgb" type="camera">
           <always_on>true</always_on>
