@@ -1145,11 +1145,11 @@ def generate_launch_description():
             # FIX-ATTACH-THRESHOLD: max 3D distance (m) for backend to accept attach.
             # Was 0.15 (default in gripper_attach_backend.py). Tightened for real
             # contact, but 0.050 was too strict for the direct grasp and rejected a
-            # valid manual-like close at 0.0509 m. 0.060 keeps the gate narrow while
-            # avoiding edge-case false negatives right at contact.
+            # valid manual-like close at 0.0509 m. 0.080 accommodates small object
+            # movements during descent while remaining far below 0.150 false-grasp risk.
             DeclareLaunchArgument(
                 "attach_backend_max_dist_m",
-                default_value=os.environ.get("ATTACH_BACKEND_MAX_DIST_M", "0.06"),
+                default_value=os.environ.get("ATTACH_BACKEND_MAX_DIST_M", "0.08"),
             ),
             # FIX-MOVEIT-BRIDGE: launch ur5_moveit_bridge so /desired_grasp has a real subscriber.
             DeclareLaunchArgument("launch_moveit_bridge", default_value="true"),

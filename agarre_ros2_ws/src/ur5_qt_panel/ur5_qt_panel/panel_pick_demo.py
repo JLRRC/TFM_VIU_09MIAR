@@ -7349,6 +7349,11 @@ def run_pick_demo(panel) -> None:
                     )
                     obj_world_before_grasp_down = _fresh_gd_world
                     obj_base_before_grasp_down = _fresh_gd_base
+                    # Update cycle reference so ATTACH_GATE (_live_object_base) uses the
+                    # real Gazebo position — avoids panel/backend mismatch when object drifted.
+                    _pick_demo_cycle_object_world = tuple(_fresh_gd_world)
+                    _pick_demo_cycle_object_base = tuple(_fresh_gd_base)
+                    _pick_demo_cycle_object_source = "fresh_gazebo_grasp_down_refresh"
                 else:
                     obj_world_before_grasp_down = _live_object_world()
                     obj_base_before_grasp_down = _live_object_base()
