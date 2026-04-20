@@ -66,7 +66,7 @@ DIRECT_SOURCE_FRAME = "rg2_pinch_center"
 DIRECT_LEGACY_TCP_FRAME = "rg2_tcp"
 DIRECT_EXECUTION_FRAME = "tool0"
 DIRECT_EXECUTION_IK_MODE = "formal_rg2_pinch_center_source_to_tool0_numeric"
-DIRECT_TOOL0_TO_RG2_TCP_Z_M = 0.175
+DIRECT_TOOL0_TO_RG2_TCP_Z_M = -0.0877005
 DIRECT_GRASP_AUDIT_PREFIX = "[PICK][DIRECT_GRASP_AUDIT]"
 
 
@@ -1945,6 +1945,19 @@ def run_pick_demo(panel) -> None:
                 panel._emit_log(f"[COMPARE][DIRECT2][GOOD_REF] error={_exc_compare}")
 
             def _current_joint_seed(*, return_source: bool = False):
+                _live_seed = []
+                try:
+                    _joint_snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
+                    _live_seed = [
+                        float(_joint_snapshot[name])
+                        for name in UR5_JOINT_NAMES
+                        if name in _joint_snapshot
+                    ]
+                except Exception:
+                    _live_seed = []
+                if len(_live_seed) == 6 and all(math.isfinite(v) for v in _live_seed):
+                    return (_live_seed, "live_joints") if return_source else _live_seed
+
                 _seed_override_str = os.environ.get("PANEL_PICK_DEMO_IK_SEED_JOINTS", "").strip()
                 if _seed_override_str:
                     try:
@@ -3490,10 +3503,7 @@ def run_pick_demo(panel) -> None:
                                 local_offset = None
                     if local_offset is None:
                         default_offset_m = DIRECT_TOOL0_TO_RG2_TCP_Z_M
-                        tcp_offset_m = max(
-                            0.0,
-                            float(env_value or default_offset_m),
-                        )
+                        tcp_offset_m = float(env_value or default_offset_m)
                         local_offset = (0.0, 0.0, tcp_offset_m)
                         offset_source = (
                             "env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M"
@@ -3701,7 +3711,13 @@ def run_pick_demo(panel) -> None:
                     return sum(_seed_devs(q_arr, s_arr))
 
                 _IK_DEV_THRESHOLD = _math_ik_retry.pi / 2  # 90° — flag a wrong-branch solution
-                if ik_ok and pos_err_m <= float(effective_ik_err_tol) and _seed_max_dev(solved_q, seed) > _IK_DEV_THRESHOLD:
+                _retry_due_to_branch = (
+                    bool(ik_ok)
+                    and pos_err_m <= float(effective_ik_err_tol)
+                    and _seed_max_dev(solved_q, seed) > _IK_DEV_THRESHOLD
+                )
+                _retry_due_to_accuracy = (not bool(ik_ok)) or pos_err_m > float(effective_ik_err_tol)
+                if _retry_due_to_branch or _retry_due_to_accuracy:
                     _best_q, _best_err, _best_ok = solved_q, pos_err_m, ik_ok
                     # Build a list of (seed_variant, seed_weight) pairs to try.
                     # The first group uses the original seed with escalating weights.
@@ -3709,12 +3725,24 @@ def run_pick_demo(panel) -> None:
                     # configurations (e.g. run-4 APPROACH_COARSE solution that had
                     # wrist_2≈-π/2, which lands in the wrist_3≈0° branch).
                     _PI_H = _math_ik_retry.pi / 2
-                    _diverse_seeds = [
+                    _diverse_seeds = []
+                    try:
+                        _joint_snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
+                        _live_seed = [
+                            float(_joint_snapshot[name])
+                            for name in UR5_JOINT_NAMES
+                            if name in _joint_snapshot
+                        ]
+                        if len(_live_seed) == 6 and all(math.isfinite(v) for v in _live_seed):
+                            _diverse_seeds.append(_live_seed)
+                    except Exception:
+                        pass
+                    _diverse_seeds.extend([
                         # wrist_2 flipped to -π/2 (mimics run-4 elbow configuration)
                         [seed[0], seed[1], seed[2], seed[3], -_PI_H, seed[5]],
                         # wrist_2 at -π/2, shoulder_pan slightly negative
                         [-0.26, seed[1], seed[2], seed[3], -_PI_H, 0.0],
-                    ]
+                    ])
                     _retry_schedule = (
                         [(seed, sw) for sw in [0.08, 0.15, 0.25, 0.35]]
                         + [(_ds, 0.035) for _ds in _diverse_seeds]
@@ -3741,7 +3769,16 @@ def run_pick_demo(panel) -> None:
                             f"pos_err_m={_rpos_err:.4f} ok={str(bool(_rok)).lower()} "
                             f"max_dev_rad={_seed_max_dev(_rq, seed):.3f}"
                         )
-                        if _rok and _rpos_err <= float(effective_ik_err_tol):
+                        _best_is_valid = bool(_best_ok) and _best_err <= float(effective_ik_err_tol)
+                        _cand_is_valid = bool(_rok) and _rpos_err <= float(effective_ik_err_tol)
+                        if _cand_is_valid and not _best_is_valid:
+                            _best_q, _best_err, _best_ok = _rq, _rpos_err, _rok
+                            if _seed_max_dev(_best_q, seed) <= _IK_DEV_THRESHOLD:
+                                break  # Good enough — stop retrying
+                            continue
+                        if _rok and not _cand_is_valid and not _best_is_valid and _rpos_err < _best_err:
+                            _best_q, _best_err, _best_ok = _rq, _rpos_err, _rok
+                        if _cand_is_valid:
                             # Prefer a solution that is dramatically more accurate
                             # (≥5× better pos_err) over one closer to the home seed.
                             # Without this, a 74 mm home-seed solution beats a 4.8 mm
@@ -3897,16 +3934,28 @@ def run_pick_demo(panel) -> None:
                     f"label={label} joints={json.dumps(_json_safe(solved_q_list), ensure_ascii=True)} "
                     f"timeout_sec={float(timeout_sec):.3f}"
                 )
-                align_joint_tol_rad = max(
-                    0.01,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_DIRECT_IK_JOINT_TOL_RAD",
-                            "0.03",
-                        )
-                        or 0.03
-                    ),
-                )
+                if str(label or "").strip().upper() == "GRASP_ALIGN_IK":
+                    align_joint_tol_rad = max(
+                        0.004,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_GRASP_ALIGN_JOINT_TOL_RAD",
+                                "0.010",
+                            )
+                            or 0.010
+                        ),
+                    )
+                else:
+                    align_joint_tol_rad = max(
+                        0.01,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_DIRECT_IK_JOINT_TOL_RAD",
+                                "0.03",
+                            )
+                            or 0.03
+                        ),
+                    )
                 _run_joint_step(
                     label,
                     solved_q_list,
@@ -5422,6 +5471,12 @@ def run_pick_demo(panel) -> None:
                                     or 0.50
                                 ),
                             ),
+                            # GRASP_ALIGN_IK is the last geometric refinement before
+                            # closing.  If we skip publishing because the joints are
+                            # merely "close enough" in joint space, the visible pinch
+                            # center can stay 10-15 mm above the object and the grasp
+                            # remains visually wrong despite a valid IK target.
+                            force_send=True,
                         )
                     except Exception as exc:
                         tcp_fail = _live_tcp_base()

@@ -358,7 +358,7 @@ export INFER_ROI_SIZE="${INFER_ROI_SIZE:-96}"
 export PANEL_TFM_INFER_USE_ROI="${PANEL_TFM_INFER_USE_ROI:-auto}"
 export PANEL_CRITICAL_POSE_TIMEOUT_SEC="${PANEL_CRITICAL_POSE_TIMEOUT_SEC:-60.0}"
 export PANEL_CRITICAL_CLOCK_TIMEOUT_SEC="${PANEL_CRITICAL_CLOCK_TIMEOUT_SEC:-5.0}"
-export PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M="${PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M:-0.175}"
+export PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M="${PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M:--0.0877005}"
 # GRASP_DOWN: z_tol 0.025 cubre divergencia FK≈13mm TCP-objeto al final del descenso
 # dist_tol 0.025: target_dist=sqrt(xy²+z²)≈0.014 < 0.025 → ok=True → geometry_only_ok activo
 export PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M="${PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M:-0.025}"
@@ -581,7 +581,7 @@ if panel_settings_yaml and os.path.isfile(panel_settings_yaml):
     if m:
         gripper_tcp_z_offset = float(m.group(1))
 if rg2_tcp_z is not None:
-    pick_demo_anchor_z = max(0.0, rg2_tcp_z - gripper_tcp_z_offset)
+    pick_demo_anchor_z = rg2_tcp_z
     joint_pat = re.compile(
         r'(<joint name="pick_demo_anchor_joint" type="fixed">)(.*?)(</joint>)',
         re.DOTALL,

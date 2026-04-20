@@ -612,11 +612,10 @@
             <pose relative_to="pick_demo_anchor_joint">0 0 0 0 0 0</pose>
         </link>
         <joint name="pick_demo_anchor_joint" type="fixed">
-            <!-- Align the detachable-joint origin with the demo grasp center.
-                 tool0 -> rg2_pinch_center is +0.175 m (URDF rg2_pinch_center_joint).
-                 The tcp_z_offset=0.05 m was removed in commit 9b58910 (_DIRECTO_GRASP_Z=0.0),
-                 so the anchor must be at +0.175 m to match rg2_pinch_center exactly. -->
-            <pose relative_to="tool0">0 0 0.175 0 0 0</pose>
+            <!-- Align the detachable-joint origin with the visible closure midpoint.
+                 This must stay coincident with the semantic rg2_pinch_center frame so
+                 attach/lift do not drag the object away from the fingers visually. -->
+            <pose relative_to="tool0">0 0 -0.0877005 0 0 0</pose>
             <parent>tool0</parent>
             <child>pick_demo_anchor</child>
         </joint>

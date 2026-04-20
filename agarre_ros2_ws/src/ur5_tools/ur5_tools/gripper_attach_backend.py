@@ -48,8 +48,8 @@ DEFAULT_OBJECTS = [
 ]
 
 TCP_FALLBACKS = {
-    "rg2_pinch_center": ("tool0", (0.0, 0.0, 0.175)),
-    "rg2_tcp": ("tool0", (0.0, 0.0, 0.175)),  # con SDF=0.237456 las yemas coinciden con pinch_center
+    "rg2_pinch_center": ("tool0", (0.0, 0.0, -0.0877005)),
+    "rg2_tcp": ("tool0", (0.0, 0.0, -0.0877005)),
 }
 
 
@@ -765,6 +765,24 @@ class GripperAttachBackend(Node):
             )
             self._publish_state(name, False)
             return False
+        obj_age = self._pose_age_sec(obj_pose)
+        tcp_age = self._pose_age_sec(tcp_pose)
+        hard_age = max(3.0, self._max_pose_age_sec * 3.0)
+        if obj_age > hard_age or tcp_age > hard_age:
+            self.get_logger().warning(
+                "[ATTACH_BACKEND] demo_transport_attach_blocked "
+                f"object={name} detail=stale_pose_hard "
+                f"obj_age={obj_age:.3f}s tcp_age={tcp_age:.3f}s "
+                f"hard={hard_age:.3f}s tcp_src={self._last_tcp_pose_source}"
+            )
+            self._publish_state(name, False)
+            return False
+        if obj_age > self._max_pose_age_sec or tcp_age > self._max_pose_age_sec:
+            self.get_logger().warning(
+                "[ATTACH_BACKEND] demo_transport_attach_soft_stale "
+                f"object={name} obj_age={obj_age:.3f}s tcp_age={tcp_age:.3f}s "
+                f"max={self._max_pose_age_sec:.3f}s tcp_src={self._last_tcp_pose_source}"
+            )
         attach_dist = math.sqrt(
             (obj_pose.x - tcp_pose.x) ** 2
             + (obj_pose.y - tcp_pose.y) ** 2
@@ -1041,7 +1059,10 @@ class GripperAttachBackend(Node):
         if not fallback:
             return None
         parent_frame, offset = fallback
-        parent_pose = self._lookup_pose(parent_frame)
+        # Gazebo `/pose/info` is consistent for free objects, but robot links in this
+        # workspace are not guaranteed to share that same world-space convention.
+        # Derive TCP fallbacks from TF-live to keep object-vs-TCP geometry coherent.
+        parent_pose = self._lookup_tf_pose(self._world_frame, parent_frame)
         if parent_pose is None:
             return None
         child_pose = PoseSample(
@@ -1076,31 +1097,48 @@ class GripperAttachBackend(Node):
                     base_chain_pose = self._compose_pose(world_base, base_tcp)
                 except Exception:
                     base_chain_pose = None
-        # base_chain excluded from selection: _compose_pose(world→base_link, base_link→tcp)
-        # gives systematically wrong world TCP (~630mm X error) because the world→base_link
-        # static TF includes the SDF-specific rotation of ur5_rg2 model origin — DH/SDF
-        # divergence H2/H3. world_tcp (from world_tf_publisher TF) is the correct source.
-        # base_chain retained only for diagnostics.
+        tool_fallback_pose = self._fallback_tcp_pose()
+        # Do not use Gazebo pose cache directly for TCP lookup. For robot links it can
+        # be fresh but geometrically inconsistent with the world-space object poses.
         named_candidates = [
-            ("base_chain", base_chain_pose),
             ("world_tcp", tf_pose),
+            ("tool_fallback", tool_fallback_pose),
+            ("base_chain", base_chain_pose),
         ]
-        cached_pose = self._lookup_pose(self._tcp_frame)  # kept for diag only
-        # Priority: world_tcp first; base_chain only if world_tcp unavailable.
-        priority_candidates = [("world_tcp", tf_pose), ("base_chain", base_chain_pose)]
-        candidates = [(name, pose) for name, pose in priority_candidates if pose is not None]
         diag: Dict[str, float | str | bool] = {
             "world_base_ok": world_base is not None,
             "base_tcp_ok": base_tcp is not None,
+            "pose_cache_policy": "disabled_for_tcp_lookup",
         }
         for name, pose in named_candidates:
             diag[f"{name}_ok"] = pose is not None
             diag[f"{name}_age"] = float("inf") if pose is None else float(self._pose_age_sec(pose))
         self._last_tcp_pose_diag = diag
-        if not candidates:
+        priority_order = {
+            "world_tcp": 0,
+            "tool_fallback": 1,
+            "base_chain": 2,
+        }
+        fresh_candidates = []
+        for name, pose in named_candidates:
+            if pose is None:
+                continue
+            age = float(self._pose_age_sec(pose))
+            if -0.25 <= age <= self._max_pose_age_sec:
+                fresh_candidates.append((age, priority_order.get(name, 99), name, pose))
+        if fresh_candidates:
+            _age, _priority, best_name, best_pose = min(fresh_candidates)
+            self._last_tcp_pose_source = str(best_name)
+            return best_pose
+        stale_candidates = [
+            (priority_order.get(name, 99), name, pose)
+            for name, pose in named_candidates
+            if pose is not None
+        ]
+        if not stale_candidates:
             self._last_tcp_pose_source = "none"
             return None
-        best_name, best_pose = candidates[0]
+        _priority, best_name, best_pose = min(stale_candidates)
         self._last_tcp_pose_source = str(best_name)
         return best_pose
 
@@ -1678,6 +1716,7 @@ class GripperAttachBackend(Node):
                 f"route={_ta_route} "
                 f"dist={_ta_dist:.4f}m max={self._attach_max_dist_m:.4f}m "
                 f"geometry_ok={str(_ta_will_pass).lower()} "
+                f"tcp_src={self._last_tcp_pose_source} "
                 f"tcp=({_ta_tcp.x:.3f},{_ta_tcp.y:.3f},{_ta_tcp.z:.3f}) "
                 f"obj=({_ta_obj.x:.3f},{_ta_obj.y:.3f},{_ta_obj.z:.3f})"
             )

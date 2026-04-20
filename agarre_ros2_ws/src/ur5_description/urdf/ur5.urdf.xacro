@@ -59,10 +59,10 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <!-- Virtual TCP frame at the operational grasp center (0.175m from tool0).
-       SDF ur5_hand_joint=0.0823 places the rg2_hand mesh at the physical flange;
-       the visual fingertips in Gazebo appear at tool0+0.020m (cosmetic offset),
-       but this frame defines the semantic grasp point used by planning/attach. -->
+  <!-- Virtual TCP frame at the operational grasp center used by planning/attach.
+       Gazebo's visible closure midpoint lies behind tool0 in the tool local +Z axis,
+       so this semantic frame must match that visual midpoint instead of the legacy
+       +0.175 m offset. -->
   <link name="rg2_tcp">
     <inertial>
       <mass value="0.01"/>
@@ -74,12 +74,12 @@
   <joint name="rg2_tcp_joint" type="fixed">
     <parent link="tool0"/>
     <child link="rg2_tcp"/>
-    <origin xyz="0 0 0.175" rpy="0 0 0"/>
+    <origin xyz="0 0 -0.0877005" rpy="0 0 0"/>
   </joint>
 
     <!-- Operational pinch-center: contact midpoint between the two RG2 fingers.
-      In this simplified model the contact point is aligned with the same TCP
-      used at the fingertips, so it must stay offset from tool0. -->
+      Keep it coincident with the semantic TCP so DIRECTO, MoveIt and attach all
+      reason about the same visible closure center. -->
   <link name="rg2_pinch_center">
     <inertial>
       <mass value="0.01"/>
@@ -91,7 +91,7 @@
   <joint name="rg2_pinch_center_joint" type="fixed">
     <parent link="tool0"/>
     <child link="rg2_pinch_center"/>
-    <origin xyz="0 0 0.175" rpy="0 0 0"/>
+    <origin xyz="0 0 -0.0877005" rpy="0 0 0"/>
   </joint>
 
   <link name="rg2_finger_link1">

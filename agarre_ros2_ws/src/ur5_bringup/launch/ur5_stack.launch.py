@@ -277,7 +277,9 @@ def _prepare_runtime(context, *_args) -> List[object]:
                     + sdf_text[match.end() :]
                 )
             if rg2_tcp_z is not None:
-                pick_demo_anchor_z = max(0.0, rg2_tcp_z - gripper_tcp_z_offset)
+                # Keep the detachable anchor exactly on the semantic TCP frame.
+                # The frame itself already encodes the contact-center correction.
+                pick_demo_anchor_z = rg2_tcp_z
                 anchor_re = re.compile(
                     r'(<joint name="pick_demo_anchor_joint" type="fixed">)(.*?)(</joint>)',
                     re.DOTALL,
@@ -364,7 +366,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetEnvironmentVariable("PANEL_MANAGED", managed_str),
         SetEnvironmentVariable("PANEL_CAMERA_REQUIRED", camera_required_env),
-        SetEnvironmentVariable("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "0.175"),
+        SetEnvironmentVariable("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "-0.0877005"),
         SetEnvironmentVariable(
             "PANEL_DIRECT_DEBUG_ROOT",
             os.environ.get("PANEL_DIRECT_DEBUG_ROOT", "/home/laboratorio/TFM/historico"),
