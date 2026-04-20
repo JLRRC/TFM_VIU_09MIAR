@@ -59,10 +59,9 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <!-- Visual TCP at the gripper fingertip tips (mesh-matched offset from tool0).
-       0.213 m = finger_pivot_reach (0.105) + finger_mesh_reach (0.108),
-       derived from the finger.dae geometry — where the fingertip mesh ends.
-       rg2_pinch_center (0.175) is the operational grasp center; rg2_tcp is visual-only. -->
+  <!-- Visual TCP: coincide con rg2_pinch_center (0.175m desde tool0) gracias al offset
+       SDF ur5_hand_joint=0.237456 que alinea las yemas del mesh con el TCP operacional.
+       Con SDF=0.237456: fingertip_wrist3 = 0.237456+0.213 = 0.450m = rg2_pinch_center. -->
   <link name="rg2_tcp">
     <inertial>
       <mass value="0.01"/>
@@ -74,7 +73,7 @@
   <joint name="rg2_tcp_joint" type="fixed">
     <parent link="tool0"/>
     <child link="rg2_tcp"/>
-    <origin xyz="0 0 0.213" rpy="0 0 0"/>
+    <origin xyz="0 0 0.175" rpy="0 0 0"/>
   </joint>
 
     <!-- Operational pinch-center: contact midpoint between the two RG2 fingers.

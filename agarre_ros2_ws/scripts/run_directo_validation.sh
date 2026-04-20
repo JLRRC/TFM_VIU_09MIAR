@@ -62,6 +62,7 @@ pkill -f "gz-transport-topic" 2>/dev/null || true
 pkill -f "gz_pose_bridge" 2>/dev/null || true
 pkill -f "grasp_audit_trace_capture" 2>/dev/null || true
 pkill -f "run_directo_button_offscreen" 2>/dev/null || true
+pkill -f "capture_camera_frames" 2>/dev/null || true
 sleep 4
 # Limpiar shared memory residual de FastDDS/CycloneDDS (evita 'Failed init_port' errors)
 rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
@@ -70,7 +71,13 @@ echo "[ORCH] Limpieza completada"
 # --- Fijar GZ_PARTITION para que stack y runner offscreen usen el mismo bus gz-transport ---
 export GZ_PARTITION="${GZ_PARTITION:-ur5pro_validation}"
 export PANEL_CAMERA_REQUIRED=0
+# Mantener cámaras en mundo headless para obtener evidencia visual real.
+# Sin PANEL_KEEP_CAMERAS=1, el launch elimina todos los modelos de cámara del SDF.
+export PANEL_KEEP_CAMERAS=1
 STACK_LOG="$OUT_DIR/stack.log"
+CAMERA_LOG="$OUT_DIR/camera_capture.log"
+CAMERA_FRAMES_DIR="$OUT_DIR/camera_frames"
+mkdir -p "$CAMERA_FRAMES_DIR"
 
 echo "[ORCH] Lanzando stack completo (Gazebo + MoveIt2 + controllers) GZ_PARTITION=$GZ_PARTITION"
 ros2 launch ur5_bringup ur5_stack.launch.py \
@@ -177,6 +184,16 @@ env \
 CAPTURE_PID=$!
 echo "[ORCH] Capture PID=$CAPTURE_PID"
 
+# --- Lanzar captura de cámara en paralelo ---
+env \
+    python3 "$SCRIPT_DIR/capture_camera_frames.py" \
+        --output "$CAMERA_FRAMES_DIR" \
+        --interval 2.0 \
+        --timeout "$(( DIRECTO_TIMEOUT_SEC + 60 ))" \
+    >"$CAMERA_LOG" 2>&1 &
+CAMERA_PID=$!
+echo "[ORCH] Camera capture PID=$CAMERA_PID frames_dir=$CAMERA_FRAMES_DIR"
+
 # --- Esperar al runner del panel ---
 echo "[ORCH][SHUTDOWN] helper_wait_begin"
 wait "$HELPER_PID" && HELPER_RC=0 || HELPER_RC=$?
@@ -190,6 +207,11 @@ kill "$CAPTURE_PID" 2>/dev/null || true
 wait "$CAPTURE_PID" && CAPTURE_RC=0 || CAPTURE_RC=$?
 echo "[ORCH][SHUTDOWN] capture_stop_end rc=$CAPTURE_RC"
 echo "[ORCH] Capture terminó rc=$CAPTURE_RC"
+
+# Parar captura de cámara
+kill "$CAMERA_PID" 2>/dev/null || true
+wait "$CAMERA_PID" 2>/dev/null || true
+echo "[ORCH] Camera capture terminado. Frames: $(ls "$CAMERA_FRAMES_DIR" 2>/dev/null | wc -l)"
 
 # --- Apagar stack ---
 echo "[ORCH][SHUTDOWN] stack_stop_begin pid=$STACK_PID"

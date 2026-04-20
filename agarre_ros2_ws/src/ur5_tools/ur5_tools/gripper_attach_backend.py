@@ -49,7 +49,7 @@ DEFAULT_OBJECTS = [
 
 TCP_FALLBACKS = {
     "rg2_pinch_center": ("tool0", (0.0, 0.0, 0.175)),
-    "rg2_tcp": ("tool0", (0.0, 0.0, 0.213)),  # visual tip: finger_pivot(0.105)+mesh_reach(0.108)
+    "rg2_tcp": ("tool0", (0.0, 0.0, 0.175)),  # con SDF=0.237456 las yemas coinciden con pinch_center
 }
 
 

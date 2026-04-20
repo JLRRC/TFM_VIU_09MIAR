@@ -404,12 +404,12 @@
         </joint>
         <!-- Arm-Hand Fixed Joint -->
         <joint name="ur5_hand_joint" type="fixed">
-            <!-- rg2_hand at UR5 d6 = 0.0823 m: places the gripper body at the physical
-                 flange face, visually connecting it to the wrist_3 body.
-                 The semantic TCP (rg2_tcp/rg2_pinch_center) lives in the URDF TF chain
-                 (robot_state_publisher) and is unaffected by this SDF offset.
-                 pick_demo_anchor is relative_to="tool0" (SDF), also unaffected. -->
-            <pose relative_to="wrist_3_link">0 0.0823 0 1.570796325 0 1.570796325</pose>
+            <!-- Offset calculado para alinear las yemas del gripper con rg2_pinch_center.
+                 Con R=Rz(pi/2)*Rx(pi/2): fingertip en wrist3.Y = sdf_y + 0.213.
+                 rg2_pinch_center en wrist3.Y = 0.275(tool0) + 0.175(d_tool0_tcp) = 0.450m.
+                 sdf_y = 0.450 - 0.213 = 0.237 → 0.237456 da error < 1mm.
+                 Con sdf_y=0.0823 las yemas quedan 155mm detras del TCP real. -->
+            <pose relative_to="wrist_3_link">0 0.237456 0 1.570796325 0 1.570796325</pose>
             <parent>wrist_3_link</parent>
             <child>rg2_hand</child>
         </joint>
