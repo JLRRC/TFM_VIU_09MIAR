@@ -49,7 +49,7 @@ DEFAULT_OBJECTS = [
 
 TCP_FALLBACKS = {
     "rg2_pinch_center": ("tool0", (0.0, 0.0, 0.175)),
-    "rg2_tcp": ("tool0", (0.0, 0.0, 0.175)),
+    "rg2_tcp": ("tool0", (0.0, 0.0, 0.213)),  # visual tip: finger_pivot(0.105)+mesh_reach(0.108)
 }
 
 
@@ -1076,17 +1076,19 @@ class GripperAttachBackend(Node):
                     base_chain_pose = self._compose_pose(world_base, base_tcp)
                 except Exception:
                     base_chain_pose = None
-        # pose_info_chain removed: Gazebo places ur5_rg2::base_link at world origin (0,0,0)
-        # with SDF-specific rotation that is incompatible with URDF-frame base_tcp offset.
-        # _compose_pose(base_link_world≈identity, base_tcp) returns base_link-frame TCP,
-        # not world-frame TCP — systematically wrong due to DH/SDF divergence H2/H3.
-        # world_tcp (from world_tf_publisher TF) gives the correct Gazebo world TCP.
+        # base_chain excluded from selection: _compose_pose(world→base_link, base_link→tcp)
+        # gives systematically wrong world TCP (~630mm X error) because the world→base_link
+        # static TF includes the SDF-specific rotation of ur5_rg2 model origin — DH/SDF
+        # divergence H2/H3. world_tcp (from world_tf_publisher TF) is the correct source.
+        # base_chain retained only for diagnostics.
         named_candidates = [
             ("base_chain", base_chain_pose),
             ("world_tcp", tf_pose),
         ]
         cached_pose = self._lookup_pose(self._tcp_frame)  # kept for diag only
-        candidates = [(name, pose) for name, pose in named_candidates if pose is not None]
+        # Priority: world_tcp first; base_chain only if world_tcp unavailable.
+        priority_candidates = [("world_tcp", tf_pose), ("base_chain", base_chain_pose)]
+        candidates = [(name, pose) for name, pose in priority_candidates if pose is not None]
         diag: Dict[str, float | str | bool] = {
             "world_base_ok": world_base is not None,
             "base_tcp_ok": base_tcp is not None,
@@ -1098,7 +1100,7 @@ class GripperAttachBackend(Node):
         if not candidates:
             self._last_tcp_pose_source = "none"
             return None
-        best_name, best_pose = min(candidates, key=lambda item: self._pose_age_sec(item[1]))
+        best_name, best_pose = candidates[0]
         self._last_tcp_pose_source = str(best_name)
         return best_pose
 
