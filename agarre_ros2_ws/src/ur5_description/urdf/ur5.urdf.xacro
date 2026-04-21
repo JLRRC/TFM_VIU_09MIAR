@@ -60,9 +60,9 @@
   </joint>
 
   <!-- Virtual TCP frame at the operational grasp center used by planning/attach.
-       Gazebo's visible closure midpoint lies behind tool0 in the tool local +Z axis,
-       so this semantic frame must match that visual midpoint instead of the legacy
-       +0.175 m offset. -->
+       The RG2 contact midpoint is slightly in front of tool0 in tool local +Z:
+       the previous -0.0877005 value landed near the finger hinges, leaving the
+       semantic TCP about 9.3 cm behind the visible pinch center. -->
   <link name="rg2_tcp">
     <inertial>
       <mass value="0.01"/>
@@ -74,7 +74,7 @@
   <joint name="rg2_tcp_joint" type="fixed">
     <parent link="tool0"/>
     <child link="rg2_tcp"/>
-    <origin xyz="0 0 -0.0877005" rpy="0 0 0"/>
+    <origin xyz="0 0 0.0050885" rpy="0 0 0"/>
   </joint>
 
     <!-- Operational pinch-center: contact midpoint between the two RG2 fingers.
@@ -91,7 +91,7 @@
   <joint name="rg2_pinch_center_joint" type="fixed">
     <parent link="tool0"/>
     <child link="rg2_pinch_center"/>
-    <origin xyz="0 0 -0.0877005" rpy="0 0 0"/>
+    <origin xyz="0 0 0.0050885" rpy="0 0 0"/>
   </joint>
 
   <link name="rg2_finger_link1">

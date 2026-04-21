@@ -613,9 +613,9 @@
         </link>
         <joint name="pick_demo_anchor_joint" type="fixed">
             <!-- Align the detachable-joint origin with the visible closure midpoint.
-                 This must stay coincident with the semantic rg2_pinch_center frame so
-                 attach/lift do not drag the object away from the fingers visually. -->
-            <pose relative_to="tool0">0 0 -0.0877005 0 0 0</pose>
+                 The previous -0.0877005 value sat near the finger hinges; the
+                 contact midpoint between the inner finger faces is at tool0.z≈+0.0051. -->
+            <pose relative_to="tool0">0 0 0.0050885 0 0 0</pose>
             <parent>tool0</parent>
             <child>pick_demo_anchor</child>
         </joint>

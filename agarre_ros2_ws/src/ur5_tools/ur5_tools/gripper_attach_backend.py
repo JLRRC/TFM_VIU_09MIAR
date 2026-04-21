@@ -48,8 +48,8 @@ DEFAULT_OBJECTS = [
 ]
 
 TCP_FALLBACKS = {
-    "rg2_pinch_center": ("tool0", (0.0, 0.0, -0.0877005)),
-    "rg2_tcp": ("tool0", (0.0, 0.0, -0.0877005)),
+    "rg2_pinch_center": ("tool0", (0.0, 0.0, 0.0050885)),
+    "rg2_tcp": ("tool0", (0.0, 0.0, 0.0050885)),
 }
 
 
