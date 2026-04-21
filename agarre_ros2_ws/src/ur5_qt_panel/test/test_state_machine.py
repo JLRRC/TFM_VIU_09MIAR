@@ -2,9 +2,12 @@
 # Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/test/test_state_machine.py
 # Contenido: Codigo del panel Qt y de la logica ROS 2 asociada al UR5.
 # Uso breve: Se usa en build con colcon y en ejecucion mediante el entry point panel_v2.
-"""Unit tests for panel state evaluation logic."""
+"""Tests unitarios de la logica de evaluacion de estado del panel."""
 from __future__ import annotations
 
+import time
+
+from ur5_qt_panel.panel_external_state import external_state_active, resolve_external_state
 from ur5_qt_panel.panel_state import (
     MoveItState,
     PanelStateEvaluator,
@@ -25,6 +28,38 @@ class _PanelStub:
 
     def _resolve_external_state(self):
         return self._target, self._reason
+
+
+class _RosWorkerStub:
+    def __init__(self, state: str = "", reason: str = "", wall: float = 0.0):
+        self._state = state
+        self._reason = reason
+        self._wall = wall
+
+    def system_state_snapshot(self):
+        return self._state, self._reason, self._wall
+
+
+class _ExternalStatePanelStub:
+    def __init__(
+        self,
+        *,
+        ui_state: str = "",
+        ui_reason: str = "",
+        ui_age_sec: float = 0.0,
+        worker_state: str = "",
+        worker_reason: str = "",
+        worker_age_sec: float = 0.0,
+    ):
+        self._external_state = ui_state
+        self._external_state_reason = ui_reason
+        self._external_state_last = time.time() - float(ui_age_sec)
+        worker_wall = 0.0
+        if worker_state:
+            worker_wall = time.monotonic() - float(worker_age_sec)
+        self.ros_worker = _RosWorkerStub(worker_state, worker_reason, worker_wall)
+        self._moveit_required = False
+        self._moveit_state = MoveItState.READY
 
 
 def _snapshot(**overrides) -> PanelStateSnapshot:
@@ -58,6 +93,32 @@ def test_state_machine_fatal_passthrough() -> None:
     decision = PanelStateMachine().decide_external(panel)
     assert decision.state == SystemState.ERROR_FATAL
     assert decision.fatal_reason == "fatal test"
+
+
+def test_external_state_active_uses_ros_worker_when_ui_stale() -> None:
+    panel = _ExternalStatePanelStub(
+        ui_state="READY",
+        ui_reason="ui stale",
+        ui_age_sec=8.0,
+        worker_state="READY",
+        worker_reason="Sistema listo",
+        worker_age_sec=0.2,
+    )
+    assert external_state_active(panel) is True
+
+
+def test_resolve_external_state_prefers_fresh_ros_worker_state() -> None:
+    panel = _ExternalStatePanelStub(
+        ui_state="WAITING_GAZEBO",
+        ui_reason="ui stale",
+        ui_age_sec=9.0,
+        worker_state="READY",
+        worker_reason="Sistema listo",
+        worker_age_sec=0.1,
+    )
+    target, reason = resolve_external_state(panel)
+    assert target == SystemState.READY_VISION
+    assert reason == "Sistema listo"
 
 
 def test_evaluator_waits_for_gazebo() -> None:

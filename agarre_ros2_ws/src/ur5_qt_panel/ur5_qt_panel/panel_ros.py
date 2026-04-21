@@ -2,7 +2,7 @@
 # Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_ros.py
 # Contenido: Codigo del panel Qt y de la logica ROS 2 asociada al UR5.
 # Uso breve: Se usa en build con colcon y en ejecucion mediante el entry point panel_v2.
-"""ROS worker implementation for the panel."""
+"""Implementacion del worker ROS para el panel."""
 from __future__ import annotations
 
 import json
@@ -30,7 +30,7 @@ CLOCK_MAX_AGE_SEC = 8.0
 
 
 def _steady_time() -> float:
-    """Return a process-local steady timestamp for watchdogs and freshness checks."""
+    """Devuelve un timestamp monotono local al proceso para watchdogs y frescura."""
     return time.monotonic()
 
 try:
@@ -241,6 +241,8 @@ class RosWorker(QObject):
         self._cleanup_done = False
         self._system_diag_reason: str = ""
         self._system_state_last: str = ""
+        self._system_state_reason: str = ""
+        self._system_state_wall: float = 0.0
         self._moveit_result_sub = None
         self._moveit_result_topic: str = ""
         self._moveit_result_last: str = ""
@@ -485,6 +487,14 @@ class RosWorker(QObject):
                 return True
         return False
 
+    def system_state_snapshot(self) -> Tuple[str, str, float]:
+        with self._lock:
+            return (
+                self._system_state_last,
+                self._system_state_reason,
+                float(self._system_state_wall),
+            )
+
     def call_trigger_detail(
         self, service_name: str, timeout_sec: float = 3.0
     ) -> Tuple[bool, str]:
@@ -659,7 +669,7 @@ class RosWorker(QObject):
             )
 
     def drain_moveit_results(self, duration_sec: float = 0.2) -> int:
-        """Consume stale moveit result updates for a short window."""
+        """Consume durante una ventana corta los resultados viejos de MoveIt."""
         drained = 0
         timeout = max(0.0, float(duration_sec))
         deadline = _steady_time() + timeout
@@ -1532,7 +1542,7 @@ class RosWorker(QObject):
                 self._safe_log("[ROS] Unsubscribe joint_states")
 
     def _format_qos(self, profile: Optional["QoSProfile"]) -> str:
-        """Describe a QoS profile for logging."""
+        """Describe un perfil QoS para logging."""
         if profile is None:
             return "QoS=default"
         reliability = self._reliability_name(getattr(profile, "reliability", None))
@@ -2100,7 +2110,7 @@ class RosWorker(QObject):
             return self._node is not None
 
     def is_worker_running(self) -> bool:
-        """Returns True if the spin loop is still active (not yet called _cleanup_ros)."""
+        """Devuelve True si el bucle de spin sigue activo."""
         with self._lock:
             return bool(self._running)
 
@@ -2109,9 +2119,9 @@ class RosWorker(QObject):
             return
 
         now = _steady_time()
-        wall_now = time.time()  # wall-clock for freshness checks in _wait_for_joint_target
+        wall_now = time.time()  # reloj de pared para checks de frescura en _wait_for_joint_target
 
-        # construir payload
+        # Construir payload
         stamp = None
         try:
             if msg.header and (msg.header.stamp.sec or msg.header.stamp.nanosec):
@@ -2129,15 +2139,17 @@ class RosWorker(QObject):
             "effort": list(msg.effort),
         }
 
-        # ✅ guardar SIEMPRE (para consumo interno del panel)
+        # Guardar SIEMPRE para el consumo interno del panel
         with self._lock:
             self._last_joint_payload = payload
-            # Use wall-clock (time.time()) so that _wait_for_joint_target can correctly
-            # compute state_age_sec = time.time() - ts. Using time.monotonic() here would
-            # give a ~1.7e9 s offset against time.time(), making state_age_sec always huge
-            # and forcing _wait_for_joint_target to fall back to _last_joint_time (Qt-signal
-            # path) which becomes stale whenever the Qt main thread is blocked by camera
-            # reconnect — causing HOME/MESA steps to time out even when the robot is there.
+            # Usamos reloj de pared (`time.time()`) para que _wait_for_joint_target
+            # calcule bien state_age_sec = time.time() - ts. Si aqui se usara
+            # time.monotonic(), apareceria un desfase enorme frente a time.time(),
+            # state_age_sec saldria siempre gigante y _wait_for_joint_target
+            # acabaria cayendo en _last_joint_time (camino de senal Qt), que se
+            # queda viejo cuando el hilo principal de Qt se bloquea reconectando
+            # camaras. Eso provocaba timeouts en HOME/MESA aunque el robot ya
+            # estuviera en posicion.
             self._last_joint_wall = wall_now
             should_emit = (now - self._last_joint_emit) >= self._joint_emit_interval
             if should_emit:
@@ -2171,13 +2183,17 @@ class RosWorker(QObject):
             return
         if not state:
             return
+        wall_now = _steady_time()
         with self._lock:
             reason = self._system_diag_reason
             self._system_state_last = state
+            self._system_state_reason = reason
+            self._system_state_wall = wall_now
         try:
-            # Always emit (even if state unchanged) so _external_state_last
-            # stays fresh. Deduplication here would starve the 2-second
-            # liveness window and block managed-mode pick readiness.
+            # Emitimos siempre, incluso si el estado no cambia, para que
+            # _external_state_last se mantenga fresco. Si aqui deduplicamos,
+            # la ventana de liveness de 2 segundos se quedaria sin alimento y
+            # bloquearia la entrada en ready del modo gestionado.
             self.system_state.emit(state, reason or "")
         except RuntimeError:
             pass
