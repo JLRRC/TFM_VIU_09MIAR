@@ -99,6 +99,7 @@ echo "$GZ_PARTITION" > "$WS_DIR/log/gz_partition.txt"
 
 # ── Variables exportadas al panel ─────────────────────────────────────────────
 export PANEL_MANAGED=1
+export PANEL_CANONICAL_ENTRYPOINT=1
 export PANEL_START_STACK=0
 export PANEL_AUTO_BRIDGE=1
 export PANEL_MOVEIT_REQUIRED=1
@@ -142,6 +143,9 @@ export PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M=0.050
 export PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M=0.080
 export PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES=3
 export PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC=0.25
+export PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_FK_ERR_M="${PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_FK_ERR_M:-0.012}"
+export PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_JOINT_DELTA_RAD="${PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_JOINT_DELTA_RAD:-0.90}"
+export PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_JOINT_DELTA_SUM_RAD="${PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_JOINT_DELTA_SUM_RAD:-2.75}"
 # Gazebo GUI (headless:=false) añade ~0.3 m de lag en pose_info durante HOME:
 # la validación home_with_object necesita tolerancia mayor que en modo headless.
 export PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M=0.500
@@ -210,7 +214,7 @@ echo "[LAUNCH] Gazebo pose/info activo ($(( $(date +%s) - GAZEBO_WAIT_START ))s)
 NODE_WAIT_SEC=30
 NODE_WAIT_START=$(date +%s)
 echo "[LAUNCH] Verificando nodos críticos..."
-for NODE in "/gripper_attach_backend" "/world_tf_publisher"; do
+for NODE in "/gripper_attach_backend" "/world_tf_publisher" "/system_state_manager"; do
     until ros2 node list 2>/dev/null | grep -q "$NODE"; do
         NOW=$(date +%s)
         ELAPSED=$(( NOW - NODE_WAIT_START ))
@@ -223,8 +227,38 @@ for NODE in "/gripper_attach_backend" "/world_tf_publisher"; do
     echo "[LAUNCH] $NODE OK"
 done
 
-# Extra grace: system_state_manager necesita tiempo para publicar GAZEBO_READY
-sleep 5
+# Esperar a que system_state_manager declare READY tras pasar TF, cámaras y self-check geométrico.
+STATE_WAIT_SEC=180
+STATE_WAIT_START=$(date +%s)
+echo "[LAUNCH] Esperando /system_state=READY (timeout=${STATE_WAIT_SEC}s)..."
+while true; do
+    if ! kill -0 "$STACK_PID" 2>/dev/null; then
+        echo "[ERROR] El stack terminó antes de publicar READY. Revisa $STACK_LOG"
+        exit 1
+    fi
+    STATE_SAMPLE="$(
+        timeout 6s ros2 topic echo --once /system_state 2>/dev/null \
+        | sed -n 's/^data: //p' \
+        | tr -d '"' \
+        | tr -d "'" \
+        | head -n1
+    )"
+    if [[ "$STATE_SAMPLE" == "READY" ]]; then
+        break
+    fi
+    if [[ "$STATE_SAMPLE" == "ERROR_FATAL" ]]; then
+        echo "[ERROR] system_state_manager publicó ERROR_FATAL. Revisa $STACK_LOG"
+        exit 1
+    fi
+    NOW=$(date +%s)
+    ELAPSED=$(( NOW - STATE_WAIT_START ))
+    if (( ELAPSED >= STATE_WAIT_SEC )); then
+        echo "[ERROR] Timeout esperando /system_state=READY. Último estado='${STATE_SAMPLE:-none}'. Revisa $STACK_LOG"
+        exit 1
+    fi
+    sleep 2
+done
+echo "[LAUNCH] /system_state READY ($(( $(date +%s) - STATE_WAIT_START ))s)"
 
 # Matar zombis/detenidos antes de abrir el panel (PANEL_COLD_BOOT=0 omite esto en start_panel_v2.sh)
 # Los zombis no se pueden matar directamente (ya están muertos); hay que matar al padre.

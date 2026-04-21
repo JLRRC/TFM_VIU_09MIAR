@@ -10,10 +10,10 @@ Workspace principal del TFM de percepcion e inferencia de agarre para UR5 con RO
 
 ## Flujos principales
 
-Arrancar el panel completo desde la raiz:
+Arranque canónico, oficial y válido del panel completo:
 
 ```bash
-./lanzar_panelv2.sh --fg
+./lanzar_panelv2.sh
 ```
 
 Parar el stack ROS 2:

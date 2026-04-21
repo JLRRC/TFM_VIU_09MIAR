@@ -24,13 +24,13 @@ Directorios generados:
 
 ## Arranque
 
-Desde la raiz del proyecto:
+Desde la raiz del proyecto, flujo canónico oficial:
 
 ```bash
-./lanzar_panelv2.sh --fg
+./lanzar_panelv2.sh
 ```
 
-Desde este workspace:
+Desde este workspace, wrapper interno para depuración:
 
 ```bash
 ./scripts/start_panel_v2.sh --fg

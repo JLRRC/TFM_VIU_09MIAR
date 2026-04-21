@@ -77,7 +77,10 @@ export PANEL_KEEP_CAMERAS=1
 STACK_LOG="$OUT_DIR/stack.log"
 CAMERA_LOG="$OUT_DIR/camera_capture.log"
 CAMERA_FRAMES_DIR="$OUT_DIR/camera_frames"
+VISUAL_SMOKE_DIR="$OUT_DIR/visual_smoke"
+VISUAL_SMOKE_LOG="$OUT_DIR/visual_smoke.log"
 mkdir -p "$CAMERA_FRAMES_DIR"
+mkdir -p "$VISUAL_SMOKE_DIR"
 
 echo "[ORCH] Lanzando stack completo (Gazebo + MoveIt2 + controllers) GZ_PARTITION=$GZ_PARTITION"
 ros2 launch ur5_bringup ur5_stack.launch.py \
@@ -169,6 +172,9 @@ env \
     PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M=0.080 \
     PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES=3 \
     PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC=0.25 \
+    PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_FK_ERR_M=0.012 \
+    PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_JOINT_DELTA_RAD=0.90 \
+    PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_JOINT_DELTA_SUM_RAD=2.75 \
     DIRECTO_CLICK_DELAY_MS=8000 \
     "DIRECTO_EXIT_AFTER_MS=$(( DIRECTO_TIMEOUT_SEC * 1000 ))" \
     DIRECTO_RETRY_MS=5000 \
@@ -198,6 +204,17 @@ env \
 CAMERA_PID=$!
 echo "[ORCH] Camera capture PID=$CAMERA_PID frames_dir=$CAMERA_FRAMES_DIR"
 
+# --- Lanzar smoke visual dirigido ---
+env \
+    python3 "$SCRIPT_DIR/directo_visual_capture.py" \
+        --output-dir "$VISUAL_SMOKE_DIR" \
+        --helper-log "$HELPER_LOG" \
+        --pose-topic "$POSE_TOPIC" \
+        --camera-topics /camera_debug_top/image /camera_overhead/image \
+    >"$VISUAL_SMOKE_LOG" 2>&1 &
+VISUAL_SMOKE_PID=$!
+echo "[ORCH] Visual smoke PID=$VISUAL_SMOKE_PID output_dir=$VISUAL_SMOKE_DIR"
+
 # --- Esperar al runner del panel ---
 echo "[ORCH][SHUTDOWN] helper_wait_begin"
 wait "$HELPER_PID" && HELPER_RC=0 || HELPER_RC=$?
@@ -216,6 +233,11 @@ echo "[ORCH] Capture terminó rc=$CAPTURE_RC"
 kill "$CAMERA_PID" 2>/dev/null || true
 wait "$CAMERA_PID" 2>/dev/null || true
 echo "[ORCH] Camera capture terminado. Frames: $(ls "$CAMERA_FRAMES_DIR" 2>/dev/null | wc -l)"
+
+# Parar smoke visual
+kill "$VISUAL_SMOKE_PID" 2>/dev/null || true
+wait "$VISUAL_SMOKE_PID" 2>/dev/null || true
+echo "[ORCH] Visual smoke terminado. Artefactos: $(ls "$VISUAL_SMOKE_DIR" 2>/dev/null | wc -l)"
 
 # --- Apagar stack ---
 echo "[ORCH][SHUTDOWN] stack_stop_begin pid=$STACK_PID"
@@ -236,6 +258,7 @@ echo "[ORCH] Benchmark rc=$BENCHMARK_RC"
     echo "capture_rc=$CAPTURE_RC"
     echo "benchmark_rc=$BENCHMARK_RC"
     echo "stack_rc=${STACK_RC:-n/a}"
+    echo "visual_smoke_dir=$VISUAL_SMOKE_DIR"
 } > "$SUMMARY"
 
 echo "[ORCH] Resumen guardado en $SUMMARY"
