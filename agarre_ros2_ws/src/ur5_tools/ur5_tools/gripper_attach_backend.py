@@ -2,7 +2,7 @@
 # Ruta/archivo: agarre_ros2_ws/src/ur5_tools/ur5_tools/gripper_attach_backend.py
 # Contenido: Codigo de herramientas, bridges y servicios auxiliares del stack UR5.
 # Uso breve: Se usa en build con colcon y como nodos/servicios ROS 2 del sistema.
-"""Attach backend for gripper topics with physical object motion in Gazebo."""
+"""Backend de attach para topics del gripper con movimiento fisico en Gazebo."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
+from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Empty
 from tf2_msgs.msg import TFMessage
 from tf2_ros import Buffer, TransformListener
@@ -31,6 +32,13 @@ try:
 except Exception:  # pragma: no cover - optional at runtime
     GzEntity = None
     SetEntityPose = None
+
+from .gripper_geometry import (
+    RG2_PINCH_CENTER_FRAME,
+    RG2_TCP_FRAME,
+    TOOL0_FRAME,
+    load_gripper_geometry,
+)
 
 
 DEFAULT_OBJECTS = [
@@ -47,9 +55,41 @@ DEFAULT_OBJECTS = [
     "cyl_purple",
 ]
 
+UR5_ARM_JOINT_ORDER = (
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint",
+)
+
+_UR5_DH_A = (0.0, -0.425, -0.39225, 0.0, 0.0, 0.0)
+_UR5_DH_D = (0.089159, 0.0, 0.0, 0.10915, 0.09465, 0.0823)
+_UR5_DH_ALPHA = (
+    math.pi / 2.0,
+    0.0,
+    0.0,
+    math.pi / 2.0,
+    -math.pi / 2.0,
+    0.0,
+)
+_BASE_LINK_FIX_R = (
+    (-1.0, 0.0, 0.0),
+    (0.0, -1.0, 0.0),
+    (0.0, 0.0, 1.0),
+)
+
+_GRIPPER_GEOMETRY = load_gripper_geometry()
 TCP_FALLBACKS = {
-    "rg2_pinch_center": ("tool0", (0.0, 0.0, 0.0050885)),
-    "rg2_tcp": ("tool0", (0.0, 0.0, 0.0050885)),
+    RG2_PINCH_CENTER_FRAME: (
+        TOOL0_FRAME,
+        _GRIPPER_GEOMETRY.xyz_for_frame(RG2_PINCH_CENTER_FRAME),
+    ),
+    RG2_TCP_FRAME: (
+        TOOL0_FRAME,
+        _GRIPPER_GEOMETRY.xyz_for_frame(RG2_TCP_FRAME),
+    ),
 }
 
 
@@ -145,8 +185,90 @@ def _rotate_vector(
     return (rx, ry, rz)
 
 
+def _matmul3(
+    a: Tuple[Tuple[float, float, float], ...],
+    b: Tuple[Tuple[float, float, float], ...],
+) -> Tuple[Tuple[float, float, float], ...]:
+    return tuple(
+        tuple(
+            sum(float(a[i][k]) * float(b[k][j]) for k in range(3))
+            for j in range(3)
+        )
+        for i in range(3)
+    )
+
+
+def _matvec3(
+    a: Tuple[Tuple[float, float, float], ...],
+    v: Tuple[float, float, float],
+) -> Tuple[float, float, float]:
+    return tuple(
+        sum(float(a[i][k]) * float(v[k]) for k in range(3))
+        for i in range(3)
+    )
+
+
+def _dh_transform(
+    a: float,
+    d: float,
+    alpha: float,
+    theta: float,
+) -> Tuple[Tuple[Tuple[float, float, float], ...], Tuple[float, float, float]]:
+    ct = math.cos(theta)
+    st = math.sin(theta)
+    ca = math.cos(alpha)
+    sa = math.sin(alpha)
+    rot = (
+        (ct, -st * ca, st * sa),
+        (st, ct * ca, -ct * sa),
+        (0.0, sa, ca),
+    )
+    pos = (a * ct, a * st, d)
+    return rot, pos
+
+
+def _quat_from_rot3(
+    rot: Tuple[Tuple[float, float, float], ...],
+) -> Tuple[float, float, float, float]:
+    m00 = float(rot[0][0])
+    m01 = float(rot[0][1])
+    m02 = float(rot[0][2])
+    m10 = float(rot[1][0])
+    m11 = float(rot[1][1])
+    m12 = float(rot[1][2])
+    m20 = float(rot[2][0])
+    m21 = float(rot[2][1])
+    m22 = float(rot[2][2])
+    trace = m00 + m11 + m22
+    if trace > 0.0:
+        s = math.sqrt(trace + 1.0) * 2.0
+        qw = 0.25 * s
+        qx = (m21 - m12) / s
+        qy = (m02 - m20) / s
+        qz = (m10 - m01) / s
+    elif m00 > m11 and m00 > m22:
+        s = math.sqrt(1.0 + m00 - m11 - m22) * 2.0
+        qw = (m21 - m12) / s
+        qx = 0.25 * s
+        qy = (m01 + m10) / s
+        qz = (m02 + m20) / s
+    elif m11 > m22:
+        s = math.sqrt(1.0 + m11 - m00 - m22) * 2.0
+        qw = (m02 - m20) / s
+        qx = (m01 + m10) / s
+        qy = 0.25 * s
+        qz = (m12 + m21) / s
+    else:
+        s = math.sqrt(1.0 + m22 - m00 - m11) * 2.0
+        qw = (m10 - m01) / s
+        qx = (m02 + m20) / s
+        qy = (m12 + m21) / s
+        qz = 0.25 * s
+    return _quat_normalize((qx, qy, qz, qw))
+
+
 class GripperAttachBackend(Node):
-    """Backend that keeps attached objects physically following the gripper TCP."""
+    """Backend que mantiene los objetos adheridos siguiendo fisicamente el TCP."""
 
     def __init__(self) -> None:
         super().__init__("gripper_attach_backend")
@@ -161,6 +283,7 @@ class GripperAttachBackend(Node):
         self.declare_parameter("world_frame", "world")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("pose_topic", "")
+        self.declare_parameter("joint_states_topic", "/joint_states")
         self.declare_parameter("tcp_frame", "rg2_pinch_center")
         self.declare_parameter("set_pose_service", "")
         self.declare_parameter("follow_rate_hz", 20.0)
@@ -180,13 +303,14 @@ class GripperAttachBackend(Node):
         self.declare_parameter("startup_detach_max_attempts", 12)
         self.declare_parameter("startup_detach_period_sec", 0.5)
         self.declare_parameter("detachable_shadow_follow", True)
-        # FIX-ATTACH-ROUTES: pick_demo removed from both soft-attach lists.
-        # prefer_tool_anchor bypasses ALL distance checks (_relay_tool_anchor_attach
-        # publishes state=True with zero geometry verification).
-        # demo_transport uses kinematic respawn+teleport (virtual grasp, not physics-based).
-        # Both lists default to empty so pick_demo falls through to _activate_follow_attachment
-        # which enforces attach_max_dist_m (set to 0.05 m via launch).
-        # To re-enable either mechanism for a specific object, pass the parameter explicitly:
+        # FIX-ATTACH-ROUTES: pick_demo se saca de ambas listas de soft-attach.
+        # prefer_tool_anchor se salta TODAS las comprobaciones de distancia
+        # (_relay_tool_anchor_attach publica state=True sin verificar geometria).
+        # demo_transport usa respawn+teleport cinematico (agarre virtual, no fisico).
+        # Ambas listas quedan vacias por defecto para que pick_demo caiga en
+        # _activate_follow_attachment, que si hace cumplir attach_max_dist_m
+        # (ajustado a 0.05 m desde launch).
+        # Para reactivar cualquiera de los dos mecanismos en un objeto concreto:
         #   ros2 launch ... prefer_tool_anchor_objects:=['box_blue']
         string_array_param = ParameterDescriptor(type=ParameterType.PARAMETER_STRING_ARRAY)
         self.declare_parameter("prefer_tool_anchor_objects", [""], string_array_param)
@@ -223,6 +347,9 @@ class GripperAttachBackend(Node):
         ).strip() or "base_link"
         self._tcp_frame = str(self.get_parameter("tcp_frame").value or "rg2_pinch_center").strip()
         self._pose_topic = str(self.get_parameter("pose_topic").value or "").strip()
+        self._joint_states_topic = str(
+            self.get_parameter("joint_states_topic").value or "/joint_states"
+        ).strip() or "/joint_states"
         if not self._pose_topic:
             self._pose_topic = f"/world/{self._world_name}/pose/info"
         self._set_pose_service = str(
@@ -388,9 +515,16 @@ class GripperAttachBackend(Node):
             self._on_pose_info,
             self._qos,
         )
+        self._joint_state_sub = self.create_subscription(
+            JointState,
+            self._joint_states_topic,
+            self._on_joint_states,
+            10,
+        )
         self._tf_buffer = Buffer(cache_time=Duration(seconds=20.0))
-        # The follow timer can block on Gazebo pose updates; keep TF subscriptions on
-        # a dedicated listener thread so the buffer does not stale during lifts.
+        # El temporizador de follow puede bloquearse esperando poses de Gazebo;
+        # mantenemos TF en un hilo dedicado para que el buffer no se quede viejo
+        # durante los lifts.
         self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=True)
         self._attached: Dict[str, AttachedTarget] = {}
         self._set_pose_client = None
@@ -408,10 +542,12 @@ class GripperAttachBackend(Node):
         self._gz_delete_service: Optional[str] = None
         self._last_tcp_pose_source = "none"
         self._last_tcp_pose_diag: Dict[str, float | str | bool] = {}
-        # In this workspace the UR5 base is fixed to world. Keep the last fresh
-        # world->base pose so carry-follow can remain geometrically coherent even
-        # if the local TF buffer momentarily stops refreshing that dynamic edge.
+        # En este workspace la base del UR5 esta fija a world. Guardamos la ultima
+        # pose fresca world->base para que el carry-follow siga siendo coherente
+        # aunque el buffer local de TF deje de refrescar momentaneamente esa arista.
         self._stable_world_base_pose: Optional[PoseSample] = None
+        self._joint_state_positions: Optional[Tuple[float, float, float, float, float, float]] = None
+        self._joint_state_stamp_ns = 0
         self._startup_detach_attempts_left = int(self._startup_detach_max_attempts)
         self._startup_detach_sent = 0
         self._demo_transport_active: Dict[str, DemoTransportState] = {}
@@ -437,7 +573,8 @@ class GripperAttachBackend(Node):
             f"tool_anchor_prefix=/{self._tool_anchor_prefix} "
             f"prefer_tool_anchor={','.join(sorted(self._prefer_tool_anchor_objects)) or 'none'} "
             f"demo_transport={','.join(sorted(self._demo_transport_objects)) or 'none'} "
-            f"pose_topic={self._pose_topic} base_frame={self._base_frame} tcp_frame={self._tcp_frame}"
+            f"pose_topic={self._pose_topic} joint_states_topic={self._joint_states_topic} "
+            f"base_frame={self._base_frame} tcp_frame={self._tcp_frame}"
         )
 
     def _demo_dynamic_sdf(self, name: str) -> Optional[str]:
@@ -540,9 +677,9 @@ class GripperAttachBackend(Node):
     def _ensure_demo_transport_services(self) -> Tuple[Optional[str], Optional[str], str]:
         env_prefix = self._gz_env_prefix()
         if not self._gz_delete_service:
-            # For this demo path, the blocking world services are the stable path
-            # in runtime. Avoid pre-introspection here: `gz service -i` has been
-            # unreliable even when the direct call works.
+            # En este camino del demo, los servicios blocking del world son la via
+            # estable en runtime. Evitamos la pre-introspeccion: `gz service -i`
+            # ha sido poco fiable incluso cuando la llamada directa si funciona.
             self._gz_delete_service = f"/world/{self._world_name}/remove/blocking"
             if not self._gz_delete_service:
                 self.get_logger().warning(
@@ -834,10 +971,10 @@ class GripperAttachBackend(Node):
             return False
         demo_state = self._demo_transport_active.get(name)
         if demo_state is not None:
-            # For the demo carry we prioritize a visually rigid lift over preserving
-            # the object's local orientation relative to the tilted TCP frame.
-            # Keeping the initial world offset avoids the object hanging farther
-            # away as the tool rotates during the lift.
+            # En el carry del demo priorizamos un lift visualmente rigido frente a
+            # preservar la orientacion local del objeto respecto al TCP inclinado.
+            # Mantener el offset inicial en world evita que el objeto se quede mas
+            # descolgado a medida que la herramienta rota durante el lift.
             demo_state.world_offset_x = float(obj_pose.x - tcp_pose.x)
             demo_state.world_offset_y = float(obj_pose.y - tcp_pose.y)
             raw_world_offset_z = float(obj_pose.z - tcp_pose.z)
@@ -885,8 +1022,8 @@ class GripperAttachBackend(Node):
             )
             return
         state_hint = bool(self._drop_anchor_states.get(name, False))
-        # The drop_anchor state topic can report false while the joint is still
-        # constraining the object on the table. Publish detach proactively.
+        # El topic de estado de drop_anchor puede dar false aunque la junta siga
+        # sujetando el objeto sobre la mesa. Publicamos detach de forma proactiva.
         for _idx in range(2):
             pub.publish(Empty())
             time.sleep(0.05)
@@ -1075,9 +1212,10 @@ class GripperAttachBackend(Node):
         if not fallback:
             return None
         parent_frame, offset = fallback
-        # Gazebo `/pose/info` is consistent for free objects, but robot links in this
-        # workspace are not guaranteed to share that same world-space convention.
-        # Derive TCP fallbacks from TF-live to keep object-vs-TCP geometry coherent.
+        # Gazebo `/pose/info` es consistente para objetos libres, pero los links del
+        # robot en este workspace no comparten necesariamente esa misma convencion
+        # en world. Derivamos los fallbacks del TCP desde TF vivo para mantener
+        # coherente la geometria objeto-vs-TCP.
         parent_pose = self._lookup_tf_pose(self._world_frame, parent_frame)
         if parent_pose is None:
             return None
@@ -1099,10 +1237,13 @@ class GripperAttachBackend(Node):
     def _lookup_tcp_pose(self) -> Optional[PoseSample]:
         tf_pose = self._lookup_tf_pose(self._world_frame, self._tcp_frame)
         base_chain_pose: Optional[PoseSample] = None
+        joint_state_chain_pose: Optional[PoseSample] = None
         world_base: Optional[PoseSample] = None
         base_tcp: Optional[PoseSample] = None
+        joint_state_base_tcp: Optional[PoseSample] = None
         world_base_age = float("inf")
         base_tcp_age = float("inf")
+        joint_state_age = float("inf")
         stable_world_base_mode = "none"
         if (
             self._base_frame
@@ -1111,6 +1252,8 @@ class GripperAttachBackend(Node):
         ):
             world_base = self._lookup_tf_pose(self._world_frame, self._base_frame)
             base_tcp = self._lookup_tf_pose(self._base_frame, self._tcp_frame)
+            if self._base_frame == "base_link":
+                joint_state_base_tcp = self._joint_state_tcp_base_pose()
             if world_base is not None:
                 world_base_age = float(self._pose_age_sec(world_base))
                 if self._pose_age_ok(world_base):
@@ -1120,9 +1263,9 @@ class GripperAttachBackend(Node):
             if world_base is not None and self._pose_age_ok(world_base):
                 stable_world_base = world_base
             elif self._stable_world_base_pose is not None and base_tcp is not None:
-                # world->base_link is fixed in the loaded world, so a last-known-good
-                # base anchor remains geometrically valid while base_link->tcp keeps
-                # providing the live manipulator motion.
+                # world->base_link es fijo en el world cargado, asi que un ancla de
+                # base buena conocida sigue siendo valida geometricamente mientras
+                # base_link->tcp aporta el movimiento vivo del manipulador.
                 stable_world_base = self._pose_with_stamp(
                     self._stable_world_base_pose,
                     int(base_tcp.stamp_ns),
@@ -1135,20 +1278,34 @@ class GripperAttachBackend(Node):
                     base_chain_pose = self._compose_pose(stable_world_base, base_tcp)
                 except Exception:
                     base_chain_pose = None
+            if joint_state_base_tcp is not None:
+                joint_state_age = float(self._pose_age_sec(joint_state_base_tcp))
+            if stable_world_base is not None and joint_state_base_tcp is not None:
+                try:
+                    joint_state_chain_pose = self._compose_pose(
+                        stable_world_base,
+                        joint_state_base_tcp,
+                    )
+                except Exception:
+                    joint_state_chain_pose = None
         tool_fallback_pose = self._fallback_tcp_pose()
-        # Do not use Gazebo pose cache directly for TCP lookup. For robot links it can
-        # be fresh but geometrically inconsistent with the world-space object poses.
+        # No usamos directamente la cache de poses de Gazebo para el TCP. En links
+        # del robot puede parecer fresca pero ser geometricamente inconsistente con
+        # las poses world de los objetos.
         named_candidates = [
             ("world_tcp", tf_pose),
+            ("joint_state_chain", joint_state_chain_pose),
             ("tool_fallback", tool_fallback_pose),
             ("base_chain", base_chain_pose),
         ]
         diag: Dict[str, float | str | bool] = {
             "world_base_ok": world_base is not None,
             "base_tcp_ok": base_tcp is not None,
+            "joint_state_base_ok": joint_state_base_tcp is not None,
             "pose_cache_policy": "disabled_for_tcp_lookup",
             "world_base_age": world_base_age,
             "base_tcp_age": base_tcp_age,
+            "joint_state_age": joint_state_age,
             "stable_world_base_ok": self._stable_world_base_pose is not None,
             "stable_world_base_age": (
                 float("inf")
@@ -1163,9 +1320,10 @@ class GripperAttachBackend(Node):
             diag[f"{name}_age"] = float("inf") if pose is None else float(self._pose_age_sec(pose))
         self._last_tcp_pose_diag = diag
         priority_order = {
-            "world_tcp": 0,
-            "tool_fallback": 1,
-            "base_chain": 2,
+            "joint_state_chain": 0,
+            "world_tcp": 1,
+            "tool_fallback": 2,
+            "base_chain": 3,
         }
         fresh_candidates = []
         for name, pose in named_candidates:
@@ -1178,8 +1336,20 @@ class GripperAttachBackend(Node):
             _age, _priority, best_name, best_pose = min(fresh_candidates)
             self._last_tcp_pose_source = str(best_name)
             return best_pose
+        # Cuando todos los candidatos parecen viejos, priorizamos las cadenas
+        # geometricamente coherentes de FK por joint-state / `world->base_link +
+        # base_link->tcp` frente a un world->tcp directo envejecido. En nuestro
+        # stack world->base_link es fijo, asi que base cacheada + cinematica viva
+        # relativa a base sigue siendo coherente durante el carry aunque la muestra
+        # directa world->tcp vaya con varios segundos de retraso.
+        stale_priority_order = {
+            "joint_state_chain": 0,
+            "base_chain": 1,
+            "tool_fallback": 2,
+            "world_tcp": 3,
+        }
         stale_candidates = [
-            (priority_order.get(name, 99), name, pose)
+            (stale_priority_order.get(name, 99), name, pose)
             for name, pose in named_candidates
             if pose is not None
         ]
@@ -1218,8 +1388,78 @@ class GripperAttachBackend(Node):
             if "::" in name:
                 model = name.split("::")[0].strip()
                 if model:
-                    # Keep model alias updated to latest sample; setdefault would freeze stale values.
+                    # Mantenemos el alias del modelo en la muestra mas reciente;
+                    # setdefault dejaria congelados valores viejos.
                     self._pose_cache[model] = sample
+
+    def _on_joint_states(self, msg: JointState) -> None:
+        names = list(getattr(msg, "name", []) or [])
+        positions = list(getattr(msg, "position", []) or [])
+        if not names or len(names) != len(positions):
+            return
+        index = {str(name): idx for idx, name in enumerate(names)}
+        try:
+            ordered = tuple(
+                float(positions[index[joint_name]])
+                for joint_name in UR5_ARM_JOINT_ORDER
+            )
+        except Exception:
+            return
+        stamp = getattr(msg, "header", None)
+        stamp_msg = getattr(stamp, "stamp", None)
+        stamp_ns = 0
+        if stamp_msg is not None:
+            stamp_ns = int(stamp_msg.sec) * 1_000_000_000 + int(stamp_msg.nanosec)
+        if stamp_ns <= 0:
+            stamp_ns = int(self.get_clock().now().nanoseconds)
+        self._joint_state_positions = ordered
+        self._joint_state_stamp_ns = int(stamp_ns)
+
+    def _joint_state_tcp_base_pose(self) -> Optional[PoseSample]:
+        joints = self._joint_state_positions
+        stamp_ns = int(self._joint_state_stamp_ns)
+        if joints is None or len(joints) != len(UR5_ARM_JOINT_ORDER) or stamp_ns <= 0:
+            return None
+        rot = (
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 1.0),
+        )
+        pos = (0.0, 0.0, 0.0)
+        for joint_idx, theta in enumerate(joints):
+            step_rot, step_pos = _dh_transform(
+                float(_UR5_DH_A[joint_idx]),
+                float(_UR5_DH_D[joint_idx]),
+                float(_UR5_DH_ALPHA[joint_idx]),
+                float(theta),
+            )
+            pos = tuple(
+                float(pos[i]) + float(_matvec3(rot, step_pos)[i])
+                for i in range(3)
+            )
+            rot = _matmul3(rot, step_rot)
+        base_pos = (-float(pos[0]), -float(pos[1]), float(pos[2]))
+        base_rot = _matmul3(_BASE_LINK_FIX_R, rot)
+        offset = _GRIPPER_GEOMETRY.xyz_for_frame(self._tcp_frame)
+        offset_base = _matvec3(
+            base_rot,
+            (float(offset[0]), float(offset[1]), float(offset[2])),
+        )
+        tcp_base_pos = tuple(
+            float(base_pos[i]) + float(offset_base[i])
+            for i in range(3)
+        )
+        qx, qy, qz, qw = _quat_from_rot3(base_rot)
+        return PoseSample(
+            x=float(tcp_base_pos[0]),
+            y=float(tcp_base_pos[1]),
+            z=float(tcp_base_pos[2]),
+            qx=float(qx),
+            qy=float(qy),
+            qz=float(qz),
+            qw=float(qw),
+            stamp_ns=stamp_ns,
+        )
 
     def _pose_age_ok(self, pose: PoseSample) -> bool:
         age = self._pose_age_sec(pose)
@@ -1251,7 +1491,8 @@ class GripperAttachBackend(Node):
     def _ensure_set_pose_client(self) -> bool:
         if SetEntityPose is None:
             return False
-        # Re-resolve dynamically because Gazebo services can appear after this node starts.
+        # Re-resolvemos dinamicamente porque los servicios de Gazebo pueden aparecer
+        # despues de arrancar este nodo.
         if not self._set_pose_service:
             resolved = self._resolve_set_pose_service()
             if resolved:
@@ -1490,9 +1731,9 @@ class GripperAttachBackend(Node):
             or (self._attach_mode == "detachable_joint" and self._detachable_shadow_follow)
         )
         has_demo_work = bool(self._demo_transport_active)
-        # detachable_shadow_follow=False disables the physics-joint/shadow path only.
-        # It must NOT prevent the demo_transport kinematic follow loop from running;
-        # those are two orthogonal mechanisms.
+        # detachable_shadow_follow=False solo desactiva el camino de physics-joint/
+        # shadow. NO debe impedir que siga corriendo el bucle cinematico de
+        # demo_transport; son dos mecanismos ortogonales.
         if not has_shadow_follow and not has_demo_work:
             return
         if not self._attached:
@@ -1511,6 +1752,8 @@ class GripperAttachBackend(Node):
                 diag = dict(self._last_tcp_pose_diag or {})
                 diag_txt = (
                     f"src={self._last_tcp_pose_source} "
+                    f"joint_state_base_ok={diag.get('joint_state_base_ok')} joint_state_age={diag.get('joint_state_age')} "
+                    f"joint_state_chain_ok={diag.get('joint_state_chain_ok')} joint_state_chain_age={diag.get('joint_state_chain_age')} "
                     f"base_chain_ok={diag.get('base_chain_ok')} base_chain_age={diag.get('base_chain_age')} "
                     f"world_tcp_ok={diag.get('world_tcp_ok')} world_tcp_age={diag.get('world_tcp_age')} "
                     f"world_base_age={diag.get('world_base_age')} base_tcp_age={diag.get('base_tcp_age')} "
@@ -1528,8 +1771,9 @@ class GripperAttachBackend(Node):
                 self._last_stale_warn_ts = now
         for name, target in list(self._attached.items()):
             demo_transport_active = name in self._demo_transport_active
-            # Non-demo objects must not receive pose updates when shadow_follow is
-            # disabled; only demo_transport objects bypass that restriction.
+            # Los objetos que no son del demo no deben recibir actualizaciones de
+            # pose cuando shadow_follow esta desactivado; solo demo_transport salta
+            # esa restriccion.
             if not demo_transport_active and not has_shadow_follow:
                 continue
             obj_pose = self._lookup_pose(name)
@@ -1747,8 +1991,9 @@ class GripperAttachBackend(Node):
         self.get_logger().info(
             f"[ATTACH_BACKEND] attach_request_received object={name} src={src_topic} mode={self._attach_mode}"
         )
-        # TRACE-ATTACH-ROUTE: log TCP↔object distance and selected route before branching.
-        # This makes every attach decision auditable without additional tooling.
+        # TRACE-ATTACH-ROUTE: trazamos la distancia TCP<->objeto y la ruta elegida
+        # antes de bifurcar. Asi cada decision de attach queda auditable sin
+        # herramientas adicionales.
         _ta_obj = self._lookup_pose(name)
         _ta_tcp = self._lookup_tcp_pose()
         if _ta_obj is not None and _ta_tcp is not None:
@@ -1839,8 +2084,8 @@ class GripperAttachBackend(Node):
                 self._publish_state(name, True)
             return
 
-        # The drop anchor can remain physically attached even if its state topic
-        # already reports false. Release it proactively before follow attach.
+        # El drop anchor puede seguir fisicamente unido aunque su topic ya reporte
+        # false. Lo liberamos de forma proactiva antes del follow attach.
         self._force_drop_anchor_detach(name)
         self._activate_follow_attachment(name, method="follow_tcp")
 
