@@ -3637,13 +3637,14 @@ def run_pick_object(panel) -> None:
             # SECUENCIA GLOBAL: ir a MESA antes de HOME_START y del preflight
             # Regla de negocio: todos los modos arrancan siempre desde MESA.
             # HOME_START sigue ejecutándose después para garantizar planificación MoveIt.
-            # En STEP_BY_STEP, gate INICIO bloquea aquí mostrando TARGET=MESA; al pulsar
-            # Siguiente el robot se desplaza a MESA y luego el gate HOME aparece.
+            # En STEP_BY_STEP, la fase INICIO se prepara aquí mostrando TARGET=MESA;
+            # al pulsar Iniciar en esa fila el robot se desplaza a MESA y luego
+            # aparece el siguiente punto de control.
             # Para fases de movimiento articular no usamos target Cartesiano porque
             # fk_ur5 computa tool0 mientras TF-live mide rg2_pinch_center: frames
             # distintos → delta siempre grande → reached=NO falso. position=None
             # hace que reached quede como PEND (neutro) en vez de NO.
-            _step_phase_gate("INICIO", position=None, decision="Pulse Siguiente → robot irá a pose MESA (joint) — punto de partida del agarre")
+            _step_phase_gate("INICIO", position=None, decision="Pulse Iniciar en la fila INICIO → robot irá a pose MESA (joint), punto de partida del agarre")
             _run_joint_step(
                 "MESA_GLOBAL",
                 JOINT_TABLE_POSE_RAD,
