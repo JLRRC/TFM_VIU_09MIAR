@@ -3,14 +3,15 @@
 # Contenido: Codigo de herramientas, bridges y servicios auxiliares del stack UR5.
 # Uso breve: Se usa en build con colcon y como nodos/servicios ROS 2 del sistema.
 # URL: /home/laboratorio/TFM/agarre_ros2_ws/src/ur5_tools/ur5_tools/system_state_manager.py
-# Summary: Publishes a global system state for the UR5 stack.
-"""Publish global system readiness state for the UR5 stack."""
+# Resumen: Publica un estado global del sistema para el stack UR5.
+"""Publica el estado global de disponibilidad del sistema para el stack UR5."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
 import json
+import os
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -27,6 +28,14 @@ from std_msgs.msg import String
 from tf2_msgs.msg import TFMessage
 from tf2_ros import Buffer, TransformListener
 
+from .gripper_geometry import (
+    RG2_PINCH_CENTER_FRAME,
+    RG2_TCP_FRAME,
+    TOOL0_FRAME,
+    format_xyz,
+    load_gripper_geometry,
+    vector_distance,
+)
 from .param_utils import read_float_param, read_str_list_param, read_str_param
 
 
@@ -36,6 +45,7 @@ class SystemState(str, Enum):
     WAITING_BRIDGE = "WAITING_BRIDGE"
     WAITING_CONTROLLERS = "WAITING_CONTROLLERS"
     WAITING_TF = "WAITING_TF"
+    WAITING_GEOMETRY = "WAITING_GEOMETRY"
     WAITING_CAMERA = "WAITING_CAMERA"
     WAITING_MOVEIT = "WAITING_MOVEIT"
     READY = "READY"
@@ -55,6 +65,8 @@ class DependencySnapshot:
     camera_age: float
     tf_ok: bool
     tf_reason: str
+    geometry_ok: bool
+    geometry_reason: str
     controllers_ready: bool
     controllers_reason: str
     missing_controllers: List[str]
@@ -99,11 +111,13 @@ class SystemStateMachine:
     def _critical_missing(snapshot: DependencySnapshot) -> bool:
         tf_in_grace = str(snapshot.tf_reason).startswith("grace:")
         tf_critical = snapshot.controllers_ready and (not snapshot.tf_ok) and (not tf_in_grace)
+        geometry_critical = snapshot.tf_ok and (not snapshot.geometry_ok)
         return not (
             snapshot.clock_ok
             and snapshot.pose_ok
             and snapshot.camera_ok
             and (not tf_critical)
+            and (not geometry_critical)
         )
 
     @staticmethod
@@ -118,6 +132,8 @@ class SystemStateMachine:
             return f"pose/info age={snapshot.pose_age:.2f}s"
         if snapshot.controllers_ready and (not snapshot.tf_ok):
             return f"tf={snapshot.tf_reason}"
+        if snapshot.tf_ok and (not snapshot.geometry_ok):
+            return f"geometry={snapshot.geometry_reason}"
         if not snapshot.camera_ok:
             if snapshot.camera_age == float("inf"):
                 return "camera sin frames válidos"
@@ -142,6 +158,8 @@ class SystemStateMachine:
             return SystemState.WAITING_CONTROLLERS, reason
         if not snapshot.tf_ok:
             return SystemState.WAITING_TF, f"tf={snapshot.tf_reason}"
+        if not snapshot.geometry_ok:
+            return SystemState.WAITING_GEOMETRY, f"geometry={snapshot.geometry_reason}"
         if not snapshot.camera_ok:
             if snapshot.camera_age == float("inf"):
                 return SystemState.WAITING_CAMERA, "camera sin frames válidos"
@@ -159,7 +177,7 @@ class StateDecision:
 
 
 class SystemStateManager(Node):
-    """Track system readiness and publish /system_state + /system_diag."""
+    """Sigue el estado global del sistema y publica /system_state + /system_diag."""
 
     def __init__(self) -> None:
         super().__init__("system_state_manager")
@@ -194,6 +212,10 @@ class SystemStateManager(Node):
         self.declare_parameter("camera_timeout_sec", 1.5)
         self.declare_parameter("tf_timeout_sec", 0.2)
         self.declare_parameter("tf_drop_grace_sec", 4.0)
+        self.declare_parameter("geometry_required", True)
+        self.declare_parameter("geometry_tool_frame", TOOL0_FRAME)
+        self.declare_parameter("geometry_offset_tol_m", 0.002)
+        self.declare_parameter("geometry_pair_tol_m", 0.001)
         self.declare_parameter("controller_check_sec", 1.0)
         self.declare_parameter("controller_future_timeout_sec", 2.0)
         self.declare_parameter("state_publish_hz", 2.0)
@@ -240,6 +262,24 @@ class SystemStateManager(Node):
             4.0,
             min_value=0.0,
         )
+        self._geometry_required = bool(self.get_parameter("geometry_required").value)
+        self._geometry_tool_frame = read_str_param(
+            self,
+            "geometry_tool_frame",
+            TOOL0_FRAME,
+        )
+        self._geometry_offset_tol = read_float_param(
+            self,
+            "geometry_offset_tol_m",
+            0.002,
+            min_value=0.0001,
+        )
+        self._geometry_pair_tol = read_float_param(
+            self,
+            "geometry_pair_tol_m",
+            0.001,
+            min_value=0.0001,
+        )
         self._controller_check_sec = read_float_param(
             self,
             "controller_check_sec",
@@ -279,10 +319,18 @@ class SystemStateManager(Node):
         self._reason = "boot"
         self._fatal_latched = False
         self._tf_missing_since = 0.0
+        self._geometry_ok_state = not self._geometry_required
+        self._geometry_reason = (
+            "geometry disabled" if not self._geometry_required else "geometry pending"
+        )
         self._fsm = SystemStateMachine(
             required_controllers=self._required_controllers,
             moveit_required=self._moveit_required,
         )
+        try:
+            self._gripper_geometry = load_gripper_geometry(os.environ.get("WS_DIR"))
+        except Exception as exc:
+            raise RuntimeError(f"canonical gripper geometry unavailable: {exc}") from exc
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -568,6 +616,53 @@ class SystemStateManager(Node):
         self._moveit_last_ok = False
         return False
 
+    def _geometry_ok(self) -> Tuple[bool, str]:
+        if not self._geometry_required:
+            return True, "disabled"
+        timeout = Duration(seconds=self._tf_timeout)
+        actual_xyz: Dict[str, Tuple[float, float, float]] = {}
+        for frame_name in (RG2_TCP_FRAME, RG2_PINCH_CENTER_FRAME):
+            try:
+                if not self._tf_buffer.can_transform(
+                    self._geometry_tool_frame,
+                    frame_name,
+                    rclpy.time.Time(),
+                    timeout=timeout,
+                ):
+                    return False, f"{self._geometry_tool_frame}->{frame_name} missing"
+                tf = self._tf_buffer.lookup_transform(
+                    self._geometry_tool_frame,
+                    frame_name,
+                    rclpy.time.Time(),
+                    timeout=timeout,
+                )
+            except Exception:
+                return False, f"{self._geometry_tool_frame}->{frame_name} tf_error"
+            tr = tf.transform.translation
+            actual = (float(tr.x), float(tr.y), float(tr.z))
+            expected = self._gripper_geometry.xyz_for_frame(frame_name)
+            err_m = vector_distance(actual, expected)
+            actual_xyz[frame_name] = actual
+            if err_m > self._geometry_offset_tol:
+                return (
+                    False,
+                    f"{self._geometry_tool_frame}->{frame_name} err_m={err_m:.4f} "
+                    f"actual=({format_xyz(actual, digits=4)}) "
+                    f"expected=({format_xyz(expected, digits=4)})",
+                )
+        pair_err_m = vector_distance(
+            actual_xyz[RG2_TCP_FRAME],
+            actual_xyz[RG2_PINCH_CENTER_FRAME],
+        )
+        if pair_err_m > self._geometry_pair_tol:
+            return (
+                False,
+                "rg2_tcp_vs_rg2_pinch_center err_m="
+                f"{pair_err_m:.4f} actual_tcp=({format_xyz(actual_xyz[RG2_TCP_FRAME], digits=4)}) "
+                f"actual_pinch=({format_xyz(actual_xyz[RG2_PINCH_CENTER_FRAME], digits=4)})",
+            )
+        return True, "ok"
+
     def _set_state(self, state: SystemState, reason: str) -> None:
         if state.value == self._state and reason == self._reason:
             return
@@ -605,6 +700,8 @@ class SystemStateManager(Node):
             "controllers_ready": self._controllers_ready,
             "controllers_reason": self._controllers_reason,
             "moveit_ready": self._moveit_ready,
+            "geometry_ok": self._geometry_ok_state,
+            "geometry_reason": self._geometry_reason,
             "pose_model_seen": self._pose_model_seen,
             "pose_entities_seen": self._pose_entities_seen,
             "controllers": self._controllers_state,
@@ -646,6 +743,12 @@ class SystemStateManager(Node):
         pose_ok, pose_age = self._pose_ok()
         camera_ok, camera_age = self._camera_ok()
         tf_ok, tf_reason = self._tf_ok()
+        geometry_ok = False
+        geometry_reason = "waiting_tf"
+        if tf_ok:
+            geometry_ok, geometry_reason = self._geometry_ok()
+        self._geometry_ok_state = geometry_ok
+        self._geometry_reason = geometry_reason
         now = self._now()
         if tf_ok:
             self._tf_missing_since = 0.0
@@ -674,6 +777,8 @@ class SystemStateManager(Node):
             camera_age=camera_age,
             tf_ok=tf_ok,
             tf_reason=tf_reason,
+            geometry_ok=geometry_ok,
+            geometry_reason=geometry_reason,
             controllers_ready=self._controllers_ready,
             controllers_reason=self._controllers_reason,
             missing_controllers=missing,

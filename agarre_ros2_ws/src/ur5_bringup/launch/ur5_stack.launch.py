@@ -3,8 +3,8 @@
 # Contenido: Configuracion de bringup ROS 2 para lanzar el sistema UR5.
 # Uso breve: Colcon/ros2 launch lo usan para arrancar simulacion y componentes principales.
 # URL: /home/laboratorio/TFM/agarre_ros2_ws/src/ur5_bringup/launch/ur5_stack.launch.py
-# Summary: Official unified launch for Gazebo + bridge + ros2_control + panel.
-"""Official unified launch for the UR5 stack (Gazebo, bridge, ros2_control, panel)."""
+# Resumen: Launch unificado oficial para Gazebo + bridge + ros2_control + panel.
+"""Launch unificado oficial del stack UR5 (Gazebo, bridge, ros2_control, panel)."""
 
 from __future__ import annotations
 
@@ -36,6 +36,12 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
+from ur5_tools.gripper_geometry import (
+    RG2_TCP_FRAME,
+    load_gripper_geometry,
+    patch_runtime_model_sdf,
+    validate_pick_demo_anchor,
+)
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -222,86 +228,26 @@ def _prepare_runtime(context, *_args) -> List[object]:
     )
     try:
         model_sdf = os.path.join(runtime_ur5_model, "model.sdf")
-        urdf_xacro = os.path.join(ws_dir, "src", "ur5_description", "urdf", "ur5.urdf.xacro")
-        rg2_tcp_z = None
-        if os.path.isfile(urdf_xacro):
-            with open(urdf_xacro, "r", encoding="utf-8") as f:
-                urdf_text = f.read()
-            rg2_match = re.search(
-                r'<joint name="rg2_tcp_joint"[^>]*>.*?<origin xyz="([^"]+)" rpy="[^"]*"/>',
-                urdf_text,
-                re.DOTALL,
-            )
-            if rg2_match:
-                xyz = [token for token in rg2_match.group(1).strip().split() if token]
-                if len(xyz) >= 3:
-                    rg2_tcp_z = float(xyz[2])
-        gripper_tcp_z_offset = 0.05
-        if os.path.isfile(panel_settings_yaml):
-            with open(panel_settings_yaml, "r", encoding="utf-8") as f:
-                settings_text = f.read()
-            offset_match = re.search(
-                r'^\s*gripper_tcp_z_offset\s*:\s*([-+0-9.eE]+)\s*$',
-                settings_text,
-                re.MULTILINE,
-            )
-            if offset_match:
-                gripper_tcp_z_offset = float(offset_match.group(1))
         if os.path.isfile(model_sdf):
-            with open(model_sdf, "r", encoding="utf-8") as f:
-                sdf_text = f.read()
-            plugin_re = re.compile(
-                r'(<plugin filename="gz_ros2_control-system"[^>]*>)(.*?)(</plugin>)',
-                re.DOTALL,
+            geometry = load_gripper_geometry(ws_dir=ws_dir)
+            patch_runtime_model_sdf(
+                model_sdf,
+                controllers_yaml=controllers_yaml,
+                geometry=geometry,
             )
-            match = plugin_re.search(sdf_text)
-            if match:
-                header, body, footer = match.groups()
-                if "<parameters>" in body:
-                    body = re.sub(
-                        r"<parameters>.*?</parameters>",
-                        f"<parameters>{controllers_yaml}</parameters>",
-                        body,
-                        flags=re.DOTALL,
-                    )
-                else:
-                    body = (
-                        body
-                        + f"\n            <parameters>{controllers_yaml}</parameters>\n"
-                    )
-                sdf_text = (
-                    sdf_text[: match.start()]
-                    + header
-                    + body
-                    + footer
-                    + sdf_text[match.end() :]
-                )
-            if rg2_tcp_z is not None:
-                # Keep the detachable anchor exactly on the semantic TCP frame.
-                # The frame itself already encodes the contact-center correction.
-                pick_demo_anchor_z = rg2_tcp_z
-                anchor_re = re.compile(
-                    r'(<joint name="pick_demo_anchor_joint" type="fixed">)(.*?)(</joint>)',
-                    re.DOTALL,
-                )
-                match = anchor_re.search(sdf_text)
-                if match:
-                    header, body, footer = match.groups()
-                    body = re.sub(
-                        r"<pose relative_to=\"tool0\">.*?</pose>",
-                        f"<pose relative_to=\"tool0\">0 0 {pick_demo_anchor_z:.3f} 0 0 0</pose>",
-                        body,
-                        count=1,
-                    )
-                    sdf_text = (
-                        sdf_text[: match.start()]
-                        + header
-                        + body
-                        + footer
-                        + sdf_text[match.end() :]
-                    )
-            with open(model_sdf, "w", encoding="utf-8") as f:
-                f.write(sdf_text)
+            anchor_ok, anchor_reason = validate_pick_demo_anchor(
+                model_sdf,
+                geometry=geometry,
+                tolerance_m=1e-6,
+            )
+            if not anchor_ok:
+                raise RuntimeError(anchor_reason)
+            logger.info(
+                "runtime model geometry synced "
+                f"source={geometry.tcp.source_path} "
+                f"tcp_z={geometry.z_for_frame(RG2_TCP_FRAME):.7f} "
+                f"{anchor_reason}"
+            )
     except Exception as exc:
         logger.warning("No se pudo ajustar plugin gz_ros2_control: %s", exc)
 
@@ -366,7 +312,6 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetEnvironmentVariable("PANEL_MANAGED", managed_str),
         SetEnvironmentVariable("PANEL_CAMERA_REQUIRED", camera_required_env),
-        SetEnvironmentVariable("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "-0.0877005"),
         SetEnvironmentVariable(
             "PANEL_DIRECT_DEBUG_ROOT",
             os.environ.get("PANEL_DIRECT_DEBUG_ROOT", "/home/laboratorio/TFM/historico"),

@@ -18,6 +18,13 @@ try:
 except Exception:  # pragma: no cover - ROS not available in unit contexts
     Empty = None
 
+from ur5_tools.gripper_geometry import (
+    RG2_PINCH_CENTER_FRAME,
+    RG2_TCP_FRAME,
+    TOOL0_FRAME,
+    load_gripper_geometry,
+)
+
 from .panel_robot_presets import (
     JOINT_TABLE_POSE_RAD,
     JOINT_PICK_IMAGE_POSE_RAD,
@@ -61,12 +68,17 @@ from .panel_utils import (
 from .ur5_kinematics import fk_ur5, ik_ur5
 from .attach_gate_evaluator import AttachGateEvaluator, AttachGateConfig
 
+_DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
+_DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
+    RG2_PINCH_CENTER_FRAME
+)
+
 DIRECT_ROUTE_MODE = "direct_rg2_pinch_center"
-DIRECT_SOURCE_FRAME = "rg2_pinch_center"
-DIRECT_LEGACY_TCP_FRAME = "rg2_tcp"
-DIRECT_EXECUTION_FRAME = "tool0"
+DIRECT_SOURCE_FRAME = RG2_PINCH_CENTER_FRAME
+DIRECT_LEGACY_TCP_FRAME = RG2_TCP_FRAME
+DIRECT_EXECUTION_FRAME = TOOL0_FRAME
 DIRECT_EXECUTION_IK_MODE = "formal_rg2_pinch_center_source_to_tool0_numeric"
-DIRECT_TOOL0_TO_RG2_TCP_Z_M = 0.0050885
+DIRECT_TOOL0_TO_RG2_TCP_Z_M = float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[2])
 DIRECT_GRASP_AUDIT_PREFIX = "[PICK][DIRECT_GRASP_AUDIT]"
 
 
@@ -1900,9 +1912,8 @@ def run_pick_demo(panel) -> None:
                 _fk_ref = fk_ur5(_q_ref)
                 # FK devuelve posición en base_link_inertia (modelo). Flip Rz(π): base_link = (-mx, -my, mz)
                 _ref_tool0_base = (-float(_fk_ref[0][0]), -float(_fk_ref[0][1]), float(_fk_ref[0][2]))
-                # rg2_tcp = tool0 + (0, 0, 0.175) en frame local del gripper.
-                # Aproximación: desplazamiento en Z de base_link asumiendo gripper apuntando hacia abajo
-                # (conservador, válido para comparación de magnitud).
+                # rg2_pinch_center cuelga de tool0 con el offset canónico del URDF.
+                # Aquí solo necesitamos una aproximación en Z para comparar magnitudes.
                 _ref_rg2_tcp_base = (
                     _ref_tool0_base[0],
                     _ref_tool0_base[1],
@@ -3489,6 +3500,13 @@ def run_pick_demo(panel) -> None:
                         except Exception:
                             local_offset = None
                     if local_offset is None:
+                        try:
+                            if str(env_value).strip():
+                                local_offset = (0.0, 0.0, float(env_value))
+                                offset_source = "env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M"
+                        except Exception:
+                            local_offset = None
+                    if local_offset is None:
                         pose_tool0_tcp, _pose_err = get_pose(
                             DIRECT_EXECUTION_FRAME,
                             DIRECT_SOURCE_FRAME,
@@ -3502,14 +3520,8 @@ def run_pick_demo(panel) -> None:
                             except Exception:
                                 local_offset = None
                     if local_offset is None:
-                        default_offset_m = DIRECT_TOOL0_TO_RG2_TCP_Z_M
-                        tcp_offset_m = float(env_value or default_offset_m)
-                        local_offset = (0.0, 0.0, tcp_offset_m)
-                        offset_source = (
-                            "env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M"
-                            if str(env_value).strip()
-                            else "default:ur5.urdf.xacro/rg2_pinch_center_joint"
-                        )
+                        local_offset = tuple(_DIRECT_TOOL0_TO_SOURCE_OFFSET)
+                        offset_source = "urdf:rg2_pinch_center_joint"
                     tcp_offset_m = float(
                         math.sqrt(
                             (float(local_offset[0]) ** 2)
@@ -6445,7 +6457,7 @@ def run_pick_demo(panel) -> None:
                         except Exception:
                             local_offset = None
                     if local_offset is None:
-                        local_offset = (0.0, 0.0, float(DIRECT_TOOL0_TO_RG2_TCP_Z_M))
+                        local_offset = tuple(_DIRECT_TOOL0_TO_SOURCE_OFFSET)
                     source_model = (
                         float(fk_pos_model[0])
                         + float(fk_rot[0, 0]) * float(local_offset[0])
@@ -6615,9 +6627,18 @@ def run_pick_demo(panel) -> None:
                     try:
                         _fk_pos, _fk_rot = fk_ur5(list(JOINT_PICK_IMAGE_POSE_RAD))
                         _fk_pinch = (
-                            float(_fk_pos[0]) + float(_fk_rot[0, 2]) * DIRECT_TOOL0_TO_RG2_TCP_Z_M,
-                            float(_fk_pos[1]) + float(_fk_rot[1, 2]) * DIRECT_TOOL0_TO_RG2_TCP_Z_M,
-                            float(_fk_pos[2]) + float(_fk_rot[2, 2]) * DIRECT_TOOL0_TO_RG2_TCP_Z_M,
+                            float(_fk_pos[0])
+                            + float(_fk_rot[0, 0]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[0])
+                            + float(_fk_rot[0, 1]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[1])
+                            + float(_fk_rot[0, 2]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[2]),
+                            float(_fk_pos[1])
+                            + float(_fk_rot[1, 0]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[0])
+                            + float(_fk_rot[1, 1]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[1])
+                            + float(_fk_rot[1, 2]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[2]),
+                            float(_fk_pos[2])
+                            + float(_fk_rot[2, 0]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[0])
+                            + float(_fk_rot[2, 1]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[1])
+                            + float(_fk_rot[2, 2]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[2]),
                         )
                         _pick_image_tcp_expected = _fk_pinch
                     except Exception as _fk_exc:
