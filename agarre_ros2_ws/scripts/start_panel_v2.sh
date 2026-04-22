@@ -245,7 +245,6 @@ if [[ "$PANEL_COLD_BOOT" == "1" ]]; then
   # Paneles previos (ajusta patrones si lo necesitas)
   pkill -f "ur5_qt_panel"      2>/dev/null || true
   pkill -f "panel_v2.py"       2>/dev/null || true
-  pkill -f "main_panel.py"     2>/dev/null || true
   pkill -f "ros2 run ur5_qt_panel panel_v2" 2>/dev/null || true
 
   # Eliminar procesos zombis (procesos bash huérfanos pausados)
@@ -254,7 +253,7 @@ if [[ "$PANEL_COLD_BOOT" == "1" ]]; then
   ps aux | awk '$8 == "T" {print $2}' | xargs -r kill -9 2>/dev/null || true
 
   any_running() {
-    pgrep -af "ros2 bag record|ros_gz_bridge|parameter_bridge|gz sim|gz-sim|gzserver|gzclient|ign gazebo|ros2 launch ur5_bringup|ros2_control_node|robot_state_publisher|world_tf_publisher|controller_manager|spawner|move_group|ur5_qt_panel|panel_v2.py|main_panel.py" >/dev/null 2>&1
+    pgrep -af "ros2 bag record|ros_gz_bridge|parameter_bridge|gz sim|gz-sim|gzserver|gzclient|ign gazebo|ros2 launch ur5_bringup|ros2_control_node|robot_state_publisher|world_tf_publisher|controller_manager|spawner|move_group|ur5_qt_panel|panel_v2.py" >/dev/null 2>&1
   }
 
   # Verificación: si quedan procesos, intentar cierre forzado.
@@ -286,7 +285,6 @@ if [[ "$PANEL_COLD_BOOT" == "1" ]]; then
     pkill -KILL -f "system_state_manager" >/dev/null 2>&1 || true
     pkill -KILL -f "ur5_qt_panel" >/dev/null 2>&1 || true
     pkill -KILL -f "panel_v2.py" >/dev/null 2>&1 || true
-    pkill -KILL -f "main_panel.py" >/dev/null 2>&1 || true
     pkill -KILL -f "ros2 run ur5_qt_panel panel_v2" >/dev/null 2>&1 || true
   fi
 fi
