@@ -76,12 +76,20 @@ Notas de rigor:
 - El generador de CSV puede volver a materializar `3542` filas en `train.csv`, pero una de ellas queda no finita y el dataset efectivo la descarta al cargar.
 - Mientras no aparezca una version valida de esa anotacion dentro del propio workspace o de una copia externa fiable, la referencia tecnica real del repo debe considerarse `3541/1569`.
 
-## Nota final sobre el panel
+## Nota de trazabilidad — módulo de panel Qt
 
-- En la memoria se cita `main_panel.py` como artefacto principal del panel.
-- En el workspace actual el panel operativo y mantenido es `agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_v2.py`.
-- `main_panel.py` no existe ya en el arbol actual del repositorio.
-- Se asume esta discrepancia como una diferencia literal entre la redaccion del TFM y la evolucion posterior del workspace, sin impacto sobre los resultados presentados.
+El componente de interfaz gráfica del sistema de agarre es el módulo
+`ur5_qt_panel.panel_v2`, ubicado en
+`agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_v2.py`.
+Este módulo está registrado como entry point en `setup.py`
+(`panel_v2 = ur5_qt_panel.panel_v2:main`) y es invocado por
+`ur5_stack.launch.py` y por `scripts/start_panel_v2.sh`.
+
+En versiones preliminares de la memoria del TFM se utilizó la
+denominación `main_panel.py` para referirse conceptualmente a este
+componente. Dicha denominación no tiene correspondencia en el historial
+git del repositorio. La diferencia es exclusivamente nominal y no afecta
+a los resultados experimentales presentados.
 
 ## Nota final sobre los desajustes metodologicos no aplicados
 
