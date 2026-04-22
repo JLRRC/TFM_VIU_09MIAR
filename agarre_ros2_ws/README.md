@@ -154,6 +154,7 @@ Benchmark y trazas:
 - Evidencias curadas del sistema ROS 2: `../reports/evidence/ros2/`
 - Evidencias del bloque del TFM en resultados: `../reports/evidence/chapter5/`
 - Logs de reproducibilidad: `../reports/logs/reproducibility/`
+- Cierre tecnico del incidente TCP RG2 UR5: `reports/incidents/2026-04-22_rg2_tcp_incident_closure.md`
 
 Artefactos operativos utiles del panel:
 
