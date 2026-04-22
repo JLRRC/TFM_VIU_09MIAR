@@ -72,6 +72,12 @@ echo "[ORCH] Limpieza completada"
 # --- Fijar GZ_PARTITION para que stack y runner offscreen usen el mismo bus gz-transport ---
 export GZ_PARTITION="${GZ_PARTITION:-ur5pro_validation}"
 export PANEL_CAMERA_REQUIRED=0
+export SYSTEM_STATE_STARTUP_TIMEOUT_SEC="${SYSTEM_STATE_STARTUP_TIMEOUT_SEC:-15.0}"
+export SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M="${SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M:-0.002}"
+export SYSTEM_STATE_GEOMETRY_PAIR_TOL_M="${SYSTEM_STATE_GEOMETRY_PAIR_TOL_M:-0.001}"
+export PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE="${PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE:-0.35}"
+export PANEL_MOVEIT_BRIDGE_ACCEL_SCALE="${PANEL_MOVEIT_BRIDGE_ACCEL_SCALE:-0.35}"
+export PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M="${PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M:-0.500}"
 # Mantener cámaras en mundo headless para obtener evidencia visual real.
 # Sin PANEL_KEEP_CAMERAS=1, el launch elimina todos los modelos de cámara del SDF.
 export PANEL_KEEP_CAMERAS=1
@@ -131,6 +137,22 @@ done
 echo "[ORCH] Gazebo pose/info activo ($(( $(date +%s) - GAZEBO_WAIT_START ))s)"
 # Extra grace para que system_state_manager publique GAZEBO_READY
 sleep 15
+
+SYSTEM_DIAG_JSON="$OUT_DIR/system_diag_startup.json"
+SYSTEM_DIAG_LOG="$OUT_DIR/system_diag_capture.log"
+echo "[ORCH] Capturando self-check geométrico de arranque..."
+if ! python3 "$SCRIPT_DIR/capture_system_diag.py" \
+    --timeout 20 \
+    --output "$SYSTEM_DIAG_JSON" \
+    --require-geometry-ok \
+    --require-state READY \
+    >"$SYSTEM_DIAG_LOG" 2>&1; then
+    echo "[ORCH][ERROR] /system_diag no llegó a READY con geometry_ok=true"
+    kill "$STACK_PID" 2>/dev/null || true
+    wait "$STACK_PID" 2>/dev/null || true
+    exit 1
+fi
+echo "[ORCH] Self-check geométrico OK snapshot=$SYSTEM_DIAG_JSON"
 
 # --- Lanzar el runner del panel offscreen ---
 env \
@@ -281,6 +303,7 @@ echo "[ORCH] Benchmark rc=$BENCHMARK_RC"
     echo "stack_rc=${STACK_RC:-n/a}"
     echo "visual_smoke_dir=$VISUAL_SMOKE_DIR"
     echo "visual_smoke_complete=$VISUAL_SMOKE_COMPLETE"
+    echo "system_diag_json=$SYSTEM_DIAG_JSON"
 } > "$SUMMARY"
 
 echo "[ORCH] Resumen guardado en $SUMMARY"

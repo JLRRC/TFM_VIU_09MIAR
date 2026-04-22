@@ -4539,21 +4539,21 @@ class UR5MoveItBridge(Node):
                 0.005,
                 self._env_float(
                     "PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_FK_ERR_M",
-                    0.03,
+                    0.012,
                 ),
             )
             candidate_max_joint_delta_rad = max(
                 0.25,
                 self._env_float(
                     "PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_JOINT_DELTA_RAD",
-                    1.60,
+                    0.90,
                 ),
             )
             candidate_sum_joint_delta_rad = max(
                 candidate_max_joint_delta_rad,
                 self._env_float(
                     "PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_JOINT_DELTA_SUM_RAD",
-                    4.50,
+                    2.75,
                 ),
             )
 

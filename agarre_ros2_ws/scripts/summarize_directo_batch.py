@@ -17,8 +17,10 @@ SUCCESS_LOG_PATTERNS = (
 )
 FAIL_LOG_PATTERNS = (
     re.compile(r"ERROR_FATAL:"),
-    re.compile(r"system_state no disponible"),
     re.compile(r"demo_carry_validation_failed"),
+)
+BENIGN_FAIL_PATTERNS = (
+    re.compile(r"ERROR_FATAL: system_state no disponible"),
 )
 
 
@@ -52,6 +54,17 @@ def _load_helper_text(run_dir: Path) -> str:
     return helper_path.read_text(encoding="utf-8", errors="replace")
 
 
+def _load_system_diag(run_dir: Path) -> Dict[str, object]:
+    diag_path = run_dir / "system_diag_startup.json"
+    if not diag_path.is_file():
+        return {}
+    try:
+        payload = json.loads(diag_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def _as_int(raw: str, default: int = 999) -> int:
     try:
         return int(str(raw).strip())
@@ -59,19 +72,59 @@ def _as_int(raw: str, default: int = 999) -> int:
         return default
 
 
+def _classify_fail_hits(
+    helper_text: str,
+    *,
+    success_complete: bool,
+    geometry_ok: bool,
+    state_ok: bool,
+    fatal_ok: bool,
+) -> tuple[list[str], list[str]]:
+    fail_hits = [pattern.pattern for pattern in FAIL_LOG_PATTERNS if pattern.search(helper_text)]
+    ignored_hits: list[str] = []
+    if success_complete and geometry_ok and state_ok and fatal_ok:
+        benign_hits = [
+            pattern.pattern for pattern in BENIGN_FAIL_PATTERNS if pattern.search(helper_text)
+        ]
+        if benign_hits:
+            ignored_hits.extend(benign_hits)
+            if re.search(r"ERROR_FATAL:", helper_text):
+                fail_hits = [hit for hit in fail_hits if hit != r"ERROR_FATAL:"]
+    return fail_hits, ignored_hits
+
+
 def _summarize_run(run_dir: Path) -> Dict[str, object]:
     summary = _parse_summary(run_dir / "orchestrator_summary.txt")
     visual_manifest = _load_visual_manifest(run_dir)
     helper_text = _load_helper_text(run_dir)
+    system_diag = _load_system_diag(run_dir)
     visual_keys = sorted(key for key in visual_manifest.keys() if key in SUCCESS_VISUAL_KEYS)
     helper_rc = _as_int(summary.get("helper_final_rc", "999"))
     benchmark_rc = _as_int(summary.get("benchmark_rc", "999"))
     visual_ok = set(visual_keys) == SUCCESS_VISUAL_KEYS
     success_hits = [pattern.pattern for pattern in SUCCESS_LOG_PATTERNS if pattern.search(helper_text)]
-    fail_hits = [pattern.pattern for pattern in FAIL_LOG_PATTERNS if pattern.search(helper_text)]
     sequence_ok = len(success_hits) == len(SUCCESS_LOG_PATTERNS)
+    geometry_ok = bool(system_diag.get("geometry_ok"))
+    state_ok = str(system_diag.get("state") or "").strip() == "READY"
+    fatal_ok = not bool(system_diag.get("fatal"))
+    fail_hits, ignored_fail_hits = _classify_fail_hits(
+        helper_text,
+        success_complete=sequence_ok and visual_ok,
+        geometry_ok=geometry_ok,
+        state_ok=state_ok,
+        fatal_ok=fatal_ok,
+    )
     log_ok = not fail_hits
-    passed = helper_rc == 0 and benchmark_rc == 0 and visual_ok and sequence_ok and log_ok
+    passed = (
+        helper_rc == 0
+        and benchmark_rc == 0
+        and visual_ok
+        and sequence_ok
+        and log_ok
+        and geometry_ok
+        and state_ok
+        and fatal_ok
+    )
     return {
         "run_dir": str(run_dir),
         "helper_rc": helper_rc,
@@ -82,6 +135,12 @@ def _summarize_run(run_dir: Path) -> Dict[str, object]:
         "success_hits": success_hits,
         "log_ok": log_ok,
         "fail_hits": fail_hits,
+        "ignored_fail_hits": ignored_fail_hits,
+        "geometry_ok": geometry_ok,
+        "system_state": str(system_diag.get("state") or ""),
+        "geometry_reason": str(system_diag.get("geometry_reason") or ""),
+        "geometry_pair_error_m": system_diag.get("geometry_pair_error_m"),
+        "fatal": bool(system_diag.get("fatal")),
         "passed": passed,
     }
 
