@@ -21,3 +21,16 @@ done
 
 python3 "$SCRIPT_DIR/summarize_directo_batch.py" "$BATCH_ROOT" | tee "$BATCH_ROOT/batch_summary.stdout.json"
 echo "[BATCH] Resumen disponible en $BATCH_ROOT/batch_summary.json"
+python3 - "$BATCH_ROOT/batch_summary.json" <<'PY'
+import json
+import sys
+
+summary_path = sys.argv[1]
+with open(summary_path, "r", encoding="utf-8") as handle:
+    payload = json.load(handle)
+failed = int(payload.get("failed", 0))
+runs = int(payload.get("runs", 0))
+passed = int(payload.get("passed", 0))
+print(f"[BATCH] Resultado agregado: passed={passed} failed={failed} runs={runs}")
+raise SystemExit(0 if failed == 0 else 1)
+PY

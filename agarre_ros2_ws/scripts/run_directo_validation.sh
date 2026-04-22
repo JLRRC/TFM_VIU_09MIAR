@@ -31,6 +31,7 @@ fi
 
 DIRECTO_TIMEOUT_SEC="${DIRECTO_TIMEOUT_SEC:-600}"
 CAPTURE_TIMEOUT_SEC="${CAPTURE_TIMEOUT_SEC:-300}"
+CANONICAL_LAUNCHER="${CANONICAL_LAUNCHER:-./lanzar_panelc2.sh}"
 
 WORLD="${GZ_WORLD:-ur5_mesa_objetos}"
 POSE_TOPIC="/world/${WORLD}/pose/info"
@@ -79,6 +80,7 @@ CAMERA_LOG="$OUT_DIR/camera_capture.log"
 CAMERA_FRAMES_DIR="$OUT_DIR/camera_frames"
 VISUAL_SMOKE_DIR="$OUT_DIR/visual_smoke"
 VISUAL_SMOKE_LOG="$OUT_DIR/visual_smoke.log"
+VISUAL_MANIFEST="$VISUAL_SMOKE_DIR/visual_capture_manifest.json"
 mkdir -p "$CAMERA_FRAMES_DIR"
 mkdir -p "$VISUAL_SMOKE_DIR"
 
@@ -238,6 +240,24 @@ echo "[ORCH] Camera capture terminado. Frames: $(ls "$CAMERA_FRAMES_DIR" 2>/dev/
 kill "$VISUAL_SMOKE_PID" 2>/dev/null || true
 wait "$VISUAL_SMOKE_PID" 2>/dev/null || true
 echo "[ORCH] Visual smoke terminado. Artefactos: $(ls "$VISUAL_SMOKE_DIR" 2>/dev/null | wc -l)"
+VISUAL_SMOKE_COMPLETE=0
+if [[ -f "$VISUAL_MANIFEST" ]] \
+    && python3 - "$VISUAL_MANIFEST" <<'PY'
+import json
+import sys
+
+required = {"pre_grasp", "grasp_confirmed", "lift_with_object", "basket_drop"}
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as handle:
+    payload = json.load(handle)
+if not isinstance(payload, dict):
+    raise SystemExit(1)
+raise SystemExit(0 if required.issubset(payload.keys()) else 1)
+PY
+then
+    VISUAL_SMOKE_COMPLETE=1
+fi
+echo "[ORCH] Smoke visual completo=$VISUAL_SMOKE_COMPLETE launcher=$CANONICAL_LAUNCHER"
 
 # --- Apagar stack ---
 echo "[ORCH][SHUTDOWN] stack_stop_begin pid=$STACK_PID"
@@ -254,14 +274,16 @@ echo "[ORCH] Benchmark rc=$BENCHMARK_RC"
 
 # --- Resumen ---
 {
+    echo "canonical_launcher=$CANONICAL_LAUNCHER"
     echo "helper_final_rc=$HELPER_RC"
     echo "capture_rc=$CAPTURE_RC"
     echo "benchmark_rc=$BENCHMARK_RC"
     echo "stack_rc=${STACK_RC:-n/a}"
     echo "visual_smoke_dir=$VISUAL_SMOKE_DIR"
+    echo "visual_smoke_complete=$VISUAL_SMOKE_COMPLETE"
 } > "$SUMMARY"
 
 echo "[ORCH] Resumen guardado en $SUMMARY"
 echo "[ORCH] Logs: $OUT_DIR"
 echo "[ORCH][SHUTDOWN] final_rc=$HELPER_RC"
-echo "helper_final_rc=$HELPER_RC capture_rc=$CAPTURE_RC benchmark_rc=$BENCHMARK_RC stack_rc=${STACK_RC:-n/a}"
+echo "canonical_launcher=$CANONICAL_LAUNCHER helper_final_rc=$HELPER_RC capture_rc=$CAPTURE_RC benchmark_rc=$BENCHMARK_RC stack_rc=${STACK_RC:-n/a} visual_smoke_complete=$VISUAL_SMOKE_COMPLETE"

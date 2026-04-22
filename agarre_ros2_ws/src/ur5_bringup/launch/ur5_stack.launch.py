@@ -228,28 +228,30 @@ def _prepare_runtime(context, *_args) -> List[object]:
     )
     try:
         model_sdf = os.path.join(runtime_ur5_model, "model.sdf")
-        if os.path.isfile(model_sdf):
-            geometry = load_gripper_geometry(ws_dir=ws_dir)
-            patch_runtime_model_sdf(
-                model_sdf,
-                controllers_yaml=controllers_yaml,
-                geometry=geometry,
-            )
-            anchor_ok, anchor_reason = validate_pick_demo_anchor(
-                model_sdf,
-                geometry=geometry,
-                tolerance_m=1e-6,
-            )
-            if not anchor_ok:
-                raise RuntimeError(anchor_reason)
-            logger.info(
-                "runtime model geometry synced "
-                f"source={geometry.tcp.source_path} "
-                f"tcp_z={geometry.z_for_frame(RG2_TCP_FRAME):.7f} "
-                f"{anchor_reason}"
-            )
+        if not os.path.isfile(model_sdf):
+            raise RuntimeError(f"Runtime model.sdf no encontrado: {model_sdf}")
+        geometry = load_gripper_geometry(ws_dir=ws_dir)
+        patch_runtime_model_sdf(
+            model_sdf,
+            controllers_yaml=controllers_yaml,
+            geometry=geometry,
+        )
+        anchor_ok, anchor_reason = validate_pick_demo_anchor(
+            model_sdf,
+            geometry=geometry,
+            tolerance_m=1e-6,
+        )
+        if not anchor_ok:
+            raise RuntimeError(anchor_reason)
+        logger.info(
+            "runtime model geometry synced "
+            f"source={geometry.tcp.source_path} "
+            f"tcp_z={geometry.z_for_frame(RG2_TCP_FRAME):.7f} "
+            f"{anchor_reason}"
+        )
     except Exception as exc:
-        logger.warning("No se pudo ajustar plugin gz_ros2_control: %s", exc)
+        logger.error("Runtime geometry sync failed: %s", exc)
+        raise RuntimeError(f"Runtime geometry sync failed: {exc}") from exc
 
     runtime_world = world_file
     try:
