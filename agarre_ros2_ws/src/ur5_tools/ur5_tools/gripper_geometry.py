@@ -11,7 +11,7 @@ import math
 import os
 from pathlib import Path
 import re
-from typing import Iterable, Optional, Tuple
+from typing import Dict, Iterable, Optional, Tuple
 
 try:
     from ament_index_python.packages import get_package_share_directory
@@ -25,6 +25,7 @@ RG2_PINCH_CENTER_FRAME = "rg2_pinch_center"
 RG2_TCP_JOINT = "rg2_tcp_joint"
 RG2_PINCH_CENTER_JOINT = "rg2_pinch_center_joint"
 PICK_DEMO_ANCHOR_JOINT = "pick_demo_anchor_joint"
+CONTACT_SEMANTIC_FRAMES = frozenset((RG2_TCP_FRAME, RG2_PINCH_CENTER_FRAME))
 
 
 @dataclass(frozen=True)
@@ -112,7 +113,40 @@ def _parse_xyz(raw_xyz: str, *, source_path: str, joint_name: str) -> Tuple[floa
     return (float(parts[0]), float(parts[1]), float(parts[2]))
 
 
-def _parse_joint_origin(urdf_text: str, *, joint_name: str, source_path: str) -> FixedJointOrigin:
+def _parse_xacro_properties(urdf_text: str) -> Dict[str, str]:
+    pattern = re.compile(
+        r"<xacro:property\s+name=\"([^\"]+)\"\s+value=\"([^\"]+)\"\s*/?>"
+    )
+    return {
+        str(name).strip(): str(value).strip()
+        for name, value in pattern.findall(urdf_text)
+        if str(name).strip()
+    }
+
+
+def _resolve_xyz_value(
+    raw_xyz: str,
+    *,
+    properties: Optional[Dict[str, str]] = None,
+) -> str:
+    value = str(raw_xyz or "").strip()
+    match = re.fullmatch(r"\$\{([^}]+)\}", value)
+    if not match:
+        return value
+    property_name = str(match.group(1) or "").strip()
+    if not property_name:
+        return value
+    resolved = str((properties or {}).get(property_name, "") or "").strip()
+    return resolved or value
+
+
+def _parse_joint_origin(
+    urdf_text: str,
+    *,
+    joint_name: str,
+    source_path: str,
+    properties: Optional[Dict[str, str]] = None,
+) -> FixedJointOrigin:
     pattern = re.compile(
         rf'<joint name="{re.escape(joint_name)}"[^>]*>'
         rf".*?<parent link=\"([^\"]+)\"/>"
@@ -128,7 +162,11 @@ def _parse_joint_origin(urdf_text: str, *, joint_name: str, source_path: str) ->
     return FixedJointOrigin(
         parent_link=str(parent_link).strip(),
         child_link=str(child_link).strip(),
-        xyz=_parse_xyz(xyz_raw, source_path=source_path, joint_name=joint_name),
+        xyz=_parse_xyz(
+            _resolve_xyz_value(xyz_raw, properties=properties),
+            source_path=source_path,
+            joint_name=joint_name,
+        ),
         source_path=source_path,
     )
 
@@ -141,16 +179,19 @@ def load_gripper_geometry(ws_dir: Optional[str] = None) -> GripperGeometry:
         if not path.is_file():
             continue
         urdf_text = _read_text(path)
+        properties = _parse_xacro_properties(urdf_text)
         source_path = str(path)
         tcp = _parse_joint_origin(
             urdf_text,
             joint_name=RG2_TCP_JOINT,
             source_path=source_path,
+            properties=properties,
         )
         pinch_center = _parse_joint_origin(
             urdf_text,
             joint_name=RG2_PINCH_CENTER_JOINT,
             source_path=source_path,
+            properties=properties,
         )
         return GripperGeometry(tcp=tcp, pinch_center=pinch_center)
     raise FileNotFoundError(
@@ -172,6 +213,27 @@ def vector_distance(a: Tuple[float, float, float], b: Tuple[float, float, float]
         + ((float(a[1]) - float(b[1])) ** 2)
         + ((float(a[2]) - float(b[2])) ** 2)
     )
+
+
+def contact_z_correction_for_frame(
+    frame_name: str,
+    *,
+    geometry: Optional[GripperGeometry] = None,
+) -> float:
+    """Devuelve la correccion Z necesaria para convertir un frame al punto de contacto.
+
+    `rg2_tcp` y `rg2_pinch_center` ya son frames semanticos de contacto y, por tanto,
+    no requieren compensacion adicional. `tool0` si necesita la traslacion canonica
+    leida del URDF.
+    """
+
+    frame = str(frame_name or "").strip()
+    if not frame or frame in CONTACT_SEMANTIC_FRAMES:
+        return 0.0
+    geometry = geometry or load_gripper_geometry()
+    if frame == TOOL0_FRAME:
+        return geometry.z_for_frame(RG2_PINCH_CENTER_FRAME)
+    return 0.0
 
 
 def patch_runtime_model_sdf(

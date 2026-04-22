@@ -126,7 +126,10 @@ def tf_ready_status(panel) -> Tuple[bool, str]:
     helper = get_tf_helper()
     base_frame = effective_base_frame(panel)
     if helper:
-        ee_frame = str(getattr(panel, "_required_ee_frame", "") or "rg2_tcp").strip() or "rg2_tcp"
+        ee_frame = (
+            str(getattr(panel, "_required_ee_frame", "") or "rg2_pinch_center").strip()
+            or "rg2_pinch_center"
+        )
         if _can_transform_between(helper, base_frame, ee_frame, timeout_sec=0.3):
             panel._tf_ready_state = True
             panel._tf_ever_ok = True
@@ -144,7 +147,10 @@ def tf_not_ready_reason(panel) -> str:
         except Exception:
             pass
     # FASE 1: el mensaje indica que falta base_link->ee (no world->base).
-    ee = str(getattr(panel, "_required_ee_frame", "") or "rg2_tcp").strip() or "rg2_tcp"
+    ee = (
+        str(getattr(panel, "_required_ee_frame", "") or "rg2_pinch_center").strip()
+        or "rg2_pinch_center"
+    )
     base = effective_base_frame(panel)
     return f"TF {base}->{ee} no disponible"
 

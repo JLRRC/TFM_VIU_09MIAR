@@ -7,6 +7,8 @@ import os
 import sys
 from typing import Dict, List, Optional, Tuple, Set
 
+from ur5_tools.gripper_geometry import RG2_PINCH_CENTER_FRAME, contact_z_correction_for_frame
+
 from .panel_settings import PanelSettings
 
 # Disable FastDDS SHM early to avoid noisy startup errors.
@@ -285,7 +287,10 @@ PICK_DEMO_PRE_GRASP_Z_OFFSET = SETTINGS.pick_demo_pre_grasp_z_offset
 PICK_DEMO_GRASP_Z_OFFSET = SETTINGS.pick_demo_grasp_z_offset
 PICK_DEMO_TRANSPORT_Z_OFFSET = SETTINGS.pick_demo_transport_z_offset
 PICK_DEMO_DROP_Z_OFFSET = SETTINGS.pick_demo_drop_z_offset
-GRIPPER_TCP_Z_OFFSET = SETTINGS.gripper_tcp_z_offset
+# Constante legacy de compatibilidad: el agarre operativo deriva ahora la geometría
+# de contacto desde el URDF canónico y `rg2_pinch_center`, así que este valor debe
+# permanecer inerte.
+GRIPPER_TCP_Z_OFFSET = contact_z_correction_for_frame(RG2_PINCH_CENTER_FRAME)
 AUTO_CALIB_FROM_CAMERA = SETTINGS.auto_calib_from_camera
 REACH_OVERLAY_Z = SETTINGS.reach_overlay_z
 REACH_OVERLAY_POINTS = SETTINGS.reach_overlay_points

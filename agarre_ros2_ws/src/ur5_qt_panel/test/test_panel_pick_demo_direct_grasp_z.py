@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for DIRECTO grasp Z offset normalization."""
+"""Pruebas unitarias para la normalización del offset Z de DIRECTO."""
 from __future__ import annotations
 
 import pytest

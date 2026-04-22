@@ -108,8 +108,11 @@ class TFMonitor:
         base_frame = "base_link"
         required_ee = (
             str(getattr(p, "_required_ee_frame", "") or "")
-            or str(os.environ.get("PANEL_REQUIRED_EE_FRAME", "rg2_tcp") or "rg2_tcp")
-        ).strip() or "rg2_tcp"
+            or str(
+                os.environ.get("PANEL_REQUIRED_EE_FRAME", "rg2_pinch_center")
+                or "rg2_pinch_center"
+            )
+        ).strip() or "rg2_pinch_center"
         frames = helper.list_frames()
         if "base" in frames and "base_link" in frames:
             base_rel = helper.lookup_transform("base_link", "base", timeout_sec=0.05)

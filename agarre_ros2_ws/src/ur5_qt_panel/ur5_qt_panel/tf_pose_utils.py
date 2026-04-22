@@ -107,7 +107,7 @@ def transform_pose(
 
 def get_tcp_in_base(
     base_frame: str = "base_link",
-    ee_frame: str = "rg2_tcp",
+    ee_frame: str = "rg2_pinch_center",
     timeout: float = 0.2,
     *,
     logger: LoggerFn = None,

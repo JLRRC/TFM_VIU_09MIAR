@@ -27,6 +27,9 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Set
+
+from ur5_tools.gripper_geometry import contact_z_correction_for_frame
+
 try:
     import psutil  # type: ignore
 except Exception:
@@ -1866,10 +1869,10 @@ class ControlPanelV2(QMainWindow):
         self._camera_ready_frames = max(1, CAMERA_READY_FRAMES)
         self._required_ee_frame = (
             str(
-                os.environ.get("PANEL_REQUIRED_EE_FRAME", "rg2_tcp")
-                or "rg2_tcp"
+                os.environ.get("PANEL_REQUIRED_EE_FRAME", "rg2_pinch_center")
+                or "rg2_pinch_center"
             ).strip()
-            or "rg2_tcp"
+            or "rg2_pinch_center"
         )
         self._auto_calib_from_camera = bool(AUTO_CALIB_FROM_CAMERA)
         self._calibrating = False
@@ -2556,9 +2559,17 @@ class ControlPanelV2(QMainWindow):
             z_clearance = float(z_clearance_m or 0.0)
             obj_ref_z = obj_center_z if mode == "center" else obj_top_z
             obj_ref_z += z_clearance
-            # tcp_z_correction_m=0.0 cuando el TCP ya está en el frame de contacto
-            # (rg2_pinch_center). Si es None, usar GRIPPER_TCP_Z_OFFSET por retrocompatibilidad.
-            _tz_corr = float(tcp_z_correction_m) if tcp_z_correction_m is not None else float(GRIPPER_TCP_Z_OFFSET)
+            # Si no se especifica correccion explícita, derivarla del frame operativo
+            # para no duplicar offsets legacy fuera del URDF canónico.
+            _tz_corr = (
+                float(tcp_z_correction_m)
+                if tcp_z_correction_m is not None
+                else float(
+                    contact_z_correction_for_frame(
+                        getattr(self, "_ee_frame_effective", "") or self._required_ee_frame or "rg2_pinch_center"
+                    )
+                )
+            )
             tcp_contact_z = float(tcp_base_pos[2]) - _tz_corr
             dx = float(obj_base_pos[0]) - float(tcp_base_pos[0])
             dy = float(obj_base_pos[1]) - float(tcp_base_pos[1])

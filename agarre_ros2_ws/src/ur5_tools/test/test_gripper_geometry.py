@@ -6,9 +6,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from ur5_tools.gripper_geometry import (
+    TOOL0_FRAME,
     load_gripper_geometry,
     RG2_PINCH_CENTER_FRAME,
     RG2_TCP_FRAME,
+    contact_z_correction_for_frame,
     validate_pick_demo_anchor,
     vector_distance,
 )
@@ -33,3 +35,10 @@ def test_model_anchor_matches_canonical_geometry() -> None:
         tolerance_m=1e-6,
     )
     assert ok, reason
+
+
+def test_contact_z_correction_is_urdf_driven() -> None:
+    geometry = load_gripper_geometry(str(ROOT))
+    assert contact_z_correction_for_frame(RG2_PINCH_CENTER_FRAME, geometry=geometry) == 0.0
+    assert contact_z_correction_for_frame(RG2_TCP_FRAME, geometry=geometry) == 0.0
+    assert contact_z_correction_for_frame(TOOL0_FRAME, geometry=geometry) == 0.0050885

@@ -25,6 +25,12 @@ except Exception:  # pragma: no cover - ROS not available in unit contexts
     Empty = None
     Float64MultiArray = None
 
+from ur5_tools.gripper_geometry import (
+    RG2_PINCH_CENTER_FRAME,
+    contact_z_correction_for_frame,
+    load_gripper_geometry,
+)
+
 from .panel_config import (
     BASKET_DROP,
     BASE_FRAME,
@@ -62,6 +68,9 @@ from .panel_objects import (
 )
 from .panel_readiness import pick_ui_status
 from .panel_state import MoveItState
+
+
+_PICK_OBJECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 
 
 def run_pick_object(panel) -> None:
@@ -912,13 +921,17 @@ def run_pick_object(panel) -> None:
         )
     except Exception:
         z_transport_clearance = 0.20
+    pick_contact_z_offset = contact_z_correction_for_frame(
+        RG2_PINCH_CENTER_FRAME,
+        geometry=_PICK_OBJECT_GRIPPER_GEOMETRY,
+    )
 
     height_profile = compute_pick_height_profile(
         object_center_z=bz,
         object_height=obj_height,
         table_top_z=table_top_base,
         basket_z=basket_z,
-        tcp_z_offset=float(GRIPPER_TCP_Z_OFFSET),
+        tcp_z_offset=float(pick_contact_z_offset),
         pick_demo_grasp_z_offset=float(PICK_DEMO_GRASP_Z_OFFSET),
         pick_demo_drop_z_offset=float(PICK_DEMO_DROP_Z_OFFSET),
         approach_clearance=z_clear,
@@ -1057,7 +1070,7 @@ def run_pick_object(panel) -> None:
     )
     panel._emit_log(
         f"[PICK_OBJ][GRASP_CFG] contact_down_z={contact_down_z:.3f} "
-        f"tcp_z_offset={float(GRIPPER_TCP_Z_OFFSET):.3f} "
+        f"tcp_z_offset={float(pick_contact_z_offset):.3f} "
         f"table_margin={z_table_margin:.3f} "
         f"micro_step={grasp_micro_step_m:.3f} micro_steps={len(grasp_micro_poses)}"
     )
@@ -1088,7 +1101,7 @@ def run_pick_object(panel) -> None:
         moveit_result_topic = "/desired_grasp/result"
         moveit_pose_topic = "/desired_grasp"
         moveit_hb_topic = "/ur5_moveit_bridge/heartbeat"
-        measured_ee_frame = panel._ee_frame_effective or "rg2_tcp"
+        measured_ee_frame = panel._ee_frame_effective or RG2_PINCH_CENTER_FRAME
         target_snapshot_name = obj_name
         target_snapshot_ts = selected_ts
         target_lock_id_local = str(getattr(panel, "_pick_target_lock_id", "") or target_lock_id)
@@ -4191,7 +4204,12 @@ def run_pick_object(panel) -> None:
             obj_center_z = float(bz)
             obj_top_z = obj_center_z + (float(height or 0.0) * 0.5 if float(height or 0.0) > 0.0 else 0.0)
             obj_ref_z = (obj_center_z if attach_z_ref_mode == "center" else obj_top_z) + float(attach_z_clearance)
-            tcp_contact_z = float(tcp_base[2]) - float(GRIPPER_TCP_Z_OFFSET)
+            measured_ee_frame = str(panel._ee_frame_effective or RG2_PINCH_CENTER_FRAME).strip() or RG2_PINCH_CENTER_FRAME
+            tcp_z_correction = contact_z_correction_for_frame(
+                measured_ee_frame,
+                geometry=_PICK_OBJECT_GRIPPER_GEOMETRY,
+            )
+            tcp_contact_z = float(tcp_base[2]) - float(tcp_z_correction)
             dx_obj = bx - tcp_base[0]
             dy_obj = by - tcp_base[1]
             dz_obj = tcp_contact_z - obj_ref_z
@@ -4213,7 +4231,7 @@ def run_pick_object(panel) -> None:
             )
             panel._emit_log(
                 f"[PICK_OBJ][TF][CHECK] object_z_gap frame={base_frame} tcp_z={tcp_base[2]:.3f} "
-                f"tcp_contact_z={tcp_contact_z:.3f} tcp_z_offset={float(GRIPPER_TCP_Z_OFFSET):.3f} "
+                f"tcp_contact_z={tcp_contact_z:.3f} tcp_z_offset={float(tcp_z_correction):.3f} "
                 f"obj_center_z={obj_center_z:.3f} obj_top_z={obj_top_z:.3f} "
                 f"obj_ref_z={obj_ref_z:.3f} z_ref_mode={attach_z_ref_mode} "
                 f"z_clearance={attach_z_clearance:.3f} dz={dz_obj:.3f} max={max_tcp_above_obj_z:.3f} "
