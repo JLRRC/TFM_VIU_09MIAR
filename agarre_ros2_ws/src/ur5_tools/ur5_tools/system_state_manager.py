@@ -509,6 +509,10 @@ class SystemStateManager(Node):
 
     def _update_controllers(self) -> None:
         now = self._now()
+        if self._controller_future is not None and self._controller_future.done():
+            # La respuesta ya está lista y la consumirá _consume_controllers() en este tick.
+            # No lances una petición nueva todavía o perderás el resultado completado.
+            return
         if (now - self._last_controller_check) < self._controller_check_sec:
             return
         self._last_controller_check = now

@@ -72,6 +72,32 @@ display_is_usable() {
   return 0
 }
 
+recover_local_display() {
+  local pid env_file candidate_display candidate_xauth candidate_session
+  local current_uid
+  current_uid="$(id -u)"
+  for pid in $(pgrep -u "$current_uid" -f 'gnome-shell|gnome-session-binary|gnome-terminal-server|ptyxis|tilix|terminator' 2>/dev/null); do
+    env_file="/proc/$pid/environ"
+    [[ -r "$env_file" ]] || continue
+    candidate_display="$(tr '\0' '\n' < "$env_file" | sed -n 's/^DISPLAY=//p' | head -n1)"
+    [[ -n "$candidate_display" ]] || continue
+    candidate_xauth="$(tr '\0' '\n' < "$env_file" | sed -n 's/^XAUTHORITY=//p' | head -n1)"
+    candidate_session="$(tr '\0' '\n' < "$env_file" | sed -n 's/^XDG_SESSION_TYPE=//p' | head -n1)"
+    if env DISPLAY="$candidate_display" XAUTHORITY="${candidate_xauth:-${XAUTHORITY:-}}" xdpyinfo >/dev/null 2>&1; then
+      export DISPLAY="$candidate_display"
+      if [[ -n "$candidate_xauth" ]]; then
+        export XAUTHORITY="$candidate_xauth"
+      fi
+      if [[ -n "$candidate_session" ]]; then
+        export XDG_SESSION_TYPE="$candidate_session"
+      fi
+      log "display recuperado automáticamente: DISPLAY=${DISPLAY} (pid=${pid})"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # Detectar WS_DIR (raíz del repo)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -96,10 +122,13 @@ export WS_DIR
 : "${PANEL_GRIPPER_OPEN_RAD:=0.5}"    # Apertura histórica del panel para validar si recupera la apertura completa
 : "${PANEL_GRIPPER_CLOSED_RAD:=0.0}"  # RG2 prismático: cierre completo en 0.0 m
 : "${RMW_IMPLEMENTATION:=rmw_fastrtps_cpp}"
-if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]] && ! display_is_usable; then
-  log "DISPLAY=${DISPLAY} no es usable; activando modo offscreen"
-  export PANEL_FORCE_OFFSCREEN=1
-  export PANEL_CAMERA_REQUIRED=0
+if [[ "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]] && ! display_is_usable; then
+  if ! recover_local_display; then
+    err "DISPLAY=${DISPLAY:-<vacío>} no es usable desde esta sesión."
+    err "Abre una terminal gráfica local del escritorio para ver el panel."
+    err "Si realmente quieres ejecutar sin GUI, exporta PANEL_FORCE_OFFSCREEN=1."
+    exit 1
+  fi
 fi
 if [[ -z "${PANEL_GZ_GUI+x}" ]]; then
   if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]]; then

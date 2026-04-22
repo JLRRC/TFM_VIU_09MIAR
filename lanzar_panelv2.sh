@@ -9,10 +9,39 @@ WS_DIR="$SCRIPT_DIR/agarre_ros2_ws"
 LOG_DIR="$SCRIPT_DIR/historico"
 mkdir -p "$LOG_DIR"
 
+recover_local_display() {
+  local pid env_file candidate_display candidate_xauth candidate_session
+  local current_uid
+  current_uid="$(id -u)"
+  for pid in $(pgrep -u "$current_uid" -f 'gnome-shell|gnome-session-binary|gnome-terminal-server|ptyxis|tilix|terminator' 2>/dev/null); do
+    env_file="/proc/$pid/environ"
+    [[ -r "$env_file" ]] || continue
+    candidate_display="$(tr '\0' '\n' < "$env_file" | sed -n 's/^DISPLAY=//p' | head -n1)"
+    [[ -n "$candidate_display" ]] || continue
+    candidate_xauth="$(tr '\0' '\n' < "$env_file" | sed -n 's/^XAUTHORITY=//p' | head -n1)"
+    candidate_session="$(tr '\0' '\n' < "$env_file" | sed -n 's/^XDG_SESSION_TYPE=//p' | head -n1)"
+    if env DISPLAY="$candidate_display" XAUTHORITY="${candidate_xauth:-${XAUTHORITY:-}}" xdpyinfo >/dev/null 2>&1; then
+      export DISPLAY="$candidate_display"
+      if [[ -n "$candidate_xauth" ]]; then
+        export XAUTHORITY="$candidate_xauth"
+      fi
+      if [[ -n "$candidate_session" ]]; then
+        export XDG_SESSION_TYPE="$candidate_session"
+      fi
+      echo "[LAUNCH] Recuperado display local DISPLAY=$DISPLAY desde PID=$pid"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # ── Entorno gráfico ───────────────────────────────────────────────────────────
 # Detectar headless por DISPLAY, no por SSH_CONNECTION (que puede estar
 # definida en terminales locales que iniciaron sesión SSH previamente).
-if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]]; then
+if [[ "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]] && { [[ -z "${DISPLAY:-}" ]] || ! xdpyinfo >/dev/null 2>&1; }; then
+  recover_local_display || true
+fi
+if [[ -n "${DISPLAY:-}" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]] && xdpyinfo >/dev/null 2>&1; then
   export HEADLESS=false
   export PANEL_GZ_GUI=1
 else
@@ -30,12 +59,13 @@ fi
 export QT_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt5/plugins
 export QT_QPA_PLATFORM_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt5/plugins/platforms
 
-# Si el DISPLAY está definido pero xdpyinfo falla (X11 no usable desde subprocesos),
-# el panel irá a offscreen automáticamente. En ese caso desactivamos camera_required
-# para no bloquear el pick esperando una cámara que no puede visualizarse.
-if [[ "${HEADLESS}" == "false" ]] && ! xdpyinfo >/dev/null 2>&1; then
-  echo "[LAUNCH] DISPLAY=${DISPLAY} definido pero no usable; desactivando camera_required"
-  export PANEL_CAMERA_REQUIRED=0
+# Si el DISPLAY sigue sin ser usable, abortamos con un mensaje claro.
+# El modo offscreen debe pedirse explícitamente con PANEL_FORCE_OFFSCREEN=1.
+if [[ "${HEADLESS}" == "true" && "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]]; then
+  echo "[ERROR] DISPLAY=${DISPLAY:-<vacío>} no es usable desde esta sesión."
+  echo "[INFO]  Abre una terminal gráfica local del escritorio y ejecuta ./lanzar_panelc2.sh"
+  echo "[INFO]  Alternativa explícita sin GUI: export PANEL_FORCE_OFFSCREEN=1"
+  exit 1
 fi
 
 # ── Activar venv ──────────────────────────────────────────────────────────────
