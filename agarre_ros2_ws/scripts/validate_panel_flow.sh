@@ -7,6 +7,10 @@ set -euo pipefail
 log() { echo "[VALIDATE] $*"; }
 warn() { echo "[VALIDATE][WARN] $*" >&2; }
 fail=0
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS_DIR="${WS_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+OUT_DIR="${OUT_DIR:-$WS_DIR/reports/validate_panel_flow_$(date +%Y%m%d_%H%M%S)}"
+mkdir -p "$OUT_DIR"
 
 if [[ -f /opt/ros/jazzy/setup.bash ]]; then
   # shellcheck disable=SC1091
@@ -177,13 +181,19 @@ fi
 
 log "Comprobando /system_diag..."
 if ros2 topic list | filter "^/system_diag$" >/dev/null 2>&1; then
-  if timeout 4.0 ros2 topic echo --once /system_diag >/dev/null 2>&1; then
-    log "OK /system_diag publica."
+  if python3 "$WS_DIR/scripts/capture_system_diag.py" \
+      --timeout 6 \
+      --output "$OUT_DIR/system_diag.json" \
+      --require-geometry-ok \
+      --require-state READY >/dev/null 2>&1; then
+    log "OK /system_diag publica con geometry_ok=true y state=READY."
   else
-    warn "/system_diag existe pero no publica (timeout)."
+    warn "/system_diag existe pero no pasa geometry_ok=true/state=READY."
+    fail=1
   fi
 else
   warn "/system_diag no existe."
+  fail=1
 fi
 
 log "Comprobando TF con tf_probe..."

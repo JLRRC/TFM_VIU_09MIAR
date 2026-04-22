@@ -8,7 +8,10 @@ WS_DIR="/home/laboratorio/TFM/agarre_ros2_ws"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 OUT_DIR="$WS_DIR/reports/diag_startup/$STAMP"
 LOG_FILE="$OUT_DIR/health.log"
+SYSTEM_DIAG_JSON="$OUT_DIR/system_diag.json"
+STATUS_FILE="$OUT_DIR/status.txt"
 mkdir -p "$OUT_DIR"
+echo 0 > "$STATUS_FILE"
 
 cd "$WS_DIR"
 set +u
@@ -60,6 +63,18 @@ CAM_REQUIRED="${PANEL_CAMERA_REQUIRED:-0}"
 
   echo "[HEALTH] 8) critical node list (subset)"
   ros2 node list | grep -E '/(ros_gz_bridge_main|world_tf_publisher|controller_bootstrap|controller_manager|system_state_manager|panel_superpro|panel_tf_helper)' || true
+
+  echo "[HEALTH] 9) /system_diag geometry gate"
+  if python3 "$WS_DIR/scripts/capture_system_diag.py" \
+      --timeout 8 \
+      --output "$SYSTEM_DIAG_JSON" \
+      --require-geometry-ok; then
+    cat "$SYSTEM_DIAG_JSON"
+  else
+    echo 1 > "$STATUS_FILE"
+    [[ -f "$SYSTEM_DIAG_JSON" ]] && cat "$SYSTEM_DIAG_JSON"
+  fi
 } 2>&1 | tee "$LOG_FILE"
 
 echo "[HEALTH] log=$LOG_FILE"
+exit "$(cat "$STATUS_FILE")"

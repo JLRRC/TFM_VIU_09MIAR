@@ -31,4 +31,4 @@ system_state_manager:
     controller_check_sec: 1.0
     controller_future_timeout_sec: 2.0
     state_publish_hz: 2.0
-    startup_timeout_sec: 5.0
+    startup_timeout_sec: 15.0

@@ -320,10 +320,9 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetEnvironmentVariable(
             # Offset en Z (metros) para subir el brazo y llevar la geometría física
-            # de la pinza al nivel del cilindro. rg2_pinch_center está 0.162 m sobre
-            # las yemas; un valor positivo sube el brazo para que éstas alcancen el
-            # objeto. 0.0 = sin cambio (comportamiento anterior).
-            # Valor inicial recomendado: 0.13 (lleva las yemas al borde inferior del cilindro).
+            # de la pinza al nivel del cilindro. El TCP canónico ya vive en el URDF;
+            # este ajuste es solo una corrección vertical operativa y no debe usarse
+            # para redefinir el frame TCP.
             "GRASP_CONTACT_Z_OFFSET_M",
             os.environ.get("GRASP_CONTACT_Z_OFFSET_M", "0.0"),
         ),
@@ -858,7 +857,21 @@ def generate_launch_description():
             {"camera_required": ParameterValue(camera_required, value_type=bool)},
             {"controller_manager": LaunchConfiguration("controller_manager")},
             {"moveit_required": ParameterValue(launch_moveit, value_type=bool)},
-            {"startup_timeout_sec": 5.0},
+            {
+                "geometry_offset_tol_m": float(
+                    os.environ.get("SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M", "0.002")
+                )
+            },
+            {
+                "geometry_pair_tol_m": float(
+                    os.environ.get("SYSTEM_STATE_GEOMETRY_PAIR_TOL_M", "0.001")
+                )
+            },
+            {
+                "startup_timeout_sec": float(
+                    os.environ.get("SYSTEM_STATE_STARTUP_TIMEOUT_SEC", "15.0")
+                )
+            },
         ],
         condition=IfCondition(launch_system_state),
     )

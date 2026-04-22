@@ -32,9 +32,8 @@ from .gripper_geometry import (
     RG2_PINCH_CENTER_FRAME,
     RG2_TCP_FRAME,
     TOOL0_FRAME,
-    format_xyz,
+    evaluate_geometry_snapshot,
     load_gripper_geometry,
-    vector_distance,
 )
 from .param_utils import read_float_param, read_str_list_param, read_str_param
 
@@ -331,6 +330,7 @@ class SystemStateManager(Node):
             self._gripper_geometry = load_gripper_geometry(os.environ.get("WS_DIR"))
         except Exception as exc:
             raise RuntimeError(f"canonical gripper geometry unavailable: {exc}") from exc
+        self._geometry_snapshot = self._empty_geometry_snapshot(reason=self._geometry_reason)
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -620,9 +620,44 @@ class SystemStateManager(Node):
         self._moveit_last_ok = False
         return False
 
-    def _geometry_ok(self) -> Tuple[bool, str]:
+    def _empty_geometry_snapshot(
+        self,
+        *,
+        reason: str,
+        actual_xyz: Optional[Dict[str, Tuple[float, float, float]]] = None,
+        ok: bool = False,
+    ) -> Dict[str, object]:
+        expected_xyz = {
+            RG2_TCP_FRAME: list(self._gripper_geometry.xyz_for_frame(RG2_TCP_FRAME)),
+            RG2_PINCH_CENTER_FRAME: list(
+                self._gripper_geometry.xyz_for_frame(RG2_PINCH_CENTER_FRAME)
+            ),
+        }
+        snapshot: Dict[str, object] = {
+            "tool_frame": self._geometry_tool_frame,
+            "source_path": self._gripper_geometry.tcp.source_path,
+            "urdf_source": self._gripper_geometry.tcp.source_path,
+            "expected_xyz": expected_xyz,
+            "actual_xyz": {},
+            "frame_error_m": {},
+            "offset_tol_m": float(self._geometry_offset_tol),
+            "pair_tol_m": float(self._geometry_pair_tol),
+            "pair_error_m": None,
+            "ok": bool(ok),
+            "reason": str(reason or ""),
+        }
+        for frame_name, xyz in (actual_xyz or {}).items():
+            snapshot["actual_xyz"][frame_name] = [
+                float(xyz[0]),
+                float(xyz[1]),
+                float(xyz[2]),
+            ]
+        return snapshot
+
+    def _geometry_ok(self) -> Tuple[bool, str, Dict[str, object]]:
         if not self._geometry_required:
-            return True, "disabled"
+            snapshot = self._empty_geometry_snapshot(reason="disabled", ok=True)
+            return True, "disabled", snapshot
         timeout = Duration(seconds=self._tf_timeout)
         actual_xyz: Dict[str, Tuple[float, float, float]] = {}
         for frame_name in (RG2_TCP_FRAME, RG2_PINCH_CENTER_FRAME):
@@ -633,7 +668,16 @@ class SystemStateManager(Node):
                     rclpy.time.Time(),
                     timeout=timeout,
                 ):
-                    return False, f"{self._geometry_tool_frame}->{frame_name} missing"
+                    reason = f"{self._geometry_tool_frame}->{frame_name} missing"
+                    return (
+                        False,
+                        reason,
+                        self._empty_geometry_snapshot(
+                            reason=reason,
+                            actual_xyz=actual_xyz,
+                            ok=False,
+                        ),
+                    )
                 tf = self._tf_buffer.lookup_transform(
                     self._geometry_tool_frame,
                     frame_name,
@@ -641,31 +685,31 @@ class SystemStateManager(Node):
                     timeout=timeout,
                 )
             except Exception:
-                return False, f"{self._geometry_tool_frame}->{frame_name} tf_error"
-            tr = tf.transform.translation
-            actual = (float(tr.x), float(tr.y), float(tr.z))
-            expected = self._gripper_geometry.xyz_for_frame(frame_name)
-            err_m = vector_distance(actual, expected)
-            actual_xyz[frame_name] = actual
-            if err_m > self._geometry_offset_tol:
+                reason = f"{self._geometry_tool_frame}->{frame_name} tf_error"
                 return (
                     False,
-                    f"{self._geometry_tool_frame}->{frame_name} err_m={err_m:.4f} "
-                    f"actual=({format_xyz(actual, digits=4)}) "
-                    f"expected=({format_xyz(expected, digits=4)})",
+                    reason,
+                    self._empty_geometry_snapshot(
+                        reason=reason,
+                        actual_xyz=actual_xyz,
+                        ok=False,
+                    ),
                 )
-        pair_err_m = vector_distance(
-            actual_xyz[RG2_TCP_FRAME],
-            actual_xyz[RG2_PINCH_CENTER_FRAME],
+            tr = tf.transform.translation
+            actual_xyz[frame_name] = (float(tr.x), float(tr.y), float(tr.z))
+        ok, reason, snapshot = evaluate_geometry_snapshot(
+            actual_xyz,
+            geometry=self._gripper_geometry,
+            tool_frame=self._geometry_tool_frame,
+            offset_tol_m=self._geometry_offset_tol,
+            pair_tol_m=self._geometry_pair_tol,
         )
-        if pair_err_m > self._geometry_pair_tol:
-            return (
-                False,
-                "rg2_tcp_vs_rg2_pinch_center err_m="
-                f"{pair_err_m:.4f} actual_tcp=({format_xyz(actual_xyz[RG2_TCP_FRAME], digits=4)}) "
-                f"actual_pinch=({format_xyz(actual_xyz[RG2_PINCH_CENTER_FRAME], digits=4)})",
-            )
-        return True, "ok"
+        snapshot["ok"] = bool(ok)
+        snapshot["reason"] = str(reason or "")
+        snapshot["urdf_source"] = str(
+            snapshot.get("urdf_source") or snapshot.get("source_path") or ""
+        )
+        return ok, reason, snapshot
 
     def _set_state(self, state: SystemState, reason: str) -> None:
         if state.value == self._state and reason == self._reason:
@@ -695,6 +739,7 @@ class SystemStateManager(Node):
 
     def _publish_state(self) -> None:
         self._state_pub.publish(String(data=self._state))
+        geometry_diag = dict(self._geometry_snapshot or {})
         diag = {
             "reason": self._reason,
             "state": self._state,
@@ -706,6 +751,14 @@ class SystemStateManager(Node):
             "moveit_ready": self._moveit_ready,
             "geometry_ok": self._geometry_ok_state,
             "geometry_reason": self._geometry_reason,
+            "geometry_tool_frame": geometry_diag.get("tool_frame"),
+            "geometry_urdf_source": geometry_diag.get("urdf_source")
+            or geometry_diag.get("source_path"),
+            "geometry_expected_xyz": geometry_diag.get("expected_xyz"),
+            "geometry_actual_xyz": geometry_diag.get("actual_xyz"),
+            "geometry_frame_error_m": geometry_diag.get("frame_error_m"),
+            "geometry_pair_error_m": geometry_diag.get("pair_error_m"),
+            "geometry_snapshot": geometry_diag,
             "pose_model_seen": self._pose_model_seen,
             "pose_entities_seen": self._pose_entities_seen,
             "controllers": self._controllers_state,
@@ -749,10 +802,12 @@ class SystemStateManager(Node):
         tf_ok, tf_reason = self._tf_ok()
         geometry_ok = False
         geometry_reason = "waiting_tf"
+        geometry_snapshot = self._empty_geometry_snapshot(reason=geometry_reason, ok=False)
         if tf_ok:
-            geometry_ok, geometry_reason = self._geometry_ok()
+            geometry_ok, geometry_reason, geometry_snapshot = self._geometry_ok()
         self._geometry_ok_state = geometry_ok
         self._geometry_reason = geometry_reason
+        self._geometry_snapshot = geometry_snapshot
         now = self._now()
         if tf_ok:
             self._tf_missing_since = 0.0

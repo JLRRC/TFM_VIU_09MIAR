@@ -236,6 +236,87 @@ def contact_z_correction_for_frame(
     return 0.0
 
 
+def tool0_offset_for_frame(
+    frame_name: str,
+    *,
+    geometry: Optional[GripperGeometry] = None,
+) -> Tuple[float, float, float]:
+    """Devuelve el offset local `tool0 -> frame_name` desde la geometría canónica."""
+
+    frame = str(frame_name or "").strip()
+    if frame == TOOL0_FRAME:
+        return (0.0, 0.0, 0.0)
+    geometry = geometry or load_gripper_geometry()
+    if frame in CONTACT_SEMANTIC_FRAMES:
+        return geometry.xyz_for_frame(frame)
+    raise KeyError(f"unsupported tool0 offset frame: {frame_name!r}")
+
+
+def evaluate_geometry_snapshot(
+    actual_xyz: Dict[str, Tuple[float, float, float]],
+    *,
+    geometry: Optional[GripperGeometry] = None,
+    tool_frame: str = TOOL0_FRAME,
+    offset_tol_m: float = 0.002,
+    pair_tol_m: float = 0.001,
+) -> Tuple[bool, str, Dict[str, object]]:
+    """Evalúa una captura runtime del gripper contra la geometría canónica."""
+
+    geometry = geometry or load_gripper_geometry()
+    expected_xyz = {
+        RG2_TCP_FRAME: geometry.xyz_for_frame(RG2_TCP_FRAME),
+        RG2_PINCH_CENTER_FRAME: geometry.xyz_for_frame(RG2_PINCH_CENTER_FRAME),
+    }
+    snapshot: Dict[str, object] = {
+        "tool_frame": str(tool_frame or TOOL0_FRAME),
+        "source_path": geometry.tcp.source_path,
+        "expected_xyz": {
+            frame_name: list(expected_xyz[frame_name])
+            for frame_name in (RG2_TCP_FRAME, RG2_PINCH_CENTER_FRAME)
+        },
+        "actual_xyz": {},
+        "frame_error_m": {},
+        "offset_tol_m": float(offset_tol_m),
+        "pair_tol_m": float(pair_tol_m),
+        "pair_error_m": None,
+    }
+
+    normalized_actual: Dict[str, Tuple[float, float, float]] = {}
+    for frame_name in (RG2_TCP_FRAME, RG2_PINCH_CENTER_FRAME):
+        raw_actual = actual_xyz.get(frame_name)
+        if raw_actual is None:
+            return False, f"{tool_frame}->{frame_name} missing", snapshot
+        actual = (float(raw_actual[0]), float(raw_actual[1]), float(raw_actual[2]))
+        expected = expected_xyz[frame_name]
+        err_m = vector_distance(actual, expected)
+        normalized_actual[frame_name] = actual
+        snapshot["actual_xyz"][frame_name] = list(actual)
+        snapshot["frame_error_m"][frame_name] = float(err_m)
+        if err_m > float(offset_tol_m):
+            return (
+                False,
+                f"{tool_frame}->{frame_name} err_m={err_m:.4f} "
+                f"actual=({format_xyz(actual, digits=4)}) "
+                f"expected=({format_xyz(expected, digits=4)})",
+                snapshot,
+            )
+
+    pair_err_m = vector_distance(
+        normalized_actual[RG2_TCP_FRAME],
+        normalized_actual[RG2_PINCH_CENTER_FRAME],
+    )
+    snapshot["pair_error_m"] = float(pair_err_m)
+    if pair_err_m > float(pair_tol_m):
+        return (
+            False,
+            "rg2_tcp_vs_rg2_pinch_center err_m="
+            f"{pair_err_m:.4f} actual_tcp=({format_xyz(normalized_actual[RG2_TCP_FRAME], digits=4)}) "
+            f"actual_pinch=({format_xyz(normalized_actual[RG2_PINCH_CENTER_FRAME], digits=4)})",
+            snapshot,
+        )
+    return True, "ok", snapshot
+
+
 def patch_runtime_model_sdf(
     model_sdf_path: str,
     *,
