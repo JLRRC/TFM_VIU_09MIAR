@@ -1,6 +1,6 @@
 # Incidente TCP RG2 — cierre técnico
 
-Fecha de cierre: 2026-04-21
+Fecha de cierre: 2026-04-22
 
 ## Resumen
 
@@ -37,10 +37,10 @@ No fue un salto de rama IK ni una recomposición lateral en `GRASP_DOWN`. Esos s
 El flujo canónico, oficial y válido de operación es:
 
 ```bash
-./lanzar_panelv2.sh
+./lanzar_panelc2.sh
 ```
 
-`agarre_ros2_ws/scripts/start_panel_v2.sh` queda como wrapper interno, no como entrada operativa oficial.
+`./lanzar_panelv2.sh` queda como alias temporal de compatibilidad y `agarre_ros2_ws/scripts/start_panel_v2.sh` como wrapper interno, no como entrada operativa oficial.
 
 ## Guardrails activos
 
@@ -48,6 +48,7 @@ El flujo canónico, oficial y válido de operación es:
 - El runtime SDF sincroniza `pick_demo_anchor_joint` desde el URDF canónico.
 - `run_directo_validation.sh` genera smoke visual mínimo.
 - `run_directo_batch_validation.sh` permite validar 5–10 corridas con resumen agregado.
+- La aceptación manual final debe repetirse explícitamente con `./lanzar_panelc2.sh`.
 
 ## Cierres operativos posteriores al fix TCP
 
@@ -84,7 +85,8 @@ Evidencia visual de esa corrida:
 Lote ejecutado:
 
 - `/home/laboratorio/TFM/auditoria/directo_batch_20260421_2`
-- Flujo de arranque usado en todas las corridas: `./lanzar_panelv2.sh`
+- Flujo de arranque usado en las 5 corridas históricas: `./lanzar_panelv2.sh`
+- Alias canónico actual equivalente: `./lanzar_panelc2.sh`
 
 Resumen agregado final:
 
@@ -113,8 +115,38 @@ Conclusión de validación final:
 - El bug geométrico original queda corregido.
 - El transporte con objeto queda estabilizado.
 - El watchdog falso de `/system_state` queda corregido.
-- El flujo canónico `./lanzar_panelv2.sh` queda validado extremo a extremo en `5/5` corridas.
+- El flujo histórico equivalente queda validado extremo a extremo en `5/5` corridas.
+- El entrypoint canónico actual `./lanzar_panelc2.sh` queda repetido manualmente y validado con trazabilidad explícita del alias operativo.
 - La aceptación final se apoya en visuales de `pre_grasp`, `grasp_confirmed`, `lift_with_object` y `basket_drop`, no solo en logs.
+
+## Repetición manual final con `./lanzar_panelc2.sh`
+
+Ejecución manual final realizada el `2026-04-22` usando el flujo canónico:
+
+```bash
+./lanzar_panelc2.sh
+```
+
+Artefactos de auditoría:
+
+- Directorio de ejecución manual:
+  - `/home/laboratorio/TFM/auditoria/manual_final_20260422/manual_final_20260422_114657`
+- Log principal del launcher:
+  - `/home/laboratorio/TFM/auditoria/manual_final_20260422/manual_final_20260422_114657/launcher.log`
+
+Evidencia técnica capturada en esa pasada:
+
+- `trigger=service:/panel/pick_demo#pickdemo-620671042392734`
+- `phase=RELEASE result=ok`
+- `phase=HOME_FINAL result=ok`
+- `SECUENCIA COMPLETADA EXITOSAMENTE route=basket`
+- `[PICK][DEMO] confirmacion cesta OK`
+
+Conclusión de la repetición manual:
+
+- La aceptación final con `./lanzar_panelc2.sh` queda cerrada.
+- La geometría del TCP queda validada también en la ruta operativa canónica final.
+- El incidente queda cerrado sin pendientes geométricos abiertos.
 
 ## Nota residual no bloqueante
 
@@ -136,7 +168,8 @@ Se clasifica como un ajuste pendiente de telemetría de apertura del gripper, no
 - [x] Fix geometrico bueno del TCP congelado en URDF canónico.
 - [x] Offsets duplicados operativos eliminados y derivados desde una sola fuente de verdad.
 - [x] Self-check geométrico de arranque añadido y conectado al gate de `READY`.
-- [x] Flujo canónico, oficial y válido fijado en `./lanzar_panelv2.sh`.
+- [x] Flujo canónico, oficial y válido fijado en `./lanzar_panelc2.sh`.
+- [x] Repetición manual final ejecutada con `./lanzar_panelc2.sh`.
 - [x] Validacion `DIRECTO` ejecutada en 5 corridas con evidencia visual guardada.
 - [x] `MOVEIT` endurecido sin volver a tocar el TCP.
 - [x] Smoke test visual mínimo disponible y automatizado.
