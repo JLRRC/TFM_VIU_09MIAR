@@ -28,7 +28,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Set
 
-from ur5_tools.gripper_geometry import contact_z_correction_for_frame
+from ur5_tools.gripper_geometry import (
+    contact_z_correction_for_frame,
+    tool0_offset_for_frame,
+)
 
 try:
     import psutil  # type: ignore
@@ -543,7 +546,13 @@ from .calibration_service import CalibrationService, CalibrationMode
 from .ur5_kinematics import fk_ur5, ik_ur5
 
 
-FK_TOOL0_TO_GRIPPER_TIP_M = 0.175
+def _canonical_tool0_to_semantic_frame(
+    frame_name: str,
+) -> tuple[float, float, float] | None:
+    frame = str(frame_name or "").strip()
+    if frame not in {"rg2_pinch_center", "rg2_tcp"}:
+        return None
+    return tool0_offset_for_frame(frame)
 
 
 def _fk_model_to_base_link(
@@ -587,8 +596,8 @@ def _fk_tool0_to_ee_base_link(
             float(translation.y),
             float(translation.z),
         )
-    elif frame_name in {"rg2_pinch_center", "rg2_tcp"}:
-        local_offset = (0.0, 0.0, float(FK_TOOL0_TO_GRIPPER_TIP_M))
+    else:
+        local_offset = _canonical_tool0_to_semantic_frame(frame_name)
 
     if local_offset is None:
         return base_pos, base_rot
@@ -5211,8 +5220,10 @@ class ControlPanelV2(QMainWindow):
             local_offset = (float(tr.x), float(tr.y), float(tr.z))
             offset_source = "tf:tool0<-rg2_pinch_center"
         else:
-            local_offset = (0.0, 0.0, float(FK_TOOL0_TO_GRIPPER_TIP_M))
-            offset_source = f"fallback:{tf_reason or 'default_0.175'}"
+            local_offset = _canonical_tool0_to_semantic_frame("rg2_pinch_center")
+            if local_offset is None:
+                return False, "canonical_tool0_offset_unavailable", None, None
+            offset_source = f"fallback:urdf_canonical:{tf_reason or 'tf_unavailable'}"
 
         target_model = (
             -float(target_tcp_runtime[0]),
@@ -6396,8 +6407,9 @@ class ControlPanelV2(QMainWindow):
             self._step_live_operational_label.setText(
                 self._step_live_pose_text("XYZ actual del TCP (world)", world_frame, operational_live_display)
             )
-        # FIX: visual_frame usaba "tool0" (base del gripper) en vez del TCP real
-        # (rg2_pinch_center está 0.175 m en Z por encima de tool0 → desfase sistemático).
+        # FIX: visual_frame usaba "tool0" (base del gripper) en vez del TCP real.
+        # rg2_pinch_center está desplazado respecto a tool0 por la geometría canónica
+        # del URDF, así que mezclar ambos frames introduce un desfase sistemático.
         # Ahora ambos labels usan el mismo frame operacional.
         visual_frame = operational_frame
         visual_live = self._step_fetch_live_pose(visual_frame)

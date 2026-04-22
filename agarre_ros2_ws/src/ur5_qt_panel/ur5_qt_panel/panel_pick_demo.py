@@ -1201,10 +1201,10 @@ def run_pick_demo(panel) -> None:
                     "note=legacy_vertical_offset_suppressed_for_pinch_center"
                 )
 
-            # Offset en Z para llevar la geometría física de la pinza al nivel del objeto.
-            # rg2_pinch_center está 0.162 m POR ENCIMA de las yemas; el valor positivo
-            # sube el brazo para que las yemas alcancen el cilindro.
-            # GRASP_CONTACT_Z_OFFSET_M=0.0 → sin cambio (comportamiento anterior).
+            # Offset vertical operativo adicional para pruebas de contacto.
+            # El TCP canónico ya está fijado en el URDF; este ajuste no redefine
+            # la geometría del frame, solo aplica una corrección temporal sobre
+            # el target durante la secuencia.
             grasp_contact_z_offset_m = float(
                 os.environ.get("GRASP_CONTACT_Z_OFFSET_M", "0.0") or "0.0"
             )
@@ -8904,13 +8904,13 @@ def run_pick_demo(panel) -> None:
 
             # Nota sobre "XYZ visual vs XYZ actual" en la UI:
             # "actual" = rg2_pinch_center (TCP de contacto), "visual" = tool0.
-            # La diferencia Z sistemática (~0.175 m) es el offset fijo de la pinza,
+            # La diferencia Z sistemática es el offset fijo canónico tool0->TCP,
             # no una divergencia de error. tcp_visual_world=None para evitar falsos
             # warnings en el evaluador.
             panel._emit_log(
                 "[ATTACH_GATE][TCP_FRAMES] "
                 f"frame_actual=rg2_pinch_center frame_visual=tool0 "
-                f"expected_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f}m "
+                f"expected_z_gap={float(DIRECT_TOOL0_TO_RG2_TCP_Z_M):.6f}m "
                 f"tcp_actual_base={_live_tcp_base()} "
                 "nota=diferencia_sistematica_no_error"
             )
@@ -8927,7 +8927,7 @@ def run_pick_demo(panel) -> None:
                 ).get("opening_sum"),
                 attach_backend_ok=bool(attach_ok),
                 tcp_command_base=tuple(tcp_base_grasp) if tcp_base_grasp is not None else None,
-                tcp_visual_world=None,  # tool0 difiere 0.175 m por offset sistematico
+                tcp_visual_world=None,  # tool0 difiere por el offset canónico tool0->TCP
                 object_pose_source="strict_fresh_gazebo",
             )
             _ag_result = _ag_evaluator.evaluate()

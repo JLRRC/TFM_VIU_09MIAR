@@ -9,6 +9,8 @@ import threading
 import time
 from typing import Callable, Optional
 
+from ur5_tools.gripper_geometry import RG2_TCP_FRAME, tool0_offset_for_frame
+
 from .panel_objects import recalc_object_states
 from .panel_robot_presets import (
     JOINT_BASKET_POSE_RAD,
@@ -135,7 +137,7 @@ class Directo2Controller:
                             from .panel_utils import get_pose as _get_pose
                             from .ur5_kinematics import fk_ur5 as _fk_ur5
 
-                            tcp_z = 0.175
+                            tcp_z = float(tool0_offset_for_frame(RG2_TCP_FRAME)[2])
                             fk_pose = _fk_ur5(list(_JREF))
                             tool0 = (-float(fk_pose[0][0]), -float(fk_pose[0][1]), float(fk_pose[0][2]))
                             tcp = (tool0[0], tool0[1], tool0[2] + tcp_z)
