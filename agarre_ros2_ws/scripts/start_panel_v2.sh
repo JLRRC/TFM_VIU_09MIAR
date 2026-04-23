@@ -590,7 +590,7 @@ PY
   export GZ_SIM_RESOURCE_PATH="$runtime_models_root:$GZ_SIM_RESOURCE_PATH"
 fi
 
-log "Wrapper interno de panel; flujo canónico oficial: ./lanzar_panelv2.sh"
+log "Wrapper interno de panel; flujo canónico oficial: ./lanzar_panelc2.sh"
 
 PANEL_START_ROS2_CONTROL="${PANEL_START_ROS2_CONTROL:-0}"
 PANEL_LAUNCH_BRIDGE="${PANEL_LAUNCH_BRIDGE:-$PANEL_START_STACK}"

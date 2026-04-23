@@ -27,8 +27,10 @@ Directorios generados:
 Desde la raiz del proyecto, flujo canónico oficial:
 
 ```bash
-./lanzar_panelv2.sh
+./lanzar_panelc2.sh
 ```
+
+(`./lanzar_panelv2.sh` se mantiene como alias de compatibilidad.)
 
 Desde este workspace, wrapper interno para depuración:
 

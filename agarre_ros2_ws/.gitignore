@@ -34,6 +34,7 @@ Thumbs.db
 BORRAR/
 bags/
 experiments/
+reports/repro_startup/
 .venv*/
 .venv_ai/
 .matplotlib_cache/
