@@ -8814,7 +8814,7 @@ def run_pick_demo(panel) -> None:
                     if tcp_world_before_coarse is not None and tcp_before_coarse is not None and obj_base_before_coarse is not None:
                         keep_xy_tol = max(
                             0.01,
-                            float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_KEEP_XY_TOL_M", "0.06") or 0.06),
+                            float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_KEEP_XY_TOL_M", "0.020") or 0.020),
                         )
                         tcp_obj_xy = math.hypot(
                             float(tcp_before_coarse[0]) - float(obj_base_before_coarse[0]),
@@ -9005,6 +9005,7 @@ def run_pick_demo(panel) -> None:
                             f"dz={coarse_dz:.3f}/{coarse_skip_z_tol:.3f} mode={coarse_target_mode}"
                         )
                         _append_trace(_skip_check_msg)
+                        panel._emit_log(_skip_check_msg)
                         if (
                             coarse_xy <= coarse_skip_xy_tol
                             and abs(coarse_dz) <= coarse_skip_z_tol
@@ -9036,6 +9037,21 @@ def run_pick_demo(panel) -> None:
                             )
                             panel._emit_log(_skip_blocked_msg)
                             _append_trace(_skip_blocked_msg)
+                    _approach_entry_msg = (
+                        "[APPROACH_COARSE][ENTRY] "
+                        f"object_world={_fmt_vec(obj_world_before_coarse)} "
+                        f"object_base={_fmt_vec(obj_base_before_coarse)} "
+                        f"target_world_coarse={_fmt_vec(target_world_coarse)} "
+                        f"target_base_coarse={_fmt_vec(target_base_coarse)} "
+                        f"coarse_target_mode={coarse_target_mode} "
+                        f"tcp_world_before={_fmt_vec(tcp_world_before_coarse)} "
+                        f"tcp_base_before={_fmt_vec(tcp_before_coarse)} "
+                        f"world_to_base_path={_direct_debug_state.get('world_to_base_path', 'unset')} "
+                        f"cycle_object_source={_pick_demo_cycle_object_source} "
+                        f"approach_decision={approach_decision}"
+                    )
+                    panel._emit_log(_approach_entry_msg)
+                    _append_trace(_approach_entry_msg)
                     if approach_decision == "direct_ik_move":
                         try:
                             approach_debug = _move_tcp_direct(
@@ -9175,6 +9191,18 @@ def run_pick_demo(panel) -> None:
                             f"tcp={_fmt_vec(_coarse_check_tcp)}"
                         )
                     # ── [/FIX PHASE_CHECK settle wait] ───────────────────────────────
+                _approach_exit_msg = (
+                    "[APPROACH_COARSE][EXIT] "
+                    f"approach_decision={approach_decision} "
+                    f"live_rg2_pinch_center_base={_fmt_vec(_coarse_check_tcp)} "
+                    f"target_base_coarse={_fmt_vec(target_base_coarse)} "
+                    f"target_exec_tool0_base={_fmt_vec(_direct_debug_state.get('target_exec_tool0_base'))} "
+                    f"offset_source={_direct_debug_state.get('offset_source', 'unset')} "
+                    f"world_to_base_path={_direct_debug_state.get('world_to_base_path', 'unset')} "
+                    f"coarse_target_mode={coarse_target_mode}"
+                )
+                panel._emit_log(_approach_exit_msg)
+                _append_trace(_approach_exit_msg)
                 _coarse_check_obj = _live_object_base()
                 coarse_gate_xy_ok: bool = False
                 coarse_gate_z_ok: bool = False
