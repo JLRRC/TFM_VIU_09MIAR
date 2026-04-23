@@ -30,7 +30,6 @@ PRE_GRASP_RE = re.compile(r"\[PICK\]\[DIRECT\]\[TRANSITION\] from=PRE_CLOSE to=C
 APPROACH_PREGRASP_RE = re.compile(r"\[PICK\]\[DIRECT\]\[DEBUG\] phase=APPROACH_COARSE result=ok ")
 APPROACH_FAILURE_RE = re.compile(r"\[PICK\]\[DIRECT\]\[ANALYSIS\] code=(?P<code>[A-Z0-9_]+) phase=(?P<phase>[A-Z_]+) ")
 BASKET_OK_RE = re.compile(r"\[PICK\]\[DEMO\] confirmacion cesta OK ")
-SUCCESS_RE = re.compile(r"\[PICK\]\[DIRECT\] SECUENCIA COMPLETADA EXITOSAMENTE route=basket")
 
 
 def _sanitize_label(topic: str) -> str:
@@ -149,8 +148,6 @@ class DirectoVisualCapture(Node):
             self._queue_snapshot("approach_failure", f"{phase}:{code}")
         if BASKET_OK_RE.search(line) and "basket_drop" not in self._manifest:
             self._queue_snapshot("basket_drop", "basket_confirmation", delay_sec=self._args.basket_delay_sec)
-        elif SUCCESS_RE.search(line) and "basket_drop" not in self._manifest:
-            self._queue_snapshot("basket_drop", "sequence_success", delay_sec=self._args.basket_delay_sec)
 
     def _check_lift_condition(self) -> None:
         if "lift_with_object" in self._manifest:

@@ -18,6 +18,7 @@ AUDIT_ROOT="${AUDIT_ROOT:-$WS_DIR/../auditoria}"
 AUDIT_DIR="${AUDIT_DIR:-$AUDIT_ROOT/spatial_$(date +%Y%m%d)}"
 RUN_ID="directo_validation_$(date +%Y%m%d_%H%M%S)"
 OUT_DIR="${OUT_DIR:-$AUDIT_DIR/$RUN_ID}"
+RUNTIME_PROFILE="${RUNTIME_PROFILE:-$WS_DIR/scripts/panel_runtime_validated.env}"
 
 mkdir -p "$OUT_DIR"
 
@@ -28,6 +29,13 @@ fi
 if [[ -f "$WS_DIR/install/setup.bash" ]]; then
     source "$WS_DIR/install/setup.bash"
 fi
+if [[ ! -f "$RUNTIME_PROFILE" ]]; then
+    echo "[ORCH][ERROR] Falta el perfil runtime validado: $RUNTIME_PROFILE"
+    exit 1
+fi
+# shellcheck disable=SC1090
+source "$RUNTIME_PROFILE"
+export PANEL_RUNTIME_PROFILE_PATH="$RUNTIME_PROFILE"
 
 DIRECTO_TIMEOUT_SEC="${DIRECTO_TIMEOUT_SEC:-600}"
 CAPTURE_TIMEOUT_SEC="${CAPTURE_TIMEOUT_SEC:-300}"
@@ -41,47 +49,54 @@ CAPTURE_LOG="$OUT_DIR/capture.log"
 BENCHMARK_JSON="$OUT_DIR/benchmark.json"
 BENCHMARK_STDOUT_JSON="$OUT_DIR/benchmark_stdout.json"
 SUMMARY="$OUT_DIR/orchestrator_summary.txt"
+STACK_STARTUP_MAX_ATTEMPTS="${STACK_STARTUP_MAX_ATTEMPTS:-3}"
+SYSTEM_DIAG_TIMEOUT_SEC="${SYSTEM_DIAG_TIMEOUT_SEC:-30}"
 
 echo "[ORCH] Corrida DIRECTO: $RUN_ID"
 echo "[ORCH] Salida: $OUT_DIR"
+echo "[ORCH] Perfil runtime: $PANEL_RUNTIME_VALIDATED_PROFILE ($RUNTIME_PROFILE)"
 
-# --- Limpiar procesos Gazebo/bridge residuales de corridas anteriores ---
-echo "[ORCH] Limpiando procesos residuales..."
-pkill -f "gz sim" 2>/dev/null || true
-pkill -f "gz_server" 2>/dev/null || true
-pkill -f "ros_gz_bridge" 2>/dev/null || true
-pkill -f "parameter_bridge" 2>/dev/null || true
-pkill -f "ros2_control_node" 2>/dev/null || true
-pkill -f "controller_manager" 2>/dev/null || true
-pkill -f "spawner" 2>/dev/null || true
-pkill -f "robot_state_publisher" 2>/dev/null || true
-# Residuales críticos entre corridas: gripper_attach_backend y move_group
-# pueden interceptar llamadas de release/attach del ciclo siguiente.
-pkill -f "gripper_attach_backend" 2>/dev/null || true
-pkill -f "move_group" 2>/dev/null || true
-pkill -f "gz-transport-topic" 2>/dev/null || true
-pkill -f "gz_pose_bridge" 2>/dev/null || true
-pkill -f "grasp_audit_trace_capture" 2>/dev/null || true
-pkill -f "run_directo_button_offscreen" 2>/dev/null || true
-pkill -f "capture_camera_frames" 2>/dev/null || true
-sleep 4
-# Limpiar shared memory residual de FastDDS/CycloneDDS (evita 'Failed init_port' errors)
-rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
-echo "[ORCH] Limpieza completada"
+cleanup_residual_processes() {
+    echo "[ORCH] Limpiando procesos residuales..."
+    pkill -f "gz sim" 2>/dev/null || true
+    pkill -f "gz_server" 2>/dev/null || true
+    pkill -f "ros_gz_bridge" 2>/dev/null || true
+    pkill -f "parameter_bridge" 2>/dev/null || true
+    pkill -f "ros2_control_node" 2>/dev/null || true
+    pkill -f "controller_manager" 2>/dev/null || true
+    pkill -f "spawner" 2>/dev/null || true
+    pkill -f "robot_state_publisher" 2>/dev/null || true
+    pkill -f "world_tf_publisher" 2>/dev/null || true
+    # Residuales críticos entre corridas: gripper_attach_backend y move_group
+    # pueden interceptar llamadas de release/attach del ciclo siguiente.
+    pkill -f "gripper_attach_backend" 2>/dev/null || true
+    pkill -f "controller_bootstrap" 2>/dev/null || true
+    pkill -f "planning_scene_sync" 2>/dev/null || true
+    pkill -f "system_state_manager" 2>/dev/null || true
+    pkill -f "release_objects_service" 2>/dev/null || true
+    pkill -f "ur5_qt_panel" 2>/dev/null || true
+    pkill -f "panel_v2.py" 2>/dev/null || true
+    pkill -f "ros2 run ur5_qt_panel panel_v2" 2>/dev/null || true
+    pkill -f "move_group" 2>/dev/null || true
+    pkill -f "gz-transport-topic" 2>/dev/null || true
+    pkill -f "gz_pose_bridge" 2>/dev/null || true
+    pkill -f "grasp_audit_trace_capture" 2>/dev/null || true
+    pkill -f "run_directo_button_offscreen" 2>/dev/null || true
+    pkill -f "capture_camera_frames" 2>/dev/null || true
+    sleep 4
+    # Limpiar shared memory residual de FastDDS/CycloneDDS (evita 'Failed init_port' errors)
+    rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
+    echo "[ORCH] Limpieza completada"
+}
+
+cleanup_residual_processes
 
 # --- Fijar GZ_PARTITION para que stack y runner offscreen usen el mismo bus gz-transport ---
 export GZ_PARTITION="${GZ_PARTITION:-ur5pro_validation}"
 export PANEL_CAMERA_REQUIRED=0
-export SYSTEM_STATE_STARTUP_TIMEOUT_SEC="${SYSTEM_STATE_STARTUP_TIMEOUT_SEC:-15.0}"
-export SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M="${SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M:-0.002}"
-export SYSTEM_STATE_GEOMETRY_PAIR_TOL_M="${SYSTEM_STATE_GEOMETRY_PAIR_TOL_M:-0.001}"
-export PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE="${PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE:-0.35}"
-export PANEL_MOVEIT_BRIDGE_ACCEL_SCALE="${PANEL_MOVEIT_BRIDGE_ACCEL_SCALE:-0.35}"
-export PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M="${PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M:-0.500}"
 # Mantener cámaras en mundo headless para obtener evidencia visual real.
 # Sin PANEL_KEEP_CAMERAS=1, el launch elimina todos los modelos de cámara del SDF.
 export PANEL_KEEP_CAMERAS=1
-STACK_LOG="$OUT_DIR/stack.log"
 CAMERA_LOG="$OUT_DIR/camera_capture.log"
 CAMERA_FRAMES_DIR="$OUT_DIR/camera_frames"
 VISUAL_SMOKE_DIR="$OUT_DIR/visual_smoke"
@@ -90,69 +105,93 @@ VISUAL_MANIFEST="$VISUAL_SMOKE_DIR/visual_capture_manifest.json"
 mkdir -p "$CAMERA_FRAMES_DIR"
 mkdir -p "$VISUAL_SMOKE_DIR"
 
-echo "[ORCH] Lanzando stack completo (Gazebo + MoveIt2 + controllers) GZ_PARTITION=$GZ_PARTITION"
-ros2 launch ur5_bringup ur5_stack.launch.py \
-    headless:=true \
-    launch_panel:=false \
-    launch_moveit:=true \
-    moveit_mode:=move_group \
-    camera_required:=false \
-    >"$STACK_LOG" 2>&1 &
-STACK_PID=$!
-echo "[ORCH] Stack PID=$STACK_PID log=$STACK_LOG"
-
-# --- Esperar a que move_group esté vivo (max 300 s) ---
-# Detecta readiness directamente del stack log: "You can start planning now!" es
-# emitido por move_group solo cuando todos los servicios y controladores están activos.
-# Esto es más fiable que ros2 service list (lenta descubrimiento DDS) y evita
-# falsos positivos de procesos stale de corridas anteriores.
-MOVEIT_WAIT_SEC=300
-MOVEIT_WAIT_START=$(date +%s)
-echo "[ORCH] Esperando 'You can start planning now!' en stack.log (timeout=${MOVEIT_WAIT_SEC}s)..."
-until grep -q "You can start planning now" "$STACK_LOG" 2>/dev/null; do
-    NOW=$(date +%s)
-    ELAPSED=$(( NOW - MOVEIT_WAIT_START ))
-    if (( ELAPSED >= MOVEIT_WAIT_SEC )); then
-        echo "[ORCH][ERROR] Timeout: move_group no publicó readiness en ${MOVEIT_WAIT_SEC}s. Abortando."
-        kill "$STACK_PID" 2>/dev/null || true
-        exit 1
-    fi
-    sleep 3
-done
-echo "[ORCH] move_group listo ($(( $(date +%s) - MOVEIT_WAIT_START ))s desde stack launch)"
-
-# --- Esperar a que Gazebo tenga datos de poses (al menos un mensaje en pose/info) ---
-GAZEBO_WAIT_SEC=120
-GAZEBO_WAIT_START=$(date +%s)
-echo "[ORCH] Esperando datos en /world/${WORLD}/pose/info (timeout=${GAZEBO_WAIT_SEC}s)..."
-until timeout 8s ros2 topic echo --once "/world/${WORLD}/pose/info" >/dev/null 2>&1; do
-    NOW=$(date +%s)
-    ELAPSED=$(( NOW - GAZEBO_WAIT_START ))
-    if (( ELAPSED >= GAZEBO_WAIT_SEC )); then
-        echo "[ORCH][WARN] Gazebo pose/info sin datos tras ${GAZEBO_WAIT_SEC}s — continuando de todos modos"
-        break
-    fi
-    sleep 5
-done
-echo "[ORCH] Gazebo pose/info activo ($(( $(date +%s) - GAZEBO_WAIT_START ))s)"
-# Extra grace para que system_state_manager publique GAZEBO_READY
-sleep 15
-
+STACK_PID=""
+STACK_LOG=""
 SYSTEM_DIAG_JSON="$OUT_DIR/system_diag_startup.json"
 SYSTEM_DIAG_LOG="$OUT_DIR/system_diag_capture.log"
-echo "[ORCH] Capturando self-check geométrico de arranque..."
-if ! python3 "$SCRIPT_DIR/capture_system_diag.py" \
-    --timeout 20 \
-    --output "$SYSTEM_DIAG_JSON" \
-    --require-geometry-ok \
-    --require-state READY \
-    >"$SYSTEM_DIAG_LOG" 2>&1; then
-    echo "[ORCH][ERROR] /system_diag no llegó a READY con geometry_ok=true"
-    kill "$STACK_PID" 2>/dev/null || true
-    wait "$STACK_PID" 2>/dev/null || true
+
+start_stack_attempt() {
+    local attempt="$1"
+    local stack_log="$OUT_DIR/stack_attempt${attempt}.log"
+    local system_diag_json="$OUT_DIR/system_diag_startup_attempt${attempt}.json"
+    local system_diag_log="$OUT_DIR/system_diag_capture_attempt${attempt}.log"
+    rm -f "$stack_log" "$system_diag_json" "$system_diag_log"
+    echo "[ORCH] Lanzando stack completo (Gazebo + MoveIt2 + controllers) intento=${attempt}/${STACK_STARTUP_MAX_ATTEMPTS} GZ_PARTITION=$GZ_PARTITION"
+    ros2 launch ur5_bringup ur5_stack.launch.py \
+        headless:=true \
+        launch_panel:=false \
+        launch_moveit:=true \
+        moveit_mode:=move_group \
+        camera_required:=false \
+        >"$stack_log" 2>&1 &
+    STACK_PID=$!
+    STACK_LOG="$stack_log"
+    echo "[ORCH] Stack PID=$STACK_PID log=$STACK_LOG"
+
+    MOVEIT_WAIT_SEC=300
+    MOVEIT_WAIT_START=$(date +%s)
+    echo "[ORCH] Esperando 'You can start planning now!' en stack.log (timeout=${MOVEIT_WAIT_SEC}s)..."
+    until grep -q "You can start planning now" "$STACK_LOG" 2>/dev/null; do
+        NOW=$(date +%s)
+        ELAPSED=$(( NOW - MOVEIT_WAIT_START ))
+        if (( ELAPSED >= MOVEIT_WAIT_SEC )); then
+            echo "[ORCH][WARN] Timeout: move_group no publicó readiness en ${MOVEIT_WAIT_SEC}s (intento ${attempt})"
+            return 1
+        fi
+        sleep 3
+    done
+    echo "[ORCH] move_group listo ($(( $(date +%s) - MOVEIT_WAIT_START ))s desde stack launch)"
+
+    GAZEBO_WAIT_SEC=120
+    GAZEBO_WAIT_START=$(date +%s)
+    echo "[ORCH] Esperando datos en /world/${WORLD}/pose/info (timeout=${GAZEBO_WAIT_SEC}s)..."
+    until timeout 8s ros2 topic echo --once "/world/${WORLD}/pose/info" >/dev/null 2>&1; do
+        NOW=$(date +%s)
+        ELAPSED=$(( NOW - GAZEBO_WAIT_START ))
+        if (( ELAPSED >= GAZEBO_WAIT_SEC )); then
+            echo "[ORCH][WARN] Gazebo pose/info sin datos tras ${GAZEBO_WAIT_SEC}s — continuando de todos modos"
+            break
+        fi
+        sleep 5
+    done
+    echo "[ORCH] Gazebo pose/info activo ($(( $(date +%s) - GAZEBO_WAIT_START ))s)"
+    # Extra grace para que system_state_manager publique GAZEBO_READY
+    sleep 15
+
+    echo "[ORCH] Capturando self-check geométrico de arranque..."
+    if ! python3 "$SCRIPT_DIR/capture_system_diag.py" \
+        --timeout "$SYSTEM_DIAG_TIMEOUT_SEC" \
+        --output "$system_diag_json" \
+        --require-geometry-ok \
+        --require-state READY \
+        >"$system_diag_log" 2>&1; then
+        echo "[ORCH][WARN] /system_diag no llegó a READY con geometry_ok=true (intento ${attempt})"
+        return 1
+    fi
+    cp "$system_diag_json" "$SYSTEM_DIAG_JSON"
+    cp "$system_diag_log" "$SYSTEM_DIAG_LOG"
+    ln -sfn "$(basename "$STACK_LOG")" "$OUT_DIR/stack.log"
+    echo "[ORCH] Self-check geométrico OK snapshot=$SYSTEM_DIAG_JSON"
+    return 0
+}
+
+startup_ok=0
+for startup_attempt in $(seq 1 "$STACK_STARTUP_MAX_ATTEMPTS"); do
+    if start_stack_attempt "$startup_attempt"; then
+        startup_ok=1
+        break
+    fi
+    if [[ -n "${STACK_PID:-}" ]]; then
+        kill "$STACK_PID" 2>/dev/null || true
+        wait "$STACK_PID" 2>/dev/null || true
+    fi
+    cleanup_residual_processes
+done
+
+if [[ "$startup_ok" != "1" ]]; then
+    echo "[ORCH][ERROR] Stack no alcanzó READY geométrico tras ${STACK_STARTUP_MAX_ATTEMPTS} intentos"
     exit 1
 fi
-echo "[ORCH] Self-check geométrico OK snapshot=$SYSTEM_DIAG_JSON"
 
 # --- Lanzar el runner del panel offscreen ---
 env \
@@ -167,38 +206,6 @@ env \
     PANEL_AUTO_BRIDGE=1 \
     PANEL_SKIP_CLEANUP=1 \
     PANEL_CAMERA_REQUIRED=0 \
-    PANEL_FATAL_STOPS_ALL=0 \
-    PANEL_GZ_HEALTH_FREEZE_SEC=30 \
-    PANEL_ALLOW_UNSETTLED_ON_TIMEOUT=1 \
-    PANEL_TF_INIT_GRACE_SEC=300 \
-    PANEL_PICK_DEMO_MAX_PROMOTED_STABLE_AGE_SEC=900 \
-    PANEL_PICK_DEMO_MOVE_SEC=15 \
-    PANEL_PICK_DEMO_STEP_TIMEOUT_EXTRA_SEC=60 \
-    PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC=120 \
-    PANEL_PICK_DEMO_IK_SEED_JOINTS=0.0,-1.5708,0.0,-1.5708,0.0,-3.07 \
-    PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M=0.015 \
-    PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M=0.025 \
-    GRASP_CONTACT_Z_OFFSET_M=0.0 \
-    PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT=0.035 \
-    PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL=0.200 \
-    PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT=0.035 \
-    PANEL_PICK_DEMO_ALIGN_IK_SEED_WEIGHT=0.035 \
-    PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL=0.200 \
-    PANEL_PICK_DEMO_POSE_SOURCE_TOL_M=1.0 \
-    PANEL_PICK_DEMO_POSE_SOURCE_AGE_TOL_SEC=300.0 \
-    PANEL_PICK_DEMO_POSE_SOURCE_SYNC_TOL_SEC=300.0 \
-    PANEL_MOVEIT_STARTUP_TIMEOUT_SEC=300 \
-    PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M=0.016 \
-    PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M=0.020 \
-    PANEL_PICK_DEMO_ATTACH_XY_TOL_M=0.020 \
-    PANEL_PICK_DEMO_ATTACH_SETTLE_SEC=4.0 \
-    PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M=0.050 \
-    PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M=0.080 \
-    PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES=3 \
-    PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC=0.25 \
-    PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_FK_ERR_M=0.012 \
-    PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_JOINT_DELTA_RAD=0.90 \
-    PANEL_MOVEIT_BRIDGE_APPROACH_IK_MAX_JOINT_DELTA_SUM_RAD=2.75 \
     DIRECTO_CLICK_DELAY_MS=8000 \
     "DIRECTO_EXIT_AFTER_MS=$(( DIRECTO_TIMEOUT_SEC * 1000 ))" \
     DIRECTO_RETRY_MS=5000 \
@@ -297,6 +304,8 @@ echo "[ORCH] Benchmark rc=$BENCHMARK_RC"
 # --- Resumen ---
 {
     echo "canonical_launcher=$CANONICAL_LAUNCHER"
+    echo "runtime_profile=$RUNTIME_PROFILE"
+    echo "runtime_profile_name=${PANEL_RUNTIME_VALIDATED_PROFILE:-unknown}"
     echo "helper_final_rc=$HELPER_RC"
     echo "capture_rc=$CAPTURE_RC"
     echo "benchmark_rc=$BENCHMARK_RC"
@@ -308,5 +317,13 @@ echo "[ORCH] Benchmark rc=$BENCHMARK_RC"
 
 echo "[ORCH] Resumen guardado en $SUMMARY"
 echo "[ORCH] Logs: $OUT_DIR"
-echo "[ORCH][SHUTDOWN] final_rc=$HELPER_RC"
+FINAL_RC="$HELPER_RC"
+if [[ "$VISUAL_SMOKE_COMPLETE" -ne 1 ]]; then
+    FINAL_RC=1
+fi
+if [[ "$BENCHMARK_RC" -ne 0 ]]; then
+    FINAL_RC=1
+fi
+echo "[ORCH][SHUTDOWN] final_rc=$FINAL_RC"
 echo "canonical_launcher=$CANONICAL_LAUNCHER helper_final_rc=$HELPER_RC capture_rc=$CAPTURE_RC benchmark_rc=$BENCHMARK_RC stack_rc=${STACK_RC:-n/a} visual_smoke_complete=$VISUAL_SMOKE_COMPLETE"
+exit "$FINAL_RC"

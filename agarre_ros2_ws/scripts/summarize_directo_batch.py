@@ -18,6 +18,11 @@ SUCCESS_LOG_PATTERNS = (
 FAIL_LOG_PATTERNS = (
     re.compile(r"ERROR_FATAL:"),
     re.compile(r"demo_carry_validation_failed"),
+    re.compile(r"demo_transport_follow_failed"),
+    re.compile(r"\[PICK\]\[DEMO\]\[FAIL\] basket_confirmation_"),
+    re.compile(r"\[PICK\]\[DEMO\]\[REJECT\] basket_confirmation_release_only"),
+    re.compile(r"\[PICK\]\[DIRECT\]\[RELEASE\] open_wait_done confirmed=False"),
+    re.compile(r"\[PICK\]\[DEMO\] confirmacion cesta OK source=release_reference"),
 )
 BENIGN_FAIL_PATTERNS = (
     re.compile(r"ERROR_FATAL: system_state no disponible"),
@@ -127,6 +132,8 @@ def _summarize_run(run_dir: Path) -> Dict[str, object]:
     )
     return {
         "run_dir": str(run_dir),
+        "runtime_profile": summary.get("runtime_profile", ""),
+        "runtime_profile_name": summary.get("runtime_profile_name", ""),
         "helper_rc": helper_rc,
         "benchmark_rc": benchmark_rc,
         "visual_ok": visual_ok,

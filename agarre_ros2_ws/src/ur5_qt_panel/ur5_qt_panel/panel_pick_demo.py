@@ -41,6 +41,8 @@ from .panel_config import (
     GRIPPER_CLOSED_RAD,
     GRIPPER_OPEN_RAD,
     GRIPPER_TCP_Z_OFFSET,
+    PICK_DEMO_TRANSPORT_Z_OFFSET,
+    PICK_DEMO_DROP_Z_OFFSET,
     UR5_JOINT_NAMES,
     GRIPPER_JOINT_NAMES,
 )
@@ -123,6 +125,27 @@ def _direct_runtime_target_tol_m(label: str) -> float:
     )
 
 
+def _is_demo_basket_transport_stage(label: str) -> bool:
+    return str(label or "").strip().upper().startswith("CESTA_STAGE_")
+
+
+def _is_demo_basket_transport_motion(label: str) -> bool:
+    label_name = str(label or "").strip().upper()
+    return _is_demo_basket_transport_stage(label_name) or label_name == "CESTA_RELEASE"
+
+
+def _should_apply_global_step_timeout_extra(
+    label: str,
+    *,
+    requested: bool,
+) -> bool:
+    if not bool(requested):
+        return False
+    if _is_demo_basket_transport_motion(label):
+        return False
+    return True
+
+
 def _pick_demo_tuple3(data):
     if data is None:
         return None
@@ -158,11 +181,82 @@ def _pick_demo_env_float(name: str, default: float, *, minimum: float = 0.0) -> 
     return max(float(minimum), float(value))
 
 
+def _pick_demo_env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    try:
+        value = int(float(os.environ.get(name, str(default)) or default))
+    except Exception:
+        value = int(default)
+    return max(int(minimum), int(value))
+
+
 def _pick_demo_env_flag(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
     if raw is None:
         return bool(default)
     return str(raw).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def _should_transport_prep_failure_jump_to_replan(
+    *,
+    failed_segment_index: int,
+    total_segments: int,
+    max_joint_residual_rad: float | None,
+    shoulder_joint_residual_rad: float | None,
+    min_failed_segment_fraction: float,
+    max_joint_residual_threshold_rad: float,
+    shoulder_joint_residual_threshold_rad: float,
+) -> bool:
+    if max_joint_residual_rad is None or shoulder_joint_residual_rad is None:
+        return False
+    safe_total_segments = max(1, int(total_segments))
+    safe_failed_segment_index = min(
+        safe_total_segments,
+        max(1, int(failed_segment_index)),
+    )
+    safe_failed_fraction = float(safe_failed_segment_index) / float(safe_total_segments)
+    safe_min_failed_fraction = min(
+        1.0,
+        max(0.0, float(min_failed_segment_fraction)),
+    )
+    return bool(
+        safe_failed_fraction >= safe_min_failed_fraction
+        and (
+            float(max_joint_residual_rad) >= float(max_joint_residual_threshold_rad)
+            or float(shoulder_joint_residual_rad) >= float(shoulder_joint_residual_threshold_rad)
+        )
+    )
+
+
+def _evaluate_transport_stage_postcheck(
+    *,
+    runtime_target_ok: bool | None,
+    runtime_target_dist_m: float | None,
+    runtime_target_tol_m: float,
+    model_target_err_m: float | None,
+    model_target_tol_m: float,
+) -> dict:
+    safe_runtime_target_tol_m = max(0.001, float(runtime_target_tol_m))
+    safe_model_target_tol_m = max(0.001, float(model_target_tol_m))
+    reasons: list[str] = []
+    if runtime_target_ok is False:
+        if runtime_target_dist_m is None:
+            reasons.append("runtime_target=unconfirmed")
+        elif float(runtime_target_dist_m) > safe_runtime_target_tol_m:
+            reasons.append(
+                "runtime_target_dist="
+                f"{_pick_demo_fmt_scalar(runtime_target_dist_m)}/{safe_runtime_target_tol_m:.3f}"
+            )
+    if model_target_err_m is not None and float(model_target_err_m) > safe_model_target_tol_m:
+        reasons.append(
+            "model_target_err="
+            f"{_pick_demo_fmt_scalar(model_target_err_m)}/{safe_model_target_tol_m:.3f}"
+        )
+    return {
+        "ok": not reasons,
+        "reason": "ok" if not reasons else " ".join(reasons),
+        "runtime_target_tol_m": safe_runtime_target_tol_m,
+        "model_target_tol_m": safe_model_target_tol_m,
+    }
 
 
 def _resolve_live_object_world(
@@ -826,6 +920,8 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
     release_xy_tol_base = 0.20
     release_z_headroom_world = 0.10
     release_z_headroom_base = 0.10
+    release_only_reject_logged = False
+    last_diag = None
     while (time.monotonic() - start) <= timeout_sec:
         st = get_object_state(PICK_DEMO_OBJECT_NAME)
         if st is not None:
@@ -889,10 +985,18 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
 
             detached_ok = (not bool(st.attached)) and (st.owner == ObjectOwner.NONE)
             release_ok = release_xy_ok_world or release_xy_ok_base
-            if detached_ok and (world_ok or base_ok or release_ok):
-                confirmation_source = "basket_reference"
-                if release_ok and not (world_ok or base_ok):
-                    confirmation_source = "release_reference"
+            last_diag = {
+                "world_obj": (xw, yw, zw),
+                "dxy_world": dxy_world,
+                "dz_world": dz_world,
+                "dxy_base": dxy_base,
+                "dz_base": dz_base,
+                "release_dxy_world": release_dxy_world,
+                "release_dxy_base": release_dxy_base,
+            }
+            basket_ok = bool(world_ok or base_ok)
+            if detached_ok and basket_ok:
+                confirmation_source = "basket_reference_world" if world_ok else "basket_reference_base"
                 panel._emit_log(
                     "[PICK][DEMO] confirmacion cesta OK "
                     f"source={confirmation_source} "
@@ -904,9 +1008,560 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
                     f"release_dxy_w={release_dxy_world:.3f} release_dxy_b={release_dxy_base:.3f}"
                 )
                 return True
+            if detached_ok and release_ok and not basket_ok and not release_only_reject_logged:
+                release_only_reject_logged = True
+                panel._emit_log(
+                    "[PICK][DEMO][REJECT] basket_confirmation_release_only "
+                    f"world_obj=({xw:.3f},{yw:.3f},{zw:.3f}) "
+                    f"world_basket=({basket_world[0]:.3f},{basket_world[1]:.3f},{basket_world[2]:.3f}) "
+                    f"world_release={_pick_demo_fmt_vec(release_reference_world)} "
+                    f"dxy_w={dxy_world:.3f} dz_w={dz_world:.3f} "
+                    f"dxy_b={dxy_base:.3f} dz_b={dz_base:.3f} "
+                    f"release_dxy_w={release_dxy_world:.3f} release_dxy_b={release_dxy_base:.3f}"
+                )
         time.sleep(0.2)
+    if last_diag is not None:
+        world_obj = last_diag["world_obj"]
+        panel._emit_log(
+            "[PICK][DEMO][FAIL] basket_confirmation_timeout "
+            f"world_obj=({world_obj[0]:.3f},{world_obj[1]:.3f},{world_obj[2]:.3f}) "
+            f"world_basket=({basket_world[0]:.3f},{basket_world[1]:.3f},{basket_world[2]:.3f}) "
+            f"world_release={_pick_demo_fmt_vec(release_reference_world)} "
+            f"dxy_w={last_diag['dxy_world']:.3f} dz_w={last_diag['dz_world']:.3f} "
+            f"dxy_b={last_diag['dxy_base']:.3f} dz_b={last_diag['dz_base']:.3f} "
+            f"release_dxy_w={last_diag['release_dxy_world']:.3f} "
+            f"release_dxy_b={last_diag['release_dxy_base']:.3f}"
+        )
     panel._emit_log("[PICK][DEMO] confirmacion cesta NO alcanzada (timeout)")
     return False
+
+
+def _validate_demo_transport_follow(
+    panel,
+    *,
+    phase: str,
+    timeout_sec: float,
+    max_tcp_dist_m: float,
+    min_obj_world_z: float,
+    min_consecutive: int = 2,
+    live_object_world_fn,
+    live_object_base_fn,
+    live_tcp_base_fn,
+    clock_fn=None,
+    sleep_fn=None,
+) -> dict:
+    """Fail fast if the carried object stops physically following the TCP."""
+    log_fn = getattr(panel, "_emit_log", lambda _line: None)
+    if clock_fn is None:
+        clock_fn = time.monotonic
+    if sleep_fn is None:
+        sleep_fn = time.sleep
+
+    deadline = float(clock_fn()) + max(0.3, float(timeout_sec))
+    consecutive_ok = 0
+    best_tcp_dist = float("inf")
+    best_obj_world_z = float("-inf")
+    last_obj_world = None
+    last_obj_base = None
+    last_tcp_base = None
+    next_sample_log_ts = 0.0
+    fail_reasons = {
+        "pose_unavailable": 0,
+        "tcp_dist_above_max": 0,
+        "obj_world_z_below_min": 0,
+    }
+
+    log_fn(
+        "[PICK][DIRECT][TRANSPORT] "
+        f"phase={phase} start timeout_sec={float(timeout_sec):.2f} "
+        f"max_tcp_dist_m={float(max_tcp_dist_m):.3f} "
+        f"min_obj_world_z={float(min_obj_world_z):.3f}"
+    )
+    while float(clock_fn()) < deadline:
+        obj_world = _pick_demo_tuple3(live_object_world_fn())
+        obj_base = _pick_demo_tuple3(live_object_base_fn())
+        tcp_base = _pick_demo_tuple3(live_tcp_base_fn())
+        last_obj_world = obj_world
+        last_obj_base = obj_base
+        last_tcp_base = tcp_base
+
+        if obj_world is None or obj_base is None or tcp_base is None:
+            fail_reasons["pose_unavailable"] += 1
+            consecutive_ok = 0
+            sleep_fn(0.08)
+            continue
+
+        obj_world_z = float(obj_world[2])
+        dx = float(obj_base[0]) - float(tcp_base[0])
+        dy = float(obj_base[1]) - float(tcp_base[1])
+        dz = float(obj_base[2]) - float(tcp_base[2])
+        tcp_dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+        best_tcp_dist = min(best_tcp_dist, tcp_dist)
+        best_obj_world_z = max(best_obj_world_z, obj_world_z)
+
+        cond_tcp = tcp_dist <= float(max_tcp_dist_m)
+        cond_z = obj_world_z >= float(min_obj_world_z)
+        if not cond_tcp:
+            fail_reasons["tcp_dist_above_max"] += 1
+        if not cond_z:
+            fail_reasons["obj_world_z_below_min"] += 1
+
+        now_ts = float(clock_fn())
+        if now_ts >= next_sample_log_ts:
+            log_fn(
+                "[PICK][DIRECT][TRANSPORT] "
+                f"phase={phase} sample "
+                f"obj_world={_pick_demo_fmt_vec(obj_world)} "
+                f"obj_base={_pick_demo_fmt_vec(obj_base)} "
+                f"tcp_base={_pick_demo_fmt_vec(tcp_base)} "
+                f"tcp_dist={tcp_dist:.3f} obj_world_z={obj_world_z:.3f} "
+                f"cond_tcp={str(cond_tcp).lower()} cond_z={str(cond_z).lower()}"
+            )
+            next_sample_log_ts = now_ts + 0.24
+
+        if cond_tcp and cond_z:
+            consecutive_ok += 1
+            if consecutive_ok >= max(1, int(min_consecutive)):
+                log_fn(
+                    "[PICK][DIRECT][TRANSPORT] "
+                    f"phase={phase} ok tcp_dist={tcp_dist:.3f} "
+                    f"obj_world_z={obj_world_z:.3f} consecutive={consecutive_ok}"
+                )
+                return {
+                    "ok": True,
+                    "phase": phase,
+                    "tcp_dist": float(tcp_dist),
+                    "obj_world_z": float(obj_world_z),
+                    "obj_world": obj_world,
+                    "obj_base": obj_base,
+                    "tcp_base": tcp_base,
+                }
+        else:
+            consecutive_ok = 0
+        sleep_fn(0.08)
+
+    fail_reason_keys = [key for key, count in fail_reasons.items() if int(count) > 0] or ["unknown"]
+    log_fn(
+        "[PICK][DIRECT][TRANSPORT] "
+        f"phase={phase} failed best_tcp_dist={_pick_demo_fmt_scalar(best_tcp_dist)} "
+        f"best_obj_world_z={_pick_demo_fmt_scalar(best_obj_world_z)} "
+        f"last_obj_world={_pick_demo_fmt_vec(last_obj_world)} "
+        f"last_obj_base={_pick_demo_fmt_vec(last_obj_base)} "
+        f"last_tcp_base={_pick_demo_fmt_vec(last_tcp_base)} "
+        f"fail_reasons={','.join(fail_reason_keys)}"
+    )
+    raise RuntimeError(
+        "demo_transport_follow_failed "
+        f"phase={phase} best_tcp_dist={_pick_demo_fmt_scalar(best_tcp_dist)} "
+        f"best_obj_world_z={_pick_demo_fmt_scalar(best_obj_world_z)} "
+        f"last_obj_world={_pick_demo_fmt_vec(last_obj_world)} "
+        f"last_obj_base={_pick_demo_fmt_vec(last_obj_base)} "
+        f"last_tcp_base={_pick_demo_fmt_vec(last_tcp_base)} "
+        f"fail_reasons={','.join(fail_reason_keys)}"
+    )
+
+
+def _compute_demo_basket_targets(
+    basket_base,
+    *,
+    transport_z_offset: float,
+    release_z_offset: float,
+) -> dict:
+    basket_base_3 = _pick_demo_tuple3(basket_base)
+    if basket_base_3 is None:
+        raise ValueError("basket_base_unavailable")
+    transport_target = (
+        float(basket_base_3[0]),
+        float(basket_base_3[1]),
+        float(basket_base_3[2]) + float(transport_z_offset),
+    )
+    release_target = (
+        float(basket_base_3[0]),
+        float(basket_base_3[1]),
+        float(basket_base_3[2]) + float(release_z_offset),
+    )
+    return {
+        "basket_base": basket_base_3,
+        "transport_target_base": transport_target,
+        "release_target_base": release_target,
+    }
+
+
+def _compute_demo_linear_stage_targets(
+    start_base,
+    end_base,
+    *,
+    stages: int,
+) -> list[tuple[float, float, float]]:
+    start_base_3 = _pick_demo_tuple3(start_base)
+    end_base_3 = _pick_demo_tuple3(end_base)
+    if start_base_3 is None or end_base_3 is None:
+        raise ValueError("stage_target_unavailable")
+    total_stages = max(1, int(stages))
+    targets = []
+    for stage_idx in range(1, total_stages + 1):
+        frac = float(stage_idx) / float(total_stages)
+        targets.append(
+            (
+                float(start_base_3[0]) + (float(end_base_3[0]) - float(start_base_3[0])) * frac,
+                float(start_base_3[1]) + (float(end_base_3[1]) - float(start_base_3[1])) * frac,
+                float(start_base_3[2]) + (float(end_base_3[2]) - float(start_base_3[2])) * frac,
+            )
+        )
+    return targets
+
+
+def _compute_demo_stage_count_for_distance(
+    start_base,
+    end_base,
+    *,
+    min_stages: int,
+    max_stage_dist_m: float,
+    max_stages: int,
+) -> int:
+    start_base_3 = _pick_demo_tuple3(start_base)
+    end_base_3 = _pick_demo_tuple3(end_base)
+    if start_base_3 is None or end_base_3 is None:
+        raise ValueError("stage_count_target_unavailable")
+    total_dist_m = math.sqrt(
+        (float(end_base_3[0]) - float(start_base_3[0])) ** 2
+        + (float(end_base_3[1]) - float(start_base_3[1])) ** 2
+        + (float(end_base_3[2]) - float(start_base_3[2])) ** 2
+    )
+    safe_max_stage_dist_m = max(0.01, float(max_stage_dist_m))
+    requested_min = max(1, int(min_stages))
+    requested_max = max(requested_min, int(max_stages))
+    adaptive_count = max(1, int(math.ceil(total_dist_m / safe_max_stage_dist_m)))
+    return min(requested_max, max(requested_min, adaptive_count))
+
+
+def _compute_demo_transport_recovery_stage_targets(
+    current_tcp_base,
+    target_tcp_base,
+    *,
+    min_remaining_dist_m: float,
+    min_stages: int,
+    max_stage_dist_m: float,
+    max_stages: int,
+) -> list[tuple[float, float, float]]:
+    current_tcp_base_3 = _pick_demo_tuple3(current_tcp_base)
+    target_tcp_base_3 = _pick_demo_tuple3(target_tcp_base)
+    if current_tcp_base_3 is None or target_tcp_base_3 is None:
+        raise ValueError("transport_recovery_target_unavailable")
+    remaining_dist_m = math.sqrt(
+        (float(target_tcp_base_3[0]) - float(current_tcp_base_3[0])) ** 2
+        + (float(target_tcp_base_3[1]) - float(current_tcp_base_3[1])) ** 2
+        + (float(target_tcp_base_3[2]) - float(current_tcp_base_3[2])) ** 2
+    )
+    if remaining_dist_m < max(0.0, float(min_remaining_dist_m)):
+        return []
+    recovery_stage_count = _compute_demo_stage_count_for_distance(
+        current_tcp_base_3,
+        target_tcp_base_3,
+        min_stages=max(1, int(min_stages)),
+        max_stage_dist_m=max_stage_dist_m,
+        max_stages=max(max(1, int(min_stages)), int(max_stages)),
+    )
+    if recovery_stage_count <= 1:
+        return []
+    return _compute_demo_linear_stage_targets(
+        current_tcp_base_3,
+        target_tcp_base_3,
+        stages=recovery_stage_count,
+    )
+
+
+def _compute_demo_joint_prep_waypoint(
+    seed_joints,
+    target_joints,
+    *,
+    blend: float,
+) -> list[float]:
+    seed_list = [float(v) for v in seed_joints]
+    target_list = [float(v) for v in target_joints]
+    if len(seed_list) != len(target_list):
+        raise ValueError("joint_prep_length_mismatch")
+    safe_blend = min(0.95, max(0.05, float(blend)))
+    return [
+        float(seed_q) - safe_blend * float(angle_shortest_diff_rad(float(seed_q), float(target_q)))
+        for seed_q, target_q in zip(seed_list, target_list)
+    ]
+
+
+def _compute_demo_joint_prep_waypoints(
+    seed_joints,
+    target_joints,
+    *,
+    blend: float,
+    max_joint_delta_rad: float,
+    max_sum_delta_rad: float,
+    max_steps: int,
+    max_shoulder_delta_rad: float | None = None,
+) -> list[list[float]]:
+    seed_list = [float(v) for v in seed_joints]
+    target_list = [float(v) for v in target_joints]
+    if len(seed_list) != len(target_list):
+        raise ValueError("joint_prep_length_mismatch")
+    if not seed_list:
+        return []
+    safe_blend = min(0.95, max(0.05, float(blend)))
+    safe_max_joint_delta_rad = max(0.05, float(max_joint_delta_rad))
+    safe_max_sum_delta_rad = max(safe_max_joint_delta_rad, float(max_sum_delta_rad))
+    safe_max_steps = max(1, int(max_steps))
+    safe_max_shoulder_delta_rad = None
+    if max_shoulder_delta_rad is not None:
+        safe_max_shoulder_delta_rad = max(0.03, float(max_shoulder_delta_rad))
+    prep_deltas = [
+        abs(float(angle_shortest_diff_rad(float(seed_q), float(target_q))))
+        for seed_q, target_q in zip(seed_list, target_list)
+    ]
+    max_delta = max(prep_deltas) if prep_deltas else 0.0
+    sum_delta = sum(prep_deltas)
+    shoulder_delta = 0.0
+    if prep_deltas:
+        shoulder_indices = (0, 1)
+        shoulder_deltas = [
+            float(prep_deltas[idx])
+            for idx in shoulder_indices
+            if 0 <= idx < len(prep_deltas)
+        ]
+        shoulder_delta = max(shoulder_deltas) if shoulder_deltas else 0.0
+
+    def _segment_count_for_limit(value: float, limit: float) -> int:
+        if value <= 0.0:
+            return 1
+        ratio = float(value) / max(1e-9, float(limit))
+        return max(1, int(math.ceil(max(0.0, ratio - 1e-9))))
+
+    segment_count = max(
+        1,
+        _segment_count_for_limit(max_delta, safe_max_joint_delta_rad),
+        _segment_count_for_limit(sum_delta, safe_max_sum_delta_rad),
+        int(math.ceil(1.0 / safe_blend)),
+    )
+    if safe_max_shoulder_delta_rad is not None:
+        segment_count = max(
+            segment_count,
+            _segment_count_for_limit(shoulder_delta, safe_max_shoulder_delta_rad),
+        )
+    segment_count = min(safe_max_steps, segment_count)
+    if segment_count <= 1:
+        return []
+    return [
+        _compute_demo_joint_prep_waypoint(
+            seed_list,
+            target_list,
+            blend=float(step_idx) / float(segment_count),
+        )
+        for step_idx in range(1, segment_count)
+    ]
+
+
+def _compute_demo_transport_prep_joint_tol(
+    start_joints,
+    target_joints,
+    *,
+    configured_tol_rad: float,
+    minimum_tol_rad: float = 0.02,
+    max_fraction: float = 0.45,
+) -> float:
+    start_list = [float(v) for v in start_joints]
+    target_list = [float(v) for v in target_joints]
+    if len(start_list) != len(target_list):
+        raise ValueError("joint_prep_tol_length_mismatch")
+    if not start_list:
+        return max(float(minimum_tol_rad), float(configured_tol_rad))
+    safe_configured_tol = max(float(minimum_tol_rad), float(configured_tol_rad))
+    safe_minimum_tol = max(0.01, float(minimum_tol_rad))
+    safe_fraction = min(0.90, max(0.10, float(max_fraction)))
+    max_delta = max(
+        abs(float(angle_shortest_diff_rad(float(start_q), float(target_q))))
+        for start_q, target_q in zip(start_list, target_list)
+    )
+    dynamic_tol = max(safe_minimum_tol, float(max_delta) * safe_fraction)
+    return min(safe_configured_tol, dynamic_tol)
+
+
+def _joint_step_wait_timeout(
+    timeout_sec: float | None,
+    *,
+    effective_move_sec: float,
+    step_timeout_extra_sec: float,
+    apply_step_timeout_extra: bool = True,
+) -> float:
+    wait_timeout = (
+        float(effective_move_sec) + 2.0
+        if timeout_sec is None
+        else float(timeout_sec)
+    )
+    if apply_step_timeout_extra:
+        wait_timeout += max(0.0, float(step_timeout_extra_sec))
+    return float(wait_timeout)
+
+
+def _wait_for_demo_runtime_target_progress(
+    panel,
+    *,
+    label: str,
+    target_xyz,
+    timeout_sec: float,
+    tol_xyz_m: float,
+    live_tcp_base_fn,
+    fallback_wait_fn=None,
+    ee_frame: str | None = None,
+    clock_fn=None,
+    sleep_fn=None,
+) -> dict:
+    target_xyz_3 = _pick_demo_tuple3(target_xyz)
+    if target_xyz_3 is None:
+        raise ValueError("runtime_target_unavailable")
+    if clock_fn is None:
+        clock_fn = time.monotonic
+    if sleep_fn is None:
+        sleep_fn = time.sleep
+
+    safe_timeout_sec = max(0.1, float(timeout_sec))
+    poll_sec = min(
+        safe_timeout_sec,
+        _pick_demo_env_float(
+            "PANEL_PICK_DEMO_TRANSPORT_RUNTIME_PROGRESS_POLL_SEC",
+            0.10,
+            minimum=0.02,
+        ),
+    )
+    arm_sec = min(
+        safe_timeout_sec,
+        _pick_demo_env_float(
+            "PANEL_PICK_DEMO_TRANSPORT_RUNTIME_PROGRESS_ARM_SEC",
+            1.5,
+            minimum=0.0,
+        ),
+    )
+    stall_timeout_sec = min(
+        safe_timeout_sec,
+        _pick_demo_env_float(
+            "PANEL_PICK_DEMO_TRANSPORT_RUNTIME_STALL_TIMEOUT_SEC",
+            8.0,
+            minimum=poll_sec,
+        ),
+    )
+    min_progress_m = _pick_demo_env_float(
+        "PANEL_PICK_DEMO_TRANSPORT_RUNTIME_MIN_PROGRESS_M",
+        0.008,
+        minimum=0.001,
+    )
+    wrong_direction_tol_m = _pick_demo_env_float(
+        "PANEL_PICK_DEMO_TRANSPORT_RUNTIME_WRONG_DIRECTION_TOL_M",
+        0.020,
+        minimum=0.001,
+    )
+
+    start_ts = float(clock_fn())
+    deadline_ts = start_ts + safe_timeout_sec
+    sample_count = 0
+    start_dist_m = None
+    best_dist_m = float("inf")
+    best_pos = None
+    last_pos = None
+    last_dist_m = float("inf")
+    last_progress_ts = start_ts
+
+    while float(clock_fn()) <= deadline_ts:
+        now_ts = float(clock_fn())
+        curr_pos = _pick_demo_tuple3(live_tcp_base_fn())
+        if curr_pos is not None:
+            sample_count += 1
+            last_pos = curr_pos
+            last_dist_m = math.sqrt(
+                (float(curr_pos[0]) - float(target_xyz_3[0])) ** 2
+                + (float(curr_pos[1]) - float(target_xyz_3[1])) ** 2
+                + (float(curr_pos[2]) - float(target_xyz_3[2])) ** 2
+            )
+            if start_dist_m is None:
+                start_dist_m = float(last_dist_m)
+                best_dist_m = float(last_dist_m)
+                best_pos = curr_pos
+                last_progress_ts = now_ts
+            if float(last_dist_m) <= float(tol_xyz_m):
+                return {
+                    "ok": True,
+                    "reason": "target_reached",
+                    "pos": curr_pos,
+                    "dist_m": float(last_dist_m),
+                    "best_dist_m": float(best_dist_m),
+                    "start_dist_m": float(start_dist_m),
+                    "elapsed_sec": max(0.0, now_ts - start_ts),
+                    "samples": int(sample_count),
+                }
+            if float(last_dist_m) < float(best_dist_m) - float(min_progress_m):
+                best_dist_m = float(last_dist_m)
+                best_pos = curr_pos
+                last_progress_ts = now_ts
+
+            elapsed_sec = max(0.0, now_ts - start_ts)
+            if elapsed_sec >= float(arm_sec):
+                if (
+                    start_dist_m is not None
+                    and float(last_dist_m) > float(start_dist_m) + float(wrong_direction_tol_m)
+                ):
+                    return {
+                        "ok": False,
+                        "reason": "wrong_direction_drift",
+                        "pos": curr_pos,
+                        "dist_m": float(last_dist_m),
+                        "best_dist_m": float(best_dist_m),
+                        "best_pos": _pick_demo_tuple3(best_pos),
+                        "start_dist_m": float(start_dist_m),
+                        "elapsed_sec": float(elapsed_sec),
+                        "samples": int(sample_count),
+                    }
+                if (now_ts - last_progress_ts) >= float(stall_timeout_sec):
+                    return {
+                        "ok": False,
+                        "reason": "no_progress",
+                        "pos": curr_pos,
+                        "dist_m": float(last_dist_m),
+                        "best_dist_m": float(best_dist_m),
+                        "best_pos": _pick_demo_tuple3(best_pos),
+                        "start_dist_m": float(start_dist_m),
+                        "elapsed_sec": float(elapsed_sec),
+                        "samples": int(sample_count),
+                    }
+        sleep_fn(poll_sec)
+
+    if sample_count == 0 and callable(fallback_wait_fn):
+        wait_ok, wait_pos, wait_dist = fallback_wait_fn(
+            target_xyz_3,
+            timeout_sec=safe_timeout_sec,
+            tol_xyz_m=float(tol_xyz_m),
+            ee_frame=ee_frame,
+        )
+        return {
+            "ok": bool(wait_ok),
+            "reason": "fallback_wait",
+            "pos": _pick_demo_tuple3(wait_pos),
+            "dist_m": float(wait_dist),
+            "best_dist_m": float(wait_dist),
+            "start_dist_m": float(wait_dist),
+            "elapsed_sec": float(safe_timeout_sec),
+            "samples": 0,
+        }
+
+    return {
+        "ok": False,
+        "reason": "timeout" if sample_count > 0 else "pose_unavailable",
+        "pos": _pick_demo_tuple3(last_pos),
+        "dist_m": float(last_dist_m),
+        "best_dist_m": float(best_dist_m if sample_count > 0 else float("inf")),
+        "best_pos": _pick_demo_tuple3(best_pos),
+        "start_dist_m": float(start_dist_m) if start_dist_m is not None else None,
+        "elapsed_sec": float(max(0.0, float(clock_fn()) - start_ts)),
+        "samples": int(sample_count),
+    }
+
+
+def _transport_prep_failure_policy(*, strict_mode: bool) -> str:
+    return "raise" if bool(strict_mode) else "continue_final_stage"
 
 
 def run_pick_demo(panel) -> None:
@@ -915,6 +1570,18 @@ def run_pick_demo(panel) -> None:
         "last_sync_gate": "entry",
         "worker_started_mono": None,
     }
+
+    def _set_pick_demo_result(success: bool, reason: str, *, executed: bool) -> None:
+        panel._pick_demo_result_ready = True
+        panel._pick_demo_result_success = bool(success)
+        panel._pick_demo_result_reason = str(reason or ("ok" if success else "failed"))
+        panel._pick_demo_executed = bool(executed)
+
+    panel._pick_demo_result_ready = False
+    panel._pick_demo_result_success = False
+    panel._pick_demo_result_reason = "running"
+    panel._pick_demo_release_reference_world = None
+    panel._pick_demo_checker_thread = None
 
     def _sync_gate_emit(stage: str, ok: bool, detail: str = "") -> None:
         run_context["last_sync_gate"] = stage
@@ -1201,17 +1868,12 @@ def run_pick_demo(panel) -> None:
                     "note=legacy_vertical_offset_suppressed_for_pinch_center"
                 )
 
-            # Offset vertical operativo adicional para pruebas de contacto.
-            # El TCP canónico ya está fijado en el URDF; este ajuste no redefine
-            # la geometría del frame, solo aplica una corrección temporal sobre
-            # el target durante la secuencia.
-            grasp_contact_z_offset_m = float(
-                os.environ.get("GRASP_CONTACT_Z_OFFSET_M", "0.0") or "0.0"
-            )
+            # El target vertical extra ya no se toma de variables de entorno:
+            # la única referencia válida es la geometría derivada del URDF canónico.
+            grasp_contact_z_offset_m = float(GRIPPER_TCP_Z_OFFSET)
             panel._emit_log(
                 f"[GRASP_Z_FIX] configured_offset={grasp_contact_z_offset_m:.4f} "
-                f"env_name=GRASP_CONTACT_Z_OFFSET_M "
-                f"source={'env' if os.environ.get('GRASP_CONTACT_Z_OFFSET_M', '').strip() else 'default:0.0'}"
+                "source=canonical_urdf_rg2_pinch_center"
             )
 
             def _fmt_vec(vec) -> str:
@@ -1329,6 +1991,48 @@ def run_pick_demo(panel) -> None:
                     parts.append(f"{name}={diff:.3f}")
                 return " ".join(parts)
 
+            def _joint_error_metrics(joints):
+                names = list(getattr(panel, "UR5_JOINT_NAMES", []) or [])
+                if not names:
+                    names = [
+                        "shoulder_pan_joint",
+                        "shoulder_lift_joint",
+                        "elbow_joint",
+                        "wrist_1_joint",
+                        "wrist_2_joint",
+                        "wrist_3_joint",
+                    ]
+                snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
+                diffs = []
+                shoulder_diffs = []
+                for idx, name in enumerate(names):
+                    if idx >= len(joints):
+                        break
+                    curr = snapshot.get(name)
+                    if curr is None:
+                        continue
+                    diff = abs(angle_shortest_diff_rad(float(curr), float(joints[idx])))
+                    diffs.append(float(diff))
+                    if idx in (0, 1):
+                        shoulder_diffs.append(float(diff))
+                if not diffs:
+                    return {
+                        "available": False,
+                        "max_diff_rad": None,
+                        "sum_diff_rad": None,
+                        "shoulder_max_diff_rad": None,
+                    }
+                return {
+                    "available": True,
+                    "max_diff_rad": float(max(diffs)),
+                    "sum_diff_rad": float(sum(diffs)),
+                    "shoulder_max_diff_rad": (
+                        float(max(shoulder_diffs))
+                        if shoulder_diffs
+                        else 0.0
+                    ),
+                }
+
             def _run_joint_step(
                 label,
                 joints,
@@ -1337,6 +2041,8 @@ def run_pick_demo(panel) -> None:
                 runtime_target_base=None,
                 runtime_target_tol_m=None,
                 force_send=False,
+                move_sec_override=None,
+                apply_step_timeout_extra=True,
             ):
                 def _local_joint_target_ok(local_tol_rad: float):
                     snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
@@ -1396,15 +2102,41 @@ def run_pick_demo(panel) -> None:
                         f"phase={label} force_send=true skipping_early_exit "
                         f"diffs={local_diffs_before} {runtime_info_before}"
                     )
-                ok, info = panel._publish_joint_trajectory(joints, move_sec)
+                effective_move_sec = float(
+                    move_sec
+                    if move_sec_override is None
+                    else max(0.5, float(move_sec_override))
+                )
+                ok, info = panel._publish_joint_trajectory(joints, effective_move_sec)
                 if not ok:
                     raise RuntimeError(f"{label} fallo: {info}")
-                wait_timeout = move_sec + 2.0 if timeout_sec is None else timeout_sec
                 try:
                     _step_extra = float(os.environ.get("PANEL_PICK_DEMO_STEP_TIMEOUT_EXTRA_SEC", "0") or "0")
                 except Exception:
                     _step_extra = 0.0
-                wait_timeout += _step_extra
+                label_name = str(label or "").strip().upper()
+                is_basket_transport_stage = _is_demo_basket_transport_stage(label_name)
+                is_basket_transport_motion = _is_demo_basket_transport_motion(label_name)
+                apply_global_step_timeout_extra = _should_apply_global_step_timeout_extra(
+                    label_name,
+                    requested=apply_step_timeout_extra,
+                )
+                if (
+                    apply_step_timeout_extra
+                    and not apply_global_step_timeout_extra
+                    and _step_extra > 0.0
+                ):
+                    panel._emit_log(
+                        "[PICK][DIRECT][ROUTE] "
+                        f"phase={label} step_timeout_extra_skipped={_step_extra:.1f} "
+                        "reason=basket_transport_motion"
+                    )
+                wait_timeout = _joint_step_wait_timeout(
+                    timeout_sec,
+                    effective_move_sec=effective_move_sec,
+                    step_timeout_extra_sec=_step_extra,
+                    apply_step_timeout_extra=apply_global_step_timeout_extra,
+                )
                 if panel._wait_for_joint_target(joints, wait_timeout, tol_rad=tol_rad):
                     return
                 local_ok_after_wait, local_diffs_after_wait = _local_joint_target_ok(max(tol_rad, 0.02))
@@ -1416,24 +2148,74 @@ def run_pick_demo(panel) -> None:
                         f"source=local_joint_state diffs={local_diffs_after_wait} {runtime_info_after_wait}"
                     )
                     return
-                if label in {"HOME", "MESA", "PICK_IMAGE", "PICK_PRE_CLOSE_REF", "HOME_WITH_OBJECT", "CESTA", "CESTA_RELEASE", "HOME_FINAL"}:
+                if is_basket_transport_motion and runtime_target_base is not None and not runtime_ok_after_wait:
+                    extra_runtime_wait_sec = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_TRANSPORT_RUNTIME_GRACE_SEC",
+                        35.0,
+                        minimum=0.0,
+                    )
+                    wait_fn = getattr(panel, "_wait_for_tcp_base_target", None)
+                    if extra_runtime_wait_sec > 0.0:
+                        runtime_target_tol = float(
+                            runtime_target_tol_m
+                            if runtime_target_tol_m is not None
+                            else _direct_runtime_target_tol_m(label)
+                        )
+                        runtime_grace = _wait_for_demo_runtime_target_progress(
+                            panel,
+                            label=label,
+                            target_xyz=runtime_target_base,
+                            timeout_sec=extra_runtime_wait_sec,
+                            tol_xyz_m=runtime_target_tol,
+                            live_tcp_base_fn=_live_tcp_base,
+                            fallback_wait_fn=wait_fn,
+                            ee_frame=DIRECT_SOURCE_FRAME,
+                        )
+                        runtime_grace_ok = bool(runtime_grace.get("ok"))
+                        runtime_grace_pos = _tuple3(runtime_grace.get("pos"))
+                        runtime_grace_dist = runtime_grace.get("dist_m")
+                        panel._emit_log(
+                            "[PICK][DIRECT][ROUTE] "
+                            f"phase={label} runtime_transport_grace_ok={str(bool(runtime_grace_ok)).lower()} "
+                            f"timeout_sec={extra_runtime_wait_sec:.1f} "
+                            f"target_tol={runtime_target_tol:.3f} "
+                            f"runtime_target_dist={_fmt_scalar(runtime_grace_dist)} "
+                            f"runtime_target_pos={_fmt_vec(_tuple3(runtime_grace_pos))} "
+                            f"reason={runtime_grace.get('reason', 'unknown')} "
+                            f"best_dist={_fmt_scalar(runtime_grace.get('best_dist_m'))} "
+                            f"elapsed_sec={_fmt_scalar(runtime_grace.get('elapsed_sec'))}"
+                        )
+                        if runtime_grace_ok:
+                            return
+                if (
+                    label in {"HOME", "MESA", "PICK_IMAGE", "PICK_PRE_CLOSE_REF", "HOME_WITH_OBJECT", "CESTA", "CESTA_RELEASE", "HOME_FINAL"}
+                    or is_basket_transport_stage
+                ):
                     panel._emit_log(
                         f"[PICK][RECOVERY] {label} no alcanzado; reintentando una vez diffs={_joint_error_snapshot(joints)}"
                     )
-                    ok_retry, info_retry = panel._publish_joint_trajectory(joints, move_sec)
+                    ok_retry, info_retry = panel._publish_joint_trajectory(joints, effective_move_sec)
                     if not ok_retry:
                         raise RuntimeError(f"{label} retry fallo: {info_retry}")
-                    retry_timeout = max(wait_timeout, move_sec + 4.0)
-                    retry_tol = max(tol_rad, 0.06)
+                    retry_timeout = max(wait_timeout, effective_move_sec + 4.0)
+                    retry_tol = max(tol_rad, 0.10 if is_basket_transport_motion else 0.06)
                     if panel._wait_for_joint_target(joints, retry_timeout, tol_rad=retry_tol):
                         panel._emit_log(f"[PICK][RECOVERY] {label} alcanzado tras reintento")
                         return
                     local_ok_after_retry, local_diffs_after_retry = _local_joint_target_ok(retry_tol)
-                    if local_ok_after_retry:
+                    runtime_ok_after_retry, runtime_info_after_retry = _runtime_target_ok()
+                    has_runtime_target = _tuple3(runtime_target_base) is not None
+                    accept_via_runtime_target = bool(
+                        is_basket_transport_motion
+                        and has_runtime_target
+                        and runtime_ok_after_retry
+                    )
+                    if local_ok_after_retry or accept_via_runtime_target:
                         panel._emit_log(
                             "[PICK][DIRECT][ROUTE] "
                             f"phase={label} joint_target_accept_after_retry_timeout=true "
-                            f"source=local_joint_state diffs={local_diffs_after_retry}"
+                            f"source={'runtime_target' if (accept_via_runtime_target and not local_ok_after_retry) else 'local_joint_state'} "
+                            f"diffs={local_diffs_after_retry} {runtime_info_after_retry}"
                         )
                         return
                 raise RuntimeError(
@@ -3477,6 +4259,7 @@ def run_pick_demo(panel) -> None:
                 ik_err_tol: float | None = None,
                 joint_weight: float = -1.0,
                 force_send: bool = False,
+                transport_replan_remaining: int | None = None,
             ) -> dict:
                 def _resolve_direct_execution_target(
                     tcp_target_base,
@@ -3584,6 +4367,22 @@ def run_pick_demo(panel) -> None:
                     raise RuntimeError(f"{label.lower()}_target_tcp_unavailable")
                 if target_tcp_world_3 is None:
                     target_tcp_world_3 = _target_world_from_base(target_tcp_runtime_3)
+                label_name = str(label or "").strip().upper()
+                is_transport_stage = _is_demo_basket_transport_stage(label_name)
+                if transport_replan_remaining is None:
+                    transport_replan_remaining = (
+                        int(
+                            _pick_demo_env_int(
+                                "PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MAX_ATTEMPTS",
+                                1,
+                                minimum=0,
+                            )
+                        )
+                        if is_transport_stage
+                        else 0
+                    )
+                else:
+                    transport_replan_remaining = max(0, int(transport_replan_remaining))
                 seed, seed_source = _current_joint_seed(return_source=True)
                 _seed_pos, target_rot = fk_ur5(seed)
                 panel._emit_log(
@@ -3946,6 +4745,307 @@ def run_pick_demo(panel) -> None:
                     f"label={label} joints={json.dumps(_json_safe(solved_q_list), ensure_ascii=True)} "
                     f"timeout_sec={float(timeout_sec):.3f}"
                 )
+
+                def _attempt_transport_replan(exec_exc):
+                    if not (is_transport_stage and transport_replan_remaining > 0):
+                        return None
+                    recovery_live_tcp = _tuple3(_live_tcp_base())
+                    recovery_min_stages = max(
+                        2,
+                        int(
+                            _pick_demo_env_int(
+                                "PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MIN_STAGES",
+                                2,
+                                minimum=2,
+                            )
+                        ),
+                    )
+                    recovery_max_stages = max(
+                        recovery_min_stages,
+                        int(
+                            _pick_demo_env_int(
+                                "PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MAX_STAGES",
+                                4,
+                                minimum=recovery_min_stages,
+                            )
+                        ),
+                    )
+                    try:
+                        recovery_targets = _compute_demo_transport_recovery_stage_targets(
+                            recovery_live_tcp,
+                            target_tcp_runtime_3,
+                            min_remaining_dist_m=_pick_demo_env_float(
+                                "PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MIN_REMAINING_DIST_M",
+                                0.060,
+                                minimum=0.0,
+                            ),
+                            min_stages=recovery_min_stages,
+                            max_stage_dist_m=_pick_demo_env_float(
+                                "PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MAX_STAGE_DIST_M",
+                                0.050,
+                                minimum=0.01,
+                            ),
+                            max_stages=recovery_max_stages,
+                        )
+                    except Exception as recovery_exc:
+                        panel._emit_log(
+                            "[PICK][DIRECT][TRANSPORT_REPLAN] "
+                            f"label={label} status=skipped "
+                            f"reason=compute_failed:{recovery_exc}"
+                        )
+                        return None
+                    if not recovery_targets:
+                        return None
+                    remaining_dist_m = _dist(recovery_live_tcp, target_tcp_runtime_3)
+                    per_stage_timeout_sec = max(
+                        8.0,
+                        max(
+                            float(move_sec) + 2.0,
+                            float(timeout_sec) / float(len(recovery_targets)),
+                        ),
+                    )
+                    panel._emit_log(
+                        "[PICK][DIRECT][TRANSPORT_REPLAN] "
+                        f"label={label} status=start "
+                        f"reason={str(exec_exc)} "
+                        f"remaining_attempts={int(transport_replan_remaining)} "
+                        f"segments={len(recovery_targets)} "
+                        f"remaining_dist_m={_fmt_scalar(remaining_dist_m)} "
+                        f"live_tcp={_fmt_vec(recovery_live_tcp)} "
+                        f"target_tcp={_fmt_vec(target_tcp_runtime_3)} "
+                        f"segment_timeout_sec={per_stage_timeout_sec:.3f}"
+                    )
+                    recovery_result = {}
+                    for recovery_idx, recovery_target in enumerate(recovery_targets, start=1):
+                        recovery_result = _move_tcp_direct(
+                            label=f"{label}_RECOVER_{recovery_idx}",
+                            target_tcp_runtime=recovery_target,
+                            timeout_sec=per_stage_timeout_sec,
+                            audit_target_source=(
+                                f"{str(audit_target_source or 'runtime_target')}_replan_{recovery_idx}"
+                            ),
+                            target_pose_original=target_pose_original,
+                            target_frame_original=target_frame_original,
+                            rot_weight=rot_weight,
+                            ik_err_tol=ik_err_tol,
+                            joint_weight=joint_weight,
+                            force_send=True,
+                            transport_replan_remaining=transport_replan_remaining - 1,
+                        )
+                    panel._emit_log(
+                        "[PICK][DIRECT][TRANSPORT_REPLAN] "
+                        f"label={label} status=ok "
+                        f"segments={len(recovery_targets)} "
+                        f"remaining_attempts={int(transport_replan_remaining) - 1}"
+                    )
+                    return recovery_result
+
+                prep_replan_exc = None
+                if _is_demo_basket_transport_stage(label_name):
+                    prep_enabled = _pick_demo_env_flag(
+                        "PANEL_PICK_DEMO_TRANSPORT_PREP_ENABLE",
+                        True,
+                    )
+                    prep_blend = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_TRANSPORT_PREP_BLEND",
+                        0.55,
+                        minimum=0.05,
+                    )
+                    prep_max_joint_delta_rad = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_TRANSPORT_PREP_MAX_JOINT_DELTA_RAD",
+                        0.16,
+                        minimum=0.05,
+                    )
+                    prep_max_shoulder_delta_rad = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_TRANSPORT_PREP_MAX_SHOULDER_DELTA_RAD",
+                        0.05,
+                        minimum=0.03,
+                    )
+                    prep_sum_joint_delta_rad = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_TRANSPORT_PREP_SUM_JOINT_DELTA_RAD",
+                        0.45,
+                        minimum=prep_max_joint_delta_rad,
+                    )
+                    prep_max_steps = max(
+                        2,
+                        int(
+                            _pick_demo_env_int(
+                                "PANEL_PICK_DEMO_TRANSPORT_PREP_MAX_STEPS",
+                                8,
+                                minimum=2,
+                            )
+                        ),
+                    )
+                    prep_deltas = [
+                        abs(float(angle_shortest_diff_rad(float(seed_q), float(goal_q))))
+                        for seed_q, goal_q in zip(seed, solved_q_list)
+                    ]
+                    prep_max_delta = max(prep_deltas) if prep_deltas else 0.0
+                    prep_sum_delta = sum(prep_deltas)
+                    prep_shoulder_delta = 0.0
+                    if prep_deltas:
+                        prep_shoulder_delta = max(
+                            float(prep_deltas[idx])
+                            for idx in (0, 1)
+                            if idx < len(prep_deltas)
+                        )
+                    prep_needed = bool(
+                        prep_enabled
+                        and (
+                            prep_max_delta >= prep_max_joint_delta_rad
+                            or prep_shoulder_delta >= prep_max_shoulder_delta_rad
+                            or prep_sum_delta >= prep_sum_joint_delta_rad
+                        )
+                    )
+                    panel._emit_log(
+                        "[PICK][DIRECT][TRANSPORT_PREP] "
+                        f"label={label} enabled={str(bool(prep_enabled)).lower()} "
+                        f"needed={str(bool(prep_needed)).lower()} "
+                        f"blend={prep_blend:.3f} "
+                        f"max_steps={prep_max_steps} "
+                        f"shoulder_delta={prep_shoulder_delta:.3f}/{prep_max_shoulder_delta_rad:.3f} "
+                        f"max_delta={prep_max_delta:.3f}/{prep_max_joint_delta_rad:.3f} "
+                        f"sum_delta={prep_sum_delta:.3f}/{prep_sum_joint_delta_rad:.3f}"
+                    )
+                    if prep_needed:
+                        prep_strict = _pick_demo_env_flag(
+                            "PANEL_PICK_DEMO_TRANSPORT_PREP_STRICT",
+                            False,
+                        )
+                        prep_failure_action = _transport_prep_failure_policy(
+                            strict_mode=prep_strict
+                        )
+                        prep_waypoints = _compute_demo_joint_prep_waypoints(
+                            seed,
+                            solved_q_list,
+                            blend=prep_blend,
+                            max_joint_delta_rad=prep_max_joint_delta_rad,
+                            max_sum_delta_rad=prep_sum_joint_delta_rad,
+                            max_steps=prep_max_steps,
+                            max_shoulder_delta_rad=prep_max_shoulder_delta_rad,
+                        )
+                        prep_segment_count = max(1, len(prep_waypoints) + 1)
+                        prep_move_sec = max(
+                            4.0,
+                            float(move_sec) / float(prep_segment_count),
+                        )
+                        prep_failed = False
+                        prep_failure_info = None
+                        prep_joint_tol_config = _pick_demo_env_float(
+                            "PANEL_PICK_DEMO_TRANSPORT_PREP_JOINT_TOL_RAD",
+                            0.06,
+                            minimum=0.02,
+                        )
+                        prep_prev_joints = [float(v) for v in seed]
+                        for prep_idx, prep_joints in enumerate(prep_waypoints, start=1):
+                            prep_label = (
+                                f"{label}_PREP"
+                                if len(prep_waypoints) == 1
+                                else f"{label}_PREP_{prep_idx}"
+                            )
+                            prep_joint_tol_rad = _compute_demo_transport_prep_joint_tol(
+                                prep_prev_joints,
+                                prep_joints,
+                                configured_tol_rad=prep_joint_tol_config,
+                                minimum_tol_rad=0.02,
+                            )
+                            panel._emit_log(
+                                "[PICK][DIRECT][TRANSPORT_PREP] "
+                                f"label={label} prep_label={prep_label} "
+                                f"segment={prep_idx}/{len(prep_waypoints)} "
+                                f"move_sec={prep_move_sec:.3f} "
+                                f"joint_tol_rad={prep_joint_tol_rad:.3f} "
+                                f"joints={json.dumps(_json_safe(prep_joints), ensure_ascii=True)}"
+                            )
+                            try:
+                                _run_joint_step(
+                                    prep_label,
+                                    prep_joints,
+                                    timeout_sec=max(prep_move_sec + 4.0, 10.0),
+                                    tol_rad=prep_joint_tol_rad,
+                                    runtime_target_base=None,
+                                    runtime_target_tol_m=None,
+                                    force_send=False,
+                                    move_sec_override=prep_move_sec,
+                                    apply_step_timeout_extra=False,
+                                )
+                                prep_prev_joints = [float(v) for v in prep_joints]
+                            except Exception as prep_exc:
+                                panel._emit_log(
+                                    "[PICK][DIRECT][TRANSPORT_PREP] "
+                                    f"label={label} prep_label={prep_label} "
+                                    "status=failed "
+                                    f"strict={str(bool(prep_strict)).lower()} "
+                                    f"action={prep_failure_action} "
+                                    f"reason={str(prep_exc)}"
+                                )
+                                if prep_failure_action == "raise":
+                                    raise
+                                prep_failed = True
+                                prep_failure_info = {
+                                    "prep_label": prep_label,
+                                    "segment_index": int(prep_idx),
+                                    "segment_count": int(len(prep_waypoints)),
+                                    "reason": str(prep_exc),
+                                }
+                                break
+                        if prep_failed:
+                            panel._emit_log(
+                                "[PICK][DIRECT][TRANSPORT_PREP] "
+                                f"label={label} status=degraded "
+                                "reason=prep_step_failed final_stage_retry=enabled"
+                            )
+                            prep_metrics = _joint_error_metrics(solved_q_list)
+                            prep_replan_min_failed_fraction = _pick_demo_env_float(
+                                "PANEL_PICK_DEMO_TRANSPORT_PREP_DIRECT_REPLAN_MIN_FAILED_FRACTION",
+                                0.70,
+                                minimum=0.0,
+                            )
+                            prep_replan_max_residual_rad = _pick_demo_env_float(
+                                "PANEL_PICK_DEMO_TRANSPORT_PREP_DIRECT_REPLAN_MAX_RESIDUAL_RAD",
+                                0.12,
+                                minimum=0.02,
+                            )
+                            prep_replan_max_shoulder_residual_rad = _pick_demo_env_float(
+                                "PANEL_PICK_DEMO_TRANSPORT_PREP_DIRECT_REPLAN_MAX_SHOULDER_RESIDUAL_RAD",
+                                0.10,
+                                minimum=0.02,
+                            )
+                            if prep_failure_info and _should_transport_prep_failure_jump_to_replan(
+                                failed_segment_index=int(prep_failure_info["segment_index"]),
+                                total_segments=int(prep_failure_info["segment_count"]),
+                                max_joint_residual_rad=prep_metrics.get("max_diff_rad"),
+                                shoulder_joint_residual_rad=prep_metrics.get("shoulder_max_diff_rad"),
+                                min_failed_segment_fraction=prep_replan_min_failed_fraction,
+                                max_joint_residual_threshold_rad=prep_replan_max_residual_rad,
+                                shoulder_joint_residual_threshold_rad=prep_replan_max_shoulder_residual_rad,
+                            ):
+                                failed_fraction = (
+                                    float(prep_failure_info["segment_index"])
+                                    / float(max(1, prep_failure_info["segment_count"]))
+                                )
+                                prep_replan_exc = RuntimeError(
+                                    "transport_prep_residual_requires_replan "
+                                    f"prep_label={prep_failure_info['prep_label']} "
+                                    f"reason={prep_failure_info['reason']} "
+                                    f"failed_fraction={failed_fraction:.3f} "
+                                    f"max_residual_rad={_pick_demo_fmt_scalar(prep_metrics.get('max_diff_rad'))} "
+                                    f"shoulder_residual_rad={_pick_demo_fmt_scalar(prep_metrics.get('shoulder_max_diff_rad'))}"
+                                )
+                                panel._emit_log(
+                                    "[PICK][DIRECT][TRANSPORT_PREP] "
+                                    f"label={label} status=skip_final_stage "
+                                    "action=transport_replan "
+                                    f"prep_label={prep_failure_info['prep_label']} "
+                                    f"failed_fraction={failed_fraction:.3f}/{prep_replan_min_failed_fraction:.3f} "
+                                    f"max_residual_rad={_pick_demo_fmt_scalar(prep_metrics.get('max_diff_rad'))}/{prep_replan_max_residual_rad:.3f} "
+                                    f"shoulder_residual_rad={_pick_demo_fmt_scalar(prep_metrics.get('shoulder_max_diff_rad'))}/{prep_replan_max_shoulder_residual_rad:.3f}"
+                                )
+                if prep_replan_exc is not None:
+                    recovery_result = _attempt_transport_replan(prep_replan_exc)
+                    if recovery_result is not None:
+                        return recovery_result
+                    raise prep_replan_exc
                 if str(label or "").strip().upper() == "GRASP_ALIGN_IK":
                     align_joint_tol_rad = max(
                         0.004,
@@ -3968,15 +5068,21 @@ def run_pick_demo(panel) -> None:
                             or 0.03
                         ),
                     )
-                _run_joint_step(
-                    label,
-                    solved_q_list,
-                    timeout_sec=max(float(timeout_sec), move_sec + 2.0),
-                    tol_rad=align_joint_tol_rad,
-                    runtime_target_base=target_tcp_runtime_3,
-                    runtime_target_tol_m=_direct_runtime_target_tol_m(label),
-                    force_send=force_send,
-                )
+                try:
+                    _run_joint_step(
+                        label,
+                        solved_q_list,
+                        timeout_sec=max(float(timeout_sec), move_sec + 2.0),
+                        tol_rad=align_joint_tol_rad,
+                        runtime_target_base=target_tcp_runtime_3,
+                        runtime_target_tol_m=_direct_runtime_target_tol_m(label),
+                        force_send=force_send,
+                    )
+                except Exception as exec_exc:
+                    recovery_result = _attempt_transport_replan(exec_exc)
+                    if recovery_result is not None:
+                        return recovery_result
+                    raise
                 runtime_target_ok = None
                 runtime_target_dist = None
                 runtime_target_pos = None
@@ -4107,6 +5213,38 @@ def run_pick_demo(panel) -> None:
                     f"runtime_target_stable_samples={json.dumps(_json_safe(runtime_target_stable_samples), ensure_ascii=True)} "
                     f"joint_goal={json.dumps(_json_safe(solved_q_list), ensure_ascii=True)}"
                 )
+                transport_postcheck = None
+                if is_transport_stage:
+                    transport_postcheck = _evaluate_transport_stage_postcheck(
+                        runtime_target_ok=runtime_target_ok,
+                        runtime_target_dist_m=runtime_target_dist,
+                        runtime_target_tol_m=runtime_target_tol_m,
+                        model_target_err_m=model_target_err,
+                        model_target_tol_m=max(
+                            float(runtime_target_tol_m),
+                            _pick_demo_env_float(
+                                "PANEL_PICK_DEMO_TRANSPORT_POSTCHECK_MODEL_TOL_M",
+                                0.040,
+                                minimum=0.01,
+                            ),
+                        ),
+                    )
+                    panel._emit_log(
+                        "[PICK][DIRECT][TRANSPORT_POSTCHECK] "
+                        f"label={label} ok={str(bool(transport_postcheck.get('ok'))).lower()} "
+                        f"reason={transport_postcheck.get('reason', 'ok')} "
+                        f"runtime_target_dist={_fmt_scalar(runtime_target_dist)}/{float(transport_postcheck.get('runtime_target_tol_m', runtime_target_tol_m)):.3f} "
+                        f"model_target_err={model_target_err:.3f}/{float(transport_postcheck.get('model_target_tol_m', runtime_target_tol_m)):.3f}"
+                    )
+                    if not bool(transport_postcheck.get("ok")):
+                        transport_postcheck_exc = RuntimeError(
+                            f"{str(label or '').lower()}_postcheck_failed "
+                            f"{transport_postcheck.get('reason', 'transport_postcheck_failed')}"
+                        )
+                        recovery_result = _attempt_transport_replan(transport_postcheck_exc)
+                        if recovery_result is not None:
+                            return recovery_result
+                        raise transport_postcheck_exc
                 if tcp_after is not None:
                     obj_after = _live_object_base()
                     target_err = _dist(tcp_after, target_tcp_runtime_3)
@@ -4168,6 +5306,17 @@ def run_pick_demo(panel) -> None:
                         else None
                     ),
                     "runtime_target_stable_pose_consistency": _json_safe(runtime_target_stable_pose),
+                    "model_target_err_m": float(model_target_err),
+                    "transport_postcheck_ok": (
+                        bool(transport_postcheck.get("ok"))
+                        if transport_postcheck is not None
+                        else None
+                    ),
+                    "transport_postcheck_reason": (
+                        str(transport_postcheck.get("reason", "ok"))
+                        if transport_postcheck is not None
+                        else None
+                    ),
                 }
 
             def _joint_preset_fallback_ok(
@@ -9518,17 +10667,144 @@ def run_pick_demo(panel) -> None:
                 ),
                 live_world_fn=_fresh_gazebo_object_world,
             )
-            _run_joint_step(
-                "CESTA",
-                JOINT_BASKET_POSE_RAD,
-                timeout_sec=move_sec + 10.0,
-                tol_rad=0.12,
+            transport_min_world_z_m = _pick_demo_env_float(
+                "PANEL_PICK_DEMO_TRANSPORT_MIN_WORLD_Z_M",
+                float(BASKET_DROP[2]) - 0.10,
+                minimum=0.0,
             )
-            _run_joint_step(
-                "CESTA_RELEASE",
-                JOINT_BASKET_DEMO_RELEASE_POSE_RAD,
+            basket_transport_max_tcp_dist_m = _pick_demo_env_float(
+                "PANEL_PICK_DEMO_TRANSPORT_BASKET_MAX_TCP_DIST_M",
+                0.220,
+                minimum=0.05,
+            )
+            basket_release_max_tcp_dist_m = _pick_demo_env_float(
+                "PANEL_PICK_DEMO_TRANSPORT_RELEASE_MAX_TCP_DIST_M",
+                0.180,
+                minimum=0.05,
+            )
+            basket_transport_ik_err_tol_m = _pick_demo_env_float(
+                "PANEL_PICK_DEMO_BASKET_TRANSPORT_IK_ERR_TOL_M",
+                0.012,
+                minimum=0.005,
+            )
+            basket_transport_rot_weight = _pick_demo_env_float(
+                "PANEL_PICK_DEMO_BASKET_TRANSPORT_ROT_WEIGHT",
+                0.02,
+                minimum=0.0,
+            )
+            basket_transport_joint_weight = _pick_demo_env_float(
+                "PANEL_PICK_DEMO_BASKET_TRANSPORT_JOINT_WEIGHT",
+                0.02,
+                minimum=0.0,
+            )
+            basket_base_target = _target_base_from_world(BASKET_DROP)
+            if basket_base_target is None:
+                raise RuntimeError("demo_basket_target_unavailable")
+            basket_targets = _compute_demo_basket_targets(
+                basket_base_target,
+                transport_z_offset=float(PICK_DEMO_TRANSPORT_Z_OFFSET),
+                release_z_offset=float(PICK_DEMO_DROP_Z_OFFSET),
+            )
+            transport_stage_floor = _pick_demo_env_int(
+                "PANEL_PICK_DEMO_TRANSPORT_SPLIT_STAGES",
+                5,
+                minimum=2,
+            )
+            transport_max_stages = max(
+                transport_stage_floor,
+                _pick_demo_env_int(
+                    "PANEL_PICK_DEMO_TRANSPORT_MAX_STAGES",
+                    24,
+                    minimum=transport_stage_floor,
+                ),
+            )
+            tcp_base_before_basket = _tuple3(_live_tcp_base())
+            if tcp_base_before_basket is None:
+                raise RuntimeError("demo_tcp_pose_unavailable_before_basket_transport")
+            basket_transport_target_base = basket_targets["transport_target_base"]
+            basket_release_target_base = basket_targets["release_target_base"]
+            transport_max_stage_dist_m = _pick_demo_env_float(
+                "PANEL_PICK_DEMO_TRANSPORT_MAX_STAGE_DIST_M",
+                0.10,
+                minimum=0.04,
+            )
+            transport_stage_count = _compute_demo_stage_count_for_distance(
+                tcp_base_before_basket,
+                basket_transport_target_base,
+                min_stages=transport_stage_floor,
+                max_stage_dist_m=transport_max_stage_dist_m,
+                max_stages=transport_max_stages,
+            )
+            basket_transport_stage_targets = _compute_demo_linear_stage_targets(
+                tcp_base_before_basket,
+                basket_transport_target_base,
+                stages=transport_stage_count,
+            )
+            transport_total_dist_m = math.sqrt(
+                (float(basket_transport_target_base[0]) - float(tcp_base_before_basket[0])) ** 2
+                + (float(basket_transport_target_base[1]) - float(tcp_base_before_basket[1])) ** 2
+                + (float(basket_transport_target_base[2]) - float(tcp_base_before_basket[2])) ** 2
+            )
+            panel._emit_log(
+                "[PICK][DIRECT][BASKET_TARGET] "
+                f"basket_base={_fmt_vec(basket_targets['basket_base'])} "
+                f"transport_target_base={_fmt_vec(basket_transport_target_base)} "
+                f"release_target_base={_fmt_vec(basket_release_target_base)} "
+                f"transport_stage_count={transport_stage_count} "
+                f"transport_total_dist_m={transport_total_dist_m:.3f} "
+                f"transport_max_stage_dist_m={transport_max_stage_dist_m:.3f} "
+                f"transport_max_stages={transport_max_stages} "
+                f"transport_ik_err_tol_m={basket_transport_ik_err_tol_m:.3f} "
+                f"transport_rot_weight={basket_transport_rot_weight:.3f} "
+                f"transport_joint_weight={basket_transport_joint_weight:.3f} "
+                f"transport_z_offset={float(PICK_DEMO_TRANSPORT_Z_OFFSET):.3f} "
+                f"release_z_offset={float(PICK_DEMO_DROP_Z_OFFSET):.3f}"
+            )
+            for stage_idx, stage_target_base in enumerate(
+                basket_transport_stage_targets,
+                start=1,
+            ):
+                _move_tcp_direct(
+                    label=f"CESTA_STAGE_{stage_idx}",
+                    target_tcp_runtime=stage_target_base,
+                    timeout_sec=move_sec + 8.0,
+                    audit_target_source=f"basket_drop_transport_stage_{stage_idx}",
+                    target_pose_original=BASKET_DROP,
+                    target_frame_original="world",
+                    rot_weight=basket_transport_rot_weight,
+                    ik_err_tol=basket_transport_ik_err_tol_m,
+                    joint_weight=basket_transport_joint_weight,
+                )
+            _validate_demo_transport_follow(
+                panel,
+                phase="basket_transport",
+                timeout_sec=1.0,
+                max_tcp_dist_m=basket_transport_max_tcp_dist_m,
+                min_obj_world_z=transport_min_world_z_m,
+                live_object_world_fn=_fresh_gazebo_object_world,
+                live_object_base_fn=_fresh_gazebo_object_base,
+                live_tcp_base_fn=_live_tcp_base,
+            )
+            _move_tcp_direct(
+                label="CESTA_RELEASE",
+                target_tcp_runtime=basket_release_target_base,
                 timeout_sec=move_sec + 8.0,
-                tol_rad=0.08,
+                audit_target_source="basket_drop_release_target",
+                target_pose_original=BASKET_DROP,
+                target_frame_original="world",
+                rot_weight=basket_transport_rot_weight,
+                ik_err_tol=basket_transport_ik_err_tol_m,
+                joint_weight=basket_transport_joint_weight,
+            )
+            _validate_demo_transport_follow(
+                panel,
+                phase="basket_release_pose",
+                timeout_sec=0.8,
+                max_tcp_dist_m=basket_release_max_tcp_dist_m,
+                min_obj_world_z=transport_min_world_z_m,
+                live_object_world_fn=_fresh_gazebo_object_world,
+                live_object_base_fn=_fresh_gazebo_object_base,
+                live_tcp_base_fn=_live_tcp_base,
             )
 
             panel._emit_log("[DEMO] Abriendo pinza en cesta")
@@ -9571,6 +10847,19 @@ def run_pick_demo(panel) -> None:
                 timeout_sec=release_open_timeout_sec,
                 opening_ref_sum=release_open_state_pre_cmd.get("opening_sum"),
             )
+            if (
+                not bool(release_open_confirmed)
+                and not bool((release_open_wait_state or {}).get("closed_flag"))
+                and bool((release_open_wait_state or {}).get("measured_target_ok"))
+            ):
+                promoted_state = dict(release_open_wait_state or {})
+                promoted_state["confirm_mode"] = "timeout_but_measured_target_ok"
+                release_open_wait_state = promoted_state
+                release_open_confirmed = True
+                panel._emit_log(
+                    "[PICK][DIRECT][RELEASE] "
+                    "open_wait_promoted confirmed=true reason=measured_target_ok_on_timeout"
+                )
             panel._emit_log(
                 "[PICK][DIRECT][RELEASE] "
                 f"open_wait_done confirmed={bool(release_open_confirmed)} "
@@ -9594,6 +10883,8 @@ def run_pick_demo(panel) -> None:
                 reason="basket_release_completed",
                 logical_state=str((_read_attach_state() or {}).get("logical_state") or "none"),
             )
+            if not bool(release_open_confirmed):
+                raise RuntimeError("demo_release_open_confirm_failed")
             _phase_begin(
                 "HOME_FINAL",
                 frame_used="base_link",
@@ -9637,39 +10928,55 @@ def run_pick_demo(panel) -> None:
                 reason="home_final_completed",
                 logical_state=str((_read_attach_state() or {}).get("logical_state") or "none"),
             )
-            panel._emit_log("[PICK][DIRECT] AVISO: TRAMO FINAL COMPLETADO route=basket")
-            panel._emit_log("[PICK][DIRECT] SECUENCIA COMPLETADA EXITOSAMENTE route=basket")
 
             panel._ui_set_status("Pick demo: verificando entrega en cesta…")
             panel._emit_log("[PICK] Secuencia PICK completada; validando entrega física.")
-            
-            # Marcar como exitoso y diferir confirmación de cesta para evitar contenciones del executor
-            panel._pick_demo_executed = True
             panel._emit_log("[PICK][DEMO] Deferiendo confirmación de cesta...")
-            
+
             def _deferred_basket_check():
                 """Ejecuta verificación de cesta después de dar tiempo al executor"""
                 time.sleep(1.0)  # Dar tiempo para que el executor se libere
-                if _demo_object_in_basket(panel):
+
+                basket_ok = False
+                failure_reason = "basket_not_confirmed"
+                try:
+                    basket_ok = _demo_object_in_basket(panel)
+                except Exception as basket_exc:
+                    failure_reason = f"basket_confirmation_exception:{basket_exc}"
+                    panel._emit_log(
+                        f"[PICK][DEMO][FAIL] basket_confirmation_exception error={basket_exc}"
+                    )
+
+                if basket_ok:
+                    _set_pick_demo_result(True, "basket_confirmed", executed=True)
+
                     def _lock_pick_demo_button() -> None:
-                        panel._pick_demo_executed = True
                         panel.btn_pick_demo.setEnabled(False)
                         panel.btn_pick_demo.setToolTip("Ya ejecutado: objeto demo confirmado en cesta")
                         panel._ui_set_status("Pick demo completado", error=False)
+                        panel._emit_log("[PICK][DIRECT] AVISO: TRAMO FINAL COMPLETADO route=basket")
+                        panel._emit_log("[PICK][DIRECT] SECUENCIA COMPLETADA EXITOSAMENTE route=basket")
                         panel._emit_log("[PICK][DEMO] boton deshabilitado (objeto confirmado en cesta)")
 
                     panel.signal_run_ui.emit(_lock_pick_demo_button)
                 else:
-                    panel._emit_log("[PICK][DEMO] Cesta no confirmada pero secuencia completada")
+                    _set_pick_demo_result(False, failure_reason, executed=True)
+                    panel._emit_log(
+                        f"[PICK][DEMO][FAIL] basket_confirmation_failed reason={failure_reason}"
+                    )
+
                     def _disable_button_anyway() -> None:
                         panel.btn_pick_demo.setEnabled(False)
-                        panel.btn_pick_demo.setToolTip("Secuencia completada (objeto en cesta no confirmado visualmente)")
+                        panel.btn_pick_demo.setToolTip(
+                            "Secuencia completada sin entrega valida en cesta"
+                        )
                         panel._ui_set_status("Pick demo fallido: cesta no confirmada", error=True)
+
                     panel.signal_run_ui.emit(_disable_button_anyway)
-            
+
             # Ejecutar verificación en thread separado para no bloquear
             panel._pick_demo_checker_thread = panel._run_async(_deferred_basket_check)
-            
+
         except Exception as exc:
             active_phase = (current_phase.get("data") or {}).get("phase")
             if active_phase:
@@ -9698,8 +11005,7 @@ def run_pick_demo(panel) -> None:
                 panel._emit_log(f"[PICK][RECOVERY] HOME_SAFE falló: {home_exc}")
             panel._ui_set_status(f"Error en pick demo: {exc}", error=True)
             panel._emit_log(f"[PICK] ✗ Error: {exc}")
-            # Marcar como ejecutado sin confirmación si falló
-            panel._pick_demo_executed = False
+            _set_pick_demo_result(False, str(exc), executed=True)
         finally:
             worker_started_mono = run_context.get("worker_started_mono") or sync_start_mono
             panel._emit_log(
