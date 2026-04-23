@@ -30,6 +30,7 @@ setup(
     entry_points={
         'console_scripts': [
             'panel_v2 = ur5_qt_panel.panel_v2:main',
+            'main_panel = ur5_qt_panel.main_panel:main',
         ],
     },
 )
