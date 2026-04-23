@@ -35,9 +35,9 @@ Queda explicitamente descartado volver a tocar este TCP para ajustar planificaci
 ## Implementacion aplicada
 
 1. Se elimino el uso operativo de offsets legacy o duplicados en panel, DIRECTO y launch.
-2. Se promovio el self-check geometrico a gate de arranque con publicacion detallada en `/system_diag`.
+2. Se promovio el self-check geometrico a gate de arranque con publicacion detallada en `/system_diag` y captura obligatoria por ciclo en `scripts/validate_startup_repro.sh`.
 3. Se centralizo el perfil runtime validado en `scripts/panel_runtime_validated.env`.
-4. Se endurecio DIRECTO en transporte con retries, replan segmentado y post-check runtime/modelo sin volver a tocar el TCP.
+4. Se endurecio DIRECTO en transporte con retries, replan segmentado, guard pre-ejecucion FK/modelo para `CESTA_STAGE_*` y post-check runtime/modelo sin volver a tocar el TCP.
 5. Se alineo la repeticion manual final con el launcher canonico `./lanzar_panelc2.sh`.
 
 ## Evidencia de cierre del incidente TCP
@@ -55,6 +55,11 @@ En todos ellos:
 - `geometry_ok=true`
 - `rg2_tcp = rg2_pinch_center = +0.0050885`
 - `state=READY`
+
+Adicionalmente, el harness de reproducibilidad de arranque ya deja evidencia por ciclo:
+
+- `reports/repro_startup/20260423_161929/cycle1_system_diag.json`
+- `reports/repro_startup/20260423_161929/summary.log`
 
 ### 2. Evidencia visual minima del fix TCP
 

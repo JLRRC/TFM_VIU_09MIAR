@@ -74,6 +74,7 @@ Interpretacion:
 Ya existe en `panel_pick_demo.py`:
 
 - retry de startup y limpieza de stack en el harness
+- guard pre-ejecucion FK/modelo para `CESTA_STAGE_*`
 - prep segmentado de transporte
 - salto temprano de `PREP` a `TRANSPORT_REPLAN`
 - `TRANSPORT_POSTCHECK` runtime/modelo
