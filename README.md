@@ -107,8 +107,9 @@ y EXP1.1/EXP1.2. Cambios respecto a `ENTREGA`:
 - **protocolo:** `agarre_inteligente/EXPERIMENTS_V2_PROTOCOL.md` define dónde
   van las salidas de trabajo futuro (nunca en `reports/`).
 
-Integridad de `reports/` verificada: MD5 `e06c4c1abd0094b674023470f9cf1f84`
-(idéntico al de `ENTREGA@dacace8`, evidencia oficial del TFM intacta).
+Integridad de `reports/` verificada: MD5 `d68e1d99da013bf3c00deb79f01b4fe3`
+(contenido trackeado por git idéntico al de `ENTREGA@dacace8`, evidencia oficial del TFM intacta).
+Verificable con: `git ls-files reports/ | sort | xargs -I{} sh -c 'cat "$1"' _ {} | md5sum`
 
 ## Nota final sobre los desajustes metodologicos no aplicados
 
