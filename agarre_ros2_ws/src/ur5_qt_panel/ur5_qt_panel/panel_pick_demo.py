@@ -2190,6 +2190,22 @@ def run_pick_demo(panel) -> None:
                 move_sec_override=None,
                 apply_step_timeout_extra=True,
             ):
+                label_name = str(label or "").strip().upper()
+                _strict_refine_target_base = _tuple3(runtime_target_base)
+                _strict_refine_runtime_label = (
+                    label_name == "APPROACH_COARSE_REFINE"
+                    and _strict_refine_target_base is not None
+                )
+                _strict_refine_runtime_tol = (
+                    float(
+                        runtime_target_tol_m
+                        if runtime_target_tol_m is not None
+                        else _direct_runtime_target_tol_m(label)
+                    )
+                    if _strict_refine_runtime_label
+                    else None
+                )
+
                 def _local_joint_target_ok(local_tol_rad: float):
                     snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
                     if not snapshot:
@@ -2225,11 +2241,69 @@ def run_pick_demo(panel) -> None:
                         return False, "runtime_target=dist_unavailable"
                     return bool(float(dist_m) <= tol_m), f"runtime_target_dist={float(dist_m):.3f}/{tol_m:.3f}"
 
+                def _strict_refine_runtime_status():
+                    if not _strict_refine_runtime_label:
+                        return None
+                    tcp_base_3 = _tuple3(_live_tcp_base())
+                    if tcp_base_3 is None:
+                        return {
+                            "target_ok": False,
+                            "accept_result": False,
+                            "dist_m": None,
+                            "z_error_m": None,
+                            "tcp_base": None,
+                        }
+                    dist_m = _dist(tcp_base_3, _strict_refine_target_base)
+                    z_error_m = abs(
+                        float(tcp_base_3[2]) - float(_strict_refine_target_base[2])
+                    )
+                    target_ok = bool(
+                        dist_m is not None
+                        and math.isfinite(float(dist_m))
+                        and float(dist_m) <= float(_strict_refine_runtime_tol)
+                    )
+                    accept_result = bool(
+                        target_ok
+                        and math.isfinite(float(z_error_m))
+                        and float(z_error_m) <= float(_strict_refine_runtime_tol)
+                    )
+                    return {
+                        "target_ok": target_ok,
+                        "accept_result": accept_result,
+                        "dist_m": float(dist_m) if dist_m is not None else None,
+                        "z_error_m": float(z_error_m),
+                        "tcp_base": _tuple3(tcp_base_3),
+                    }
+
+                def _emit_strict_refine_runtime_log(stage: str, joint_target_ok: bool):
+                    state = _strict_refine_runtime_status()
+                    if state is None:
+                        return None
+                    panel._emit_log(
+                        "[PICK][DIRECT][COARSE_REFINE_EXEC] "
+                        f"stage={stage} "
+                        "label=APPROACH_COARSE_REFINE "
+                        f"refine_joint_target_ok={str(bool(joint_target_ok)).lower()} "
+                        f"refine_runtime_target_ok={str(bool(state.get('target_ok'))).lower()} "
+                        f"refine_runtime_target_dist={_fmt_scalar(state.get('dist_m'))} "
+                        f"refine_runtime_target_pos={_fmt_vec(state.get('tcp_base'))} "
+                        f"refine_runtime_z_error={_fmt_scalar(state.get('z_error_m'))} "
+                        f"refine_execution_accept_result={str(bool(state.get('accept_result'))).lower()}"
+                    )
+                    return state
+
                 panel._emit_log(f"[PICK] Paso joint: {label}" + (" [FORCE_SEND]" if force_send else ""))
                 local_ok_before, local_diffs_before = _local_joint_target_ok(tol_rad)
                 runtime_ok_before, runtime_info_before = _runtime_target_ok()
                 if local_ok_before and not force_send:
-                    if runtime_ok_before:
+                    _strict_refine_before = _emit_strict_refine_runtime_log(
+                        "before_publish",
+                        local_ok_before,
+                    )
+                    if runtime_ok_before and (
+                        not _strict_refine_runtime_label
+                        or bool((_strict_refine_before or {}).get("accept_result"))
+                    ):
                         panel._emit_log(
                             "[PICK][DIRECT][ROUTE] "
                             f"phase={label} joint_target_already_satisfied=true "
@@ -2253,14 +2327,23 @@ def run_pick_demo(panel) -> None:
                     if move_sec_override is None
                     else max(0.5, float(move_sec_override))
                 )
-                ok, info = panel._publish_joint_trajectory(joints, effective_move_sec)
+                ok, info = panel._publish_joint_trajectory(
+                    joints,
+                    effective_move_sec,
+                    prefer_action=_strict_refine_runtime_label,
+                )
+                if _strict_refine_runtime_label:
+                    panel._emit_log(
+                        "[PICK][DIRECT][ROUTE] "
+                        f"phase=APPROACH_COARSE_REFINE trajectory_dispatch={info} "
+                        f"prefer_action={str(bool(_strict_refine_runtime_label)).lower()}"
+                    )
                 if not ok:
                     raise RuntimeError(f"{label} fallo: {info}")
                 try:
                     _step_extra = float(os.environ.get("PANEL_PICK_DEMO_STEP_TIMEOUT_EXTRA_SEC", "0") or "0")
                 except Exception:
                     _step_extra = 0.0
-                label_name = str(label or "").strip().upper()
                 is_basket_transport_stage = _is_demo_basket_transport_stage(label_name)
                 is_basket_transport_motion = _is_demo_basket_transport_motion(label_name)
                 apply_global_step_timeout_extra = _should_apply_global_step_timeout_extra(
@@ -2283,10 +2366,33 @@ def run_pick_demo(panel) -> None:
                     step_timeout_extra_sec=_step_extra,
                     apply_step_timeout_extra=apply_global_step_timeout_extra,
                 )
-                if panel._wait_for_joint_target(joints, wait_timeout, tol_rad=tol_rad):
+                joint_wait_ok = panel._wait_for_joint_target(joints, wait_timeout, tol_rad=tol_rad)
+                if joint_wait_ok and not _strict_refine_runtime_label:
                     return
+                if joint_wait_ok and _strict_refine_runtime_label:
+                    _emit_strict_refine_runtime_log("after_joint_wait", True)
                 local_ok_after_wait, local_diffs_after_wait = _local_joint_target_ok(max(tol_rad, 0.02))
                 runtime_ok_after_wait, runtime_info_after_wait = _runtime_target_ok()
+                _strict_refine_after_wait = _emit_strict_refine_runtime_log(
+                    "after_wait_timeout",
+                    local_ok_after_wait,
+                )
+                if _strict_refine_runtime_label:
+                    if bool((_strict_refine_after_wait or {}).get("accept_result")):
+                        panel._emit_log(
+                            "[PICK][DIRECT][ROUTE] "
+                            "phase=APPROACH_COARSE_REFINE "
+                            "refine_execution_accept_after_wait_timeout=true "
+                            f"diffs={local_diffs_after_wait} {runtime_info_after_wait}"
+                        )
+                        return
+                    panel._emit_log(
+                        "[PICK][DIRECT][ROUTE] "
+                        "phase=APPROACH_COARSE_REFINE "
+                        "refine_execution_accept_after_wait_timeout=false "
+                        "action=defer_to_move_tcp_direct_runtime_settle"
+                    )
+                    return
                 if local_ok_after_wait and runtime_ok_after_wait:
                     panel._emit_log(
                         "[PICK][DIRECT][ROUTE] "
@@ -5345,6 +5451,21 @@ def run_pick_demo(panel) -> None:
                 )
                 q_after = _current_joint_seed()
                 fk_after_pos, _fk_after_rot = fk_ur5(q_after)
+                solved_q_list = [float(v) for v in solved_q.tolist()]
+                joint_goal_diffs: List[str] = []
+                for idx, name in enumerate(UR5_JOINT_NAMES):
+                    if idx >= len(solved_q_list) or idx >= len(q_after):
+                        break
+                    try:
+                        diff = abs(
+                            angle_shortest_diff_rad(
+                                float(q_after[idx]),
+                                float(solved_q_list[idx]),
+                            )
+                        )
+                        joint_goal_diffs.append(f"{name}={diff:.3f}")
+                    except Exception:
+                        joint_goal_diffs.append(f"{name}=n/a")
                 model_target_err = math.sqrt(
                     (float(fk_after_pos[0]) - float(target_ik[0])) ** 2
                     + (float(fk_after_pos[1]) - float(target_ik[1])) ** 2
@@ -5373,7 +5494,9 @@ def run_pick_demo(panel) -> None:
                     f"runtime_target_pos={_fmt_vec(runtime_target_pos)} "
                     f"runtime_stable_samples={runtime_target_stable_samples} "
                     f"runtime_stable_elapsed={_fmt_scalar(runtime_target_stable_elapsed)} "
-                    f"runtime_stable_motion={_fmt_scalar(runtime_target_stable_motion)}"
+                    f"runtime_stable_motion={_fmt_scalar(runtime_target_stable_motion)} "
+                    f"q_after={json.dumps(_json_safe(q_after), ensure_ascii=True)} "
+                    f"joint_goal_diff={' '.join(joint_goal_diffs)}"
                 )
                 if label == "GRASP_ALIGN_IK":
                     _tcp_aft = _tuple3(tcp_after)
@@ -8895,6 +9018,10 @@ def run_pick_demo(panel) -> None:
                     _coarse_refine_runtime_target_dist = None
                     _coarse_refine_runtime_z_error = None
                     _coarse_refine_accept_result = False
+                    _coarse_refine_target_z_strategy = "object_z_plus_0p010"
+                    _coarse_refine_object_z = None
+                    _coarse_refine_tcp_obj_dist_after = None
+                    _coarse_refine_dz_obj_after = None
                     _coarse_refine_start_log = (
                         "[PICK][DIRECT][COARSE_REFINE] "
                         "phase=APPROACH_COARSE "
@@ -8915,7 +9042,8 @@ def run_pick_demo(panel) -> None:
                     _append_trace(_coarse_refine_start_log)
 
                     if _coarse_refine_needed and _coarse_phase_check.get("tcp_base") is not None and _coarse_phase_check.get("object_base") is not None:
-                        _coarse_refine_target_z = float(_coarse_phase_check.get("object_z")) + float(_coarse_handoff_dz_tol)
+                        _coarse_refine_object_z = float(_coarse_phase_check.get("object_z"))
+                        _coarse_refine_target_z = float(_coarse_refine_object_z) + 0.010
                         _coarse_refine_runtime_target_tol = _direct_runtime_target_tol_m("APPROACH_COARSE_REFINE")
                         _phase_check_target_base = (
                             float(_coarse_phase_check.get("tcp_base")[0]),
@@ -8926,7 +9054,9 @@ def run_pick_demo(panel) -> None:
                             "[PICK][DIRECT][COARSE_REFINE] "
                             "phase=APPROACH_COARSE "
                             f"coarse_refine_needed=true "
+                            f"refine_target_z_strategy={_coarse_refine_target_z_strategy} "
                             f"refine_target_z={_coarse_refine_target_z:.3f} "
+                            f"object_z={_fmt_scalar(_coarse_refine_object_z)} "
                             f"refine_target_xyz={_fmt_vec(_phase_check_target_base)}"
                         )
                         panel._emit_log(_refine_start_msg)
@@ -8961,6 +9091,8 @@ def run_pick_demo(panel) -> None:
                             _coarse_refine_dy = float(_coarse_refine_result_tcp[1]) - float(_coarse_phase_check.get("object_base")[1])
                             _coarse_refine_dz = float(_coarse_refine_result_tcp[2]) - float(_coarse_phase_check.get("object_base")[2])
                             _coarse_refine_dist = _dist(_coarse_refine_result_tcp, _coarse_phase_check.get("object_base"))
+                            _coarse_refine_tcp_obj_dist_after = _coarse_refine_dist
+                            _coarse_refine_dz_obj_after = _coarse_refine_dz
                         if _coarse_refine_result_tcp is not None and _coarse_refine_target_z is not None:
                             _coarse_refine_runtime_z_error = abs(
                                 float(_coarse_refine_result_tcp[2]) - float(_coarse_refine_target_z)
@@ -9014,6 +9146,8 @@ def run_pick_demo(panel) -> None:
                                 _coarse_refine_dy = float(_coarse_refine_result_tcp[1]) - float(_coarse_phase_check.get("object_base")[1])
                                 _coarse_refine_dz = float(_coarse_refine_result_tcp[2]) - float(_coarse_phase_check.get("object_base")[2])
                                 _coarse_refine_dist = _dist(_coarse_refine_result_tcp, _coarse_phase_check.get("object_base"))
+                                _coarse_refine_tcp_obj_dist_after = _coarse_refine_dist
+                                _coarse_refine_dz_obj_after = _coarse_refine_dz
                             if _coarse_refine_result_tcp is not None and _coarse_refine_target_z is not None:
                                 _coarse_refine_runtime_z_error = abs(
                                     float(_coarse_refine_result_tcp[2]) - float(_coarse_refine_target_z)
@@ -9025,12 +9159,16 @@ def run_pick_demo(panel) -> None:
                             "[PICK][DIRECT][COARSE_REFINE] "
                             "phase=APPROACH_COARSE "
                             f"coarse_refine_needed=true "
+                            f"refine_target_z_strategy={_coarse_refine_target_z_strategy} "
                             f"refine_target_z={_fmt_scalar(_coarse_refine_target_z)} "
+                            f"object_z={_fmt_scalar(_coarse_refine_object_z)} "
                             f"refine_result_tcp={_fmt_vec(_coarse_refine_result_tcp)} "
                             f"refine_dx={_fmt_scalar(_coarse_refine_dx)} "
                             f"refine_dy={_fmt_scalar(_coarse_refine_dy)} "
                             f"refine_dz={_fmt_scalar(_coarse_refine_dz)} "
                             f"refine_dist={_fmt_scalar(_coarse_refine_dist)} "
+                            f"dz_obj_after_refine={_fmt_scalar(_coarse_refine_dz_obj_after)} "
+                            f"tcp_obj_dist_after_refine={_fmt_scalar(_coarse_refine_tcp_obj_dist_after)} "
                             f"refine_runtime_target_tol={_fmt_scalar(_coarse_refine_runtime_target_tol)} "
                             f"refine_runtime_target_dist={_fmt_scalar(_coarse_refine_runtime_target_dist)} "
                             f"refine_runtime_z_error={_fmt_scalar(_coarse_refine_runtime_z_error)} "

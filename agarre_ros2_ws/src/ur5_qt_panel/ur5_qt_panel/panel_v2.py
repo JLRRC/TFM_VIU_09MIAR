@@ -2978,7 +2978,26 @@ class ControlPanelV2(QMainWindow):
         goal_handle = future.result() if future.done() else None
         if not goal_handle or not goal_handle.accepted:
             return False, self._format_action_error("FollowJointTrajectory", "goal rechazado")
-        return True, action_name
+        result_future = goal_handle.get_result_async()
+        result_timeout_sec = max(float(sec) + 3.0, TRAJ_ACTION_FALLBACK_TIMEOUT_SEC)
+        rclpy.spin_until_future_complete(
+            self._moveit_node,
+            result_future,
+            timeout_sec=result_timeout_sec,
+        )
+        if not result_future.done():
+            return False, self._format_action_error(
+                "FollowJointTrajectory",
+                f"result timeout>{result_timeout_sec:.1f}s",
+            )
+        result_msg = result_future.result()
+        status = getattr(result_msg, "status", None)
+        if status != 4:
+            return False, self._format_action_error(
+                "FollowJointTrajectory",
+                f"{action_name}:status={status}",
+            )
+        return True, f"{action_name}:status={status}"
 
     def _schedule_traj_action_fallback(self, positions: List[float], sec: float, traj_topic: str) -> None:
         if not TRAJ_ACTION_FALLBACK:
@@ -3038,7 +3057,13 @@ class ControlPanelV2(QMainWindow):
                 )
         return clamped, warnings
 
-    def _publish_joint_trajectory(self, positions: List[float], sec: float) -> Tuple[bool, str]:
+    def _publish_joint_trajectory(
+        self,
+        positions: List[float],
+        sec: float,
+        *,
+        prefer_action: bool = False,
+    ) -> Tuple[bool, str]:
         if getattr(self, "_pick_moveit_phase_active", False):
             self._emit_log(
                 "[MANUAL] BLOCKED: publicación manual durante fase MoveIt de PICK_OBJ"
@@ -3075,6 +3100,17 @@ class ControlPanelV2(QMainWindow):
         safe_positions, limit_warnings = self._clamp_joint_positions(positions)
         for w in limit_warnings:
             self._emit_log(f"[ROBOT][JOINT_LIMIT] WARN: {w}")
+        if prefer_action:
+            ok, info = self._send_joint_trajectory_action(safe_positions, sec, topic)
+            if ok:
+                self._emit_log(
+                    "[ROBOT] Executing JointTrajectory via FollowJointTrajectory action"
+                )
+                return True, f"action:{info}"
+            self._emit_log(
+                "[ROBOT] FollowJointTrajectory action failed; falling back to topic "
+                f"reason={info}"
+            )
         if self._traj_publish_inflight:
             self._emit_log("[ROBOT] WARN: publish JointTrajectory solapado")
         self._traj_publish_inflight = True

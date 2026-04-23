@@ -135,6 +135,8 @@ def main() -> int:
         "script_motion_guard_logged": False,
         "step_mode_forced": False,
         "step_inicio_captured": False,
+        "step_approach_ready_captured": False,
+        "step_approach_started": False,
         "step_post_captured": False,
         "step_close_scheduled": False,
         "step_continues_sent": 0,
@@ -423,8 +425,40 @@ def main() -> int:
             mode = str(getattr(panel, "_step_mode", "") or "").strip()
             step_window = getattr(panel, "_step_window", None)
             window_visible = bool(step_window is not None and step_window.isVisible())
+            wait_active = bool(getattr(panel, "_step_wait_active", False))
+            running_phase = str(getattr(panel, "_step_running_phase", "") or "").strip().upper()
+            current_phase = str(getattr(panel, "_step_current_phase", "") or "").strip().upper()
 
-            # Captura obligatoria: INICIO visible antes de pulsar Siguiente.
+            # Flujo actual: HOME_INITIAL -> MESA -> espera -> APPROACH_COARSE manual.
+            if (
+                pending.upper().endswith("APPROACH_COARSE")
+                and wait_active
+                and not state["step_approach_ready_captured"]
+            ):
+                rows = _snapshot_step_rows(panel)
+                home_initial = _find_row(rows, "HOME_INITIAL")
+                approach = _find_row(rows, "APPROACH_COARSE")
+                home_actual = home_initial.get("actual") if home_initial else None
+                home_target = home_initial.get("target") if home_initial else None
+                approach_actual = approach.get("actual") if approach else None
+                approach_target = approach.get("target") if approach else None
+                state["step_inicio_actual"] = home_actual
+                state["step_inicio_target"] = home_target
+                panel._emit_log(
+                    "[AUDIT][STEP] approach_ready_before_start "
+                    f"mode={mode or 'unknown'} "
+                    f"window_visible={str(window_visible).lower()} "
+                    f"pending={pending or 'none'} "
+                    f"wait_active={str(wait_active).lower()} "
+                    f"rows={len(rows)} "
+                    f"home_initial_act={_fmt_xyz(home_actual)} "
+                    f"home_initial_obj={_fmt_xyz(home_target)} "
+                    f"approach_act={_fmt_xyz(approach_actual)} "
+                    f"approach_obj={_fmt_xyz(approach_target)}"
+                )
+                state["step_approach_ready_captured"] = True
+
+            # Compatibilidad: si la UI vieja sigue exponiendo INICIO, conservar captura previa.
             if pending.upper().endswith("INICIO") and not state["step_inicio_captured"]:
                 rows = _snapshot_step_rows(panel)
                 inicio = _find_row(rows, "INICIO")
@@ -443,7 +477,25 @@ def main() -> int:
                 )
                 state["step_inicio_captured"] = True
 
-            # Avance explícito con botón Siguiente.
+            # Flujo actual: disparo manual de APPROACH_COARSE desde el panel paso a paso.
+            if (
+                state["step_approach_ready_captured"]
+                and not state["step_approach_started"]
+                and wait_active
+                and pending.upper().endswith("APPROACH_COARSE")
+            ):
+                now = time.monotonic()
+                if now - float(state["step_last_continue_ts"] or 0.0) > 0.4:
+                    state["step_last_continue_ts"] = now
+                    state["step_approach_started"] = True
+                    panel._emit_log(
+                        "[AUDIT][STEP] phase_start_click "
+                        f"phase=APPROACH_COARSE pending={pending or 'none'} "
+                        f"current_phase={current_phase or 'none'}"
+                    )
+                    panel._on_step_phase_start_clicked("APPROACH_COARSE")
+
+            # Compatibilidad: avance explícito con botón Siguiente para la UI vieja.
             if (
                 state["step_inicio_captured"]
                 and state["step_continues_sent"] < STEP_MAX_CONTINUES
@@ -458,6 +510,26 @@ def main() -> int:
                         f"index={state['step_continues_sent']} pending={pending or 'none'}"
                     )
                     panel._on_step_continue_clicked()
+
+            # Confirmar arranque real de APPROACH_COARSE en el flujo actual.
+            if (
+                state["step_approach_started"]
+                and running_phase == "APPROACH_COARSE"
+                and not state["step_post_captured"]
+            ):
+                rows_after = _snapshot_step_rows(panel)
+                approach_row = _find_row(rows_after, "APPROACH_COARSE")
+                approach_actual = approach_row.get("actual") if approach_row else None
+                approach_target = approach_row.get("target") if approach_row else None
+                panel._emit_log(
+                    "[AUDIT][STEP] approach_running "
+                    f"pending={pending or 'none'} "
+                    f"running_phase={running_phase or 'none'} "
+                    f"rows={len(rows_after)} "
+                    f"approach_act={_fmt_xyz(approach_actual)} "
+                    f"approach_obj={_fmt_xyz(approach_target)}"
+                )
+                state["step_post_captured"] = True
 
             # Captura post-avance: verificar no mutación de INICIO + fila siguiente.
             if (
@@ -513,9 +585,6 @@ def main() -> int:
                     f"inicio_row_preserved={str(same_act and same_obj).lower()}"
                 )
                 state["step_post_captured"] = True
-                if not state["step_close_scheduled"]:
-                    state["step_close_scheduled"] = True
-                    QTimer.singleShot(1800, _close)
         except Exception as exc:
             print(f"[{_stamp()}] [AUDIT][STEP] step_drive_error={exc}", flush=True)
 
