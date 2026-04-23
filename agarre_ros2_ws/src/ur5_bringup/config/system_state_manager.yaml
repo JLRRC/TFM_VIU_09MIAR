@@ -7,7 +7,7 @@ system_state_manager:
     model_name: ur5_rg2
     base_frame: base_link
     world_frame: world
-    ee_frame: rg2_tcp
+    ee_frame: rg2_pinch_center
     pose_topic: ""
     camera_topic: /camera_overhead/image
     controller_manager: /controller_manager

@@ -32,7 +32,7 @@ from .gripper_geometry import (
     RG2_PINCH_CENTER_FRAME,
     RG2_TCP_FRAME,
     TOOL0_FRAME,
-    evaluate_geometry_snapshot,
+    evaluate_runtime_geometry,
     load_gripper_geometry,
 )
 from .param_utils import read_float_param, read_str_list_param, read_str_param
@@ -659,57 +659,36 @@ class SystemStateManager(Node):
             snapshot = self._empty_geometry_snapshot(reason="disabled", ok=True)
             return True, "disabled", snapshot
         timeout = Duration(seconds=self._tf_timeout)
-        actual_xyz: Dict[str, Tuple[float, float, float]] = {}
-        for frame_name in (RG2_TCP_FRAME, RG2_PINCH_CENTER_FRAME):
+
+        def _lookup_xyz(tool_frame: str, frame_name: str) -> Tuple[float, float, float]:
             try:
                 if not self._tf_buffer.can_transform(
-                    self._geometry_tool_frame,
+                    tool_frame,
                     frame_name,
                     rclpy.time.Time(),
                     timeout=timeout,
                 ):
-                    reason = f"{self._geometry_tool_frame}->{frame_name} missing"
-                    return (
-                        False,
-                        reason,
-                        self._empty_geometry_snapshot(
-                            reason=reason,
-                            actual_xyz=actual_xyz,
-                            ok=False,
-                        ),
-                    )
+                    raise LookupError(f"{tool_frame}->{frame_name} missing")
                 tf = self._tf_buffer.lookup_transform(
-                    self._geometry_tool_frame,
+                    tool_frame,
                     frame_name,
                     rclpy.time.Time(),
                     timeout=timeout,
                 )
-            except Exception:
-                reason = f"{self._geometry_tool_frame}->{frame_name} tf_error"
-                return (
-                    False,
-                    reason,
-                    self._empty_geometry_snapshot(
-                        reason=reason,
-                        actual_xyz=actual_xyz,
-                        ok=False,
-                    ),
-                )
+            except LookupError:
+                raise
+            except Exception as exc:
+                raise RuntimeError(f"{tool_frame}->{frame_name} tf_error") from exc
             tr = tf.transform.translation
-            actual_xyz[frame_name] = (float(tr.x), float(tr.y), float(tr.z))
-        ok, reason, snapshot = evaluate_geometry_snapshot(
-            actual_xyz,
+            return (float(tr.x), float(tr.y), float(tr.z))
+
+        return evaluate_runtime_geometry(
+            _lookup_xyz,
             geometry=self._gripper_geometry,
             tool_frame=self._geometry_tool_frame,
             offset_tol_m=self._geometry_offset_tol,
             pair_tol_m=self._geometry_pair_tol,
         )
-        snapshot["ok"] = bool(ok)
-        snapshot["reason"] = str(reason or "")
-        snapshot["urdf_source"] = str(
-            snapshot.get("urdf_source") or snapshot.get("source_path") or ""
-        )
-        return ok, reason, snapshot
 
     def _set_state(self, state: SystemState, reason: str) -> None:
         if state.value == self._state and reason == self._reason:

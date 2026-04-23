@@ -62,6 +62,16 @@ run_pipeline_check() {
   [[ "$result" == "PASS" ]]
 }
 
+capture_diag_check() {
+  local output_json="$1"
+  source_ros
+  python3 ./scripts/capture_system_diag.py \
+    --timeout 15.0 \
+    --require-geometry-ok \
+    --require-state READY \
+    --output "$output_json"
+}
+
 for i in $(seq 1 "$CYCLES"); do
   echo "" | tee -a "$OUT_DIR/summary.log"
   echo "=== CYCLE $i START ===" | tee -a "$OUT_DIR/summary.log"
@@ -71,9 +81,17 @@ for i in $(seq 1 "$CYCLES"); do
 
   sleep 10
 
-  run_pipeline_check > "$OUT_DIR/cycle${i}_pipeline.log" 2>&1 || true
+  diag_ok=0
+  if capture_diag_check "$OUT_DIR/cycle${i}_system_diag.json" > "$OUT_DIR/cycle${i}_system_diag.log" 2>&1; then
+    diag_ok=1
+  fi
 
-  if grep -q 'RESULTADO: PASS' "$OUT_DIR/cycle${i}_pipeline.log"; then
+  pipeline_ok=0
+  if run_pipeline_check > "$OUT_DIR/cycle${i}_pipeline.log" 2>&1; then
+    pipeline_ok=1
+  fi
+
+  if [[ "$diag_ok" -eq 1 && "$pipeline_ok" -eq 1 ]]; then
     ./scripts/stop_panel_v2.sh > "$OUT_DIR/cycle${i}_post_stop.log" 2>&1 || true
     source_ros
     post_nodes="$(ros2 node list 2>/dev/null | grep '^/' | wc -l | tr -d ' ' || true)"
@@ -87,10 +105,11 @@ for i in $(seq 1 "$CYCLES"); do
       fails=$((fails+1))
     fi
   else
-    echo "[REPRO] cycle=$i FAIL" | tee -a "$OUT_DIR/summary.log"
+    echo "[REPRO] cycle=$i FAIL (diag_ok=$diag_ok pipeline_ok=$pipeline_ok)" | tee -a "$OUT_DIR/summary.log"
     fails=$((fails+1))
   fi
 
+  tail -n 8 "$OUT_DIR/cycle${i}_system_diag.log" >> "$OUT_DIR/summary.log"
   tail -n 8 "$OUT_DIR/cycle${i}_pipeline.log" >> "$OUT_DIR/summary.log"
 done
 

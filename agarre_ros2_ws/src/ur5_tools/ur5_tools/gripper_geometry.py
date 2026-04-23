@@ -11,7 +11,7 @@ import math
 import os
 from pathlib import Path
 import re
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Callable, Dict, Iterable, Optional, Tuple
 
 try:
     from ament_index_python.packages import get_package_share_directory
@@ -250,6 +250,124 @@ def tool0_offset_for_frame(
     if frame in CONTACT_SEMANTIC_FRAMES:
         return geometry.xyz_for_frame(frame)
     raise KeyError(f"unsupported tool0 offset frame: {frame_name!r}")
+
+
+def _runtime_geometry_snapshot(
+    *,
+    geometry: Optional[GripperGeometry] = None,
+    tool_frame: str = TOOL0_FRAME,
+    offset_tol_m: float = 0.002,
+    pair_tol_m: float = 0.001,
+    actual_xyz: Optional[Dict[str, Tuple[float, float, float]]] = None,
+    ok: bool = False,
+    reason: str = "",
+) -> Dict[str, object]:
+    geometry = geometry or load_gripper_geometry()
+    snapshot: Dict[str, object] = {
+        "tool_frame": str(tool_frame or TOOL0_FRAME),
+        "source_path": geometry.tcp.source_path,
+        "urdf_source": geometry.tcp.source_path,
+        "expected_xyz": {
+            RG2_TCP_FRAME: list(geometry.xyz_for_frame(RG2_TCP_FRAME)),
+            RG2_PINCH_CENTER_FRAME: list(geometry.xyz_for_frame(RG2_PINCH_CENTER_FRAME)),
+        },
+        "actual_xyz": {},
+        "frame_error_m": {},
+        "offset_tol_m": float(offset_tol_m),
+        "pair_tol_m": float(pair_tol_m),
+        "pair_error_m": None,
+        "ok": bool(ok),
+        "reason": str(reason or ""),
+    }
+    for frame_name, xyz in (actual_xyz or {}).items():
+        snapshot["actual_xyz"][frame_name] = [
+            float(xyz[0]),
+            float(xyz[1]),
+            float(xyz[2]),
+        ]
+    return snapshot
+
+
+def evaluate_runtime_geometry(
+    lookup_xyz_fn: Callable[[str, str], Tuple[float, float, float]],
+    *,
+    geometry: Optional[GripperGeometry] = None,
+    tool_frame: str = TOOL0_FRAME,
+    offset_tol_m: float = 0.002,
+    pair_tol_m: float = 0.001,
+) -> Tuple[bool, str, Dict[str, object]]:
+    """Evalúa la geometría runtime usando un callback `tool_frame -> frame`."""
+
+    geometry = geometry or load_gripper_geometry()
+    normalized_tool_frame = str(tool_frame or TOOL0_FRAME)
+    actual_xyz: Dict[str, Tuple[float, float, float]] = {}
+    for frame_name in (RG2_TCP_FRAME, RG2_PINCH_CENTER_FRAME):
+        try:
+            raw_xyz = lookup_xyz_fn(normalized_tool_frame, frame_name)
+        except Exception as exc:
+            reason = str(exc or "").strip() or f"{normalized_tool_frame}->{frame_name} lookup_error"
+            return (
+                False,
+                reason,
+                _runtime_geometry_snapshot(
+                    geometry=geometry,
+                    tool_frame=normalized_tool_frame,
+                    offset_tol_m=offset_tol_m,
+                    pair_tol_m=pair_tol_m,
+                    actual_xyz=actual_xyz,
+                    ok=False,
+                    reason=reason,
+                ),
+            )
+        if raw_xyz is None:
+            reason = f"{normalized_tool_frame}->{frame_name} missing"
+            return (
+                False,
+                reason,
+                _runtime_geometry_snapshot(
+                    geometry=geometry,
+                    tool_frame=normalized_tool_frame,
+                    offset_tol_m=offset_tol_m,
+                    pair_tol_m=pair_tol_m,
+                    actual_xyz=actual_xyz,
+                    ok=False,
+                    reason=reason,
+                ),
+            )
+        try:
+            actual_xyz[frame_name] = (
+                float(raw_xyz[0]),
+                float(raw_xyz[1]),
+                float(raw_xyz[2]),
+            )
+        except Exception:
+            reason = f"{normalized_tool_frame}->{frame_name} invalid_xyz"
+            return (
+                False,
+                reason,
+                _runtime_geometry_snapshot(
+                    geometry=geometry,
+                    tool_frame=normalized_tool_frame,
+                    offset_tol_m=offset_tol_m,
+                    pair_tol_m=pair_tol_m,
+                    actual_xyz=actual_xyz,
+                    ok=False,
+                    reason=reason,
+                ),
+            )
+    ok, reason, snapshot = evaluate_geometry_snapshot(
+        actual_xyz,
+        geometry=geometry,
+        tool_frame=normalized_tool_frame,
+        offset_tol_m=offset_tol_m,
+        pair_tol_m=pair_tol_m,
+    )
+    snapshot["ok"] = bool(ok)
+    snapshot["reason"] = str(reason or "")
+    snapshot["urdf_source"] = str(
+        snapshot.get("urdf_source") or snapshot.get("source_path") or geometry.tcp.source_path
+    )
+    return ok, reason, snapshot
 
 
 def evaluate_geometry_snapshot(
