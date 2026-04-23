@@ -54,6 +54,13 @@ def capture(pattern: str, text: str, label: str, *, flags: int = re.S) -> str:
     return match.group(1)
 
 
+def optional_capture(pattern: str, text: str, *, flags: int = re.S) -> str | None:
+    match = re.search(pattern, text, flags)
+    if not match:
+        return None
+    return match.group(1)
+
+
 def capture_groups(pattern: str, text: str, label: str, *, flags: int = re.S) -> tuple[str, ...]:
     match = re.search(pattern, text, flags)
     if not match:
@@ -258,7 +265,26 @@ def parse_historical_env_defaults(text: str) -> dict[str, str]:
     return defaults
 
 
+def parse_xacro_properties(text: str) -> dict[str, str]:
+    pattern = re.compile(r"<xacro:property\s+name=\"([^\"]+)\"\s+value=\"([^\"]+)\"\s*/?>")
+    return {
+        str(name).strip(): str(value).strip()
+        for name, value in pattern.findall(text)
+        if str(name).strip()
+    }
+
+
+def resolve_xacro_value(value: str, properties: dict[str, str]) -> str:
+    raw = str(value or "").strip()
+    match = re.fullmatch(r"\$\{([^}]+)\}", raw)
+    if not match:
+        return raw
+    return str(properties.get(match.group(1).strip(), raw)).strip()
+
+
 def env_group(name: str) -> str:
+    if name == "PANEL_RUNTIME_VALIDATED_PROFILE" or name == "STRICT_SELF_COLLISION" or name.startswith("SYSTEM_STATE_"):
+        return "guardrails de arranque / geometría"
     if name.startswith("GRASP_CONTACT") or "OBJECT_HEIGHT" in name or "TCP_OFFSET" in name:
         return "geometría y altura de agarre"
     if "APPROACH_COARSE" in name:
@@ -281,7 +307,9 @@ def env_group(name: str) -> str:
         return "settle IK directo"
     if name.startswith("PANEL_MOVEIT_BRIDGE"):
         return "MoveIt bridge"
-    if "LIFT" in name or "CARRY" in name or "TRANSPORT" in name:
+    if "TRANSPORT" in name or "BASKET" in name:
+        return "TRANSPORT / basket corridor"
+    if "LIFT" in name or "CARRY" in name:
         return "LIFT / CARRY"
     return "otros"
 
@@ -307,6 +335,7 @@ def env_units(name: str, value: str) -> str:
 
 def env_effect(group: str) -> str:
     mapping = {
+        "guardrails de arranque / geometría": "Bloquea READY si la geometría/runtime no coincide con la configuración validada.",
         "geometría y altura de agarre": "Ajusta alturas, offsets y contacto geométrico del pick.",
         "APPROACH_COARSE": "Controla la aproximación gruesa antes del descenso final.",
         "GRASP_DOWN": "Controla el descenso, segmentación IK y/o cartesian path del grasp.",
@@ -314,6 +343,7 @@ def env_effect(group: str) -> str:
         "PRE_CLOSE": "Valida pose y permite realineación justo antes de cerrar.",
         "CLOSE": "Controla cierre del gripper y su confirmación por telemetría.",
         "ATTACH_GATE": "Controla la ventana temporal y los umbrales del attach lógico.",
+        "TRANSPORT / basket corridor": "Controla el corredor cartesiano a cesta, el replan segmentado y sus post-checks.",
         "LIFT / CARRY": "Controla validación física post-grasp y transporte con objeto.",
         "freshness / pose source": "Controla frescura, fuente y tolerancias de poses/TF.",
         "settle IK directo": "Controla settle y tolerancias del camino directo por IK.",
@@ -325,6 +355,7 @@ def env_effect(group: str) -> str:
 
 def env_risk(group: str) -> str:
     mapping = {
+        "guardrails de arranque / geometría": "Si se pierden estos gates, READY puede declararse con geometría o runtime incoherentes.",
         "geometría y altura de agarre": "Un offset incorrecto desplaza el TCP y degrada el grasp.",
         "APPROACH_COARSE": "Tolerancias demasiado agresivas disparan abortos o saltos de fase.",
         "GRASP_DOWN": "Steps o tolerancias mal ajustados favorecen cambio de rama IK o colisión.",
@@ -332,6 +363,7 @@ def env_risk(group: str) -> str:
         "PRE_CLOSE": "Permite cerrar fuera de objeto o repetir realineaciones inútiles.",
         "CLOSE": "Puede dejar CLOSE en PEND o confirmar falsamente un cierre débil.",
         "ATTACH_GATE": "Puede aprobar attach lógico sin contacto físico real, o bloquear attaches válidos.",
+        "TRANSPORT / basket corridor": "Puede aceptar soluciones IK que pasan la llamada numérica pero fallan el post-check runtime/modelo.",
         "LIFT / CARRY": "Puede aceptar falsos positivos o abortar carries físicamente correctos.",
         "freshness / pose source": "Pose stale o mezcla de fuentes produce decisiones incoherentes.",
         "settle IK directo": "Un settle corto deja FK/TF desalineados respecto a la telemetría real.",
@@ -393,7 +425,18 @@ def resolve_env_entries(entries: list[EnvEntry], historical_defaults: dict[str, 
     filtered = [
         entry
         for entry in dedupe_env_entries(entries)
-        if entry.name.startswith(("PANEL_PICK_DEMO_", "ATTACH_BACKEND_", "PANEL_MOVEIT_BRIDGE_", "GRASP_CONTACT_"))
+        if entry.name.startswith(
+            (
+                "PANEL_PICK_DEMO_",
+                "ATTACH_BACKEND_",
+                "PANEL_MOVEIT_BRIDGE_",
+                "PANEL_MOVEIT_",
+                "PANEL_CONTROLLER_READY_",
+                "GRASP_CONTACT_",
+                "SYSTEM_STATE_",
+            )
+        )
+        or entry.name in {"STRICT_SELF_COLLISION", "PANEL_RUNTIME_VALIDATED_PROFILE"}
     ]
     names = sorted({entry.name for entry in filtered})
     resolved: list[ResolvedEnv] = []
@@ -406,7 +449,7 @@ def resolve_env_entries(entries: list[EnvEntry], historical_defaults: dict[str, 
                 continue
             if entry.source_label == "launch" and entry.default:
                 launch_default = entry.default
-            elif entry.source_label == "start_panel" and entry.default:
+            elif entry.source_label in {"runtime_profile", "start_panel"} and entry.default:
                 runtime_override = entry.default
             elif entry.source_label == "panel" and entry.default:
                 panel_default = entry.default
@@ -768,6 +811,7 @@ def main() -> None:
         "launch": root / "agarre_ros2_ws/src/ur5_bringup/launch/ur5_stack.launch.py",
         "panel": root / "agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py",
         "backend": root / "agarre_ros2_ws/src/ur5_tools/ur5_tools/gripper_attach_backend.py",
+        "gripper_geometry": root / "agarre_ros2_ws/src/ur5_tools/ur5_tools/gripper_geometry.py",
         "urdf": root / "agarre_ros2_ws/src/ur5_description/urdf/ur5.urdf.xacro",
         "sdf": root / "agarre_ros2_ws/models/ur5_rg2/model.sdf",
         "world": root / "agarre_ros2_ws/worlds/ur5_mesa_objetos.sdf",
@@ -776,6 +820,8 @@ def main() -> None:
         "attach_gate": root / "agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/attach_gate_evaluator.py",
         "world_tf": root / "agarre_ros2_ws/src/ur5_tools/ur5_tools/world_tf_publisher.py",
         "start_panel": root / "agarre_ros2_ws/scripts/start_panel_v2.sh",
+        "runtime_profile": root / "agarre_ros2_ws/scripts/panel_runtime_validated.env",
+        "startup_repro": root / "agarre_ros2_ws/scripts/validate_startup_repro.sh",
         "pkg_bringup": root / "agarre_ros2_ws/src/ur5_bringup/package.xml",
         "pkg_description": root / "agarre_ros2_ws/src/ur5_description/package.xml",
         "pkg_moveit": root / "agarre_ros2_ws/src/ur5_moveit_config/package.xml",
@@ -819,23 +865,34 @@ def main() -> None:
     attach_gate_text = read_text(files["attach_gate"])
     world_tf_text = read_text(files["world_tf"])
     start_panel_text = read_text(files["start_panel"])
+    runtime_profile_text = read_text(files["runtime_profile"])
     historical_text = load_markdown_or_pdf(hist_md, ref_pdf)
     current_seed_text = read_text(current_seed_md) if current_seed_md and current_seed_md.exists() else ""
+    urdf_properties = parse_xacro_properties(urdf_text)
 
-    rg2_tcp_xyz = capture(
+    rg2_tcp_xyz = resolve_xacro_value(
+        capture(
         r'<joint name="rg2_tcp_joint"[^>]*>.*?<origin xyz="([^"]+)"',
         urdf_text,
         "offset tool0 -> rg2_tcp",
+        ),
+        urdf_properties,
     )
-    rg2_pinch_xyz = capture(
+    rg2_pinch_xyz = resolve_xacro_value(
+        capture(
         r'<joint name="rg2_pinch_center_joint"[^>]*>.*?<origin xyz="([^"]+)"',
         urdf_text,
         "offset tool0 -> rg2_pinch_center",
+        ),
+        urdf_properties,
     )
-    urdf_base_origin = capture(
+    urdf_base_origin = resolve_xacro_value(
+        capture(
         r'<origin xyz="([^"]+)" rpy="0 0 0"/>',
         urdf_text,
         "origen URDF world -> base_link",
+        ),
+        urdf_properties,
     )
     sdf_hand_rel, sdf_hand_pose = capture_groups(
         r'<joint name="ur5_hand_joint"[^>]*>.*?<pose relative_to="([^"]+)">([^<]+)</pose>',
@@ -1085,8 +1142,14 @@ def main() -> None:
 
     audit_doc = root / "auditoria/informe_fix_visual_grasp_20260419.md"
     reports_status = root / "reports/evidence/ros2/moveit2_system_status.json"
+    tcp_incident_path = root / "reports/incidents/2026-04-21_tcp_geometry_incident.md"
+    tcp_closure_path = root / "agarre_ros2_ws/reports/incidents/2026-04-22_rg2_tcp_incident_closure.md"
+    basket_followup_path = root / "agarre_ros2_ws/reports/incidents/2026-04-23_directo_basket_transport_ik_followup.md"
     audit_text = read_text(audit_doc) if audit_doc.exists() else ""
     reports_status_text = read_text(reports_status) if reports_status.exists() else ""
+    tcp_incident_text = read_text(tcp_incident_path) if tcp_incident_path.exists() else ""
+    tcp_closure_text = read_text(tcp_closure_path) if tcp_closure_path.exists() else ""
+    basket_followup_text = read_text(basket_followup_path) if basket_followup_path.exists() else ""
 
     helper_logs = sorted((root / "auditoria").glob("**/helper.log"))
     stack_logs = sorted((root / "auditoria").glob("**/stack.log")) + sorted((root / "historico").glob("stack_manual_*.log"))
@@ -1153,9 +1216,71 @@ def main() -> None:
     hist_env_defaults = parse_historical_env_defaults(historical_text)
     env_entries = []
     env_entries.extend(collect_env_entries(launch_text, "launch", files["launch"]))
+    # El runtime profile se sourcea dentro del wrapper. Se carga antes para que,
+    # si una variable existe en ambos sitios, prevalezca el export directo del wrapper.
+    env_entries.extend(collect_env_entries(runtime_profile_text, "runtime_profile", files["runtime_profile"]))
     env_entries.extend(collect_env_entries(start_panel_text, "start_panel", files["start_panel"]))
     env_entries.extend(collect_env_entries(panel_text, "panel", files["panel"]))
     resolved_env = resolve_env_entries(env_entries, hist_env_defaults)
+
+    tcp_incident_closure_date = optional_capture(r"^Fecha de cierre:\s*([0-9-]+)$", tcp_incident_text, flags=re.M)
+    tcp_incident_validated_offset = optional_capture(
+        r"Correcto validado:\s*`tool0 -> rg2_tcp\.z = ([^`]+)`",
+        tcp_incident_text,
+        flags=re.M,
+    )
+    tcp_incident_runs = optional_capture(r"- `runs=([0-9]+)`", tcp_incident_text, flags=re.M)
+    tcp_incident_passed = optional_capture(r"- `passed=([0-9]+)`", tcp_incident_text, flags=re.M)
+    tcp_incident_manual_date = optional_capture(
+        r"realizada el `([^`]+)` usando el flujo canónico",
+        tcp_incident_text,
+    )
+    tcp_closure_geometric_date = optional_capture(
+        r"^Fecha de cierre geometrico:\s*([0-9-]+)$",
+        tcp_closure_text,
+        flags=re.M,
+    )
+    tcp_closure_status = optional_capture(r"^Estado:\s*(.+)$", tcp_closure_text, flags=re.M)
+    tcp_closure_validated_offset = optional_capture(
+        r"Correcto validado:\s*`tool0 -> rg2_tcp\.z = ([^`]+)`",
+        tcp_closure_text,
+        flags=re.M,
+    )
+    basket_followup_status = optional_capture(r"^Estado:\s*(.+)$", basket_followup_text, flags=re.M)
+    basket_followup_stage = optional_capture(
+        r"- `(CESTA_STAGE_[^`]+_postcheck_failed)`",
+        basket_followup_text,
+        flags=re.M,
+    )
+    basket_followup_runtime = optional_capture(
+        r"- `runtime_target_dist=([^`]+)`",
+        basket_followup_text,
+        flags=re.M,
+    )
+    basket_followup_model = optional_capture(
+        r"- `model_target_err=([^`]+)`",
+        basket_followup_text,
+        flags=re.M,
+    )
+    tcp_closure_offset_txt = (
+        tcp_incident_validated_offset
+        or tcp_closure_validated_offset
+        or rg2_tcp_xyz.split()[-1]
+    )
+    tcp_closure_batch_txt = (
+        f"{tcp_incident_passed}/{tcp_incident_runs}"
+        if tcp_incident_passed and tcp_incident_runs
+        else "no consignado en la fuente cargada"
+    )
+    basket_followup_signal = ", ".join(
+        item
+        for item in [
+            basket_followup_stage,
+            f"runtime_target_dist={basket_followup_runtime}" if basket_followup_runtime else None,
+            f"model_target_err={basket_followup_model}" if basket_followup_model else None,
+        ]
+        if item
+    ) or "sin señal resumida extraída automáticamente"
 
     package_rows = []
     for key in [
@@ -1191,11 +1316,14 @@ def main() -> None:
 
     file_control_rows = [
         ("Frames TF del robot", "`agarre_ros2_ws/src/ur5_description/urdf/ur5.urdf.xacro`"),
+        ("Geometría canónica runtime del RG2", "`agarre_ros2_ws/src/ur5_tools/ur5_tools/gripper_geometry.py`"),
         ("Modelo físico Gazebo", "`agarre_ros2_ws/models/ur5_rg2/model.sdf`"),
         ("Mundo de simulación", "`agarre_ros2_ws/worlds/ur5_mesa_objetos.sdf`"),
         ("Controladores ros2_control", "`agarre_ros2_ws/src/ur5_bringup/config/ur5_mock_controllers.yaml`"),
         ("Variables de entorno del pick demo", "`agarre_ros2_ws/src/ur5_bringup/launch/ur5_stack.launch.py`"),
         ("Overrides runtime del panel", "`agarre_ros2_ws/scripts/start_panel_v2.sh`"),
+        ("Perfil runtime validado", "`agarre_ros2_ws/scripts/panel_runtime_validated.env`"),
+        ("Harness de validación de arranque", "`agarre_ros2_ws/scripts/validate_startup_repro.sh`"),
         ("Lógica de fases del pick", "`agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py`"),
         ("Gate de attach", "`agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/attach_gate_evaluator.py`"),
         ("Backend attach/transporte", "`agarre_ros2_ws/src/ur5_tools/ur5_tools/gripper_attach_backend.py`"),
@@ -1291,6 +1419,9 @@ def main() -> None:
         ref_pdf if ref_pdf.exists() else None,
         audit_doc if audit_doc.exists() else None,
         reports_status if reports_status.exists() else None,
+        tcp_incident_path if tcp_incident_text else None,
+        tcp_closure_path if tcp_closure_text else None,
+        basket_followup_path if basket_followup_text else None,
         static_fail_path,
         follow_lost_path,
         never_moved_path,
@@ -1326,6 +1457,8 @@ def main() -> None:
             "- Contenido vigente preservado explícitamente: attach lógico vs transporte físico, ATTACH_GATE vs CARRY, follow_tcp vs world_locked, stale_tcp_pose_soft_follow, discrepancias metadata/llamada real/telemetría y diagnósticos best_obj_move / best_lift_delta / best_tcp_dist.",
             "- Recuperación histórica: se reincorporan arquitectura extendida, tabla amplia de frames, geometría, flujo fase por fase, inventario amplio de variables, controladores/topics, bugs legacy y troubleshooting operativo de 2026-04-18.",
             f"- Discrepancias abiertas resaltadas: world->base_link actual={urdf_base_origin} frente a simplificaciones históricas; attach backend launch={attach_backend_max_dist} / wrapper runtime=0.06; max_pose_age launch={attach_backend_max_pose_age} / wrapper runtime=2.5.",
+            f"- Cronología reciente incorporada: `{tcp_incident_closure_date or '2026-04-22'}` cerró operativamente el incidente TCP con valor canónico `{tcp_closure_offset_txt}`; `{tcp_closure_geometric_date or '2026-04-23'}` lo ratifica geométricamente en el workspace y deja abierto un follow-up separado de cesta / IK (`{basket_followup_status or tcp_closure_status or 'estado no consignado'}`).",
+            "- Nuevas fuentes de detalle incorporadas al generador: `gripper_geometry.py`, `panel_runtime_validated.env`, `validate_startup_repro.sh` y los incidentes recientes de 2026-04-21/22/23.",
             "- Regla de trazabilidad aplicada: cuando una fuente histórica difiere de la actual, se conserva como histórico/documentado previamente en lugar de borrarla.",
         ]
     )
@@ -1390,9 +1523,11 @@ def main() -> None:
             "- panel_v2 orquesta interacción de usuario, estados UI y disparo del ciclo.",
             "- panel_pick_demo ejecuta fases, targets, settle, gates y validación física del carry.",
             "- ur5_kinematics aplica IK/FK directo en base_link_inertia; el panel traduce desde base_link con NEGATE_XY.",
+            "- gripper_geometry centraliza la lectura canónica de `rg2_tcp` y `rg2_pinch_center` desde el URDF para evitar offsets duplicados en runtime.",
             "- ur5_moveit_bridge publica/consume desired_grasp para el camino MoveIt.",
             "- joint_trajectory_controller y gripper_controller ejecutan los comandos físicos en Gazebo.",
             "- gripper_attach_backend decide attach_route_decision entre follow_tcp, tool_anchor y demo_transport/world_locked según objeto y configuración.",
+            "- start_panel_v2 carga `panel_runtime_validated.env`; `validate_startup_repro.sh` revalida que el stack sólo llegue a `READY` con geometría coherente.",
         ]
     )
     parts.append("")
@@ -1445,8 +1580,10 @@ def main() -> None:
         [
             "### 5.3 Estado de validación de geometría",
             "",
+            f"- Cierre geométrico documentado entre `{tcp_incident_closure_date or '2026-04-22'}` y `{tcp_closure_geometric_date or '2026-04-23'}`: `tool0 -> rg2_tcp.z = {tcp_closure_offset_txt}` validado y sincronizado con `rg2_pinch_center`; `gripper_geometry.py` centraliza esta lectura desde el URDF.",
             "- `tool0 -> rg2_pinch_center`: actual confirmado en URDF.",
             "- `pick_demo`: actual confirmado en world file con radio=0.025 m y longitud=0.05 m.",
+            "- Guardrail de arranque actual: `validate_startup_repro.sh` exige `geometry_ok=true` y `state=READY` antes de considerar reproducible el stack.",
             "- Reach operativo UR5 ≈ 0.85 m: histórico no revalidado en esta corrida; se conserva por utilidad operativa.",
             "- Residual DH/SDF fino subcentimétrico: pendiente de validación runtime detallada; se mantiene el conocimiento histórico sobre bias loop y residual en Z.",
             "",
@@ -1479,7 +1616,7 @@ def main() -> None:
             "### 7.0 Cómo leer esta sección",
             "",
             "- `Launch`: default declarado en `ur5_stack.launch.py`.",
-            "- `Runtime wrapper`: override exportado por `start_panel_v2.sh` antes de lanzar el panel/stack.",
+            "- `Runtime wrapper`: valor efectivo exportado por `start_panel_v2.sh` y por `panel_runtime_validated.env` cuando el wrapper lo sourcea.",
             "- `Fallback panel`: valor local que usa `panel_pick_demo.py` si lee la variable directamente y no recibe otra cosa.",
             "- El inventario exhaustivo completo se conserva en el apéndice 15.5; aquí se muestran sólo parámetros de alto impacto operativo.",
         ]
@@ -1557,6 +1694,34 @@ def main() -> None:
         )
     )
     parts.append("")
+    parts.append(
+        env_source_markdown(
+            resolved_env,
+            "7.4 Guardrails de arranque y corredor de cesta",
+            [
+                "PANEL_RUNTIME_VALIDATED_PROFILE",
+                "SYSTEM_STATE_STARTUP_TIMEOUT_SEC",
+                "SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M",
+                "SYSTEM_STATE_GEOMETRY_PAIR_TOL_M",
+                "STRICT_SELF_COLLISION",
+                "PANEL_CONTROLLER_READY_TIMEOUT_SEC",
+                "PANEL_MOVEIT_STARTUP_TIMEOUT_SEC",
+                "PANEL_MOVEIT_BRIDGE_CONTROLLER_PATH_TOL_RAD",
+                "PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TOL_RAD",
+                "PANEL_PICK_DEMO_TRANSPORT_PREEXEC_MODEL_TOL_M",
+                "PANEL_PICK_DEMO_TRANSPORT_POSTCHECK_MODEL_TOL_M",
+                "PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MIN_REMAINING_DIST_M",
+                "PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MAX_STAGE_DIST_M",
+            ],
+        )
+    )
+    parts.append("")
+    parts.append("### 7.5 Lectura efectiva del runtime")
+    parts.append("")
+    parts.append("- `start_panel_v2.sh` exporta defaults base y luego sourcea `panel_runtime_validated.env`.")
+    parts.append("- Si una variable ya fue exportada por el wrapper, el perfil validado no la pisa; si no existe aún, el perfil la completa.")
+    parts.append("- Esto permite documentar en un mismo inventario tanto los defaults base del launcher como los guardrails añadidos tras el cierre TCP del `2026-04-22` y el follow-up de cesta del `2026-04-23`.")
+    parts.append("")
     parts.append(env_discrepancy_markdown(resolved_env))
     parts.append("")
     parts.append("### 7.98 Discrepancias explícitas que no deben perderse")
@@ -1567,6 +1732,8 @@ def main() -> None:
             f"- `ATTACH_BACKEND_MAX_POSE_AGE_SEC`: launch actual={attach_backend_max_pose_age}; wrapper `start_panel_v2.sh` exporta 2.5 por defecto.",
             f"- `ATTACH_BACKEND_MAX_DIST_M`: launch actual={attach_backend_max_dist}; wrapper `start_panel_v2.sh` exporta 0.06 por defecto.",
             f"- CARRY metadata vs llamada real: metadata CARRY=({carry_phase_min_obj}, {carry_phase_min_lift}, {carry_phase_max_tcp}) frente a llamada post_grasp_lift=({post_grasp_min_obj}, {post_grasp_min_lift}, {post_grasp_max_tcp}).",
+            "- `SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M` y `SYSTEM_STATE_GEOMETRY_PAIR_TOL_M` viven hoy en `panel_runtime_validated.env`; perderlos borraría del documento el gate geométrico de arranque introducido tras el cierre TCP.",
+            "- `PANEL_PICK_DEMO_TRANSPORT_PREEXEC_MODEL_TOL_M`, `PANEL_PICK_DEMO_TRANSPORT_POSTCHECK_MODEL_TOL_M` y `PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_*` son claves para entender el atasco residual de cesta descrito en el follow-up `2026-04-23`.",
         ]
     )
     parts.append("")
@@ -1587,6 +1754,7 @@ def main() -> None:
             f"- `pick_demo` sigue entrando por `demo_transport` porque `ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS={demo_transport_objects}` y el backend activa `use_world_locked_pose=True` en esa rama.",
             f"- `attach_backend_mode` por launch sigue siendo `{attach_backend_mode}` y representa la semántica base para objetos no desviados a demo transport.",
             f"- `stale_tcp_pose_soft_follow` aparece cuando `tcp_age` supera `max_pose_age_sec={attach_backend_max_pose_age}`; los logs inspeccionados muestran separación efectiva entre ticks world_locked de {world_locked_gap_txt}.",
+            f"- El follow-up de `2026-04-23` separa un incidente residual de cesta/IK con señal principal `{basket_followup_signal}`; no debe leerse como reapertura del fix TCP.",
             "",
             "### 8.2 Diagnóstico físico por métricas best_*",
             "",
@@ -1643,10 +1811,20 @@ def main() -> None:
         ("Attach lógico aprobado pero transporte físico fallido", "ATTACH_GATE puede pasar aunque CARRY falle", "Diseño deliberadamente separado entre attach lógico y confirmación física", "Código actual + logs FINAL_TRACE/CARRY", "Mantener separación explícita; no tratar ATTACH_GATE como éxito final", "Vigente / documentado"),
         ("`world_locked` puede arrastrar una referencia retrasada", "Objeto no sigue al TCP o queda incoherente", "Demo transport usa `use_world_locked_pose=True` para `pick_demo`", f"Log world_locked: {world_locked_line or 'no localizado'}", "Ajustar frescura de pose y no ocultar la discrepancia frente a follow_tcp", "Vigente / parcialmente mitigado"),
         ("`stale_tcp_pose_soft_follow` degrada carry", "Warnings de stale y carry_follow_lost", f"Pose TCP demasiado vieja respecto a max_pose_age={attach_backend_max_pose_age}", f"Log stale: {stale_line or 'no localizado'}", "Se elevó max pose age en wrapper runtime, pero sigue siendo riesgo abierto", "Vigente / riesgo abierto"),
+        ("Corredor de cesta / IK residual abierto el 2026-04-23", "DIRECTO falla en `CESTA_STAGE_*` aunque el TCP ya es correcto", "Se aceptan soluciones IK que no reproducen el target cartesiano tras ejecución", f"Follow-up 2026-04-23: {basket_followup_signal}", "Añadir guard de modelo pre-ejecución, reseeding/branching y revalidar sin tocar el TCP", "Abierto / incidente separado"),
         ("Metadata, llamada real y telemetría de CARRY divergen", "Timeouts y thresholds no coinciden según la fuente que se mire", "Valores codificados en sitios distintos del panel", "Inspección de panel_pick_demo.py + logs helper/stack", "Conservar discrepancia anotada en vez de resumirla", "Vigente / sin cierre"),
         ("Diagnóstico best_* mal interpretado", "Se concluye grasp o fallo con criterio insuficiente", "Se ignora la relación entre best_obj_move, best_lift_delta y best_tcp_dist", "Auditorías 2026-04-18/19 y documento actual", "Mantener criterios especializados y troubleshooting específico", "Vigente / documentado"),
     ]
     parts.append(markdown_table(current_bug_rows, ("Bug / hallazgo", "Síntoma", "Causa raíz", "Cómo se detectó", "Fix / tratamiento actual", "Estado")))
+    parts.append("")
+    parts.append("### 10.2 Cronología reciente de incidentes")
+    parts.append("")
+    parts.append(
+        f"- `{tcp_incident_closure_date or '2026-04-22'}`: `reports/incidents/2026-04-21_tcp_geometry_incident.md` documenta el cierre operativo del TCP con `tool0 -> rg2_tcp.z = {tcp_closure_offset_txt}`, batch `DIRECTO={tcp_closure_batch_txt}` y repetición manual final `{tcp_incident_manual_date or 'fecha no extraída'}` con `./lanzar_panelc2.sh`."
+    )
+    parts.append(
+        f"- `{tcp_closure_geometric_date or '2026-04-23'}`: `agarre_ros2_ws/reports/incidents/2026-04-22_rg2_tcp_incident_closure.md` ratifica el cierre geométrico del TCP (`{tcp_closure_status or 'estado no consignado'}`) y deja separado el corredor de cesta / IK con señal representativa `{basket_followup_signal}`."
+    )
     parts.append("")
     parts.append(preserved_block("Detalle histórico recuperado (2026-04-18)", historical_sections.get("8. Bugs Conocidos y Fixes Aplicados", ""), shift=1).strip())
     parts.append("")
@@ -1661,6 +1839,7 @@ def main() -> None:
         ("`carry_follow_lost` / `best_lift_delta < 0`", "Comparar pose objeto vs TCP durante LIFT/CARRY y buscar `stale_tcp_pose_soft_follow` y `world_locked` retrasado.", follow_lost_line or "No localizado en logs inspeccionados"),
         ("`best_tcp_dist > máximo`", "El objeto se mueve, pero no acompaña al TCP. Verificar offset ancla, follow mode, frescura de pose y thresholds reales de carry.", world_locked_line or "No localizado en logs inspeccionados"),
         ("`stale_tcp_pose_soft_follow`", f"Inspeccionar `/world/ur5_mesa_objetos/pose/info`, TF freshness y valores `ATTACH_BACKEND_MAX_POSE_AGE_SEC` launch={attach_backend_max_pose_age} / wrapper=2.5.", stale_line or "No localizado en logs inspeccionados"),
+        ("`CESTA_STAGE_*_postcheck_failed`", "Tomar `runtime_target_dist` y `model_target_err` como señal primaria. Si ambos superan 0.040, tratarlo como incidente de corredor IK/cesta y no como bug del TCP.", basket_followup_signal),
         ("CLOSE en PEND", "Verificar gripper_controller activo, joint_states del gripper y delta de cierre. No confundir cierre medido con attach/carry confirmado.", "Bug legacy aún relevante"),
         ("UI muestra poses incoherentes", "Separar FK base_link_inertia vs TF-live base_link y revisar world->base_link actual con X=-0.85 además de Z.", "world_tf_publisher + panel traces"),
     ]
@@ -1670,6 +1849,17 @@ def main() -> None:
     parts.append("")
 
     parts.append("## 12. Estado Actual del Sistema")
+    parts.append("")
+    parts.append("### 12.1 Cronología reciente confirmada")
+    parts.append("")
+    parts.append(
+        f"- `{tcp_incident_closure_date or '2026-04-22'}`: cierre operativo documentado en `{rel(root, tcp_incident_path) if tcp_incident_text else 'fuente no disponible'}`; valor canónico `{tcp_closure_offset_txt}` y aceptación manual final con `./lanzar_panelc2.sh`."
+    )
+    parts.append(
+        f"- `{tcp_closure_geometric_date or '2026-04-23'}`: nota técnica de workspace en `{rel(root, tcp_closure_path) if tcp_closure_text else 'fuente no disponible'}` ratifica el cierre geométrico y deja abierto el follow-up de cesta / IK (`{basket_followup_status or tcp_closure_status or 'estado no consignado'}`), detallado también en `{rel(root, basket_followup_path) if basket_followup_text else 'fuente no disponible'}`."
+    )
+    parts.append("")
+    parts.append("### 12.2 Estado operativo sintetizado")
     parts.append("")
     parts.extend(
         [
@@ -1688,6 +1878,8 @@ def main() -> None:
             "- Riesgo de leer thresholds de CARRY desde metadata de fase y no desde la llamada efectiva.",
             "- Riesgo de asumir que ATTACH_GATE correcto implica carry físico correcto.",
             "- Riesgo de degradación por pose TCP stale cuando el backend entra en soft follow con referencia vieja.",
+            "- Riesgo operativo abierto desde el follow-up `2026-04-23`: el corredor de cesta puede aceptar una IK numéricamente válida pero fallar el post-check runtime/modelo.",
+            "- Riesgo de reabrir falsamente el TCP para corregir un problema que hoy ya está separado como incidente de transporte / IK.",
             "- Riesgo documental si se simplifica `world -> base_link` a sólo Z y se pierde el desplazamiento actual en X.",
         ]
     )
@@ -1696,10 +1888,12 @@ def main() -> None:
     parts.append("")
     parts.extend(
         [
+            "- Añadir o revalidar el guard pre-ejecución de modelo en `CESTA_STAGE_*` y rechazar `solved_q` si `fk_ur5(solved_q)` no cae dentro de tolerancia frente a `target_ik`.",
+            "- Probar reseeding / branching explícito para el corredor de cesta antes de aceptar una solución IK como válida.",
+            "- Repetir batches `RUNS=5` y `RUNS=10` del flujo DIRECTO cuando el follow-up `2026-04-23` quede mitigado.",
             "- Revalidar estadísticamente el carry con múltiples corridas y registrar distribución de `best_obj_move`, `best_lift_delta` y `best_tcp_dist`.",
-            "- Medir con más precisión la latencia efectiva de `demo_transport_follow_tick` frente a `follow_rate_hz` nominal.",
-            "- Verificar si conviene unificar metadata, llamada real y telemetría de CARRY para reducir la discrepancia de observabilidad.",
             "- Mantener una tabla de cambios de defaults entre launch, wrapper runtime y documento histórico para no perder trazabilidad en futuras revisiones.",
+            "- Repetir la validación manual final con `./lanzar_panelc2.sh` sólo después de cerrar el incidente residual de cesta / IK.",
         ]
     )
     parts.append("")
