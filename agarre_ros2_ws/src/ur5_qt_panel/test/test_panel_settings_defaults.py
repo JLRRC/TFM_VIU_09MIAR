@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Pruebas de regresión para los valores por defecto del panel."""
+"""Pruebas de regresión para eliminar offsets TCP legacy del panel."""
 
 from pathlib import Path
 
 from ur5_qt_panel.panel_settings import PanelSettings
 
 
-def test_panel_settings_default_tcp_offset_is_zero(monkeypatch):
+def test_panel_settings_no_longer_exposes_legacy_tcp_offset(monkeypatch):
     monkeypatch.delenv("PANEL_GRIPPER_TCP_Z_OFFSET", raising=False)
     monkeypatch.delenv("PANEL_SETTINGS_YAML", raising=False)
 
     settings = PanelSettings.from_env()
 
-    assert settings.gripper_tcp_z_offset == 0.0
+    assert not hasattr(settings, "gripper_tcp_z_offset")
 
 
 def test_panel_settings_ignores_nonzero_tcp_offset_env(monkeypatch):
@@ -21,7 +21,7 @@ def test_panel_settings_ignores_nonzero_tcp_offset_env(monkeypatch):
 
     settings = PanelSettings.from_env()
 
-    assert settings.gripper_tcp_z_offset == 0.0
+    assert not hasattr(settings, "gripper_tcp_z_offset")
 
 
 def test_panel_settings_ignores_nonzero_tcp_offset_yaml(monkeypatch, tmp_path: Path):
@@ -32,4 +32,4 @@ def test_panel_settings_ignores_nonzero_tcp_offset_yaml(monkeypatch, tmp_path: P
 
     settings = PanelSettings.from_env()
 
-    assert settings.gripper_tcp_z_offset == 0.0
+    assert not hasattr(settings, "gripper_tcp_z_offset")

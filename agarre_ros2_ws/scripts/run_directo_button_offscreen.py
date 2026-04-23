@@ -141,8 +141,11 @@ def main() -> int:
         "step_last_continue_ts": 0.0,
         "step_inicio_actual": None,
         "step_inicio_target": None,
+        "close_requested": False,
+        "final_exit_code": 0,
         "completion_idle_since": 0.0,
         "completion_logged": False,
+        "result_wait_logged": False,
     }
 
     def _check_trigger_confirmed() -> None:
@@ -520,6 +523,7 @@ def main() -> int:
         if not state["confirmed"]:
             state["completion_idle_since"] = 0.0
             state["completion_logged"] = False
+            state["result_wait_logged"] = False
             return
         script_active = bool(getattr(panel, "_script_motion_active", False))
         manual_inflight = bool(getattr(panel, "_manual_inflight", False))
@@ -528,13 +532,31 @@ def main() -> int:
         if script_active or manual_inflight or detach_inflight:
             state["completion_idle_since"] = 0.0
             state["completion_logged"] = False
+            state["result_wait_logged"] = False
             return
+        result_ready = bool(getattr(panel, "_pick_demo_result_ready", False))
+        result_success = bool(getattr(panel, "_pick_demo_result_success", False))
+        result_reason = str(getattr(panel, "_pick_demo_result_reason", "") or "none")
+        if not result_ready:
+            state["completion_idle_since"] = 0.0
+            state["completion_logged"] = False
+            if not state["result_wait_logged"]:
+                state["result_wait_logged"] = True
+                print(
+                    f"[{_stamp()}] [AUDIT][DIRECTO] waiting_for_final_result "
+                    f"demo_done={str(demo_done).lower()} result_reason={result_reason}",
+                    flush=True,
+                )
+            return
+        state["result_wait_logged"] = False
         now = time.monotonic()
         if not state["completion_idle_since"]:
             state["completion_idle_since"] = now
             print(
                 f"[{_stamp()}] [AUDIT][DIRECTO] completion_idle_begin "
                 f"demo_done={str(demo_done).lower()} "
+                f"result_success={str(result_success).lower()} "
+                f"result_reason={result_reason} "
                 f"script_active=false manual_inflight={str(manual_inflight).lower()} "
                 f"detach_inflight={str(detach_inflight).lower()}",
                 flush=True,
@@ -548,6 +570,8 @@ def main() -> int:
             print(
                 f"[{_stamp()}] [AUDIT][DIRECTO] completion_idle_confirmed "
                 f"idle_sec={idle_sec:.3f} demo_done={str(demo_done).lower()} "
+                f"result_success={str(result_success).lower()} "
+                f"result_reason={result_reason} "
                 "closing_helper=true",
                 flush=True,
             )
@@ -559,13 +583,30 @@ def main() -> int:
             retry_timer.start()
 
     def _close() -> None:
+        if state["close_requested"]:
+            return
+        state["close_requested"] = True
         retry_timer.stop()
         completion_timer.stop()
         step_timer.stop()
+        exit_code = 0
+        if state["confirmed"]:
+            result_ready = bool(getattr(panel, "_pick_demo_result_ready", False))
+            result_success = bool(getattr(panel, "_pick_demo_result_success", False))
+            result_reason = str(getattr(panel, "_pick_demo_result_reason", "") or "none")
+            if (not result_ready) or (not result_success):
+                exit_code = 1
+            state["final_exit_code"] = exit_code
+            print(
+                f"[{_stamp()}] [SHUTDOWN][HELPER] closing_result "
+                f"ready={str(result_ready).lower()} success={str(result_success).lower()} "
+                f"reason={result_reason} exit_code={exit_code}",
+                flush=True,
+            )
         print(f"[{_stamp()}] [SHUTDOWN][HELPER] close_begin", flush=True)
         panel._emit_log("[AUDIT][DIRECTO] offscreen helper closing panel")
         panel.close()
-        QTimer.singleShot(250, app.quit)
+        QTimer.singleShot(250, lambda code=exit_code: app.exit(code))
 
     def _about_to_quit() -> None:
         print(f"[{_stamp()}] [SHUTDOWN][HELPER] about_to_quit", flush=True)
@@ -587,6 +628,7 @@ def main() -> int:
         step_timer.start()
     QTimer.singleShot(EXIT_AFTER_MS, _close)
     rc = app.exec_()
+    rc = max(int(rc), int(state.get("final_exit_code") or 0))
     print(f"[{_stamp()}] [SHUTDOWN][HELPER] app_exec_end rc={rc}", flush=True)
     sys.stdout.flush()
     sys.stderr.flush()

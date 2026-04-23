@@ -101,6 +101,7 @@ recover_local_display() {
 # Detectar WS_DIR (raíz del repo)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+RUNTIME_PROFILE="${RUNTIME_PROFILE:-$WS_DIR/scripts/panel_runtime_validated.env}"
 export WS_DIR
 
 # Config (puedes exportar estas vars antes de lanzar)
@@ -499,11 +500,6 @@ export PANEL_TFM_MOVEIT_ACTIVE_REQUEST_GRACE_SEC="${PANEL_TFM_MOVEIT_ACTIVE_REQU
 export PANEL_SELECT_OBJECT_SERVICE_TIMEOUT_SEC="${PANEL_SELECT_OBJECT_SERVICE_TIMEOUT_SEC:-10.0}"
 export PANEL_TFM_INFER_SERVICE_TIMEOUT_SEC="${PANEL_TFM_INFER_SERVICE_TIMEOUT_SEC:-30.0}"
 export PANEL_TFM_EXECUTE_SERVICE_TIMEOUT_SEC="${PANEL_TFM_EXECUTE_SERVICE_TIMEOUT_SEC:-480.0}"
-# FIX-VELOCITY-SCALING: subido de 0.15 a 0.30; con sim a 0.5x real-time, 0.15 generaba
-# trayectorias de >120s wall-clock por fase. 0.30 es el default del bridge y mantiene
-# trayectorias en ~60s por fase al ritmo actual del simulador.
-export PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE="${PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE:-0.30}"
-export PANEL_MOVEIT_BRIDGE_ACCEL_SCALE="${PANEL_MOVEIT_BRIDGE_ACCEL_SCALE:-0.30}"
 # Perfil de defensa: priorizar trayectorias pose-based y arranque asentado del controlador.
 export PANEL_TFM_GRASP_CARTESIAN="${PANEL_TFM_GRASP_CARTESIAN:-0}"
 export PANEL_TFM_CANONICAL_USE_PICK_OBJECT="${PANEL_TFM_CANONICAL_USE_PICK_OBJECT:-1}"
@@ -527,6 +523,14 @@ export ATTACH_BACKEND_MAX_DIST_M="${ATTACH_BACKEND_MAX_DIST_M:-0.06}"
 # For `pick_demo` we prefer deterministic carry once the direct grasp reaches
 # close-range contact. Clear this env var to fall back to pure follow_tcp.
 export ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS="${ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS:-pick_demo}"
+if [[ -f "$RUNTIME_PROFILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$RUNTIME_PROFILE"
+  export PANEL_RUNTIME_PROFILE_PATH="$RUNTIME_PROFILE"
+  log "perfil runtime validado: ${PANEL_RUNTIME_VALIDATED_PROFILE:-desconocido} ($RUNTIME_PROFILE)"
+else
+  log "Aviso: no existe perfil runtime validado en $RUNTIME_PROFILE"
+fi
 PYQT_PLUGINS_DIR=""
 if [[ -n "${PANEL_VENV_DIR:-}" ]]; then
   for pyqt_candidate in \

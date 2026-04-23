@@ -44,12 +44,12 @@ def _env_optional_bool(name: str) -> Optional[bool]:
     return raw.strip().lower() not in ("0", "false", "no", "off", "")
 
 
-def _legacy_gripper_tcp_z_offset(raw_value: object = None, *, source: str) -> float:
+def _warn_ignored_legacy_gripper_tcp_z_offset(raw_value: object = None, *, source: str) -> None:
     raw = raw_value
     if raw is None:
         raw = os.environ.get("PANEL_GRIPPER_TCP_Z_OFFSET")
     if raw is None or not str(raw).strip():
-        return 0.0
+        return
     try:
         value = float(raw)
     except Exception:
@@ -59,17 +59,15 @@ def _legacy_gripper_tcp_z_offset(raw_value: object = None, *, source: str) -> fl
             file=sys.stderr,
             flush=True,
         )
-        return 0.0
-    if abs(value) > 1e-9:
-        print(
-            "[PANEL][WARN] PANEL_GRIPPER_TCP_Z_OFFSET está deprecada. "
-            f"Valor ignorado ({value:.6f}) en {source}. "
-            "La fuente de verdad geométrica es el URDF canónico y el frame operativo "
-            "debe ser rg2_pinch_center.",
-            file=sys.stderr,
-            flush=True,
-        )
-    return 0.0
+        return
+    print(
+        "[PANEL][WARN] PANEL_GRIPPER_TCP_Z_OFFSET/gripper_tcp_z_offset es legacy. "
+        f"Valor ignorado ({value:.6f}) en {source}. "
+        "La fuente de verdad geométrica es el URDF canónico y el frame operativo "
+        "debe ser rg2_pinch_center.",
+        file=sys.stderr,
+        flush=True,
+    )
 
 def _load_yaml_overrides(path: str) -> Dict[str, object]:
     if not path:
@@ -238,7 +236,6 @@ class PanelSettings:
     pick_demo_grasp_z_offset: float = 0.02
     pick_demo_transport_z_offset: float = 0.28
     pick_demo_drop_z_offset: float = 0.05
-    gripper_tcp_z_offset: float = 0.0
     auto_calib_from_camera: bool = True
     reach_overlay_z: float = 0.850
     reach_overlay_points: int = 72
@@ -270,6 +267,9 @@ class PanelSettings:
             "chapter5_experiment_summary_validated.csv",
         )
         vision_fig_dir = os.path.join(vision_exp_dir, "figures_memoria")
+        _warn_ignored_legacy_gripper_tcp_z_offset(
+            source="env:PANEL_GRIPPER_TCP_Z_OFFSET"
+        )
 
         settings = cls(
             ws_dir=ws_dir,
@@ -413,7 +413,6 @@ class PanelSettings:
             pick_demo_grasp_z_offset=_env_float("PANEL_PICK_DEMO_GRASP_Z", 0.02),
             pick_demo_transport_z_offset=_env_float("PANEL_PICK_DEMO_TRANSPORT_Z", 0.28),
             pick_demo_drop_z_offset=_env_float("PANEL_PICK_DEMO_DROP_Z", 0.05),
-            gripper_tcp_z_offset=_legacy_gripper_tcp_z_offset(source="env:PANEL_GRIPPER_TCP_Z_OFFSET"),
             auto_calib_from_camera=_env_bool("PANEL_CALIB_AUTO", True),
             reach_overlay_z=_env_float("PANEL_REACH_OVERLAY_Z", 0.850),
             reach_overlay_points=_env_int("PANEL_REACH_OVERLAY_POINTS", 72),
@@ -428,13 +427,13 @@ class PanelSettings:
         data = settings.__dict__.copy()
         for key, value in overrides.items():
             if key not in data:
+                if key == "gripper_tcp_z_offset":
+                    _warn_ignored_legacy_gripper_tcp_z_offset(
+                        value,
+                        source=f"yaml:{os.path.expandvars(os.path.expanduser(yaml_path or '<inline>'))}",
+                    )
+                    continue
                 print(f"[PANEL][WARN] Clave desconocida en YAML: {key}", file=sys.stderr, flush=True)
-                continue
-            if key == "gripper_tcp_z_offset":
-                data[key] = _legacy_gripper_tcp_z_offset(
-                    value,
-                    source=f"yaml:{os.path.expandvars(os.path.expanduser(yaml_path or '<inline>'))}",
-                )
                 continue
             data[key] = value
         return cls(**data)

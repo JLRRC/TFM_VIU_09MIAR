@@ -319,14 +319,6 @@ def _prepare_runtime(context, *_args) -> List[object]:
             os.environ.get("PANEL_DIRECT_DEBUG_ROOT", "/home/laboratorio/TFM/historico"),
         ),
         SetEnvironmentVariable(
-            # Offset en Z (metros) para subir el brazo y llevar la geometría física
-            # de la pinza al nivel del cilindro. El TCP canónico ya vive en el URDF;
-            # este ajuste es solo una corrección vertical operativa y no debe usarse
-            # para redefinir el frame TCP.
-            "GRASP_CONTACT_Z_OFFSET_M",
-            os.environ.get("GRASP_CONTACT_Z_OFFSET_M", "0.0"),
-        ),
-        SetEnvironmentVariable(
             # Default Z step is 0.025m → 2 segments over 35mm descent.
             # With 17mm jumps the IK can switch solution branch → 48mm Y deviation.
             # 5mm steps → 7 segments; each IK seeds from the previous (close) joints

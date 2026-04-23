@@ -857,13 +857,51 @@ def main() -> None:
         sdf_text,
         "pose pick_demo_anchor en SDF",
     )
-    gripper_tcp_z_offset = capture(
+    gripper_tcp_z_offset_match = re.search(
         r'^\s*gripper_tcp_z_offset\s*:\s*([-+0-9.eE]+)\s*$',
         panel_settings_text,
-        "gripper_tcp_z_offset",
-        flags=re.M,
+        re.M,
     )
-    runtime_pick_demo_anchor = str(max(0.0, float(rg2_tcp_xyz.split()[-1]) - float(gripper_tcp_z_offset)))
+    gripper_tcp_z_offset = (
+        gripper_tcp_z_offset_match.group(1) if gripper_tcp_z_offset_match else None
+    )
+    runtime_pick_demo_anchor = rg2_tcp_xyz.split()[-1]
+    if gripper_tcp_z_offset is not None:
+        runtime_pick_demo_anchor = str(
+            max(0.0, float(rg2_tcp_xyz.split()[-1]) - float(gripper_tcp_z_offset))
+        )
+        pick_demo_anchor_runtime_note = (
+            f"runtime actual efectivo={runtime_pick_demo_anchor} m por panel_settings "
+            f"gripper_tcp_z_offset={gripper_tcp_z_offset}"
+        )
+        pick_demo_anchor_discrepancy = (
+            f"Hoy coincide porque gripper_tcp_z_offset={gripper_tcp_z_offset}, "
+            "pero el launch mantiene la lógica de reescritura runtime y debe documentarse como tal."
+        )
+        pick_demo_anchor_current_state = (
+            f"`pick_demo_anchor` runtime actual: 0 0 {runtime_pick_demo_anchor} sobre `tool0` "
+            f"porque `gripper_tcp_z_offset={gripper_tcp_z_offset}`."
+        )
+        pick_demo_anchor_tolerance_note = (
+            "- `gripper_tcp_z_offset` sigue presente en `panel_settings.yaml`; "
+            "mientras exista, conviene documentar el riesgo de deriva geométrica."
+        )
+    else:
+        pick_demo_anchor_runtime_note = (
+            f"runtime actual sincronizado con la geometría canónica (`rg2_tcp`={runtime_pick_demo_anchor})"
+        )
+        pick_demo_anchor_discrepancy = (
+            "El launch ahora sincroniza `pick_demo_anchor` directamente con la geometría canónica del URDF; "
+            "ya no depende de `gripper_tcp_z_offset`."
+        )
+        pick_demo_anchor_current_state = (
+            f"`pick_demo_anchor` runtime actual: 0 0 {runtime_pick_demo_anchor} sobre `tool0`, "
+            "sin offsets legacy intermedios."
+        )
+        pick_demo_anchor_tolerance_note = (
+            "- `gripper_tcp_z_offset` ya no existe en `panel_settings.yaml`; "
+            "la sincronización runtime de `pick_demo_anchor` sale del URDF canónico."
+        )
 
     attach_xy_tol = capture(
         r'"PANEL_PICK_DEMO_ATTACH_XY_TOL_M".*?os\.environ\.get\("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "([^"]+)"\)',
@@ -1176,14 +1214,14 @@ def main() -> None:
         ("`rg2_tcp`", "frame URDF fijo", "`tool0`", f"actual confirmado: {rg2_tcp_xyz}", "TCP virtual/semántico del gripper", "No confundir con geometría visible SDF del cuerpo RG2."),
         ("`rg2_pinch_center`", "frame URDF fijo", "`tool0`", f"actual confirmado: {rg2_pinch_xyz}", "Punto operacional de grasp y attach", "Es el frame correcto para lógica de pick; usar tool0 degrada Z y distancias."),
         ("`camera_wrist_link`", "frame SDF fijo", "`rg2_hand`", f"actual confirmado en SDF: {camera_wrist_pose}", "Cámara montada en la muñeca/gripper", "Es geometría SDF, no el TCP operacional."),
-        ("`pick_demo_anchor`", "frame SDF fijo / runtime rewrite", "`tool0`", f"SDF fuente={pick_demo_anchor_sdf}; runtime actual efectivo={runtime_pick_demo_anchor} m por panel_settings gripper_tcp_z_offset={gripper_tcp_z_offset}", "Ancla auxiliar para attach backend / probes", "Si el offset runtime cambia, el ancla deja de coincidir con rg2_pinch_center aunque el SDF fuente quede estable."),
+        ("`pick_demo_anchor`", "frame SDF fijo / runtime rewrite", "`tool0`", f"SDF fuente={pick_demo_anchor_sdf}; {pick_demo_anchor_runtime_note}", "Ancla auxiliar para attach backend / probes", "Si el runtime deja de sincronizarse con el URDF, el ancla vuelve a desviarse de rg2_pinch_center."),
     ]
 
     frame_discrepancy_rows = [
         ("world -> base_link", f"actual confirmado: {urdf_base_origin}", "histórico simplificado: (0,0,0.850)", "La geometría actual incluye traslación en X; documentar sólo Z ya no es suficiente."),
         ("tool0 -> rg2_pinch_center", f"actual confirmado: {rg2_pinch_xyz}", "histórico: 0 0 0.175", "Sin discrepancia de valor; se conserva como confirmación actual."),
         ("SDF ur5_hand_joint", f"actual confirmado: relative_to={sdf_hand_rel}, pose={sdf_hand_pose}", "memorias previas con otros valores", "Priorizar el source tree actual; los valores previos quedan como históricos o desactualizados."),
-        ("pick_demo_anchor", f"actual runtime efectivo: {runtime_pick_demo_anchor} m", f"histórico documentado: {pick_demo_anchor_sdf.split()[2]} m", "Hoy coincide porque gripper_tcp_z_offset=0.0, pero el launch mantiene la lógica de reescritura runtime y debe documentarse como tal."),
+        ("pick_demo_anchor", f"actual runtime efectivo: {runtime_pick_demo_anchor} m", f"histórico documentado: {pick_demo_anchor_sdf.split()[2]} m", pick_demo_anchor_discrepancy),
     ]
 
     geometry_rows = [
@@ -1415,7 +1453,7 @@ def main() -> None:
             "### 5.4 Notas de tolerancia y residual geométrico",
             "",
             "- La compensación geométrica fina sigue ocurriendo en GRASP_ALIGN_IK y no debe sustituirse por asumir que el SDF visible coincide exactamente con el TCP.",
-            "- `gripper_tcp_z_offset` actual en `panel_settings.yaml` vale 0.0, pero el launch conserva la capacidad de reescribir `pick_demo_anchor` en runtime; se documenta como riesgo de deriva geométrica si ese valor vuelve a cambiar.",
+            pick_demo_anchor_tolerance_note,
             "- Cuando un dato aquí no ha podido revalidarse automáticamente, se mantiene como histórico/documentado o inferido desde documentación previa, en vez de eliminarse.",
         ]
     )
@@ -1635,9 +1673,9 @@ def main() -> None:
     parts.append("")
     parts.extend(
         [
-            "- Geometría semántica actual confirmada: `tool0 -> rg2_tcp = tool0 -> rg2_pinch_center = 0 0 0.175`.",
+            f"- Geometría semántica actual confirmada: `tool0 -> rg2_tcp = tool0 -> rg2_pinch_center = {rg2_tcp_xyz}`.",
             f"- Geometría visual SDF actual confirmada: `ur5_hand_joint relative_to={sdf_hand_rel}, pose={sdf_hand_pose}`.",
-            f"- `pick_demo_anchor` runtime actual: 0 0 {runtime_pick_demo_anchor} sobre `tool0` porque `gripper_tcp_z_offset={gripper_tcp_z_offset}`.",
+            f"- {pick_demo_anchor_current_state}",
             f"- Backend actual: modo launch `{attach_backend_mode}`, pero `pick_demo` en `{demo_transport_objects}` usa `world_locked` en demo transport.",
             f"- Validación carry post-grasp real: timeout={post_grasp_timeout}s, min_obj_move={post_grasp_min_obj}, min_lift_delta={post_grasp_min_lift}, max_tcp_dist={post_grasp_max_tcp}.",
         ]

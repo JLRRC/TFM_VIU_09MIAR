@@ -1773,6 +1773,9 @@ class ControlPanelV2(QMainWindow):
         self._pick_log_last_sig = ""
         self._pick_log_last_ts = 0.0
         self._pick_demo_executed = False  # Flag para UI state (FASE 4)
+        self._pick_demo_result_ready = False
+        self._pick_demo_result_success = False
+        self._pick_demo_result_reason = ""
         self._pick_target_lock_active = False
         self._pick_target_lock_name: str = ""
         self._pick_target_lock_ts: float = 0.0
@@ -11467,7 +11470,7 @@ class ControlPanelV2(QMainWindow):
                 min_margin = max(0.0, _env_float("PANEL_TFM_MIN_TABLE_MARGIN_M", 0.01))
                 z_approach = max(0.12, min(0.20, _env_float("PANEL_PICK_Z_APPROACH_M", 0.14)))
                 z_grasp_offset = _env_float("PANEL_PICK_Z_GRASP_OFFSET_M", 0.02)
-                grasp_contact_z_offset = _env_float("GRASP_CONTACT_Z_OFFSET_M", 0.0)
+                grasp_contact_z_offset = float(GRIPPER_TCP_Z_OFFSET)
                 speed_scale = max(0.01, min(1.0, _env_float("PANEL_PICK_SPEED_SCALE", 0.25)))
                 accel_scale = max(0.01, min(1.0, _env_float("PANEL_PICK_ACCEL_SCALE", 0.25)))
                 bridge_request_timeout = max(

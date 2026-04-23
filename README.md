@@ -13,8 +13,11 @@ Workspace principal del TFM de percepcion e inferencia de agarre para UR5 con RO
 Arranque canónico, oficial y válido del panel completo:
 
 ```bash
-./lanzar_panelv2.sh
+./lanzar_panelc2.sh
 ```
+
+`./lanzar_panelv2.sh` se mantiene como alias de compatibilidad.
+La repetición manual final de las pruebas operativas debe ejecutarse con `./lanzar_panelc2.sh`.
 
 Parar el stack ROS 2:
 
