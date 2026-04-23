@@ -19,6 +19,14 @@ try:
 except Exception:  # pragma: no cover - ROS not available in unit contexts
     Empty = None
 
+try:
+    from geometry_msgs.msg import Point
+    from visualization_msgs.msg import Marker, MarkerArray
+except Exception:  # pragma: no cover - ROS not available in unit contexts
+    Point = None
+    Marker = None
+    MarkerArray = None
+
 from ur5_tools.gripper_geometry import (
     RG2_PINCH_CENTER_FRAME,
     RG2_TCP_FRAME,
@@ -1994,6 +2002,23 @@ def run_pick_demo(panel) -> None:
             _pick_demo_cycle_object_snapshot_age_sec = None
             _pick_demo_cycle_object_stable_age_sec = None
             _pick_demo_cycle_object_selected_divergence_m = None
+            _direct_debug_state = {
+                "world_to_base_path": "unset",
+                "offset_source": "unset",
+                "target_semantic_base": None,
+                "target_semantic_world": None,
+                "target_exec_tool0_base": None,
+                "target_exec_tool0_world": None,
+                "ik_err": None,
+                "seed_weight": None,
+                "inherit_xy": None,
+                "keep_xy": None,
+                "object_fresh_world": None,
+                "approach_grasp_down_target_base": None,
+                "approach_grasp_down_target_world": None,
+                "approach_grasp_down_target_source": "none",
+                "approach_grasp_down_target_path": "unset",
+            }
 
             def _clear_cycle_object_reference(*, reason: str) -> None:
                 nonlocal _pick_demo_cycle_object_world
@@ -3650,6 +3675,237 @@ def run_pick_demo(panel) -> None:
                     f"attach_owner={attach.get('owner')}"
                 )
 
+            def _direct_debug_marker_pub():
+                if MarkerArray is None or Marker is None or Point is None:
+                    return None
+                try:
+                    pub = getattr(panel, "_direct_pick_debug_marker_pub", None)
+                    if pub is not None:
+                        return pub
+                    node = getattr(panel, "_moveit_node", None) or getattr(panel, "_node", None)
+                    if node is None or not hasattr(node, "create_publisher"):
+                        return None
+                    pub = node.create_publisher(MarkerArray, "/pick_debug/directo_markers", 1)
+                    panel._direct_pick_debug_marker_pub = pub
+                    return pub
+                except Exception as exc:
+                    panel._emit_log(f"[PICK][DIRECT][MARKERS] status=publisher_error reason={exc}")
+                    panel._direct_pick_debug_marker_pub = None
+                    return None
+
+            def _direct_debug_stamp():
+                try:
+                    node = getattr(panel, "_moveit_node", None) or getattr(panel, "_node", None)
+                    if node is not None and hasattr(node, "get_clock"):
+                        return node.get_clock().now().to_msg()
+                except Exception:
+                    pass
+                return None
+
+            def _direct_make_sphere_marker(*, ns: str, marker_id: int, frame_id: str, xyz, rgba) -> Marker | None:
+                xyz3 = _tuple3(xyz)
+                if Marker is None or xyz3 is None:
+                    return None
+                marker = Marker()
+                marker.header.frame_id = str(frame_id or WORLD_FRAME or "world")
+                stamp = _direct_debug_stamp()
+                if stamp is not None:
+                    marker.header.stamp = stamp
+                marker.ns = ns
+                marker.id = int(marker_id)
+                marker.type = Marker.SPHERE
+                marker.action = Marker.ADD
+                marker.pose.position.x = float(xyz3[0])
+                marker.pose.position.y = float(xyz3[1])
+                marker.pose.position.z = float(xyz3[2])
+                marker.pose.orientation.w = 1.0
+                marker.scale.x = 0.018
+                marker.scale.y = 0.018
+                marker.scale.z = 0.018
+                marker.color.r = float(rgba[0])
+                marker.color.g = float(rgba[1])
+                marker.color.b = float(rgba[2])
+                marker.color.a = float(rgba[3])
+                return marker
+
+            def _direct_make_arrow_marker(
+                *,
+                ns: str,
+                marker_id: int,
+                frame_id: str,
+                start_xyz,
+                end_xyz,
+                rgba,
+            ) -> Marker | None:
+                start3 = _tuple3(start_xyz)
+                end3 = _tuple3(end_xyz)
+                if Marker is None or Point is None or start3 is None or end3 is None:
+                    return None
+                marker = Marker()
+                marker.header.frame_id = str(frame_id or WORLD_FRAME or "world")
+                stamp = _direct_debug_stamp()
+                if stamp is not None:
+                    marker.header.stamp = stamp
+                marker.ns = ns
+                marker.id = int(marker_id)
+                marker.type = Marker.ARROW
+                marker.action = Marker.ADD
+                marker.scale.x = 0.004
+                marker.scale.y = 0.008
+                marker.scale.z = 0.012
+                marker.color.r = float(rgba[0])
+                marker.color.g = float(rgba[1])
+                marker.color.b = float(rgba[2])
+                marker.color.a = float(rgba[3])
+                marker.points = [
+                    Point(x=float(start3[0]), y=float(start3[1]), z=float(start3[2])),
+                    Point(x=float(end3[0]), y=float(end3[1]), z=float(end3[2])),
+                ]
+                return marker
+
+            def _publish_direct_debug_markers(
+                *,
+                object_frozen_world=None,
+                object_fresh_world=None,
+                target_semantic_world=None,
+                target_exec_tool0_world=None,
+            ) -> None:
+                pub = _direct_debug_marker_pub()
+                if pub is None or MarkerArray is None:
+                    return
+                try:
+                    world_frame_local = str(
+                        getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
+                            WORLD_FRAME or "world"
+                        )
+                    ).strip() or "world"
+                except Exception:
+                    world_frame_local = str(WORLD_FRAME or "world").strip() or "world"
+                live_pinch_world = _pose_position(world_frame_local, DIRECT_SOURCE_FRAME, timeout_sec=0.10)
+                live_tool0_world = _pose_position(world_frame_local, DIRECT_EXECUTION_FRAME, timeout_sec=0.10)
+                marker_array = MarkerArray()
+                markers = [
+                    _direct_make_sphere_marker(
+                        ns="directo/object_frozen",
+                        marker_id=1,
+                        frame_id=world_frame_local,
+                        xyz=object_frozen_world,
+                        rgba=(1.0, 1.0, 0.0, 0.90),
+                    ),
+                    _direct_make_sphere_marker(
+                        ns="directo/object_fresh",
+                        marker_id=2,
+                        frame_id=world_frame_local,
+                        xyz=object_fresh_world,
+                        rgba=(0.0, 1.0, 1.0, 0.90),
+                    ),
+                    _direct_make_sphere_marker(
+                        ns="directo/target_semantic_rg2_pinch_center",
+                        marker_id=3,
+                        frame_id=world_frame_local,
+                        xyz=target_semantic_world,
+                        rgba=(1.0, 0.0, 1.0, 0.90),
+                    ),
+                    _direct_make_sphere_marker(
+                        ns="directo/target_exec_tool0",
+                        marker_id=4,
+                        frame_id=world_frame_local,
+                        xyz=target_exec_tool0_world,
+                        rgba=(0.35, 0.70, 1.0, 0.90),
+                    ),
+                    _direct_make_sphere_marker(
+                        ns="directo/live_rg2_pinch_center",
+                        marker_id=5,
+                        frame_id=world_frame_local,
+                        xyz=live_pinch_world,
+                        rgba=(0.0, 1.0, 0.0, 0.90),
+                    ),
+                    _direct_make_sphere_marker(
+                        ns="directo/live_tool0",
+                        marker_id=6,
+                        frame_id=world_frame_local,
+                        xyz=live_tool0_world,
+                        rgba=(1.0, 0.0, 0.0, 0.90),
+                    ),
+                    _direct_make_arrow_marker(
+                        ns="directo/live_tool0_to_pinch",
+                        marker_id=10,
+                        frame_id=world_frame_local,
+                        start_xyz=live_tool0_world,
+                        end_xyz=live_pinch_world,
+                        rgba=(1.0, 1.0, 1.0, 0.95),
+                    ),
+                    _direct_make_arrow_marker(
+                        ns="directo/target_exec_to_semantic",
+                        marker_id=11,
+                        frame_id=world_frame_local,
+                        start_xyz=target_exec_tool0_world,
+                        end_xyz=target_semantic_world,
+                        rgba=(1.0, 1.0, 1.0, 0.95),
+                    ),
+                ]
+                marker_array.markers = [marker for marker in markers if marker is not None]
+                if marker_array.markers:
+                    pub.publish(marker_array)
+
+            def _emit_direct_visual_snapshot(
+                *,
+                phase: str,
+                event: str,
+                object_frozen_world=None,
+                object_fresh_world=None,
+                target_semantic_world=None,
+                target_exec_tool0_world=None,
+            ) -> None:
+                try:
+                    world_frame_local = str(
+                        getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
+                            WORLD_FRAME or "world"
+                        )
+                    ).strip() or "world"
+                except Exception:
+                    world_frame_local = str(WORLD_FRAME or "world").strip() or "world"
+                object_frozen_world_3 = _tuple3(object_frozen_world) or _tuple3(_pick_demo_cycle_object_world)
+                object_fresh_world_3 = (
+                    _tuple3(object_fresh_world)
+                    or _tuple3(_direct_debug_state.get("object_fresh_world"))
+                    or _tuple3(_live_object_world())
+                )
+                target_semantic_world_3 = (
+                    _tuple3(target_semantic_world)
+                    or _tuple3(_direct_debug_state.get("target_semantic_world"))
+                )
+                target_exec_tool0_world_3 = (
+                    _tuple3(target_exec_tool0_world)
+                    or _tuple3(_direct_debug_state.get("target_exec_tool0_world"))
+                )
+                live_pinch_world = _pose_position(world_frame_local, DIRECT_SOURCE_FRAME, timeout_sec=0.10)
+                live_tool0_world = _pose_position(world_frame_local, DIRECT_EXECUTION_FRAME, timeout_sec=0.10)
+                msg = (
+                    "[PICK][DIRECT][VISUAL_SNAPSHOT] "
+                    f"phase={phase} event={event} "
+                    f"object_frozen={_fmt_vec(object_frozen_world_3)} "
+                    f"object_fresh={_fmt_vec(object_fresh_world_3)} "
+                    f"target_semantic={_fmt_vec(target_semantic_world_3)} "
+                    f"target_exec_tool0={_fmt_vec(target_exec_tool0_world_3)} "
+                    f"live_rg2_pinch_center={_fmt_vec(live_pinch_world)} "
+                    f"live_tool0={_fmt_vec(live_tool0_world)} "
+                    f"ik_err={_fmt_scalar(_direct_debug_state.get('ik_err'))} "
+                    f"seed_weight={_fmt_scalar(_direct_debug_state.get('seed_weight'))} "
+                    f"inherit_xy={str(_direct_debug_state.get('inherit_xy')).lower() if _direct_debug_state.get('inherit_xy') is not None else 'none'} "
+                    f"keep_xy={str(_direct_debug_state.get('keep_xy')).lower() if _direct_debug_state.get('keep_xy') is not None else 'none'} "
+                    f"world_to_base_path={_direct_debug_state.get('world_to_base_path') or 'unset'} "
+                    f"offset_source={_direct_debug_state.get('offset_source') or 'unset'}"
+                )
+                panel._emit_log(msg)
+                _append_trace(msg)
+                _publish_direct_debug_markers(
+                    object_frozen_world=object_frozen_world_3,
+                    object_fresh_world=object_fresh_world_3,
+                    target_semantic_world=target_semantic_world_3,
+                    target_exec_tool0_world=target_exec_tool0_world_3,
+                )
+
             def _trace_phase_pose(
                 *,
                 phase: str,
@@ -3693,6 +3949,15 @@ def run_pick_demo(panel) -> None:
                 )
                 panel._emit_log(msg)
                 _append_trace(msg)
+                if phase in {"APPROACH_COARSE", "GRASP_DOWN_JOINT", "GRASP_ALIGN_IK", "PRE_CLOSE", "CLOSE"}:
+                    _emit_direct_visual_snapshot(
+                        phase=phase,
+                        event=event,
+                        object_frozen_world=_tuple3(_pick_demo_cycle_object_world),
+                        object_fresh_world=_tuple3(_direct_debug_state.get("object_fresh_world")),
+                        target_semantic_world=target_world_3,
+                        target_exec_tool0_world=_tuple3(_direct_debug_state.get("target_exec_tool0_world")),
+                    )
                 _monitor_alcance(trigger=f"{phase}:{event}")
 
             def _execution_type_from_decision(decision: str | None) -> str:
@@ -4068,13 +4333,6 @@ def run_pick_demo(panel) -> None:
                 if world_coords is None:
                     return None
                 try:
-                    base = panel._world_to_base_coords(world_coords)
-                except Exception:
-                    base = None
-                base_3 = _tuple3(base)
-                if base_3 is not None:
-                    return base_3
-                try:
                     world_frame = str(
                         getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
                             WORLD_FRAME or "world"
@@ -4088,12 +4346,16 @@ def run_pick_demo(panel) -> None:
                     )
                     base_3 = _tuple3(transformed)
                     if base_3 is not None:
+                        _direct_debug_state["world_to_base_path"] = f"tf:{world_frame}->{base_frame}"
                         return base_3
-                except Exception:
-                    pass
-                try:
-                    return tuple(float(v) for v in world_to_base(*world_coords))
-                except Exception:
+                except Exception as exc:
+                    _direct_debug_state["world_to_base_path"] = f"tf_failed:{type(exc).__name__}"
+                    panel._emit_log(
+                        "[PICK][DIRECT][WORLD_TO_BASE_ABORT] "
+                        f"world={_fmt_vec(world_coords)} "
+                        f"path={_direct_debug_state['world_to_base_path']} "
+                        "fallbacks=disabled"
+                    )
                     return None
 
             def _target_world_base_pair(*, target_world=None, target_base=None):
@@ -4343,6 +4605,15 @@ def run_pick_demo(panel) -> None:
                     "ik_solution": _json_safe(ik_solution if ik_solution is not None else last_target.get("ik_solution")),
                     "note": note or last_target.get("note"),
                 }
+                if phase in {"APPROACH_COARSE", "GRASP_DOWN_JOINT", "GRASP_ALIGN_IK", "PRE_CLOSE", "CLOSE"}:
+                    _emit_direct_visual_snapshot(
+                        phase=phase,
+                        event="phase_begin",
+                        object_frozen_world=_tuple3(_pick_demo_cycle_object_world),
+                        object_fresh_world=_tuple3(_direct_debug_state.get("object_fresh_world")),
+                        target_semantic_world=target_world_3,
+                        target_exec_tool0_world=_tuple3(_direct_debug_state.get("target_exec_tool0_world")),
+                    )
                 if phase in visual_focus_phases:
                     _emit_visual_coherence(phase, event="enter")
                 _monitor_alcance(trigger=f"{phase}:enter")
@@ -4454,6 +4725,15 @@ def run_pick_demo(panel) -> None:
                     f"gripper_measured={bool(gripper_payload.get('measured_target_ok'))} "
                     f"attach={json.dumps(attach_payload or {}, ensure_ascii=False, sort_keys=True)}"
                 )
+                if phase in {"APPROACH_COARSE", "GRASP_DOWN_JOINT", "GRASP_ALIGN_IK", "PRE_CLOSE", "CLOSE"}:
+                    _emit_direct_visual_snapshot(
+                        phase=phase,
+                        event="phase_end",
+                        object_frozen_world=_tuple3(_pick_demo_cycle_object_world),
+                        object_fresh_world=_tuple3(_direct_debug_state.get("object_fresh_world")),
+                        target_semantic_world=target_world_3,
+                        target_exec_tool0_world=_tuple3(_direct_debug_state.get("target_exec_tool0_world")),
+                    )
                 if phase in visual_focus_phases:
                     _emit_visual_coherence(phase, event="exit")
                 _monitor_alcance(trigger=f"{phase}:exit")
@@ -4711,20 +4991,19 @@ def run_pick_demo(panel) -> None:
                     local_offset = None
                     offset_source = None
                     if env_xyz:
-                        try:
-                            parts = [float(v.strip()) for v in env_xyz.split(",")]
-                            if len(parts) == 3:
-                                local_offset = (parts[0], parts[1], parts[2])
-                                offset_source = "env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_XYZ"
-                        except Exception:
-                            local_offset = None
-                    if local_offset is None:
-                        try:
-                            if str(env_value).strip():
-                                local_offset = (0.0, 0.0, float(env_value))
-                                offset_source = "env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M"
-                        except Exception:
-                            local_offset = None
+                        panel._emit_log(
+                            "[PICK][DIRECT][OFFSET_ABORT] "
+                            "reason=runtime_env_offset_forbidden "
+                            "offset_source=env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_XYZ"
+                        )
+                        raise RuntimeError("direct_runtime_offset_env_forbidden_xyz")
+                    if local_offset is None and str(env_value).strip():
+                        panel._emit_log(
+                            "[PICK][DIRECT][OFFSET_ABORT] "
+                            "reason=runtime_env_offset_forbidden "
+                            "offset_source=env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M"
+                        )
+                        raise RuntimeError("direct_runtime_offset_env_forbidden_m")
                     if local_offset is None:
                         pose_tool0_tcp, _pose_err = get_pose(
                             DIRECT_EXECUTION_FRAME,
@@ -4741,6 +5020,24 @@ def run_pick_demo(panel) -> None:
                     if local_offset is None:
                         local_offset = tuple(_DIRECT_TOOL0_TO_SOURCE_OFFSET)
                         offset_source = "urdf:rg2_pinch_center_joint"
+                    canonical_offset = tuple(float(v) for v in _DIRECT_TOOL0_TO_SOURCE_OFFSET)
+                    canonical_offset_delta_m = math.sqrt(
+                        sum(
+                            (float(local_offset[idx]) - float(canonical_offset[idx])) ** 2
+                            for idx in range(3)
+                        )
+                    )
+                    if canonical_offset_delta_m > 0.002:
+                        panel._emit_log(
+                            "[PICK][DIRECT][OFFSET_ABORT] "
+                            f"reason=non_canonical_offset offset_source={offset_source} "
+                            f"offset_local={_fmt_vec(local_offset)} "
+                            f"canonical_offset={_fmt_vec(canonical_offset)} "
+                            f"offset_delta_m={canonical_offset_delta_m:.4f}/0.0020"
+                        )
+                        raise RuntimeError(
+                            f"direct_runtime_offset_non_canonical delta_m={canonical_offset_delta_m:.4f}"
+                        )
                     tcp_offset_m = float(
                         math.sqrt(
                             (float(local_offset[0]) ** 2)
@@ -4775,12 +5072,18 @@ def run_pick_demo(panel) -> None:
                         float(target_model[1]) - float(offset_vector[1]),
                         float(target_model[2]) - float(offset_vector[2]),
                     )
+                    execution_target_tool0_base = (
+                        -float(execution_target_tool0[0]),
+                        -float(execution_target_tool0[1]),
+                        float(execution_target_tool0[2]),
+                    )
                     return {
                         "source_frame": DIRECT_SOURCE_FRAME,
                         "source_pose": _tuple3(tcp_target_base),
                         "target_model": _tuple3(target_model),
                         "execution_frame": DIRECT_EXECUTION_FRAME,
                         "execution_pose": _tuple3(execution_target_tool0),
+                        "execution_pose_base": _tuple3(execution_target_tool0_base),
                         "offset_local": _tuple3(local_offset),
                         "offset_vector": _tuple3(offset_vector),
                         "offset_m": float(tcp_offset_m),
@@ -4864,9 +5167,16 @@ def run_pick_demo(panel) -> None:
                     target_rot,
                 )
                 target_ik = execution_semantics["execution_pose"]
+                target_ik_base = _tuple3(execution_semantics.get("execution_pose_base"))
+                target_ik_world = _target_world_from_base(target_ik_base)
                 target_model = execution_semantics["target_model"]
                 offset_vector = execution_semantics["offset_vector"]
                 tcp_offset_m = float(execution_semantics["offset_m"])
+                _direct_debug_state["offset_source"] = str(execution_semantics.get("offset_source") or "unknown")
+                _direct_debug_state["target_semantic_base"] = _tuple3(target_tcp_runtime_3)
+                _direct_debug_state["target_semantic_world"] = _tuple3(target_tcp_world_3)
+                _direct_debug_state["target_exec_tool0_base"] = _tuple3(target_ik_base)
+                _direct_debug_state["target_exec_tool0_world"] = _tuple3(target_ik_world)
                 panel._emit_log(
                     "[PICK][DIRECT][FRAME] "
                     f"label={label} route={DIRECT_ROUTE_MODE} "
@@ -4931,6 +5241,8 @@ def run_pick_demo(panel) -> None:
                     rot_weight=float(rot_weight),
                     joint_weight=_effective_joint_weight,
                 )
+                _direct_debug_state["ik_err"] = float(err_norm)
+                _direct_debug_state["seed_weight"] = float(_effective_joint_weight)
                 # Compute pure position error via FK to validate independently of joint_weight cost
                 import numpy as _np_ik_check
                 import math as _math_ik_retry
@@ -4939,6 +5251,7 @@ def run_pick_demo(panel) -> None:
                     _np_ik_check.asarray(_fk_pos_solved, dtype=float)
                     - _np_ik_check.asarray(target_ik, dtype=float)
                 ))
+                _direct_debug_state["ik_err"] = float(pos_err_m)
                 # If the solution deviates too far from the seed (any joint > 90° off
                 # after 2π-normalization), the solver landed in the wrong configuration
                 # branch.  Retry with escalating seed_weights to force it closer to the
@@ -5054,6 +5367,14 @@ def run_pick_demo(panel) -> None:
                     f"target_pose_base_link={_fmt_vec(target_tcp_runtime_3)} "
                     f"command_pose_sent={_fmt_vec(target_ik)} command_frame={DIRECT_EXECUTION_FRAME}"
                 )
+                _emit_direct_visual_snapshot(
+                    phase=label_name,
+                    event="command_target",
+                    object_frozen_world=_tuple3(_pick_demo_cycle_object_world),
+                    object_fresh_world=_tuple3(_direct_debug_state.get("object_fresh_world")),
+                    target_semantic_world=_tuple3(target_tcp_world_3),
+                    target_exec_tool0_world=_tuple3(target_ik_world),
+                )
                 _branch_guard_xy_tol = max(
                     0.003,
                     float(
@@ -5129,6 +5450,22 @@ def run_pick_demo(panel) -> None:
                         f"{label.lower()}_branch_guard max_dev_rad={_bg_max_dev:.3f} "
                         f"sum_dev_rad={_bg_sum_dev:.3f} ref={_bg_ref_label}"
                     )
+                elif (
+                    label == "GRASP_ALIGN_IK"
+                    and abs(float(delta_runtime[2])) >= 0.020
+                    and _bg_max_dev > _branch_guard_max_dev
+                ):
+                    _guard_align_msg = (
+                        "[PICK][DIRECT][IK_BRANCH_GUARD_ALIGN] "
+                        f"label={label} reason=live_deviation_for_align_descent "
+                        f"delta_z_m={abs(float(delta_runtime[2])):.3f} "
+                        f"ref={_bg_ref_label} "
+                        f"max_dev_rad={_bg_max_dev:.3f}/{_branch_guard_max_dev:.3f} "
+                        f"sum_dev_rad={_bg_sum_dev:.3f}/{_branch_guard_sum_dev:.3f} "
+                        "action=warn_continue"
+                    )
+                    panel._emit_log(_guard_align_msg)
+                    _append_trace(_guard_align_msg)
                 _audit_emit(
                     "BEFORE_EXECUTION",
                     target_source=audit_target_source,
@@ -5733,6 +6070,8 @@ def run_pick_demo(panel) -> None:
                         f"target_err={target_err:.3f} "
                         f"obj_dist={obj_dist:.3f}"
                     )
+                _direct_debug_state["ik_err"] = float(pos_err_m)
+                _direct_debug_state["seed_weight"] = float(_effective_joint_weight)
                 return {
                     "label": label,
                     "seed": [float(v) for v in seed],
@@ -6892,10 +7231,9 @@ def run_pick_demo(panel) -> None:
                     keep_xy = bool(
                         tcp_before is not None
                         and xy_dist_pre is not None
-                        and z_error_pre is not None
                         and xy_dist_pre <= (xy_tol_pre * xy_lock_factor)
-                        and z_error_pre > z_tol_pre
                     )
+                    _direct_debug_state["keep_xy"] = bool(keep_xy)
                     if keep_xy:
                         # Si el TCP ya esta encima en XY, evitar correccion lateral
                         # que pueda degradar la alineacion visual; solo corregir Z.
@@ -8398,24 +8736,19 @@ def run_pick_demo(panel) -> None:
                         )
                         target_base_grasp_down = _target_base_from_world(target_world_grasp_down)
                 elif obj_base_before_coarse is not None:
-                    coarse_target_mode = "object_xy_plus_object_z_base_fallback"
-                    target_world_coarse = (
-                        float(obj_base_before_coarse[0]),
-                        float(obj_base_before_coarse[1]),
-                        float(obj_base_before_coarse[2]) + _DIRECTO_GRASP_Z + float(coarse_extra_z_m),
+                    panel._emit_log(
+                        "[PICK][DIRECT][ABORT] "
+                        "phase=APPROACH_COARSE reason=world_target_unavailable base_fallback_disabled"
                     )
-                    target_base_coarse = (
-                        float(obj_base_before_coarse[0]),
-                        float(obj_base_before_coarse[1]),
-                        float(obj_base_before_coarse[2]) + _DIRECTO_GRASP_Z + float(coarse_extra_z_m),
+                    _abort_grasp(
+                        code="APPROACH_COARSE_WORLD_TARGET_REQUIRED",
+                        phase="APPROACH_COARSE",
+                        note="DIRECT debug mode forbids base-link fallback when building the coarse target",
+                        metrics={
+                            "object_base": _tuple3(obj_base_before_coarse),
+                            "world_to_base_path": str(_direct_debug_state.get("world_to_base_path") or "unset"),
+                        },
                     )
-                    target_world_coarse = _target_world_from_base(target_base_coarse)
-                    target_base_grasp_down = (
-                        float(obj_base_before_coarse[0]),
-                        float(obj_base_before_coarse[1]),
-                        float(obj_base_before_coarse[2]) + _DIRECTO_GRASP_Z + float(grasp_down_extra_z_m),
-                    )
-                    target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
                 if target_world_coarse is not None or target_base_coarse is not None:
                     panel._emit_log(
                         "[PICK][DIRECT][APPROACH_PLAN] "
@@ -8424,6 +8757,22 @@ def run_pick_demo(panel) -> None:
                         f"obj_before_base={_fmt_vec(obj_base_before_coarse)} "
                         f"target_world={_fmt_vec(target_world_coarse)} target_base={_fmt_vec(target_base_coarse)}"
                     )
+                _direct_debug_state["target_semantic_world"] = _tuple3(target_world_coarse)
+                _direct_debug_state["target_semantic_base"] = _tuple3(target_base_coarse)
+                _direct_debug_state["approach_grasp_down_target_world"] = _tuple3(target_world_grasp_down)
+                _direct_debug_state["approach_grasp_down_target_base"] = _tuple3(target_base_grasp_down)
+                _direct_debug_state["approach_grasp_down_target_source"] = "approach_coarse_first_build"
+                _direct_debug_state["approach_grasp_down_target_path"] = str(
+                    _direct_debug_state.get("world_to_base_path") or "unset"
+                )
+                _emit_direct_visual_snapshot(
+                    phase="APPROACH_COARSE",
+                    event="target_set",
+                    object_frozen_world=_tuple3(_pick_demo_cycle_object_world),
+                    object_fresh_world=_tuple3(obj_world_before_coarse),
+                    target_semantic_world=_tuple3(target_world_coarse),
+                    target_exec_tool0_world=_tuple3(_direct_debug_state.get("target_exec_tool0_world")),
+                )
                 _phase_begin(
                     "APPROACH_COARSE",
                     target_world=target_world_coarse,
@@ -8974,6 +9323,18 @@ def run_pick_demo(panel) -> None:
                     coarse_pose_metrics = _coarse_gate.get("pose_consistency") or {}
                     _coarse_handoff_dist_tol = 0.015
                     _coarse_handoff_dz_tol = 0.015
+                    _coarse_relaxed_handoff_dist_tol = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_DIST_TOL_M",
+                        0.030,
+                        minimum=_coarse_handoff_dist_tol,
+                        maximum=0.050,
+                    )
+                    _coarse_relaxed_handoff_dz_tol = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_DZ_TOL_M",
+                        0.030,
+                        minimum=_coarse_handoff_dz_tol,
+                        maximum=0.050,
+                    )
                     _phase_check_target_base = _tuple3(target_base_coarse)
 
                     def _build_approach_coarse_phase_check(target_base_for_check, gate_metrics_for_check):
@@ -9014,13 +9375,25 @@ def run_pick_demo(panel) -> None:
                             and abs(float(dz_obj_local)) <= _coarse_handoff_dz_tol
                         )
                         gate_ok_local = bool(gate_metrics_for_check.get("ok"))
-                        result_local = "OK" if bool(gate_ok_local and handoff_dist_ok_local and handoff_dz_ok_local) else "NO"
+                        relaxed_handoff_ok_local = bool(
+                            coarse_gate_xy_ok
+                            and coarse_gate_pose_ok
+                            and tcp_obj_dist_local is not None
+                            and float(tcp_obj_dist_local) <= float(_coarse_relaxed_handoff_dist_tol)
+                            and dz_obj_local is not None
+                            and float(dz_obj_local) >= 0.0
+                            and float(dz_obj_local) <= float(_coarse_relaxed_handoff_dz_tol)
+                        )
+                        strict_handoff_ok_local = bool(
+                            gate_ok_local and handoff_dist_ok_local and handoff_dz_ok_local
+                        )
+                        result_local = "OK" if bool(strict_handoff_ok_local or relaxed_handoff_ok_local) else "NO"
                         block_reasons_local = []
-                        if not gate_ok_local:
+                        if not gate_ok_local and not relaxed_handoff_ok_local:
                             block_reasons_local.append("phase_gate_not_ready")
-                        if not handoff_dist_ok_local:
+                        if not handoff_dist_ok_local and not relaxed_handoff_ok_local:
                             block_reasons_local.append("tcp_obj_dist_exceeded")
-                        if not handoff_dz_ok_local:
+                        if not handoff_dz_ok_local and not relaxed_handoff_ok_local:
                             block_reasons_local.append("dz_obj_exceeded")
                         return {
                             "gate_ok": gate_ok_local,
@@ -9034,8 +9407,15 @@ def run_pick_demo(panel) -> None:
                             "dz_obj": dz_obj_local,
                             "handoff_dist_ok": handoff_dist_ok_local,
                             "handoff_dz_ok": handoff_dz_ok_local,
+                            "relaxed_handoff_ok": relaxed_handoff_ok_local,
                             "result": result_local,
-                            "gate_decision": "handoff_ready" if result_local == "OK" else "not_ready",
+                            "gate_decision": (
+                                "handoff_ready"
+                                if strict_handoff_ok_local
+                                else "handoff_ready_relaxed_corridor"
+                                if relaxed_handoff_ok_local
+                                else "not_ready"
+                            ),
                             "block_reasons": block_reasons_local,
                         }
 
@@ -9058,6 +9438,7 @@ def run_pick_demo(panel) -> None:
                             f"samples={int(_coarse_gate.get('stable_samples') or 0)}/{int(_coarse_gate.get('required_samples') or 0)} "
                             f"xy_ok={str(coarse_gate_xy_ok).lower()} z_ok={str(coarse_gate_z_ok).lower()} "
                             f"decision={approach_decision} gate_decision={check_info.get('gate_decision')} "
+                            f"relaxed_handoff_ok={str(bool(check_info.get('relaxed_handoff_ok'))).lower()} "
                             f"block_reasons={','.join(check_info.get('block_reasons') or []) or 'none'} "
                             f"coarse_refine_attempted={str(refine_attempted).lower()} "
                             f"result={check_info.get('result')}"
@@ -9070,16 +9451,20 @@ def run_pick_demo(panel) -> None:
                         _coarse_gate,
                     )
                     _emit_approach_coarse_phase_check(_coarse_phase_check, refine_attempted=False)
+                    if bool(_coarse_phase_check.get("relaxed_handoff_ok")):
+                        _coarse_relaxed_log = (
+                            "[PICK][DIRECT][COARSE_REFINE_BYPASS] "
+                            "phase=APPROACH_COARSE "
+                            "reason=relaxed_handoff_corridor "
+                            f"tcp_obj_dist={_fmt_scalar(_coarse_phase_check.get('tcp_obj_dist'))}/{_coarse_relaxed_handoff_dist_tol:.3f} "
+                            f"dz_obj={_fmt_scalar(_coarse_phase_check.get('dz_obj'))}/{_coarse_relaxed_handoff_dz_tol:.3f} "
+                            f"gate_decision={_coarse_phase_check.get('gate_decision')}"
+                        )
+                        panel._emit_log(_coarse_relaxed_log)
+                        _append_trace(_coarse_relaxed_log)
 
                     _coarse_refine_needed = bool(
-                        (
-                            _coarse_phase_check.get("tcp_obj_dist") is not None
-                            and float(_coarse_phase_check.get("tcp_obj_dist")) > _coarse_handoff_dist_tol
-                        )
-                        or (
-                            _coarse_phase_check.get("dz_obj") is not None
-                            and abs(float(_coarse_phase_check.get("dz_obj"))) > _coarse_handoff_dz_tol
-                        )
+                        str(_coarse_phase_check.get("result") or "NO").upper() != "OK"
                     )
                     _coarse_refine_target_z = None
                     _coarse_refine_result_tcp = None
@@ -9254,12 +9639,8 @@ def run_pick_demo(panel) -> None:
                         if _coarse_refine_accept_result:
                             _emit_approach_coarse_phase_check(_coarse_phase_check, refine_attempted=True)
 
-                    _cg_gate_ok = bool(_coarse_phase_check.get("gate_ok"))
-                    _cg_handoff_ok = bool(
-                        _coarse_phase_check.get("handoff_dist_ok")
-                        and _coarse_phase_check.get("handoff_dz_ok")
-                    )
-                    if not bool(_cg_gate_ok and _cg_handoff_ok):
+                    _cg_result_ok = bool(str(_coarse_phase_check.get("result") or "NO").upper() == "OK")
+                    if not _cg_result_ok:
                         _abort_grasp(
                             code="APPROACH_COARSE_NOT_READY",
                             phase="APPROACH_COARSE",
@@ -9282,6 +9663,9 @@ def run_pick_demo(panel) -> None:
                                 "pose_consistency": _json_safe(coarse_pose_metrics),
                                 "decision": str(approach_decision),
                                 "gate_decision": _coarse_phase_check.get("gate_decision"),
+                                "relaxed_handoff_ok": bool(_coarse_phase_check.get("relaxed_handoff_ok")),
+                                "relaxed_handoff_dist_tol": float(_coarse_relaxed_handoff_dist_tol),
+                                "relaxed_handoff_dz_tol": float(_coarse_relaxed_handoff_dz_tol),
                                 "block_reasons": list(_coarse_phase_check.get("block_reasons") or []),
                                 "coarse_refine_needed": bool(_coarse_refine_needed),
                                 "refine_target_z": _coarse_refine_target_z,
@@ -9325,6 +9709,7 @@ def run_pick_demo(panel) -> None:
                 # Si Gazebo no está disponible cae de vuelta al cycle reference.
                 _fresh_gd_world = _fresh_gazebo_object_world()
                 _fresh_gd_base = _fresh_gazebo_object_base() if _fresh_gd_world is not None else None
+                _direct_debug_state["object_fresh_world"] = _tuple3(_fresh_gd_world)
                 if _fresh_gd_base is not None:
                     _cycle_world_frozen = _tuple3(_pick_demo_cycle_object_world)
                     if _cycle_world_frozen is not None:
@@ -9534,13 +9919,7 @@ def run_pick_demo(panel) -> None:
                         # PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M queda como telemetría
                         # de cuánto error XY llega al handoff, no como segundo gate.
                         _coarse_was_fallback = "fallback" in str(approach_decision).lower()
-                        _force_inherit_xy = str(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_GRASP_DOWN_FORCE_INHERIT_XY",
-                                "0",
-                            )
-                            or "0"
-                        ).strip().lower() in {"1", "true", "yes", "on"}
+                        _force_inherit_xy = True
                         # Once APPROACH_COARSE has already passed its own strict
                         # geometric gate and the pre-GRASP_DOWN handoff is coherent,
                         # GRASP_DOWN must inherit that validated XY instead of
@@ -9551,8 +9930,11 @@ def run_pick_demo(panel) -> None:
                             and coarse_gate_z_ok
                             and coarse_gate_pose_ok
                             and not _coarse_was_fallback
+                            and _handoff_jump_m is not None
+                            and float(_handoff_jump_m) <= float(_grasp_down_phase_jump_tol)
                         )
                         if _can_inherit_xy:
+                            _direct_debug_state["inherit_xy"] = True
                             target_x = float(tcp_world_before_grasp_down[0])
                             target_y = float(tcp_world_before_grasp_down[1])
                             target_mode = "keep_approach_coarse_xy_plus_object_z"
@@ -9578,6 +9960,7 @@ def run_pick_demo(panel) -> None:
                             panel._emit_log(_gd_gate_msg)
                             _append_trace(_gd_gate_msg)
                         else:
+                            _direct_debug_state["inherit_xy"] = False
                             _gd_reason = (
                                 "approach_coarse_fallback" if _coarse_was_fallback
                                 else "approach_coarse_xy_out_of_tol" if not coarse_gate_xy_ok
@@ -9636,6 +10019,63 @@ def run_pick_demo(panel) -> None:
                         float(target_z),
                     )
                     target_base_grasp_down = _target_base_from_world(target_world_grasp_down)
+                    _approach_grasp_down_world = _tuple3(_direct_debug_state.get("approach_grasp_down_target_world"))
+                    _approach_grasp_down_base = _tuple3(_direct_debug_state.get("approach_grasp_down_target_base"))
+                    _handoff_target_jump_m = _dist(_approach_grasp_down_base, target_base_grasp_down)
+                    _frozen_object_world = _tuple3(_pick_demo_cycle_object_world)
+                    _fresh_object_world = _tuple3(obj_world_before_grasp_down)
+                    _frozen_fresh_object_m = _dist(_frozen_object_world, _fresh_object_world)
+                    _handoff_compare_msg = (
+                        "[PICK][DIRECT][HANDOFF_COMPARE] "
+                        "from=APPROACH_COARSE to=GRASP_DOWN_JOINT "
+                        f"approach_target={_fmt_vec(_approach_grasp_down_world)} "
+                        f"grasp_down_target={_fmt_vec(target_world_grasp_down)} "
+                        f"dist(APPROACH_target,GRASP_DOWN_target)={_fmt_scalar(_handoff_target_jump_m)}/0.005 "
+                        f"approach_end_tcp={_fmt_vec(tcp_before_grasp_down)} "
+                        f"grasp_down_entry_tcp={_fmt_vec(tcp_live_before_grasp_down)} "
+                        f"dist(APPROACH_end_tcp,GRASP_DOWN_entry_tcp)={_fmt_scalar(_handoff_jump_m)} "
+                        f"frozen_object={_fmt_vec(_frozen_object_world)} "
+                        f"fresh_object={_fmt_vec(_fresh_object_world)} "
+                        f"dist(frozen_object,fresh_object)={_fmt_scalar(_frozen_fresh_object_m)} "
+                        f"inherit_xy={str(_direct_debug_state.get('inherit_xy')).lower() if _direct_debug_state.get('inherit_xy') is not None else 'none'} "
+                        f"world_to_base_path={_direct_debug_state.get('world_to_base_path') or 'unset'}"
+                    )
+                    panel._emit_log(_handoff_compare_msg)
+                    _append_trace(_handoff_compare_msg)
+                    _emit_direct_visual_snapshot(
+                        phase="GRASP_DOWN_JOINT",
+                        event="handoff_compare",
+                        object_frozen_world=_frozen_object_world,
+                        object_fresh_world=_fresh_object_world,
+                        target_semantic_world=_tuple3(target_world_grasp_down),
+                        target_exec_tool0_world=_tuple3(_direct_debug_state.get("target_exec_tool0_world")),
+                    )
+                    if (
+                        _handoff_target_jump_m is not None
+                        and float(_handoff_target_jump_m) > 0.005
+                    ):
+                        _abort_grasp(
+                            code="GRASP_DOWN_HANDOFF_TARGET_JUMP",
+                            phase="GRASP_DOWN_JOINT",
+                            note="reconstructed GRASP_DOWN target diverged from the APPROACH_COARSE target by more than 5 mm",
+                            metrics={
+                                "approach_target_world": _tuple3(_approach_grasp_down_world),
+                                "approach_target_base": _tuple3(_approach_grasp_down_base),
+                                "grasp_down_target_world": _tuple3(target_world_grasp_down),
+                                "grasp_down_target_base": _tuple3(target_base_grasp_down),
+                                "dist_approach_target_to_grasp_down_target_m": float(_handoff_target_jump_m),
+                                "dist_approach_end_tcp_to_grasp_down_entry_tcp_m": (
+                                    float(_handoff_jump_m) if _handoff_jump_m is not None else None
+                                ),
+                                "frozen_object_world": _tuple3(_frozen_object_world),
+                                "fresh_object_world": _tuple3(_fresh_object_world),
+                                "dist_frozen_object_to_fresh_object_m": (
+                                    float(_frozen_fresh_object_m) if _frozen_fresh_object_m is not None else None
+                                ),
+                                "inherit_xy": _direct_debug_state.get("inherit_xy"),
+                                "world_to_base_path": str(_direct_debug_state.get("world_to_base_path") or "unset"),
+                            },
+                        )
                     panel._emit_log(
                         "[PICK][DIRECT][GRASP_DOWN_PLAN] "
                         f"mode={target_mode} "
@@ -9647,20 +10087,18 @@ def run_pick_demo(panel) -> None:
                         f"target_base={_fmt_vec(target_base_grasp_down)}"
                     )
                 elif obj_base_before_grasp_down is not None:
-                    target_mode = "object_xy_plus_object_z_base_fallback"
-                    grasp_down_relative_mode = "object_xy_plus_object_z_base_fallback"
-                    grasp_down_target_source = "live_object_base_fallback"
-                    target_base_grasp_down = (
-                        float(obj_base_before_grasp_down[0]),
-                        float(obj_base_before_grasp_down[1]),
-                        float(obj_base_before_grasp_down[2]) + grasp_z_for_source_frame + float(grasp_down_extra_z_m),
-                    )
-                    target_world_grasp_down = _target_world_from_base(target_base_grasp_down)
                     panel._emit_log(
-                        "[GRASP_Z_FIX] phase=GRASP_DOWN_fallback "
-                        f"obj_z_base={float(obj_base_before_grasp_down[2]):.4f} "
-                        f"target_z_no_offset={float(target_base_grasp_down[2]):.4f} "
-                        f"contact_offset_reserved_for_align={grasp_contact_z_offset_m:.4f}"
+                        "[PICK][DIRECT][ABORT] "
+                        "phase=GRASP_DOWN_JOINT reason=world_target_unavailable base_fallback_disabled"
+                    )
+                    _abort_grasp(
+                        code="GRASP_DOWN_WORLD_TARGET_REQUIRED",
+                        phase="GRASP_DOWN_JOINT",
+                        note="DIRECT debug mode forbids base-link fallback when rebuilding the grasp-down target",
+                        metrics={
+                            "object_base": _tuple3(obj_base_before_grasp_down),
+                            "world_to_base_path": str(_direct_debug_state.get("world_to_base_path") or "unset"),
+                        },
                     )
                 # [ALIGN_DEBUG] Snapshot de frames antes de GRASP_DOWN_JOINT
                 try:

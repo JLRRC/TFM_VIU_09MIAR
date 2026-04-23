@@ -475,6 +475,26 @@ def _prepare_runtime(context, *_args) -> List[object]:
             os.environ.get("PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL", "0.200"),
         ),
         SetEnvironmentVariable(
+            # Higher seed bias keeps the retry loop in the current arm
+            # configuration during the GRASP_ALIGN_IK descent. With 0.50
+            # (previous default) all retry candidates had similar pos_err
+            # (~0.15m model artifact) so the tie-breaker could pick a
+            # different elbow branch undetected (no branch guard on ALIGN).
+            "PANEL_PICK_DEMO_ALIGN_IK_SEED_WEIGHT",
+            os.environ.get("PANEL_PICK_DEMO_ALIGN_IK_SEED_WEIGHT", "0.80"),
+        ),
+        SetEnvironmentVariable(
+            # Tighter branch guard for GRASP_DOWN: near-identity joint changes
+            # expected (seed_weight=0.035), so >16° from live joints signals
+            # a wrong-branch IK solution.
+            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_MAX_DEV_RAD",
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_MAX_DEV_RAD", "0.28"),
+        ),
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_SUM_DEV_RAD",
+            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_SUM_DEV_RAD", "0.60"),
+        ),
+        SetEnvironmentVariable(
             # Exit XY tolerance for GRASP_ALIGN_IK convergence check.
             # TCP arrives at xy≈0.006m; the strict 0.006 fails in floating point
             # (real value 0.00635). 10mm clears the boundary and aligns with
