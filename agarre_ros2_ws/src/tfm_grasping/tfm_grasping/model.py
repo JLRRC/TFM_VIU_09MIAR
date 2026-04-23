@@ -116,31 +116,41 @@ class GraspModel:
             candidates: List[Tuple[object, int, str]] = []
             conv_key = "features.0.weight"
             in_ch = 3
+            kernel_size = 3
             if conv_key in state_dict and hasattr(state_dict[conv_key], "shape"):
                 try:
                     in_ch = int(state_dict[conv_key].shape[1])
+                    kernel_size = int(state_dict[conv_key].shape[2])
                 except Exception:
                     in_ch = 3
 
-            try:
-                from graspnet.models.simple_cnn import SimpleGraspCNN as SimpleCnn  # type: ignore
-                candidates.append((SimpleCnn(in_channels=in_ch, img_size=self._img_size), in_ch, "simple_cnn"))
-            except Exception as exc:
-                self._last_error = f"no se pudo importar simple_cnn.SimpleGraspCNN: {exc}"
+            if kernel_size == 7:
+                # SimpleGrasp architecture (EXP1.1/EXP1.2): kernel 7x7
+                try:
+                    from models.simple_grasp import SimpleGrasp  # type: ignore
+                    candidates.append((SimpleGrasp(input_channels=in_ch), in_ch, "simple_grasp"))
+                except Exception as exc:
+                    self._last_error = f"no se pudo importar models.simple_grasp: {exc}"
+            else:
+                # SimpleCNN architecture (EXP1): kernel 3x3
+                try:
+                    from graspnet.models.simple_cnn import SimpleGraspCNN as SimpleCnn  # type: ignore
+                    candidates.append((SimpleCnn(in_channels=in_ch, img_size=self._img_size), in_ch, "simple_cnn"))
+                except Exception as exc:
+                    self._last_error = f"no se pudo importar simple_cnn.SimpleGraspCNN: {exc}"
 
-            # Fallback for current agarre_inteligente layout.
-            try:
-                from models.simple_cnn import SimpleCNN  # type: ignore
+                # Fallback for current agarre_inteligente layout.
+                try:
+                    from models.simple_cnn import SimpleCNN  # type: ignore
+                    candidates.append((SimpleCNN(input_channels=in_ch), in_ch, "simple_cnn"))
+                except Exception:
+                    pass
 
-                candidates.append((SimpleCNN(input_channels=in_ch), in_ch, "simple_cnn"))
-            except Exception:
-                pass
-
-            try:
-                from graspnet.models.simple_grasp_cnn import SimpleGraspCNN as SimpleLegacy  # type: ignore
-                candidates.append((SimpleLegacy(in_channels=in_ch), in_ch, "simple_grasp_cnn"))
-            except Exception:
-                pass
+                try:
+                    from graspnet.models.simple_grasp_cnn import SimpleGraspCNN as SimpleLegacy  # type: ignore
+                    candidates.append((SimpleLegacy(in_channels=in_ch), in_ch, "simple_grasp_cnn"))
+                except Exception:
+                    pass
 
             if candidates:
                 return candidates
