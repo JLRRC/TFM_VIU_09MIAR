@@ -94,27 +94,33 @@ componente. Dicha denominación no tiene correspondencia en el historial
 git del repositorio. La diferencia es exclusivamente nominal y no afecta
 a los resultados experimentales presentados.
 
-## ENTREGA.V2 — nota de cierre (2026-04-23)
+## ENTREGA.V2 — nota de cierre
 
-Rama creada sobre `ENTREGA` para dejar el proyecto conforme al TFM presentado
+Rama creada sobre `ENTREGA` para dejar el proyecto conforme al TFM presentado,
 con el panel completamente operativo para todos los experimentos EXP1..EXP4
 y EXP1.1/EXP1.2. Cambios respecto a `ENTREGA`:
 
-- **fix:** loader de modelos en `tfm_grasping/model.py` corregido para cargar
-  EXP1.1 (`SimpleGrasp`, kernel 7×7) sin error de arquitectura.
+- **fix(model):** loader en `tfm_grasping/model.py` corregido para cargar
+  EXP1.1/EXP1.2 (`SimpleGrasp`, kernel 7×7) sin error de arquitectura.
+  Salida clampeada a rango normalizado para evitar divergencia en inferencia.
+- **fix(exp11-12):** EXP1.1 y EXP1.2 reentrenados desde el directorio correcto.
+  El retrain anterior usaba `data_root: "."` desde `agarre_inteligente/`, lo que
+  causaba doble prefijo en las rutas → todas las imágenes cargaban en negro →
+  colapso de BatchNorm (`running_var ≈ 8e-6`) → salidas del orden de 167.000 en
+  modo eval → `val_success = 0.0%` para los 10 epochs. Tras el fix
+  (`data_root: ".."`) y retrain: EXP1.1 val_success 0.27–0.47, EXP1.2 0.39–0.46.
 - **docs:** `agarre_ros2_ws/README.md` y `start_panel_v2.sh` alineados con
   `lanzar_panelc2.sh` como entrypoint canónico.
 - **protocolo:** `agarre_inteligente/EXPERIMENTS_V2_PROTOCOL.md` define dónde
   van las salidas de trabajo futuro (nunca en `reports/`).
+- **alineación metodológica** (posterior al TFM, no invalida resultados oficiales):
+  implementación de IoU Cornell con rectángulos orientados (`iou_oriented_boxes`,
+  algoritmo Sutherland-Hodgman), criterio de éxito por imagen con IoU orientada
+  (`EvaluatorOriented`), función de pérdida con simetría de 180° para el ángulo
+  (`GraspLoss`). Todas las funciones y clases oficiales de EXP1..EXP4 se
+  conservan intactas; las nuevas se añaden en paralelo. Véase
+  `agarre_inteligente/METHODOLOGY_ALIGNMENT.md`.
 
 Integridad de `reports/` verificada: MD5 `d68e1d99da013bf3c00deb79f01b4fe3`
 (contenido trackeado por git idéntico al de `ENTREGA@dacace8`, evidencia oficial del TFM intacta).
 Verificable con: `git ls-files reports/ | sort | xargs -I{} sh -c 'cat "$1"' _ {} | md5sum`
-
-## Nota final sobre los desajustes metodologicos no aplicados
-
-- Se reconocen tres desajustes metodologicos pendientes respecto a la memoria: la IoU Cornell con rectangulos orientados, el calculo de `grasp success` por imagen y una posible funcion de perdida mas alineada con la formulacion teorica.
-- No se aplican cambios sobre esos puntos en este workspace porque dejarian de ser estrictamente comparables los resultados ya presentados en el TFM.
-- Ajustar la IoU y el criterio de `grasp success` obligaria como minimo a reevaluar `EXP1..EXP4`.
-- Cambiar la funcion de perdida obligaria a reentrenar los experimentos oficiales.
-- Por tanto, el estado actual del repositorio conserva deliberadamente la base experimental ya consolidada en la memoria, y estos puntos quedan solo anotados como trabajo pendiente no ejecutado.
