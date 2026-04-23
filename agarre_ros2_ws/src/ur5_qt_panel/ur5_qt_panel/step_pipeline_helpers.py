@@ -25,6 +25,8 @@ def step_phase_sequence(flow: str) -> List[str]:
     flow_name = str(flow or "").strip().upper()
     sequences = {
         "DIRECT": [
+            "INITIAL_SNAPSHOT",
+            "HOME_INITIAL",
             "APPROACH_COARSE",
             "GRASP_DOWN_JOINT",
             "GRASP_ALIGN_IK",
@@ -82,6 +84,9 @@ def step_phase_intent(flow: str, phase: str) -> str:
     phase_name = str(phase or "").strip().upper()
     intents = {
         "DIRECT": {
+            "INITIAL_SNAPSHOT": "Registrar la pose real previa al movimiento hacia MESA.",
+            "HOME_INITIAL": "Mover el robot a MESA y dejarlo detenido antes de APPROACH_COARSE.",
+            "MESA_READY": "Confirmar que el robot ya está quieto en MESA antes de APPROACH_COARSE.",
             "PICK_PRE_CLOSE_REF": "Ir a la referencia manual previa al cierre.",
             "APPROACH_COARSE": "Acercarse al objeto de forma gruesa.",
             "GRASP_DOWN_JOINT": "Bajar de forma conservadora preservando el XY útil.",
@@ -173,6 +178,9 @@ def step_phase_gripper_state(flow: str, phase: str) -> str:
     phase_name = str(phase or "").strip().upper()
     states = {
         "DIRECT": {
+            "INITIAL_SNAPSHOT": "Actual",
+            "HOME_INITIAL": "Abierta",
+            "MESA_READY": "Abierta",
             "PICK_PRE_CLOSE_REF": "Abierta",
             "APPROACH_COARSE": "Abierta",
             "GRASP_DOWN_JOINT": "Abierta",

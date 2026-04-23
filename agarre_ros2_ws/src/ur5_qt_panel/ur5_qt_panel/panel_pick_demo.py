@@ -9,6 +9,7 @@ import os
 import json
 import math
 import time
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -107,6 +108,17 @@ def _direct_runtime_target_tol_m(label: str) -> float:
                     "0.015",
                 )
                 or 0.015
+            ),
+        )
+    if label_name == "APPROACH_COARSE_REFINE":
+        return max(
+            0.006,
+            float(
+                os.environ.get(
+                    "PANEL_PICK_DEMO_APPROACH_COARSE_REFINE_TCP_TOL_M",
+                    "0.006",
+                )
+                or 0.006
             ),
         )
     if label_name == "GRASP_DOWN_JOINT":
@@ -2061,6 +2073,112 @@ def run_pick_demo(panel) -> None:
                     ),
                 }
 
+            def _current_arm_joint_snapshot() -> list[float | None]:
+                snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
+                values = []
+                for joint_name in UR5_JOINT_NAMES:
+                    current = snapshot.get(joint_name)
+                    if current is None:
+                        values.append(None)
+                    else:
+                        values.append(float(current))
+                return values
+
+            def _emit_direct_event_trace(
+                stage_name: str,
+                *,
+                ui_step_method_name: str | None = None,
+                target_source: str = "",
+                wait_for_ui: bool = False,
+            ) -> None:
+                tcp_base, pose_source = _live_tcp_base_with_source()
+                object_base = _tuple3(_live_object_base())
+                dx = dy = dz = dist3d = None
+                if tcp_base is not None and object_base is not None:
+                    dx = float(tcp_base[0]) - float(object_base[0])
+                    dy = float(tcp_base[1]) - float(object_base[1])
+                    dz = float(tcp_base[2]) - float(object_base[2])
+                    dist3d = math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
+                joints_current = _current_arm_joint_snapshot()
+                _append_trace(
+                    f"[PICK][DIRECT][{stage_name}] "
+                    f"request_id={run_id} "
+                    f"tcp_base={_fmt_vec(tcp_base)} "
+                    f"object_base={_fmt_vec(object_base)} "
+                    f"dx={_fmt_scalar(dx)} dy={_fmt_scalar(dy)} dz={_fmt_scalar(dz)} "
+                    f"dist3d={_fmt_scalar(dist3d)} "
+                    f"joints={json.dumps(_json_safe(joints_current), ensure_ascii=True)} "
+                    f"pose_source={pose_source}"
+                )
+                _audit_emit(
+                    stage_name,
+                    target_source=target_source or str(stage_name or "").strip().lower(),
+                    target_frame_original="base_link",
+                    target_pose_original=object_base,
+                    target_pose_world=_tuple3(_live_object_world()),
+                    target_pose_base_link=object_base,
+                    command_pose_sent=tcp_base,
+                    command_frame="base_link",
+                    command_joint_goal=joints_current,
+                    extra={
+                        "pose_source": pose_source,
+                        "object_source": _pick_demo_cycle_object_source,
+                        "dx": dx,
+                        "dy": dy,
+                        "dz": dz,
+                        "dist3d": dist3d,
+                    },
+                )
+                _step_event_fn = getattr(panel, ui_step_method_name, None) if ui_step_method_name else None
+                if callable(_step_event_fn):
+                    _ui_done = threading.Event()
+                    def _run_step_event(
+                        _request_id=run_id,
+                        _tcp_base=tcp_base,
+                        _object_base=object_base,
+                        _dx=dx,
+                        _dy=dy,
+                        _dz=dz,
+                        _dist3d=dist3d,
+                        _joints=joints_current,
+                        _pose_source=pose_source,
+                        _done=_ui_done,
+                    ) -> None:
+                        try:
+                            _step_event_fn(
+                                request_id=_request_id,
+                                tcp_base=_tcp_base,
+                                object_base=_object_base,
+                                dx=_dx,
+                                dy=_dy,
+                                dz=_dz,
+                                dist3d=_dist3d,
+                                joints=_joints,
+                                pose_source=_pose_source,
+                                flow_name="DIRECT",
+                            )
+                        finally:
+                            _done.set()
+
+                    panel.signal_run_ui.emit(_run_step_event)
+                    if wait_for_ui:
+                        _ui_done.wait(timeout=1.5)
+
+            def _emit_initial_snapshot_trace() -> None:
+                _emit_direct_event_trace(
+                    "INITIAL_SNAPSHOT",
+                    ui_step_method_name="_step_record_direct_initial_snapshot",
+                    target_source="initial_snapshot",
+                )
+
+            def _emit_home_initial_trace() -> None:
+                _emit_direct_event_trace(
+                    "HOME_INITIAL",
+                    ui_step_method_name="_step_record_direct_home_initial",
+                    target_source="home_initial_mesa",
+                    wait_for_ui=True,
+                )
+
             def _run_joint_step(
                 label,
                 joints,
@@ -2290,21 +2408,31 @@ def run_pick_demo(panel) -> None:
                 )
                 return _tuple3(result.get("base"))
 
-            def _live_tcp_base():
+            def _live_tcp_base_with_source():
                 try:
                     tcp_pose = panel.get_tcp_base()
                 except Exception:
                     tcp_pose = None
-                if tcp_pose is None:
-                    tcp_world = getattr(panel, "_last_tcp_world", None)
-                    if tcp_world is not None:
-                        try:
-                            return tuple(float(v) for v in world_to_base(*tcp_world))
-                        except Exception:
-                            return None
-                    return None
-                pos = tcp_pose.pose.position
-                return (float(pos.x), float(pos.y), float(pos.z))
+                if tcp_pose is not None:
+                    pos = tcp_pose.pose.position
+                    return (
+                        (float(pos.x), float(pos.y), float(pos.z)),
+                        "panel.get_tcp_base",
+                    )
+                tcp_world = getattr(panel, "_last_tcp_world", None)
+                if tcp_world is not None:
+                    try:
+                        return (
+                            tuple(float(v) for v in world_to_base(*tcp_world)),
+                            "panel._last_tcp_world_fallback",
+                        )
+                    except Exception:
+                        pass
+                return None, "unavailable"
+
+            def _live_tcp_base():
+                tcp_base, _tcp_source = _live_tcp_base_with_source()
+                return tcp_base
 
             def _fresh_gazebo_object_world():
                 """Lee la posición del objeto DIRECTAMENTE de Gazebo (/world/.../pose/info).
@@ -2694,6 +2822,7 @@ def run_pick_demo(panel) -> None:
                         f"stable_age_sec={_fmt_scalar(_pick_demo_cycle_object_stable_age_sec)} "
                         f"selected_stable_divergence_m={_fmt_scalar(_pick_demo_cycle_object_selected_divergence_m)}"
                     )
+                _emit_initial_snapshot_trace()
             else:
                 _pick_demo_cycle_object_reason = str(cycle_ref.get("reason") or "cycle_reference_unavailable")
                 reject_reasons = ",".join(cycle_ref.get("reject_reasons") or []) or "none"
@@ -3902,13 +4031,20 @@ def run_pick_demo(panel) -> None:
                 )
                 _append_trace(f"[PICK][DIRECT][DEBUG] ENTER_PHASE {phase}")
                 step_gate_fn = getattr(panel, "_step_wait_for_phase", None)
+                step_gate_reuse_fn = getattr(panel, "_step_phase_gate_already_owned", None)
+                step_gate_reused = False
+                if callable(step_gate_reuse_fn):
+                    try:
+                        step_gate_reused = bool(step_gate_reuse_fn(flow="DIRECT", phase=phase))
+                    except Exception:
+                        step_gate_reused = False
                 if callable(step_gate_fn) and getattr(panel, "_step_mode", "") == "STEP_BY_STEP":
                     # Esperar a que TF se estabilice tras el último movimiento.
                     # _wait_for_joint_target se satisface antes de que el TF tree
                     # propague la nueva pose, y origin_snapshot capturaría datos stale.
                     # 0.12 s es suficiente para que robot_state_publisher + TF publiquen.
                     time.sleep(0.12)
-                if callable(step_gate_fn):
+                if callable(step_gate_fn) and not step_gate_reused:
                     step_gate_fn(
                         f"DIRECT.{phase}",
                         flow="DIRECT",
@@ -3919,6 +4055,18 @@ def run_pick_demo(panel) -> None:
                     # Registrar exec_target_snapshot: target efectivo que el IK va a usar.
                     # Se llama tras el gate (usuario pulsó Sigue) para que la fila ya exista.
                     # Si target_base es None usamos last_target para no dejar Exec en --.
+                    _exec_base = target_base_3 or _tuple3(last_target.get("target_base"))
+                    _set_exec_fn = getattr(panel, "_step_set_exec_target", None)
+                    if callable(_set_exec_fn):
+                        _set_exec_fn(_exec_base)
+                elif step_gate_reused:
+                    _gate_reuse_msg = (
+                        "[STEP][GATE_REUSE] "
+                        f"flow=DIRECT phase={str(phase or '').strip().upper()} "
+                        "authority=step_panel reason=already_running"
+                    )
+                    panel._emit_log(_gate_reuse_msg)
+                    _append_trace(_gate_reuse_msg)
                     _exec_base = target_base_3 or _tuple3(last_target.get("target_base"))
                     _set_exec_fn = getattr(panel, "_step_set_exec_target", None)
                     if callable(_set_exec_fn):
@@ -7629,6 +7777,81 @@ def run_pick_demo(panel) -> None:
             panel._emit_log("[DEMO] Abriendo pinza en posición MESA")
             panel.signal_run_ui.emit(lambda: panel._command_gripper(False, log_action="PICK", force=True))
             time.sleep(0.6)
+            _emit_home_initial_trace()
+            mesa_wait_tcp = _tuple3(_live_tcp_base())
+            mesa_wait_object = _tuple3(_live_object_base())
+            if getattr(panel, "_step_mode", "") == "STEP_BY_STEP":
+                coarse_extra_z_preview_m = float(
+                    os.environ.get(
+                        "PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M",
+                        "0.035",
+                    )
+                    or 0.035
+                )
+                approach_preview_target_base = None
+                if mesa_wait_object is not None:
+                    approach_preview_target_base = (
+                        float(mesa_wait_object[0]),
+                        float(mesa_wait_object[1]),
+                        float(mesa_wait_object[2]) + float(_DIRECTO_GRASP_Z) + float(coarse_extra_z_preview_m),
+                    )
+                _step_wait_msg = (
+                    "[PICK][DIRECT][STATE] "
+                    "state=WAITING_STEP_PANEL_APPROACH_CONFIRMATION "
+                    f"request_id={run_id} "
+                    f"tcp_base={_fmt_vec(mesa_wait_tcp)} "
+                    f"object_base={_fmt_vec(mesa_wait_object)} "
+                    f"target_base={_fmt_vec(approach_preview_target_base)}"
+                )
+                panel._emit_log(_step_wait_msg)
+                _append_trace(_step_wait_msg)
+                panel.signal_run_ui.emit(
+                    lambda: panel._ui_set_status(
+                        "Directo: robot en MESA; inicia APPROACH_COARSE desde el panel paso a paso",
+                        error=False,
+                    )
+                )
+                step_gate_fn = getattr(panel, "_step_wait_for_phase", None)
+                if callable(step_gate_fn):
+                    step_gate_fn(
+                        "DIRECT.APPROACH_COARSE",
+                        flow="DIRECT",
+                        position=approach_preview_target_base,
+                        decision="HOME_INITIAL completado; APPROACH_COARSE queda pendiente del panel paso a paso",
+                        object_position=mesa_wait_object,
+                    )
+            else:
+                _append_trace(
+                    "[PICK][DIRECT][WAIT] "
+                    "state=WAITING_FOR_APPROACH_CONFIRMATION "
+                    f"request_id={run_id} "
+                    f"tcp_base={_fmt_vec(mesa_wait_tcp)} "
+                    f"object_base={_fmt_vec(mesa_wait_object)}"
+                )
+                _enter_wait_fn = getattr(panel, "_direct_enter_waiting_for_approach_confirmation", None)
+                if callable(_enter_wait_fn):
+                    panel.signal_run_ui.emit(
+                        lambda _request_id=run_id,
+                               _tcp_base=mesa_wait_tcp,
+                               _object_base=mesa_wait_object: _enter_wait_fn(
+                                   request_id=_request_id,
+                                   tcp_base=_tcp_base,
+                                   object_base=_object_base,
+                               )
+                    )
+                mesa_wait_event = getattr(panel, "_direct_wait_for_approach_event", None)
+                while True:
+                    if bool(getattr(panel, "_closing", False)):
+                        raise RuntimeError("direct_wait_cancelled_closing")
+                    if mesa_wait_event is None:
+                        break
+                    if mesa_wait_event.wait(timeout=0.1):
+                        break
+                _append_trace(
+                    "[PICK][DIRECT][WAIT] "
+                    "state=WAITING_FOR_APPROACH_CONFIRMATION "
+                    f"request_id={run_id} released=true"
+                )
 
             # INICIO eliminado: el robot ya está en MESA antes de llegar aquí.
 
@@ -7806,11 +8029,10 @@ def run_pick_demo(panel) -> None:
                         f"z_error={_fmt_scalar(ref_metrics.get('z_error'))}"
                     )
             if route_selected != "manual_reference" or not manual_reference_ok:
-                # PICK_IMAGE: corre siempre (AUTO y STEP_BY_STEP) antes del gate de
-                # APPROACH_COARSE, para que el robot esté en J0≈-15.7° cuando el IK de
-                # approach ejecuta. Desde MESA (J0≈-2.7°) el cambio de 13° en J0 más
-                # 24° en J1 producía una trayectoria que el controller rechazaba o que
-                # convergía a un branch incorrecto.
+                # PICK_IMAGE es una preparación interna del APPROACH. En STEP_BY_STEP
+                # ya no puede ejecutarse antes del gate manual de APPROACH_COARSE,
+                # porque eso rompería la autoridad única del panel paso a paso y haría
+                # que el robot abandonase MESA antes de que la fase fuese lanzada.
                 if True:
                     _run_joint_step("PICK_IMAGE", JOINT_PICK_IMAGE_POSE_RAD)
 
@@ -8024,11 +8246,9 @@ def run_pick_demo(panel) -> None:
                     execution_type="hibrido",
                     decision="phase_enter",
                 )
-                # En SBS: inyectar joints de PICK_IMAGE como semilla del IK
-                # (no mover el robot). En modo STEP el robot ya está en PICK_IMAGE,
-                # así que los live joints son equivalentes, pero la inyección
-                # explícita garantiza un seed determinista independientemente de
-                # posible ruido en el estado articular.
+                # En SBS: inyectar joints de PICK_IMAGE como semilla del IK.
+                # El movimiento a PICK_IMAGE ya se ejecutó dentro de la misma fase
+                # APPROACH_COARSE, después del gate manual del panel paso a paso.
                 _sbs_ik_seed_injected = False
                 if getattr(panel, "_step_mode", "") == "STEP_BY_STEP":
                     _pi_seed_str = ",".join(
@@ -8043,10 +8263,9 @@ def run_pick_demo(panel) -> None:
 
                 approach_debug = None
                 approach_decision = "direct_ik_move"
-                # PICK_IMAGE ahora corre en ambos modos (antes del gate de APPROACH_COARSE).
-                # El robot llega a PICK_IMAGE tanto en AUTO como en STEP_BY_STEP,
-                # garantizando la posición de partida correcta para el IK.
-                # ────────────────────────────────────────────────────────────────────
+                # PICK_IMAGE corre en ambos modos como preparación interna de
+                # APPROACH_COARSE, pero el gate manual en STEP_BY_STEP ocurre
+                # antes de este movimiento para dejar una única autoridad de disparo.
                 # TCP canónico después del gate: usar el valor capturado POR _phase_begin
                 # justo después de que el usuario pulsó "Sigue".  Evita el bug de TF stale
                 # donde una segunda llamada a _live_tcp_base() devuelve un valor cacheado
@@ -8325,7 +8544,7 @@ def run_pick_demo(panel) -> None:
                     )
                     _cg_z_tol = max(
                         0.006,
-                        float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M", "0.012") or 0.012),
+                        float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M", "0.008") or 0.008),
                     )
                     coarse_gate_xy_err = math.hypot(
                         float(_coarse_check_tcp[0]) - float(_coarse_check_obj[0]),
@@ -8497,41 +8716,44 @@ def run_pick_demo(panel) -> None:
                                 stage="phase_end",
                                 tcp_base=_ac_xyc_tcp,
                             )
+                    _ac_gate_settle_sec = max(
+                        0.3,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_SETTLE_SEC",
+                                "0.80",
+                            )
+                            or 0.80
+                        ),
+                    )
+                    _ac_gate_poll_sec = max(
+                        0.05,
+                        float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_POLL_SEC",
+                                "0.10",
+                            )
+                            or 0.10
+                        ),
+                    )
+                    _ac_gate_stable_samples = max(
+                        2,
+                        int(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_STABLE_SAMPLES",
+                                "2",
+                            )
+                            or 2
+                        ),
+                    )
                     _coarse_gate = _wait_phase_gate_ready(
                         phase="APPROACH_COARSE",
                         target_base=target_base_coarse,
                         xy_tol_m=_cg_xy_tol,
                         z_tol_m=_cg_z_tol,
-                        timeout_sec=max(
-                            0.3,
-                            float(
-                                os.environ.get(
-                                    "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_SETTLE_SEC",
-                                    "0.80",
-                                )
-                                or 0.80
-                            ),
-                        ),
-                        poll_sec=max(
-                            0.05,
-                            float(
-                                os.environ.get(
-                                    "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_POLL_SEC",
-                                    "0.10",
-                                )
-                                or 0.10
-                            ),
-                        ),
-                        required_samples=max(
-                            2,
-                            int(
-                                os.environ.get(
-                                    "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_STABLE_SAMPLES",
-                                    "2",
-                                )
-                                or 2
-                            ),
-                        ),
+                        timeout_sec=_ac_gate_settle_sec,
+                        poll_sec=_ac_gate_poll_sec,
+                        required_samples=_ac_gate_stable_samples,
                         pose_gate_key="ok_for_gate",
                         xy_reference_mode="object",
                     )
@@ -8553,38 +8775,314 @@ def run_pick_demo(panel) -> None:
                     coarse_gate_z_ok = bool(_coarse_gate.get("z_ok"))
                     coarse_gate_pose_ok = bool(_coarse_gate.get("pose_ok"))
                     coarse_pose_metrics = _coarse_gate.get("pose_consistency") or {}
-                    _cg_result = "OK" if bool(_coarse_gate.get("ok")) else "NO"
-                    _cg_msg = (
-                        "[PICK][DIRECT][PHASE_CHECK] "
-                        f"phase=APPROACH_COARSE "
-                        f"xy_err={coarse_gate_xy_err:.3f}/{_cg_xy_tol:.3f} "
-                        f"z_err={_cg_z_err:.3f}/{_cg_z_tol:.3f} "
-                        f"pose_ok={str(coarse_gate_pose_ok).lower()} "
-                        f"pose_gate={str(_coarse_gate.get('pose_gate_key') or 'ok_for_gate')} "
-                        f"target_xyz=({target_base_coarse[0]:.3f},{target_base_coarse[1]:.3f},{target_base_coarse[2]:.3f}) "
-                        f"actual_xyz=({_coarse_check_tcp[0]:.3f},{_coarse_check_tcp[1]:.3f},{_coarse_check_tcp[2]:.3f}) "
-                        f"object_xyz=({_coarse_check_obj[0]:.3f},{_coarse_check_obj[1]:.3f},{_coarse_check_obj[2]:.3f}) "
-                        f"samples={int(_coarse_gate.get('stable_samples') or 0)}/{int(_coarse_gate.get('required_samples') or 0)} "
-                        f"xy_ok={str(coarse_gate_xy_ok).lower()} z_ok={str(coarse_gate_z_ok).lower()} "
-                        f"decision={approach_decision} result={_cg_result}"
+                    _coarse_handoff_dist_tol = 0.015
+                    _coarse_handoff_dz_tol = 0.015
+                    _phase_check_target_base = _tuple3(target_base_coarse)
+
+                    def _build_approach_coarse_phase_check(target_base_for_check, gate_metrics_for_check):
+                        target_base_local = _tuple3(target_base_for_check)
+                        tcp_base_local = _tuple3(gate_metrics_for_check.get("tcp_base")) or _tuple3(_coarse_check_tcp)
+                        obj_base_local = _tuple3(gate_metrics_for_check.get("object_base")) or _tuple3(_coarse_check_obj)
+                        target_z_local = (
+                            float(target_base_local[2])
+                            if target_base_local is not None
+                            else None
+                        )
+                        object_z_local = (
+                            float(obj_base_local[2])
+                            if obj_base_local is not None
+                            else None
+                        )
+                        actual_z_local = (
+                            float(tcp_base_local[2])
+                            if tcp_base_local is not None
+                            else None
+                        )
+                        tcp_obj_dist_local = (
+                            _dist(tcp_base_local, obj_base_local)
+                            if tcp_base_local is not None and obj_base_local is not None
+                            else None
+                        )
+                        dz_obj_local = (
+                            float(actual_z_local) - float(object_z_local)
+                            if actual_z_local is not None and object_z_local is not None
+                            else None
+                        )
+                        handoff_dist_ok_local = bool(
+                            tcp_obj_dist_local is not None
+                            and float(tcp_obj_dist_local) <= _coarse_handoff_dist_tol
+                        )
+                        handoff_dz_ok_local = bool(
+                            dz_obj_local is not None
+                            and abs(float(dz_obj_local)) <= _coarse_handoff_dz_tol
+                        )
+                        gate_ok_local = bool(gate_metrics_for_check.get("ok"))
+                        result_local = "OK" if bool(gate_ok_local and handoff_dist_ok_local and handoff_dz_ok_local) else "NO"
+                        block_reasons_local = []
+                        if not gate_ok_local:
+                            block_reasons_local.append("phase_gate_not_ready")
+                        if not handoff_dist_ok_local:
+                            block_reasons_local.append("tcp_obj_dist_exceeded")
+                        if not handoff_dz_ok_local:
+                            block_reasons_local.append("dz_obj_exceeded")
+                        return {
+                            "gate_ok": gate_ok_local,
+                            "tcp_base": tcp_base_local,
+                            "object_base": obj_base_local,
+                            "target_base": target_base_local,
+                            "target_z": target_z_local,
+                            "object_z": object_z_local,
+                            "actual_z": actual_z_local,
+                            "tcp_obj_dist": tcp_obj_dist_local,
+                            "dz_obj": dz_obj_local,
+                            "handoff_dist_ok": handoff_dist_ok_local,
+                            "handoff_dz_ok": handoff_dz_ok_local,
+                            "result": result_local,
+                            "gate_decision": "handoff_ready" if result_local == "OK" else "not_ready",
+                            "block_reasons": block_reasons_local,
+                        }
+
+                    def _emit_approach_coarse_phase_check(check_info, *, refine_attempted: bool = False):
+                        _msg = (
+                            "[PICK][DIRECT][PHASE_CHECK] "
+                            f"phase=APPROACH_COARSE "
+                            f"xy_err={coarse_gate_xy_err:.3f}/{_cg_xy_tol:.3f} "
+                            f"z_err={_cg_z_err:.3f}/{_cg_z_tol:.3f} "
+                            f"tcp_obj_dist={_fmt_scalar(check_info.get('tcp_obj_dist'))}/{_coarse_handoff_dist_tol:.3f} "
+                            f"dz_obj={_fmt_scalar(check_info.get('dz_obj'))}/{_coarse_handoff_dz_tol:.3f} "
+                            f"target_z={_fmt_scalar(check_info.get('target_z'))} "
+                            f"object_z={_fmt_scalar(check_info.get('object_z'))} "
+                            f"actual_z={_fmt_scalar(check_info.get('actual_z'))} "
+                            f"pose_ok={str(coarse_gate_pose_ok).lower()} "
+                            f"pose_gate={str(_coarse_gate.get('pose_gate_key') or 'ok_for_gate')} "
+                            f"target_xyz=({_phase_check_target_base[0]:.3f},{_phase_check_target_base[1]:.3f},{_phase_check_target_base[2]:.3f}) "
+                            f"actual_xyz=({check_info.get('tcp_base')[0]:.3f},{check_info.get('tcp_base')[1]:.3f},{check_info.get('tcp_base')[2]:.3f}) "
+                            f"object_xyz=({check_info.get('object_base')[0]:.3f},{check_info.get('object_base')[1]:.3f},{check_info.get('object_base')[2]:.3f}) "
+                            f"samples={int(_coarse_gate.get('stable_samples') or 0)}/{int(_coarse_gate.get('required_samples') or 0)} "
+                            f"xy_ok={str(coarse_gate_xy_ok).lower()} z_ok={str(coarse_gate_z_ok).lower()} "
+                            f"decision={approach_decision} gate_decision={check_info.get('gate_decision')} "
+                            f"block_reasons={','.join(check_info.get('block_reasons') or []) or 'none'} "
+                            f"coarse_refine_attempted={str(refine_attempted).lower()} "
+                            f"result={check_info.get('result')}"
+                        )
+                        panel._emit_log(_msg)
+                        _append_trace(_msg)
+
+                    _coarse_phase_check = _build_approach_coarse_phase_check(
+                        _phase_check_target_base,
+                        _coarse_gate,
                     )
-                    panel._emit_log(_cg_msg)
-                    _append_trace(_cg_msg)
-                    if not bool(_coarse_gate.get("ok")):
+                    _emit_approach_coarse_phase_check(_coarse_phase_check, refine_attempted=False)
+
+                    _coarse_refine_needed = bool(
+                        (
+                            _coarse_phase_check.get("tcp_obj_dist") is not None
+                            and float(_coarse_phase_check.get("tcp_obj_dist")) > _coarse_handoff_dist_tol
+                        )
+                        or (
+                            _coarse_phase_check.get("dz_obj") is not None
+                            and abs(float(_coarse_phase_check.get("dz_obj"))) > _coarse_handoff_dz_tol
+                        )
+                    )
+                    _coarse_refine_target_z = None
+                    _coarse_refine_result_tcp = None
+                    _coarse_refine_dx = None
+                    _coarse_refine_dy = None
+                    _coarse_refine_dz = None
+                    _coarse_refine_dist = None
+                    _coarse_refine_phase_check_result = "SKIP"
+                    _coarse_refine_runtime_target_tol = None
+                    _coarse_refine_runtime_target_dist = None
+                    _coarse_refine_runtime_z_error = None
+                    _coarse_refine_accept_result = False
+                    _coarse_refine_start_log = (
+                        "[PICK][DIRECT][COARSE_REFINE] "
+                        "phase=APPROACH_COARSE "
+                        f"coarse_refine_needed={str(_coarse_refine_needed).lower()} "
+                        f"refine_target_z={_fmt_scalar(None)} "
+                        f"refine_result_tcp={_fmt_vec(None)} "
+                        f"refine_dx={_fmt_scalar(None)} "
+                        f"refine_dy={_fmt_scalar(None)} "
+                        f"refine_dz={_fmt_scalar(None)} "
+                        f"refine_dist={_fmt_scalar(None)} "
+                        f"refine_runtime_target_tol={_fmt_scalar(None)} "
+                        f"refine_runtime_target_dist={_fmt_scalar(None)} "
+                        f"refine_runtime_z_error={_fmt_scalar(None)} "
+                        "refine_accept_result=false "
+                        f"refine_phase_check_result={_coarse_refine_phase_check_result}"
+                    )
+                    panel._emit_log(_coarse_refine_start_log)
+                    _append_trace(_coarse_refine_start_log)
+
+                    if _coarse_refine_needed and _coarse_phase_check.get("tcp_base") is not None and _coarse_phase_check.get("object_base") is not None:
+                        _coarse_refine_target_z = float(_coarse_phase_check.get("object_z")) + float(_coarse_handoff_dz_tol)
+                        _coarse_refine_runtime_target_tol = _direct_runtime_target_tol_m("APPROACH_COARSE_REFINE")
+                        _phase_check_target_base = (
+                            float(_coarse_phase_check.get("tcp_base")[0]),
+                            float(_coarse_phase_check.get("tcp_base")[1]),
+                            float(_coarse_refine_target_z),
+                        )
+                        _refine_start_msg = (
+                            "[PICK][DIRECT][COARSE_REFINE] "
+                            "phase=APPROACH_COARSE "
+                            f"coarse_refine_needed=true "
+                            f"refine_target_z={_coarse_refine_target_z:.3f} "
+                            f"refine_target_xyz={_fmt_vec(_phase_check_target_base)}"
+                        )
+                        panel._emit_log(_refine_start_msg)
+                        _append_trace(_refine_start_msg)
+                        _coarse_refine_exec = None
+                        try:
+                            _coarse_refine_exec = _move_tcp_direct(
+                                label="APPROACH_COARSE_REFINE",
+                                target_tcp_runtime=_phase_check_target_base,
+                                timeout_sec=max(move_sec, 4.0),
+                                audit_target_source="coarse_refine_z_feedback",
+                                target_pose_original=_phase_check_target_base,
+                                target_frame_original="base_link",
+                            )
+                        except Exception as _coarse_refine_exc:
+                            _refine_warn_msg = (
+                                "[PICK][DIRECT][COARSE_REFINE][WARN] "
+                                f"phase=APPROACH_COARSE failed={_coarse_refine_exc}"
+                            )
+                            panel._emit_log(_refine_warn_msg)
+                            _append_trace(_refine_warn_msg)
+                        _refine_runtime_pos = None
+                        if isinstance(_coarse_refine_exec, dict):
+                            _coarse_refine_runtime_target_dist = _coarse_refine_exec.get("runtime_target_dist")
+                            _refine_runtime_pos = _tuple3(_coarse_refine_exec.get("runtime_target_pos"))
+                            if _refine_runtime_pos is None:
+                                _refine_runtime_pos = _tuple3(_coarse_refine_exec.get("runtime_target_stable_pos"))
+                        if _refine_runtime_pos is not None:
+                            _coarse_refine_result_tcp = _refine_runtime_pos
+                        if _coarse_refine_result_tcp is not None and _coarse_phase_check.get("object_base") is not None:
+                            _coarse_refine_dx = float(_coarse_refine_result_tcp[0]) - float(_coarse_phase_check.get("object_base")[0])
+                            _coarse_refine_dy = float(_coarse_refine_result_tcp[1]) - float(_coarse_phase_check.get("object_base")[1])
+                            _coarse_refine_dz = float(_coarse_refine_result_tcp[2]) - float(_coarse_phase_check.get("object_base")[2])
+                            _coarse_refine_dist = _dist(_coarse_refine_result_tcp, _coarse_phase_check.get("object_base"))
+                        if _coarse_refine_result_tcp is not None and _coarse_refine_target_z is not None:
+                            _coarse_refine_runtime_z_error = abs(
+                                float(_coarse_refine_result_tcp[2]) - float(_coarse_refine_target_z)
+                            )
+                        _coarse_refine_accept_result = bool(
+                            _coarse_refine_runtime_target_tol is not None
+                            and _coarse_refine_runtime_target_dist is not None
+                            and math.isfinite(float(_coarse_refine_runtime_target_dist))
+                            and float(_coarse_refine_runtime_target_dist) <= float(_coarse_refine_runtime_target_tol)
+                            and _coarse_refine_runtime_z_error is not None
+                            and math.isfinite(float(_coarse_refine_runtime_z_error))
+                            and float(_coarse_refine_runtime_z_error) <= float(_coarse_refine_runtime_target_tol)
+                        )
+                        if _coarse_refine_accept_result:
+                            _coarse_gate = _wait_phase_gate_ready(
+                                phase="APPROACH_COARSE",
+                                target_base=_phase_check_target_base,
+                                xy_tol_m=_cg_xy_tol,
+                                z_tol_m=max(_cg_z_tol, _coarse_handoff_dz_tol),
+                                timeout_sec=_ac_gate_settle_sec,
+                                poll_sec=_ac_gate_poll_sec,
+                                required_samples=_ac_gate_stable_samples,
+                                pose_gate_key="ok_for_gate",
+                                xy_reference_mode="object",
+                            )
+                            _coarse_check_tcp = _tuple3(_coarse_gate.get("tcp_base")) or _coarse_check_tcp
+                            _coarse_check_obj = _tuple3(_coarse_gate.get("object_base")) or _coarse_check_obj
+                            _coarse_xy_err_value = _coarse_gate.get("xy_err")
+                            _coarse_z_err_value = _coarse_gate.get("z_err")
+                            coarse_gate_xy_err = (
+                                float(_coarse_xy_err_value)
+                                if _coarse_xy_err_value is not None
+                                else float("inf")
+                            )
+                            _cg_z_err = (
+                                float(_coarse_z_err_value)
+                                if _coarse_z_err_value is not None
+                                else float("inf")
+                            )
+                            coarse_gate_xy_ok = bool(_coarse_gate.get("xy_ok"))
+                            coarse_gate_z_ok = bool(_coarse_gate.get("z_ok"))
+                            coarse_gate_pose_ok = bool(_coarse_gate.get("pose_ok"))
+                            coarse_pose_metrics = _coarse_gate.get("pose_consistency") or {}
+                            _coarse_phase_check = _build_approach_coarse_phase_check(
+                                _phase_check_target_base,
+                                _coarse_gate,
+                            )
+                            _coarse_refine_result_tcp = _coarse_phase_check.get("tcp_base")
+                            if _coarse_refine_result_tcp is not None and _coarse_phase_check.get("object_base") is not None:
+                                _coarse_refine_dx = float(_coarse_refine_result_tcp[0]) - float(_coarse_phase_check.get("object_base")[0])
+                                _coarse_refine_dy = float(_coarse_refine_result_tcp[1]) - float(_coarse_phase_check.get("object_base")[1])
+                                _coarse_refine_dz = float(_coarse_refine_result_tcp[2]) - float(_coarse_phase_check.get("object_base")[2])
+                                _coarse_refine_dist = _dist(_coarse_refine_result_tcp, _coarse_phase_check.get("object_base"))
+                            if _coarse_refine_result_tcp is not None and _coarse_refine_target_z is not None:
+                                _coarse_refine_runtime_z_error = abs(
+                                    float(_coarse_refine_result_tcp[2]) - float(_coarse_refine_target_z)
+                                )
+                            _coarse_refine_phase_check_result = str(_coarse_phase_check.get("result") or "NO")
+                        else:
+                            _coarse_refine_phase_check_result = "REJECT_RUNTIME"
+                        _refine_result_msg = (
+                            "[PICK][DIRECT][COARSE_REFINE] "
+                            "phase=APPROACH_COARSE "
+                            f"coarse_refine_needed=true "
+                            f"refine_target_z={_fmt_scalar(_coarse_refine_target_z)} "
+                            f"refine_result_tcp={_fmt_vec(_coarse_refine_result_tcp)} "
+                            f"refine_dx={_fmt_scalar(_coarse_refine_dx)} "
+                            f"refine_dy={_fmt_scalar(_coarse_refine_dy)} "
+                            f"refine_dz={_fmt_scalar(_coarse_refine_dz)} "
+                            f"refine_dist={_fmt_scalar(_coarse_refine_dist)} "
+                            f"refine_runtime_target_tol={_fmt_scalar(_coarse_refine_runtime_target_tol)} "
+                            f"refine_runtime_target_dist={_fmt_scalar(_coarse_refine_runtime_target_dist)} "
+                            f"refine_runtime_z_error={_fmt_scalar(_coarse_refine_runtime_z_error)} "
+                            f"refine_accept_result={str(bool(_coarse_refine_accept_result)).lower()} "
+                            f"refine_phase_check_result={_coarse_refine_phase_check_result}"
+                        )
+                        panel._emit_log(_refine_result_msg)
+                        _append_trace(_refine_result_msg)
+                        if _coarse_refine_accept_result:
+                            _emit_approach_coarse_phase_check(_coarse_phase_check, refine_attempted=True)
+
+                    _cg_gate_ok = bool(_coarse_phase_check.get("gate_ok"))
+                    _cg_handoff_ok = bool(
+                        _coarse_phase_check.get("handoff_dist_ok")
+                        and _coarse_phase_check.get("handoff_dz_ok")
+                    )
+                    if not bool(_cg_gate_ok and _cg_handoff_ok):
                         _abort_grasp(
                             code="APPROACH_COARSE_NOT_READY",
                             phase="APPROACH_COARSE",
-                            note="coarse approach did not reach a geometrically valid and pose-consistent high pregrasp corridor",
+                            note="coarse approach reached pregrasp target but handoff is still too far from object",
                             metrics={
                                 "xy_err": float(coarse_gate_xy_err),
                                 "xy_tol": float(_cg_xy_tol),
                                 "z_err": float(_cg_z_err),
                                 "z_tol": float(_cg_z_tol),
-                                "tcp_base": _tuple3(_coarse_check_tcp),
-                                "object_base": _tuple3(_coarse_check_obj),
-                                "target_base": _tuple3(target_base_coarse),
+                                "tcp_obj_dist": _coarse_phase_check.get("tcp_obj_dist"),
+                                "tcp_obj_dist_tol": float(_coarse_handoff_dist_tol),
+                                "dz_obj": _coarse_phase_check.get("dz_obj"),
+                                "dz_obj_tol": float(_coarse_handoff_dz_tol),
+                                "target_z": _coarse_phase_check.get("target_z"),
+                                "object_z": _coarse_phase_check.get("object_z"),
+                                "actual_z": _coarse_phase_check.get("actual_z"),
+                                "tcp_base": _tuple3(_coarse_phase_check.get("tcp_base")),
+                                "object_base": _tuple3(_coarse_phase_check.get("object_base")),
+                                "target_base": _tuple3(_phase_check_target_base),
                                 "pose_consistency": _json_safe(coarse_pose_metrics),
                                 "decision": str(approach_decision),
+                                "gate_decision": _coarse_phase_check.get("gate_decision"),
+                                "block_reasons": list(_coarse_phase_check.get("block_reasons") or []),
+                                "coarse_refine_needed": bool(_coarse_refine_needed),
+                                "refine_target_z": _coarse_refine_target_z,
+                                "refine_result_tcp": _tuple3(_coarse_refine_result_tcp),
+                                "refine_dx": _coarse_refine_dx,
+                                "refine_dy": _coarse_refine_dy,
+                                "refine_dz": _coarse_refine_dz,
+                                "refine_dist": _coarse_refine_dist,
+                                "refine_runtime_target_tol": _coarse_refine_runtime_target_tol,
+                                "refine_runtime_target_dist": _coarse_refine_runtime_target_dist,
+                                "refine_runtime_z_error": _coarse_refine_runtime_z_error,
+                                "refine_accept_result": bool(_coarse_refine_accept_result),
+                                "refine_phase_check_result": str(_coarse_refine_phase_check_result),
                             },
                         )
                     # ── [/FIX] APPROACH_COARSE Z closed-loop correction ───────────────
@@ -8694,6 +9192,68 @@ def run_pick_demo(panel) -> None:
                             "coarse_check_tcp": _tuple3(_coarse_check_tcp),
                         },
                     )
+                _panel_fk_tcp_before_grasp_down = _tuple3(getattr(panel, "_last_tcp_base", None))
+                _panel_trace_tcp_before_grasp_down = _tuple3(
+                    getattr(panel, "_last_trace_tcp_base", None)
+                )
+                _visual_source_dx = None
+                _visual_source_dy = None
+                _visual_source_dz = None
+                _visual_source_dist3d_m = None
+                _visual_source_tol_m = 0.020
+                if (
+                    _panel_fk_tcp_before_grasp_down is not None
+                    and _panel_trace_tcp_before_grasp_down is not None
+                ):
+                    _visual_source_dx = (
+                        float(_panel_fk_tcp_before_grasp_down[0])
+                        - float(_panel_trace_tcp_before_grasp_down[0])
+                    )
+                    _visual_source_dy = (
+                        float(_panel_fk_tcp_before_grasp_down[1])
+                        - float(_panel_trace_tcp_before_grasp_down[1])
+                    )
+                    _visual_source_dz = (
+                        float(_panel_fk_tcp_before_grasp_down[2])
+                        - float(_panel_trace_tcp_before_grasp_down[2])
+                    )
+                    _visual_source_dist3d_m = math.sqrt(
+                        (_visual_source_dx * _visual_source_dx)
+                        + (_visual_source_dy * _visual_source_dy)
+                        + (_visual_source_dz * _visual_source_dz)
+                    )
+                _visual_source_log = (
+                    "[PICK][DIRECT][VISUAL_SOURCE_CHECK] "
+                    "phase=GRASP_DOWN_JOINT "
+                    f"panel_fk_tcp={_fmt_vec(_panel_fk_tcp_before_grasp_down)} "
+                    f"panel_trace_tcp={_fmt_vec(_panel_trace_tcp_before_grasp_down)} "
+                    f"delta=({_fmt_scalar(_visual_source_dx)},{_fmt_scalar(_visual_source_dy)},{_fmt_scalar(_visual_source_dz)}) "
+                    f"dist3d_m={_fmt_scalar(_visual_source_dist3d_m)}/{_visual_source_tol_m:.3f}"
+                )
+                panel._emit_log(_visual_source_log)
+                _append_trace(_visual_source_log)
+                if (
+                    _visual_source_dist3d_m is not None
+                    and float(_visual_source_dist3d_m) > float(_visual_source_tol_m)
+                ):
+                    _abort_grasp(
+                        code="PREGRASP_VISUAL_SOURCE_DIVERGENCE",
+                        phase="GRASP_DOWN_JOINT",
+                        note="panel FK TCP diverged from panel trace/live TCP before GRASP_DOWN handoff",
+                        metrics={
+                            "panel_fk_tcp": _tuple3(_panel_fk_tcp_before_grasp_down),
+                            "panel_trace_tcp": _tuple3(_panel_trace_tcp_before_grasp_down),
+                            "delta_xyz": _tuple3(
+                                (
+                                    _visual_source_dx,
+                                    _visual_source_dy,
+                                    _visual_source_dz,
+                                )
+                            ),
+                            "dist3d_m": float(_visual_source_dist3d_m),
+                            "dist3d_tol_m": float(_visual_source_tol_m),
+                        },
+                    )
                 _handoff_jump_m = _dist(tcp_live_before_grasp_down, tcp_before_grasp_down)
                 _handoff_log = (
                     "[PICK][DIRECT][HANDOFF] "
@@ -8745,7 +9305,7 @@ def run_pick_demo(panel) -> None:
                         f"contact_offset_reserved_for_align={grasp_contact_z_offset_m:.4f}"
                     )
                     if tcp_before_grasp_down is not None and tcp_world_before_grasp_down is not None and obj_base_before_grasp_down is not None:
-                        keep_xy_tol = _pick_demo_env_float(
+                        keep_xy_tol_telemetry = _pick_demo_env_float(
                             "PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M",
                             0.005,
                             minimum=0.001,
@@ -8757,8 +9317,10 @@ def run_pick_demo(panel) -> None:
                         )
                         tcp_obj_dz_gate = float(tcp_before_grasp_down[2]) - float(obj_base_before_grasp_down[2])
                         # Gate explícito: GRASP_DOWN_JOINT solo hereda XY de APPROACH_COARSE
-                        # si (a) la distancia XY está dentro de tolerancia, (b) APPROACH_COARSE
-                        # superó su propio check geométrico y (c) no fue un fallback de preset.
+                        # si (a) APPROACH_COARSE superó su propio check geométrico y
+                        # de consistencia de pose y (b) no fue un fallback de preset.
+                        # PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M queda como telemetría
+                        # de cuánto error XY llega al handoff, no como segundo gate.
                         _coarse_was_fallback = "fallback" in str(approach_decision).lower()
                         _force_inherit_xy = str(
                             os.environ.get(
@@ -8786,14 +9348,15 @@ def run_pick_demo(panel) -> None:
                             grasp_down_target_source = f"{tcp_before_grasp_down_source}_world+live_object_world_z"
                             _gd_reason = (
                                 "approach_coarse_forced"
-                                if _force_inherit_xy
+                                if _force_inherit_xy and tcp_obj_xy > keep_xy_tol_telemetry
                                 else "approach_coarse_validated_handoff"
                             )
                             _gd_gate_msg = (
                                 "[PICK][DIRECT][PHASE_GATE] "
                                 "phase=GRASP_DOWN_JOINT inherit_xy=true "
                                 f"reason={_gd_reason} "
-                                f"xy_err={tcp_obj_xy:.3f}/{keep_xy_tol:.3f} "
+                                f"xy_err={tcp_obj_xy:.3f} "
+                                f"xy_telemetry_tol={keep_xy_tol_telemetry:.3f} "
                                 f"dz={tcp_obj_dz_gate:.3f} "
                                 f"coarse_xy_ok={str(coarse_gate_xy_ok).lower()} "
                                 f"coarse_z_ok={str(coarse_gate_z_ok).lower()} "
@@ -8808,13 +9371,14 @@ def run_pick_demo(panel) -> None:
                                 else "approach_coarse_xy_out_of_tol" if not coarse_gate_xy_ok
                                 else "approach_coarse_z_out_of_tol" if not coarse_gate_z_ok
                                 else "approach_coarse_pose_mismatch" if not coarse_gate_pose_ok
-                                else "tcp_xy_outside_keep_tol"
+                                else "inherit_gate_blocked"
                             )
                             _gd_gate_msg = (
                                 "[PICK][DIRECT][PHASE_GATE] "
                                 "phase=GRASP_DOWN_JOINT inherit_xy=false "
                                 f"reason={_gd_reason} "
-                                f"xy_err={tcp_obj_xy:.3f}/{keep_xy_tol:.3f} "
+                                f"xy_err={tcp_obj_xy:.3f} "
+                                f"xy_telemetry_tol={keep_xy_tol_telemetry:.3f} "
                                 f"dz={tcp_obj_dz_gate:.3f} "
                                 f"coarse_xy_ok={str(coarse_gate_xy_ok).lower()} "
                                 f"coarse_z_ok={str(coarse_gate_z_ok).lower()} "
@@ -8838,7 +9402,7 @@ def run_pick_demo(panel) -> None:
                                         "tcp_before": _tuple3(tcp_before_grasp_down),
                                         "obj_before": _tuple3(obj_base_before_grasp_down),
                                         "xy_err": float(tcp_obj_xy),
-                                        "keep_xy_tol": float(keep_xy_tol),
+                                        "xy_telemetry_tol_m": float(keep_xy_tol_telemetry),
                                         "dz": float(tcp_obj_dz_gate),
                                         "coarse_xy_ok": bool(coarse_gate_xy_ok),
                                         "coarse_z_ok": bool(coarse_gate_z_ok),
@@ -8850,7 +9414,8 @@ def run_pick_demo(panel) -> None:
                                 f"tcp_source={tcp_before_grasp_down_source} "
                                 f"tcp_before={_fmt_vec(tcp_before_grasp_down)} "
                                 f"obj_before={_fmt_vec(obj_base_before_grasp_down)} "
-                                f"xy_dist={tcp_obj_xy:.3f}/{keep_xy_tol:.3f} "
+                                f"xy_dist={tcp_obj_xy:.3f} "
+                                f"xy_telemetry_tol={keep_xy_tol_telemetry:.3f} "
                                 "decision=use_object_xy"
                             )
                     target_world_grasp_down = (
@@ -11167,6 +11732,11 @@ def run_pick_demo(panel) -> None:
                 f"worker_runtime_sec={time.monotonic() - worker_started_mono:.3f} "
                 f"script_active_before_release={str(bool(getattr(panel, '_script_motion_active', False))).lower()}"
             )
+            _clear_wait_fn = getattr(panel, "_direct_clear_waiting_for_approach_confirmation", None)
+            if callable(_clear_wait_fn):
+                panel.signal_run_ui.emit(
+                    lambda: _clear_wait_fn(reason="worker_finally")
+                )
             panel._set_motion_lock(False)
 
     try:

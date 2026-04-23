@@ -1430,6 +1430,9 @@ class ControlPanelV2(QMainWindow):
         self._debug_motion_continue_event = threading.Event()
         self._step_gate_lock = threading.Lock()
         self._step_wait_event = threading.Event()
+        self._direct_wait_for_approach_event = threading.Event()
+        self._direct_flow_state = ""
+        self._direct_flow_request_id = ""
         self._debug_motion_wait_active = False
         self._debug_motion_wait_reason = ""
         self._step_mode = "AUTO"
@@ -3855,6 +3858,14 @@ class ControlPanelV2(QMainWindow):
             "Demo pick & place con objeto de posicion conocida (fuera del TFM)"
         )
         self.btn_pick_demo.clicked.connect(self._run_pick_demo)
+        self.btn_pick_demo_approach = QPushButton("Iniciar APPROACH_COARSE")
+        self.btn_pick_demo_approach.setMinimumHeight(32)
+        self.btn_pick_demo_approach.setToolTip(
+            "Segundo paso del flujo Directo: continuar desde MESA hacia APPROACH_COARSE"
+        )
+        self.btn_pick_demo_approach.clicked.connect(self._run_pick_demo)
+        self.btn_pick_demo_approach.setVisible(False)
+        self.btn_pick_demo_approach.setEnabled(False)
         self.btn_pick_demo2 = QPushButton("Agarre Objeto (Directo2)")
         self.btn_pick_demo2.setMinimumHeight(32)
         self.btn_pick_demo2.setToolTip(
@@ -3943,6 +3954,7 @@ class ControlPanelV2(QMainWindow):
         baseline_col.addWidget(self.btn_table)
         baseline_col.addWidget(self.btn_basket)
         baseline_col.addWidget(self.btn_pick_demo)
+        baseline_col.addWidget(self.btn_pick_demo_approach)
         baseline_col.addWidget(self.btn_pick_demo2)
         baseline_col.addWidget(self.btn_pick_object)
         baseline_col.addWidget(baseline_info)
@@ -5699,6 +5711,14 @@ class ControlPanelV2(QMainWindow):
         row = self._step_find_history_row(phase)
         if row is None:
             return False
+        row_kind = str(row.get("row_kind") or "").strip().upper()
+        row_state = str(row.get("row_state") or "").strip().upper()
+        if row_kind == "EVENT":
+            return False
+        if row_state in {"PHASE_DONE", "PHASE_BLOCKED", "PHASE_ABORTED"}:
+            return True
+        if row_state in {"PHASE_READY", "PHASE_RUNNING", "PHASE_WAITING_CONFIRMATION"}:
+            return False
         if row.get("actual") is not None:
             return True
         if row.get("reached") is not None:
@@ -5718,6 +5738,16 @@ class ControlPanelV2(QMainWindow):
         running_phase = str(self._step_running_phase or "").strip().upper()
         waiting_active = bool(self._step_wait_active)
         row = self._step_find_history_row(phase_name)
+        row_kind = str((row or {}).get("row_kind") or "").strip().upper()
+        row_state = str((row or {}).get("row_state") or "").strip().upper()
+
+        if row_kind == "EVENT" or row_state == "EVENT_SNAPSHOT":
+            return (
+                "Evento capturado",
+                QColor(168, 85, 247),
+                False,
+                "Entrada de trazabilidad: snapshot registrado, no una fase ejecutada.",
+            )
 
         if self._step_phase_completed(phase_name):
             reached = None if row is None else row.get("reached")
@@ -5784,6 +5814,86 @@ class ControlPanelV2(QMainWindow):
             False,
             "Solo se desbloquea la siguiente fase cuando termina la fase activa.",
         )
+
+    def _direct_waiting_for_approach_confirmation(self) -> bool:
+        return (
+            str(getattr(self, "_direct_flow_state", "") or "").strip().upper()
+            == "WAITING_FOR_APPROACH_CONFIRMATION"
+        )
+
+    def _direct_enter_waiting_for_approach_confirmation(
+        self,
+        *,
+        request_id: str = "",
+        tcp_base=None,
+        object_base=None,
+    ) -> None:
+        self._direct_flow_state = "WAITING_FOR_APPROACH_CONFIRMATION"
+        self._direct_flow_request_id = str(request_id or "").strip()
+        self._direct_wait_for_approach_event.clear()
+        self._ui_set_status(
+            "Directo: robot en MESA; pulsa de nuevo para iniciar APPROACH_COARSE",
+            error=False,
+        )
+        self._emit_log(
+            "[PICK][DIRECT][STATE] "
+            "state=WAITING_FOR_APPROACH_CONFIRMATION "
+            f"request_id={self._direct_flow_request_id or 'none'} "
+            f"tcp_base={self._step_format_inline_xyz(tcp_base)} "
+            f"object_base={self._step_format_inline_xyz(object_base)}"
+        )
+        self._refresh_controls()
+
+    def _direct_release_waiting_for_approach_confirmation(self) -> bool:
+        if not self._direct_waiting_for_approach_confirmation():
+            return False
+        self._direct_flow_state = "RUNNING_APPROACH"
+        self._emit_log(
+            "[PICK][DIRECT][STATE] "
+            "state=RUNNING_APPROACH "
+            f"request_id={self._direct_flow_request_id or 'none'}"
+        )
+        self._ui_set_status("Directo: reanudando desde MESA hacia APPROACH_COARSE", error=False)
+        self._direct_wait_for_approach_event.set()
+        self._refresh_controls()
+        return True
+
+    def _step_phase_gate_already_owned(self, *, flow: str = "", phase: str = "") -> bool:
+        flow_name = str(flow or "").strip().upper()
+        phase_name = str(phase or "").strip().upper().split(".")[-1]
+        if self._step_mode != "STEP_BY_STEP":
+            return False
+        with self._step_gate_lock:
+            if bool(self._step_wait_active):
+                return False
+            pipeline_flow = str(self._step_pipeline_flow or self._step_pending_flow or "").strip().upper()
+            current_phase = str(self._step_current_phase or "").strip().upper()
+            running_phase = str(self._step_running_phase or "").strip().upper()
+            if flow_name and pipeline_flow and flow_name != pipeline_flow:
+                return False
+            if not phase_name or current_phase != phase_name or running_phase != phase_name:
+                return False
+            row = self._step_find_history_row(phase_name)
+            if row is None:
+                return False
+            row_kind = str(row.get("row_kind") or "").strip().upper()
+            row_state = str(row.get("row_state") or "").strip().upper()
+            return row_kind == "PHASE" and row_state == "PHASE_RUNNING"
+
+    def _direct_clear_waiting_for_approach_confirmation(self, *, reason: str = "") -> None:
+        previous = str(getattr(self, "_direct_flow_state", "") or "").strip()
+        request_id = str(getattr(self, "_direct_flow_request_id", "") or "").strip()
+        self._direct_flow_state = ""
+        self._direct_flow_request_id = ""
+        self._direct_wait_for_approach_event.clear()
+        if previous:
+            self._emit_log(
+                "[PICK][DIRECT][STATE] "
+                f"state=CLEARED previous={previous} "
+                f"request_id={request_id or 'none'} "
+                f"reason={reason or 'none'}"
+            )
+        self._refresh_controls()
 
     def _step_pipeline_rebuild(self, flow: str) -> None:
         table = self._step_pipeline_table
@@ -6032,8 +6142,34 @@ class ControlPanelV2(QMainWindow):
             and dz <= float(self._step_history_target_z_tol_m)
         )
 
-    def _step_status_item(self, reached: Optional[bool]) -> QTableWidgetItem:
-        if reached is True:
+    def _step_status_item(
+        self,
+        reached: Optional[bool],
+        *,
+        row_state: str = "",
+        row_kind: str = "",
+    ) -> QTableWidgetItem:
+        state_name = str(row_state or "").strip().upper()
+        kind_name = str(row_kind or "").strip().upper()
+        if kind_name == "EVENT" or state_name == "EVENT_SNAPSHOT":
+            item = QTableWidgetItem("EVENT")
+            item.setBackground(QColor(168, 85, 247))
+        elif state_name == "PHASE_READY":
+            item = QTableWidgetItem("READY")
+            item.setBackground(QColor(148, 163, 184))
+        elif state_name == "PHASE_RUNNING":
+            item = QTableWidgetItem("RUN")
+            item.setBackground(QColor(59, 130, 246))
+        elif state_name == "PHASE_DONE":
+            item = QTableWidgetItem("DONE")
+            item.setBackground(QColor(34, 197, 94))
+        elif state_name == "PHASE_BLOCKED":
+            item = QTableWidgetItem("BLOCK")
+            item.setBackground(QColor(245, 158, 11))
+        elif state_name == "PHASE_ABORTED":
+            item = QTableWidgetItem("ABORT")
+            item.setBackground(QColor(239, 68, 68))
+        elif reached is True:
             item = QTableWidgetItem("OK")
             item.setBackground(QColor(34, 197, 94))
         elif reached is False:
@@ -6124,6 +6260,12 @@ class ControlPanelV2(QMainWindow):
                 # y la tabla muestra PEND en vez de datos inventados.
                 last_row["actual"] = actual_pose
                 last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
+                if str(last_row.get("row_kind") or "").strip().upper() == "PHASE":
+                    last_row["row_state"] = (
+                        "PHASE_DONE"
+                        if last_row.get("reached") is True
+                        else "PHASE_BLOCKED"
+                    )
             elif last_phase != phase_name and last_row.get("actual") is not None:
                 self._emit_log(
                     "[STEP][ROW_FROZEN] "
@@ -6218,6 +6360,8 @@ class ControlPanelV2(QMainWindow):
                     "origin_snapshot": _origin_snap,  # pose robot al abrir la gate (congelada)
                     "exec_target_snapshot": None,     # fijado por _step_set_exec_target
                     "reached": None,
+                    "row_kind": "PHASE",
+                    "row_state": "PHASE_READY",
                     "object_world_snapshot": None,    # pose objeto world al cerrar la fase
                     "dist_tcp_obj_snapshot": None,    # distancia TCP↔objeto al cerrar la fase
                     "check_reason": None,             # texto corto del motivo de check
@@ -6338,6 +6482,347 @@ class ControlPanelV2(QMainWindow):
             f"target={self._step_format_inline_xyz(pos3_target)} "
             "btn_iniciar=disabled pending_worker=true"
         )
+
+    def _step_record_direct_initial_snapshot(
+        self,
+        *,
+        request_id: str,
+        tcp_base=None,
+        object_base=None,
+        dx=None,
+        dy=None,
+        dz=None,
+        dist3d=None,
+        joints=None,
+        pose_source: str = "",
+        flow_name: str = "DIRECT",
+    ) -> None:
+        self._step_record_direct_event_snapshot(
+            phase_name="INITIAL_SNAPSHOT",
+            request_id=request_id,
+            tcp_base=tcp_base,
+            object_base=object_base,
+            dx=dx,
+            dy=dy,
+            dz=dz,
+            dist3d=dist3d,
+            joints=joints,
+            pose_source=pose_source,
+            flow_name=flow_name,
+            prepend=True,
+            decision_text="INITIAL_SNAPSHOT - Snapshot inicial previo al movimiento hacia MESA",
+        )
+
+    def _step_upsert_history_row_ordered(
+        self,
+        *,
+        flow_name: str,
+        row: Dict[str, object],
+        prepend: bool = False,
+    ) -> None:
+        flow_name = str(flow_name or "DIRECT").strip().upper() or "DIRECT"
+        phase_name = str(row.get("phase") or "").strip().upper()
+        if flow_name != self._step_history_flow:
+            self._step_history_flow = flow_name
+            self._step_history_rows = []
+
+        for idx, existing_row in enumerate(self._step_history_rows):
+            if str(existing_row.get("phase") or "").strip().upper() == phase_name:
+                self._step_history_rows[idx] = row
+                return
+
+        sequence = self._step_phase_sequence(flow_name)
+        phase_index = sequence.index(phase_name) if phase_name in sequence else None
+        if phase_index is None:
+            if prepend:
+                self._step_history_rows.insert(0, row)
+            else:
+                self._step_history_rows.append(row)
+            return
+
+        insert_at = len(self._step_history_rows)
+        for idx, existing_row in enumerate(self._step_history_rows):
+            existing_phase = str(existing_row.get("phase") or "").strip().upper()
+            if existing_phase not in sequence:
+                continue
+            if sequence.index(existing_phase) > phase_index:
+                insert_at = idx
+                break
+        self._step_history_rows.insert(insert_at, row)
+
+    def _step_record_direct_home_initial(
+        self,
+        *,
+        request_id: str,
+        tcp_base=None,
+        object_base=None,
+        dx=None,
+        dy=None,
+        dz=None,
+        dist3d=None,
+        joints=None,
+        pose_source: str = "",
+        flow_name: str = "DIRECT",
+    ) -> None:
+        if self._step_mode != "STEP_BY_STEP":
+            return
+
+        flow_name = str(flow_name or "DIRECT").strip().upper() or "DIRECT"
+        phase_name = "HOME_INITIAL"
+
+        tcp_pos3 = None
+        if isinstance(tcp_base, (list, tuple)) and len(tcp_base) >= 3:
+            try:
+                tcp_pos3 = (float(tcp_base[0]), float(tcp_base[1]), float(tcp_base[2]))
+            except Exception:
+                tcp_pos3 = None
+
+        obj_pos3 = None
+        if isinstance(object_base, (list, tuple)) and len(object_base) >= 3:
+            try:
+                obj_pos3 = (float(object_base[0]), float(object_base[1]), float(object_base[2]))
+            except Exception:
+                obj_pos3 = None
+
+        dist_val = None
+        if dist3d is not None:
+            try:
+                dist_val = float(dist3d)
+            except Exception:
+                dist_val = None
+
+        def _fmt_scalar_local(value) -> str:
+            if value is None:
+                return "--"
+            try:
+                return f"{float(value):.3f}"
+            except Exception:
+                return "--"
+
+        joint_values = []
+        if isinstance(joints, (list, tuple)):
+            for value in joints:
+                try:
+                    joint_values.append(float(value))
+                except Exception:
+                    joint_values.append(None)
+        joints_txt = json.dumps(joint_values, ensure_ascii=True)
+        reason = (
+            f"request_id={str(request_id or '').strip() or 'none'} "
+            f"source={str(pose_source or '').strip() or 'none'} "
+            f"dx={_fmt_scalar_local(dx)} dy={_fmt_scalar_local(dy)} "
+            f"dz={_fmt_scalar_local(dz)} dist3d={_fmt_scalar_local(dist_val)} "
+            f"joints={joints_txt}"
+        )
+        row = {
+            "phase": phase_name,
+            "target": tcp_pos3,
+            "actual": tcp_pos3,
+            "origin_snapshot": tcp_pos3,
+            "exec_target_snapshot": tcp_pos3,
+            "reached": True,
+            "row_kind": "PHASE",
+            "row_state": "PHASE_DONE",
+            "object_world_snapshot": self._step_display_position(obj_pos3),
+            "dist_tcp_obj_snapshot": dist_val,
+            "check_reason": reason,
+            "request_id": str(request_id or "").strip(),
+            "pose_source": str(pose_source or "").strip(),
+            "joint_snapshot": joint_values,
+            "object_base_snapshot": obj_pos3,
+            "delta_snapshot": {
+                "dx": dx,
+                "dy": dy,
+                "dz": dz,
+                "dist3d": dist_val,
+            },
+        }
+
+        self._step_upsert_history_row_ordered(
+            flow_name=flow_name,
+            row=row,
+            prepend=False,
+        )
+
+        preserve_active_gate = bool(self._step_wait_active) or bool(
+            str(self._step_running_phase or "").strip()
+        )
+        self._step_pipeline_flow = flow_name
+        if not preserve_active_gate:
+            self._step_pending_flow = flow_name
+            self._step_pending_phase = f"{flow_name}.{phase_name}"
+            self._step_current_phase = phase_name
+            self._step_next_phase = self._step_predict_next_phase(flow_name, phase_name)
+            self._step_running_phase = ""
+            self._step_decision = (
+                "HOME_INITIAL - Robot movido a MESA y detenido; esperando confirmación para APPROACH_COARSE"
+            )
+            self._step_phase_position = tcp_pos3
+            self._step_object_position = obj_pos3
+
+        self._emit_log(
+            f"[STEP][{phase_name}] "
+            f"request_id={str(request_id or '').strip() or 'none'} "
+            f"tcp={self._step_format_inline_xyz(tcp_pos3)} "
+            f"object={self._step_format_inline_xyz(obj_pos3)} "
+            f"source={str(pose_source or '').strip() or 'none'} "
+            f"dist3d={_fmt_scalar_local(dist_val)} "
+            f"row_state=PHASE_DONE preserve_active_gate={str(preserve_active_gate).lower()}"
+        )
+        self._step_window_refresh()
+        if self._step_window is not None:
+            self._step_window.show()
+
+    def _step_record_direct_mesa_ready(
+        self,
+        *,
+        request_id: str,
+        tcp_base=None,
+        object_base=None,
+        dx=None,
+        dy=None,
+        dz=None,
+        dist3d=None,
+        joints=None,
+        pose_source: str = "",
+        flow_name: str = "DIRECT",
+    ) -> None:
+        self._step_record_direct_home_initial(
+            request_id=request_id,
+            tcp_base=tcp_base,
+            object_base=object_base,
+            dx=dx,
+            dy=dy,
+            dz=dz,
+            dist3d=dist3d,
+            joints=joints,
+            pose_source=pose_source,
+            flow_name=flow_name,
+        )
+
+    def _step_record_direct_event_snapshot(
+        self,
+        *,
+        phase_name: str,
+        request_id: str,
+        tcp_base=None,
+        object_base=None,
+        dx=None,
+        dy=None,
+        dz=None,
+        dist3d=None,
+        joints=None,
+        pose_source: str = "",
+        flow_name: str = "DIRECT",
+        prepend: bool = False,
+        decision_text: str = "",
+    ) -> None:
+        if self._step_mode != "STEP_BY_STEP":
+            return
+
+        phase_name = str(phase_name or "").strip().upper() or "DIRECT_EVENT"
+        flow_name = str(flow_name or "DIRECT").strip().upper() or "DIRECT"
+
+        tcp_pos3 = None
+        if isinstance(tcp_base, (list, tuple)) and len(tcp_base) >= 3:
+            try:
+                tcp_pos3 = (float(tcp_base[0]), float(tcp_base[1]), float(tcp_base[2]))
+            except Exception:
+                tcp_pos3 = None
+
+        obj_pos3 = None
+        if isinstance(object_base, (list, tuple)) and len(object_base) >= 3:
+            try:
+                obj_pos3 = (float(object_base[0]), float(object_base[1]), float(object_base[2]))
+            except Exception:
+                obj_pos3 = None
+
+        dist_val = None
+        if dist3d is not None:
+            try:
+                dist_val = float(dist3d)
+            except Exception:
+                dist_val = None
+
+        def _fmt_scalar_local(value) -> str:
+            if value is None:
+                return "--"
+            try:
+                return f"{float(value):.3f}"
+            except Exception:
+                return "--"
+
+        joint_values = []
+        if isinstance(joints, (list, tuple)):
+            for value in joints:
+                try:
+                    joint_values.append(float(value))
+                except Exception:
+                    joint_values.append(None)
+        joints_txt = json.dumps(joint_values, ensure_ascii=True)
+        reason = (
+            f"request_id={str(request_id or '').strip() or 'none'} "
+            f"source={str(pose_source or '').strip() or 'none'} "
+            f"dx={_fmt_scalar_local(dx)} dy={_fmt_scalar_local(dy)} "
+            f"dz={_fmt_scalar_local(dz)} dist3d={_fmt_scalar_local(dist_val)} "
+            f"joints={joints_txt}"
+        )
+        row = {
+            "phase": phase_name,
+            "target": tcp_pos3,
+            "actual": tcp_pos3,
+            "origin_snapshot": tcp_pos3,
+            "exec_target_snapshot": tcp_pos3,
+            "reached": None,
+            "row_kind": "EVENT",
+            "row_state": "EVENT_SNAPSHOT",
+            "object_world_snapshot": self._step_display_position(obj_pos3),
+            "dist_tcp_obj_snapshot": dist_val,
+            "check_reason": reason,
+            "request_id": str(request_id or "").strip(),
+            "pose_source": str(pose_source or "").strip(),
+            "joint_snapshot": joint_values,
+            "object_base_snapshot": obj_pos3,
+            "delta_snapshot": {
+                "dx": dx,
+                "dy": dy,
+                "dz": dz,
+                "dist3d": dist_val,
+            },
+        }
+
+        self._step_upsert_history_row_ordered(
+            flow_name=flow_name,
+            row=row,
+            prepend=prepend,
+        )
+
+        preserve_active_gate = bool(self._step_wait_active) or bool(
+            str(self._step_running_phase or "").strip()
+        )
+        self._step_pipeline_flow = flow_name
+        if not preserve_active_gate:
+            self._step_pending_flow = flow_name
+            self._step_pending_phase = f"{flow_name}.{phase_name}"
+            self._step_current_phase = phase_name
+            self._step_next_phase = self._step_predict_next_phase(flow_name, phase_name)
+            self._step_running_phase = ""
+            self._step_decision = str(decision_text or "").strip()
+            self._step_phase_position = tcp_pos3
+            self._step_object_position = obj_pos3
+
+        self._emit_log(
+            f"[STEP][{phase_name}] "
+            f"request_id={str(request_id or '').strip() or 'none'} "
+            f"tcp={self._step_format_inline_xyz(tcp_pos3)} "
+            f"object={self._step_format_inline_xyz(obj_pos3)} "
+            f"source={str(pose_source or '').strip() or 'none'} "
+            f"dist3d={_fmt_scalar_local(dist_val)} "
+            f"preserve_active_gate={str(preserve_active_gate).lower()}"
+        )
+        self._step_window_refresh()
+        if self._step_window is not None:
+            self._step_window.show()
 
     def _step_window_refresh(self) -> None:
         self._ensure_step_window()
@@ -6507,7 +6992,8 @@ class ControlPanelV2(QMainWindow):
                 f"Tabla STEP (frame operacional: {world_frame} | interno: {operational_frame}@{self._business_base_frame()}). "
                 "Org=pose robot al abrir la fase | TCP-TF=TCP real por TF al cerrar | "
                 "Target=destino planificado | Exec=target realmente enviado | "
-                "Obj World=pose objeto en world | D TCP-Obj=dist TCP↔objeto | Razón=motivo del check."
+                "Obj World=pose objeto en world | D TCP-Obj=dist TCP↔objeto | Razón=motivo del check | "
+                "Estado=EVENT/RUN/DONE/BLOCK/ABORT."
             )
         if self._step_history_table is not None:
             self._step_history_table.setRowCount(len(self._step_history_rows))
@@ -6561,7 +7047,15 @@ class ControlPanelV2(QMainWindow):
                         item.setTextAlignment(Qt.AlignCenter)
                     self._step_history_table.setItem(row_idx, col_idx, item)
                 # Check (columna final: índice 19)
-                self._step_history_table.setItem(row_idx, len(values), self._step_status_item(reached))
+                self._step_history_table.setItem(
+                    row_idx,
+                    len(values),
+                    self._step_status_item(
+                        reached,
+                        row_state=str(row_data.get("row_state") or ""),
+                        row_kind=str(row_data.get("row_kind") or ""),
+                    ),
+                )
 
     def _step_update_phase_result(
         self,
@@ -6592,6 +7086,11 @@ class ControlPanelV2(QMainWindow):
                     row["dist_tcp_obj_snapshot"] = float(dist_tcp_obj)
                 row["check_reason"] = str(check_reason)
                 row["reached"] = ok
+                if str(row.get("row_kind") or "").strip().upper() == "PHASE":
+                    if ok is True:
+                        row["row_state"] = "PHASE_DONE"
+                    elif ok is False:
+                        row["row_state"] = "PHASE_BLOCKED"
                 if tf_visual_gap is not None:
                     row["tf_visual_gap"] = float(tf_visual_gap)
                 if target_phase == str(self._step_running_phase or "").strip().upper():
@@ -6638,6 +7137,11 @@ class ControlPanelV2(QMainWindow):
         last_row["actual"] = actual_pose
         reached = self._step_assess_target_reached(last_row.get("target"), actual_pose)
         last_row["reached"] = reached
+        if str(last_row.get("row_kind") or "").strip().upper() == "PHASE":
+            if reached is True:
+                last_row["row_state"] = "PHASE_DONE"
+            elif reached is False:
+                last_row["row_state"] = "PHASE_BLOCKED"
 
         # Capturar pose del objeto y distancia TCP↔objeto al cerrar la fase
         try:
@@ -6741,6 +7245,11 @@ class ControlPanelV2(QMainWindow):
             if allowed:
                 self._step_wait_active = False
                 self._step_running_phase = phase_name
+                for row in reversed(self._step_history_rows):
+                    if str(row.get("phase") or "").strip().upper() == phase_name:
+                        if str(row.get("row_kind") or "").strip().upper() == "PHASE":
+                            row["row_state"] = "PHASE_RUNNING"
+                        break
                 self._step_wait_event.set()
         if allowed:
             self._emit_log(f"[STEP] phase_start_requested phase={phase_name}")
@@ -6804,6 +7313,12 @@ class ControlPanelV2(QMainWindow):
                     _prev_row["reached"] = self._step_assess_target_reached(
                         _prev_row.get("target"), _curr_snap
                     )
+                    if str(_prev_row.get("row_kind") or "").strip().upper() == "PHASE":
+                        _prev_row["row_state"] = (
+                            "PHASE_DONE"
+                            if _prev_row.get("reached") is True
+                            else "PHASE_BLOCKED"
+                        )
                     if not _prev_row.get("check_reason"):
                         _rv = _prev_row.get("reached")
                         import math as _math
@@ -10210,10 +10725,46 @@ class ControlPanelV2(QMainWindow):
             return
         effective_state, effective_reason = self._effective_system_state()
         apply_ui_state(self, effective_state, effective_reason)
+        if getattr(self, "btn_pick_demo", None) is not None:
+            _main_panel_can_release_approach = (
+                self._direct_waiting_for_approach_confirmation()
+                and self._step_mode != "STEP_BY_STEP"
+            )
+            if _main_panel_can_release_approach:
+                self.btn_pick_demo.setEnabled(False)
+                self.btn_pick_demo.setText("Agarre Objeto (Directo)")
+                self.btn_pick_demo.setToolTip(
+                    "Flujo Directo detenido en MESA. Usa el boton de iniciar APPROACH."
+                )
+                if getattr(self, "btn_pick_demo_approach", None) is not None:
+                    self.btn_pick_demo_approach.setVisible(True)
+                    self.btn_pick_demo_approach.setEnabled(True)
+                    self.btn_pick_demo_approach.setText("Iniciar APPROACH_COARSE")
+                    self.btn_pick_demo_approach.setToolTip(
+                        "Robot detenido en MESA. Pulsa para iniciar APPROACH_COARSE."
+                    )
+            else:
+                if self._direct_waiting_for_approach_confirmation() and self._step_mode == "STEP_BY_STEP":
+                    self.btn_pick_demo.setToolTip(
+                        "Flujo Directo detenido en MESA. Inicia APPROACH_COARSE desde el panel paso a paso."
+                    )
+                self.btn_pick_demo.setText("Agarre Objeto (Directo)")
+                if not (self._direct_waiting_for_approach_confirmation() and self._step_mode == "STEP_BY_STEP"):
+                    self.btn_pick_demo.setToolTip(
+                        "Demo pick & place con objeto de posicion conocida (fuera del TFM)"
+                    )
+                if getattr(self, "btn_pick_demo_approach", None) is not None:
+                    self.btn_pick_demo_approach.setVisible(False)
+                    self.btn_pick_demo_approach.setEnabled(False)
         self._maybe_auto_run_pick_demo()
 
     def _maybe_auto_run_pick_demo(self) -> None:
         if not self._auto_pick_demo_enabled:
+            return
+        if self._direct_waiting_for_approach_confirmation():
+            self._emit_log(
+                "[AUTO_PICK_DEMO] en espera de confirmacion manual para APPROACH_COARSE"
+            )
             return
         if self._auto_pick_demo_done >= self._auto_pick_demo_attempts:
             return
@@ -16220,6 +16771,22 @@ class ControlPanelV2(QMainWindow):
 
     def _run_pick_demo(self):
         """Ejecuta la ruta directa del demo sobre el objeto seleccionado."""
+        if self._direct_waiting_for_approach_confirmation():
+            if self._step_mode == "STEP_BY_STEP":
+                self._log_button("Agarre Objeto (Directo) [ignorado: authority=step_panel]")
+                self._emit_log(
+                    "[PICK][DIRECT][AUTH] "
+                    "action=ignore_main_panel_approach "
+                    "authority=step_panel "
+                    "reason=step_by_step_single_source_of_truth"
+                )
+                return
+            self._log_button("Agarre Objeto (Directo) [confirmar APPROACH_COARSE]")
+            if self._direct_release_waiting_for_approach_confirmation():
+                self._emit_log(
+                    "[BOTON] Confirmado: continuar desde MESA hacia APPROACH_COARSE"
+                )
+            return
         self._log_button("Agarre Objeto (Directo)")
         self._step_capture_start_pose("Agarre Objeto (Directo)")
         _op_frame = self._step_operational_frame_name()
