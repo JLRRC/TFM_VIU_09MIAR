@@ -112,7 +112,17 @@ def main() -> int:
     else:
         optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
 
-    criterion = nn.SmoothL1Loss()
+    # Oficial EXP1..EXP4: "smooth_l1" (SmoothL1Loss, sin pesos).
+    # Alineación metodológica posterior: "grasp_loss" (GraspLoss con pérdida
+    # coseno periódica para el ángulo). Configurable desde la clave
+    # training.criterion del YAML. Si no aparece la clave, usa smooth_l1.
+    criterion_name = cfg["training"].get("criterion", "smooth_l1")
+    if criterion_name == "smooth_l1":
+        criterion = nn.SmoothL1Loss()
+    else:
+        from src.training.losses import build_criterion
+        criterion_kwargs = cfg["training"].get("criterion_kwargs", {})
+        criterion = build_criterion(criterion_name, **criterion_kwargs)
 
     trainer = Trainer(
         model=model,
