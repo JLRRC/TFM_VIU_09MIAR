@@ -1,20 +1,74 @@
-# Reports del TFM
+# reports
 
-Esta carpeta combina dos vistas complementarias:
+Directorio curado del documento del TFM y de los artefactos que respaldan la memoria final.
 
-- `capitulos/`: vista editorial alineada con la numeracion real del TFM.
-- resto de subcarpetas (`figures/`, `tables/`, `tfm_ros_gazebo_results/`, etc.): vista tecnica y de artefactos fuente regenerables.
+## Que hay aqui
 
-La carpeta `capitulos/` es la referencia principal para localizar ilustraciones, tablas y evidencias tal y como aparecen numeradas en la memoria.
-Los ficheros `CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.md` y `CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.csv` actuan como indice maestro PDF -> artefacto real.
+- `TFM_Lozano_Rodriguez-Jesus.pdf`: memoria final de referencia actualmente usada en este workspace.
+- `figures/`: figuras finales organizadas por capitulo.
+- `tables/`: tablas finales organizadas por capitulo.
+- `metrics/raw/`: metricas copiadas desde los experimentos para trazabilidad.
+- `metrics/aggregated/`: agregaciones intermedias.
+- `metrics/validated/`: metricas finales que deben citarse.
+- `evidence/`: evidencias funcionales y cualitativas.
+- `logs/`: logs de entrenamiento, regeneracion y reproducibilidad.
+- `exports/`: exportaciones por capitulo o por bloque.
+- `bench/`: mediciones de latencia y benchmarks auxiliares.
+- `cornell_audit/`: soporte minimo de auditoria del split Cornell.
+- `history/`: snapshots historicos utiles para comparativas internas.
 
-## Capitulos disponibles
+## Ubicaciones canonicas
 
-- `01_introduccion/`: Introduccion (pp. 11-13)
-- `02_objetivos_y_alcance/`: Objetivos y alcance (pp. 14-17)
-- `03_estado_del_arte_y_marco_teorico/`: Estado del Arte y Marco teorico (pp. 18-32)
-- `04_metodologia/`: Metodologia (pp. 33-54)
-- `05_resultados_y_discusion/`: Resultados y discusion (pp. 56-77)
-- `06_conclusiones_y_trabajos_futuros/`: Conclusiones y trabajos futuros (pp. 78-83)
-- `07_referencias_bibliograficas/`: Referencias bibliograficas (pp. 84-85)
-- `08_anexos/`: Anexos (pp. 86-88)
+- Figuras del capitulo 5: `figures/cap5/`
+- Tablas del capitulo 5: `tables/cap5/`
+- Tablas de anexos: `tables/anexos/`
+- Resumen validado del capitulo 5:
+  - `metrics/validated/chapter5_experiment_summary_validated.csv`
+- Evidencia del bloque TFM y casos cualitativos:
+  - `evidence/chapter5/`
+- Evidencia ROS 2 y auditoria del panel:
+  - `evidence/ros2/`
+  - `evidence/ros2/tfm_panel_repro_seed0_raw_trace_20260415.md`
+  - `evidence/ros2/tfm_session_exports/`
+- Nota de rigor del workspace:
+  - `evidence/workspace_rigour_notes_20260415.md`
+- Trazabilidad de `EXP1.1` y `EXP1.2` como implementacion de `4.6.2`:
+  - `evidence/exp1_1_exp1_2_theoretical_implementation_trace_20260415.md`
+- Logs de regeneracion y trazabilidad:
+  - `logs/reproducibility/`
+
+## Notas de rigor del workspace
+
+- El PDF de referencia del TFM en este workspace es `TFM_Lozano_Rodriguez-Jesus.pdf`.
+- La recreacion del bloque experimental presentado en la memoria sigue apoyandose en `EXP1`, `EXP2`, `EXP3` y `EXP4`.
+- `EXP1.1` y `EXP1.2` se conservan en el repo como experimentos adicionales asociados a la implementacion del diseño ligero descrito en `4.6.2`.
+- En el panel pueden cargarse y usarse todos los experimentos disponibles sin distincion visual entre ellos.
+
+## Uso esperado
+
+Este directorio no es el lugar para arrancar ROS 2 ni para entrenar modelos. Sirve para:
+
+- consultar figuras y tablas finales
+- revisar metricas validadas
+- localizar evidencias que respaldan la memoria
+- seguir la trazabilidad entre resultados crudos y artefactos publicados
+
+## Regeneracion
+
+Desde la raiz del proyecto:
+
+```bash
+./recrear_artefactos_tfm.sh
+```
+
+Para la tabla de latencia:
+
+```bash
+./recrear_tabla_5_3_latencia.sh
+```
+
+## Relacion con el resto del repo
+
+- `../agarre_inteligente/` produce experimentos, checkpoints y metricas base.
+- `../agarre_ros2_ws/` produce evidencias operativas, logs de panel y trazas ROS 2.
+- `history/` conserva material historico; no siempre coincide con el estado operativo actual.

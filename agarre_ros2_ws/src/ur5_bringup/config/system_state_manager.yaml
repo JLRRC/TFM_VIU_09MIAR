@@ -24,7 +24,11 @@ system_state_manager:
     pose_timeout_sec: 1.0
     camera_timeout_sec: 1.5
     tf_timeout_sec: 0.2
+    geometry_required: true
+    geometry_tool_frame: tool0
+    geometry_offset_tol_m: 0.002
+    geometry_pair_tol_m: 0.001
     controller_check_sec: 1.0
     controller_future_timeout_sec: 2.0
     state_publish_hz: 2.0
-    startup_timeout_sec: 5.0
+    startup_timeout_sec: 15.0

@@ -15,15 +15,8 @@ import torch
 from PIL import Image
 
 from src.data.transforms import get_val_transforms
-from src.models.resnet_variants import ResNetGrasp
-from src.models.simple_cnn import SimpleCNN
+from src.models.factory import build_model
 from src.utils.config_loader import load_config
-
-
-def build_model(model_cfg: dict):
-    if model_cfg["name"] == "SimpleGraspCNN":
-        return SimpleCNN(input_channels=int(model_cfg["input_channels"]))
-    return ResNetGrasp(input_channels=int(model_cfg["input_channels"]), pretrained=False)
 
 
 def main() -> int:

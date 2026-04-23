@@ -7,6 +7,8 @@ import os
 import sys
 from typing import Dict, List, Optional, Tuple, Set
 
+from ur5_tools.gripper_geometry import RG2_PINCH_CENTER_FRAME, contact_z_correction_for_frame
+
 from .panel_settings import PanelSettings
 
 # Disable FastDDS SHM early to avoid noisy startup errors.
@@ -56,23 +58,24 @@ UR5_BASE_Z = SETTINGS.ur5_base_z
 UR5_REACH_RADIUS = SETTINGS.ur5_reach_radius
 
 # Pick demo objects: objetos de demostracion (definidos solo por nombre).
+PICK_DEMO_SPAWN_POSE = (-0.42, 0.00, 0.875)
 _PICK_DEMO_OBJECTS = {
-    "pick_demo": (-0.42, 0.00, 0.800),
+    "pick_demo": PICK_DEMO_SPAWN_POSE,
 }
 ATTACHABLE_OBJECTS = ("pick_demo",)
 PICK_DEMO_NAME_SET = set(ATTACHABLE_OBJECTS)
-# Drop objects: objetos congelados hasta "Soltar/Obj" (definidos solo por nombre).
+# Drop objects: racimo compacto suspendido a ~2 m hasta pulsar "Soltar objetos".
 _DROP_AIR_OBJECTS = {
-    "box_red": (-0.320, 0.180, 2.775),
-    "box_blue": (-0.200, 0.180, 2.775),
-    "box_green": (-0.080, 0.180, 2.775),
-    "cyl_gray": (0.040, 0.180, 2.775),
-    "cyl_orange": (-0.320, 0.060, 2.775),
-    "cyl_purple": (-0.200, 0.060, 2.775),
-    "box_lightblue": (-0.080, 0.060, 2.775),
-    "cyl_green": (0.040, 0.060, 2.775),
-    "box_yellow": (-0.320, -0.060, 2.775),
-    "cross_cyan": (-0.200, -0.060, 2.775),
+    "box_red": (-0.260, 0.100, 2.000),
+    "box_blue": (-0.180, 0.100, 2.000),
+    "box_green": (-0.100, 0.100, 2.000),
+    "cyl_gray": (-0.020, 0.100, 2.000),
+    "cyl_orange": (-0.260, 0.020, 2.000),
+    "cyl_purple": (-0.180, 0.020, 2.000),
+    "box_lightblue": (-0.100, 0.020, 2.000),
+    "cyl_green": (-0.020, 0.020, 2.000),
+    "box_yellow": (-0.220, -0.060, 2.000),
+    "cross_cyan": (-0.080, -0.060, 2.000),
 }
 DROP_NAME_SET = {
     "box_blue",
@@ -124,18 +127,44 @@ def refresh_object_groups() -> None:
 
 
 refresh_object_groups()
+OBJECT_SHAPES = {
+    "pick_demo": "circle",
+    "box_red": "square",
+    "box_blue": "rect_h",
+    "box_green": "rect_v",
+    "cyl_gray": "circle",
+    "cyl_orange": "circle",
+    "cyl_purple": "circle",
+    "box_lightblue": "square",
+    "cyl_green": "circle",
+    "box_yellow": "rect_h",
+    "cross_cyan": "cross",
+}
+OBJECT_LABELS = {
+    "pick_demo": "DEM",
+    "box_red": "ROJ",
+    "box_blue": "AZL",
+    "box_green": "VER",
+    "cyl_gray": "GRI",
+    "cyl_orange": "NAR",
+    "cyl_purple": "MOR",
+    "box_lightblue": "CEL",
+    "cyl_green": "CVE",
+    "box_yellow": "AMA",
+    "cross_cyan": "CRZ",
+}
 OBJECT_COLORS = {
     "pick_demo": "#f59e0b",
-    "box_red": "#f97316",
-    "box_blue": "#a855f7",
-    "box_green": "#14b8a6",
-    "cyl_gray": "#22c55e",
-    "cyl_orange": "#06b6d4",
-    "cyl_purple": "#84cc16",
+    "box_red": "#d94141",
+    "box_blue": "#3b82f6",
+    "box_green": "#22c55e",
+    "cyl_gray": "#6b7280",
+    "cyl_orange": "#f59e0b",
+    "cyl_purple": "#a855f7",
     "box_lightblue": "#93c5fd",
-    "cyl_green": "#22c55e",
-    "box_yellow": "#10b981",
-    "cross_cyan": "#06b6d4",
+    "cyl_green": "#34d399",
+    "box_yellow": "#facc15",
+    "cross_cyan": "#22d3ee",
 }
 
 BASKET_DROP = (-1.30, 0.00, 0.82)
@@ -213,7 +242,7 @@ GRIPPER_CLOSED_RAD = SETTINGS.gripper_closed_rad
 GRIPPER_JOINT2_SIGN = SETTINGS.gripper_joint2_sign
 PANEL_MANAGED = SETTINGS.panel_managed
 PANEL_MOVEIT_REQUIRED = SETTINGS.panel_moveit_required
-ALLOW_UNSETTLED_ON_TIMEOUT = False
+ALLOW_UNSETTLED_ON_TIMEOUT = SETTINGS.allow_unsettled_on_timeout
 CAMERA_READY_FRAMES = SETTINGS.camera_ready_frames
 CAMERA_INIT_GRACE_SEC = SETTINGS.camera_init_grace_sec
 CAMERA_READY_MAX_AGE_SEC = SETTINGS.camera_ready_max_age_sec
@@ -258,7 +287,10 @@ PICK_DEMO_PRE_GRASP_Z_OFFSET = SETTINGS.pick_demo_pre_grasp_z_offset
 PICK_DEMO_GRASP_Z_OFFSET = SETTINGS.pick_demo_grasp_z_offset
 PICK_DEMO_TRANSPORT_Z_OFFSET = SETTINGS.pick_demo_transport_z_offset
 PICK_DEMO_DROP_Z_OFFSET = SETTINGS.pick_demo_drop_z_offset
-GRIPPER_TCP_Z_OFFSET = SETTINGS.gripper_tcp_z_offset
+# Constante legacy de compatibilidad: el agarre operativo deriva ahora la geometría
+# de contacto desde el URDF canónico y `rg2_pinch_center`, así que este valor debe
+# permanecer inerte.
+GRIPPER_TCP_Z_OFFSET = contact_z_correction_for_frame(RG2_PINCH_CENTER_FRAME)
 AUTO_CALIB_FROM_CAMERA = SETTINGS.auto_calib_from_camera
 REACH_OVERLAY_Z = SETTINGS.reach_overlay_z
 REACH_OVERLAY_POINTS = SETTINGS.reach_overlay_points

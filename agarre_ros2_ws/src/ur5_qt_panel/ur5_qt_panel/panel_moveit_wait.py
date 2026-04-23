@@ -34,7 +34,7 @@ def wait_for_moveit_ready(panel) -> None:
             return
         if not panel._ros_worker_started:
             panel._ensure_ros_worker_started()
-        if panel._move_group_ready():
+        if panel._move_group_startup_ready():
             try:
                 panel.signal_moveit_state.emit("READY", "move_group activo")
             except RuntimeError:
@@ -45,11 +45,13 @@ def wait_for_moveit_ready(panel) -> None:
             return
         panel._wait_for_state_change(0.5)
     try:
+        startup_ready = panel._move_group_startup_ready()
         action_ready = panel._moveit_action_ready()
         status_ready = panel._moveit_status_ready()
         traj_ready = panel._follow_joint_traj_ready()
         panel._emit_log(
-            f"[MOVEIT] READY checks: action={action_ready} status={status_ready} traj={traj_ready}"
+            f"[MOVEIT] READY checks: startup={startup_ready} action={action_ready} "
+            f"status={status_ready} traj={traj_ready}"
         )
         panel.signal_moveit_state.emit("WAITING_MOVEIT_READY", "timeout esperando move_group")
     except RuntimeError:

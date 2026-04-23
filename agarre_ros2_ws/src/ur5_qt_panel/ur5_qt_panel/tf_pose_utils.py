@@ -107,12 +107,17 @@ def transform_pose(
 
 def get_tcp_in_base(
     base_frame: str = "base_link",
-    ee_frame: str = "rg2_tcp",
+    ee_frame: str = "rg2_pinch_center",
     timeout: float = 0.2,
     *,
     logger: LoggerFn = None,
 ):
-    tf, reason = get_transform(base_frame, ee_frame, timeout=timeout, logger=logger)
+    tf, reason = get_transform(
+        base_frame,
+        ee_frame,
+        timeout=timeout,
+        logger=logger,
+    )
     if tf is None:
         return None, None, reason
     out = PoseStamped()

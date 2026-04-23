@@ -48,7 +48,7 @@ class GraspInferenceNode(Node):
         
         # Parámetros
         self.img_size = 224
-        self.declare_parameter("model_path", "models/exp1_simple_rgb_best.pth")
+        self.declare_parameter("model_path", "")
         self.declare_parameter("image_topic", "/camera/rgb/image_raw")
         self.declare_parameter("output_topic", "/tfm/grasp_prediction")
         self.declare_parameter("device", "auto")
@@ -112,6 +112,12 @@ class GraspInferenceNode(Node):
     def _load_model(self, model_rel_path: str) -> Optional[torch.nn.Module]:
         """Cargar modelo entrenado."""
         try:
+            model_rel_path = str(model_rel_path or "").strip()
+            if not model_rel_path:
+                self.get_logger().error(
+                    "Parametro model_path vacio. Este nodo legacy requiere un checkpoint explicito compatible con SimpleGraspCNN."
+                )
+                return None
             # Construir ruta absoluta del modelo
             node_dir = Path(__file__).parent
             model_path = node_dir / model_rel_path

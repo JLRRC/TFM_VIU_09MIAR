@@ -297,8 +297,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>30</damping>
-                    <friction>4</friction>
+                    <damping>1.0</damping>
+                    <friction>0.1</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -317,8 +317,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>45</damping>
-                    <friction>6</friction>
+                    <damping>1.0</damping>
+                    <friction>0.1</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -337,8 +337,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>35</damping>
-                    <friction>5</friction>
+                    <damping>1.0</damping>
+                    <friction>0.1</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -357,8 +357,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>25</damping>
-                    <friction>3.5</friction>
+                    <damping>0.8</damping>
+                    <friction>0.05</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -377,8 +377,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>20</damping>
-                    <friction>2.5</friction>
+                    <damping>0.8</damping>
+                    <friction>0.05</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -397,13 +397,18 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>15</damping>
-                    <friction>1.75</friction>
+                    <damping>0.6</damping>
+                    <friction>0.05</friction>
                 </dynamics>
             </axis>
         </joint>
         <!-- Arm-Hand Fixed Joint -->
         <joint name="ur5_hand_joint" type="fixed">
+            <!-- rg2_hand at UR5 d6 = 0.0823 m: places the gripper body at the physical
+                 flange face (wrist3.dae mesh ends at Y≈0.082m), visually connecting
+                 it to the wrist_3 body. The semantic TCP (rg2_tcp/rg2_pinch_center)
+                 lives in the URDF TF chain and is unaffected by this SDF offset.
+                 pick_demo_anchor is relative_to="tool0" (SDF), also unaffected. -->
             <pose relative_to="wrist_3_link">0 0.0823 0 1.570796325 0 1.570796325</pose>
             <parent>wrist_3_link</parent>
             <child>rg2_hand</child>
@@ -602,6 +607,142 @@
             <parent>wrist_3_link</parent>
             <child>tool0</child>
         </joint>
+        <link name="pick_demo_anchor">
+            <gravity>false</gravity>
+            <pose relative_to="pick_demo_anchor_joint">0 0 0 0 0 0</pose>
+        </link>
+        <joint name="pick_demo_anchor_joint" type="fixed">
+            <!-- Align the detachable-joint origin with the visible closure midpoint.
+                 The previous -0.0877005 value sat near the finger hinges; the
+                 contact midpoint between the inner finger faces is at tool0.z≈+0.0051. -->
+            <pose relative_to="tool0">0 0 0.0050885 0 0 0</pose>
+            <parent>tool0</parent>
+            <child>pick_demo_anchor</child>
+        </joint>
+
+        <!-- Wrist camera: mounted on rg2_hand looking toward the fingertips (+X of rg2_hand
+             = approach direction). Position (0, 0, 0.05): 5 cm in the Z direction of rg2_hand
+             (lateral face of the gripper body). Clip near=0.04 m to cut out the gripper mesh. -->
+        <link name="camera_wrist_link">
+            <gravity>false</gravity>
+            <pose relative_to="camera_wrist_joint">0 0 0 0 0 0</pose>
+            <sensor name="camera_wrist_rgb" type="camera">
+                <always_on>true</always_on>
+                <update_rate>15</update_rate>
+                <topic>/camera_wrist/image</topic>
+                <camera>
+                    <horizontal_fov>1.05</horizontal_fov>
+                    <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+                    <clip><near>0.04</near><far>1.5</far></clip>
+                </camera>
+            </sensor>
+        </link>
+        <joint name="camera_wrist_joint" type="fixed">
+            <pose relative_to="rg2_hand">0 0 0.05 0 0 0</pose>
+            <parent>rg2_hand</parent>
+            <child>camera_wrist_link</child>
+        </joint>
+
+        <!-- Tool-side detachable joints for physically carrying grasped objects. -->
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_hand</parent_link>
+            <child_model>box_red</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/box_red/attach</attach_topic>
+            <detach_topic>/gripper_anchor/box_red/detach</detach_topic>
+            <output_topic>/gripper_anchor/box_red/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_hand</parent_link>
+            <child_model>box_blue</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/box_blue/attach</attach_topic>
+            <detach_topic>/gripper_anchor/box_blue/detach</detach_topic>
+            <output_topic>/gripper_anchor/box_blue/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_hand</parent_link>
+            <child_model>box_green</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/box_green/attach</attach_topic>
+            <detach_topic>/gripper_anchor/box_green/detach</detach_topic>
+            <output_topic>/gripper_anchor/box_green/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_hand</parent_link>
+            <child_model>box_lightblue</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/box_lightblue/attach</attach_topic>
+            <detach_topic>/gripper_anchor/box_lightblue/detach</detach_topic>
+            <output_topic>/gripper_anchor/box_lightblue/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_hand</parent_link>
+            <child_model>box_yellow</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/box_yellow/attach</attach_topic>
+            <detach_topic>/gripper_anchor/box_yellow/detach</detach_topic>
+            <output_topic>/gripper_anchor/box_yellow/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_hand</parent_link>
+            <child_model>cross_cyan</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/cross_cyan/attach</attach_topic>
+            <detach_topic>/gripper_anchor/cross_cyan/detach</detach_topic>
+            <output_topic>/gripper_anchor/cross_cyan/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_hand</parent_link>
+            <child_model>cyl_gray</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/cyl_gray/attach</attach_topic>
+            <detach_topic>/gripper_anchor/cyl_gray/detach</detach_topic>
+            <output_topic>/gripper_anchor/cyl_gray/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_hand</parent_link>
+            <child_model>cyl_green</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/cyl_green/attach</attach_topic>
+            <detach_topic>/gripper_anchor/cyl_green/detach</detach_topic>
+            <output_topic>/gripper_anchor/cyl_green/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_hand</parent_link>
+            <child_model>cyl_orange</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/cyl_orange/attach</attach_topic>
+            <detach_topic>/gripper_anchor/cyl_orange/detach</detach_topic>
+            <output_topic>/gripper_anchor/cyl_orange/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_hand</parent_link>
+            <child_model>cyl_purple</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/cyl_purple/attach</attach_topic>
+            <detach_topic>/gripper_anchor/cyl_purple/detach</detach_topic>
+            <output_topic>/gripper_anchor/cyl_purple/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>pick_demo_anchor</parent_link>
+            <child_model>pick_demo</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/pick_demo/attach</attach_topic>
+            <detach_topic>/gripper_anchor/pick_demo/detach</detach_topic>
+            <output_topic>/gripper_anchor/pick_demo/state</output_topic>
+        </plugin>
 
         <plugin
             filename="gz-sim-pose-publisher-system"
@@ -625,42 +766,58 @@
             </hardware>
             <joint name="shoulder_pan_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="shoulder_lift_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">-1.5707963267948966</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="elbow_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="wrist_1_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">-1.5707963267948966</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="wrist_2_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="wrist_3_joint">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="rg2_finger_joint1">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="rg2_finger_joint2">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
         </ros2_control>

@@ -4,7 +4,7 @@
 # Uso breve: Se ejecuta manualmente para arrancar, medir o validar el stack.
 set -u
 
-AUDIT_ROOT="/home/laboratorio/TFM/reports/panel_audit"
+AUDIT_ROOT="/home/laboratorio/TFM/auditoria/panel_audit"
 LOG_DIR="$AUDIT_ROOT/logs"
 ART_DIR="$AUDIT_ROOT/artifacts"
 FIG_DIR="$AUDIT_ROOT/figures"
@@ -40,7 +40,7 @@ import json
 from pathlib import Path
 
 root = Path('/home/laboratorio/TFM')
-audit = root / 'reports' / 'panel_audit' / 'artifacts' / 'checkpoints_index.json'
+audit = root / 'auditoria' / 'panel_audit' / 'artifacts' / 'checkpoints_index.json'
 roots = [
     root / 'agarre_inteligente' / 'experiments',
     root / 'agarre_inteligente' / 'experiments_smoke',

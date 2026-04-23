@@ -1,0 +1,34 @@
+{
+  "root": "/home/laboratorio/TFM/agarre_inteligente/experiments",
+  "count": 4,
+  "entries": [
+    {
+      "path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP1_SIMPLE_RGB/seed_2/checkpoints/best.pth",
+      "experiment": "EXP1_SIMPLE_RGB",
+      "seed": 2,
+      "val_success": 0.3295092415551306,
+      "val_iou": 0.2916960033177566
+    },
+    {
+      "path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP2_SIMPLE_RGBD/seed_0/checkpoints/best.pth",
+      "experiment": "EXP2_SIMPLE_RGBD",
+      "seed": 0,
+      "val_success": 0.3855959209687699,
+      "val_iou": 0.3125385341837182
+    },
+    {
+      "path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/seed_2/checkpoints/best.pth",
+      "experiment": "EXP3_RESNET18_RGB_AUGMENT",
+      "seed": 2,
+      "val_success": 0.7036328871892925,
+      "val_iou": 0.3948210766759475
+    },
+    {
+      "path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP4_RESNET18_RGBD/seed_2/checkpoints/best.pth",
+      "experiment": "EXP4_RESNET18_RGBD",
+      "seed": 2,
+      "val_success": 0.65710643722116,
+      "val_iou": 0.4004947834455899
+    }
+  ]
+}

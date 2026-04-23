@@ -54,6 +54,8 @@ from .panel_config import (
     FIG_DIR,
     LOG_DIR,
     OBJECT_COLORS,
+    OBJECT_LABELS,
+    OBJECT_SHAPES,
     SCRIPTS_DIR,
     SELECTION_SNAP_DIST,
     TABLE_CENTER_X,
@@ -192,15 +194,11 @@ class ObjectRow(QWidget):
         super().mousePressEvent(event)
 
     def _shape_type(self) -> str:
-        nm = self.name.lower()
-        if "cilindro" in nm:
-            return "circle"
-        if "cubo" in nm or "caja" in nm:
-            return "square"
-        return "rect"
+        return OBJECT_SHAPES.get(self.name, "rect_h")
 
     def _short_name(self) -> str:
-        cleaned = "".join(ch for ch in self.name if ch.isalnum())
+        label = OBJECT_LABELS.get(self.name, self.name)
+        cleaned = "".join(ch for ch in label if ch.isalnum())
         if not cleaned:
             return "---"
         return cleaned.upper()[:3]
@@ -223,6 +221,11 @@ class ObjectRow(QWidget):
             painter.drawEllipse(QPointF(x0 + 5, y0 + 5), 4, 4)
         elif self._shape_type() == "square":
             painter.drawRect(x0, y0, 10, 10)
+        elif self._shape_type() == "rect_v":
+            painter.drawRoundedRect(x0 + 3, y0, 6, 12, 2, 2)
+        elif self._shape_type() == "cross":
+            painter.drawRoundedRect(x0 + 4, y0, 4, 12, 1, 1)
+            painter.drawRoundedRect(x0, y0 + 4, 12, 4, 1, 1)
         else:
             painter.drawRoundedRect(x0, y0 + 2, 12, 6, 2, 2)
         painter.setPen(QColor(color))
@@ -521,16 +524,13 @@ class CameraTile(QWidget):
             p1 = _rot( hw, -hh)
             p2 = _rot( hw,  hh)
             p3 = _rot(-hw,  hh)
-            # Green: aperture lines (long sides w)
-            pen_g = QPen(QColor("#22c55e"))
-            pen_g.setWidth(2)
-            painter.setPen(pen_g)
+            pen_pred = QPen(QColor("#ef4444"))
+            pen_pred.setWidth(2)
+            painter.setPen(pen_pred)
             painter.drawLine(p0, p1)
             painter.drawLine(p3, p2)
-            # Red: jaw lines (short sides h)
-            pen_r = QPen(QColor("#ef4444"))
-            pen_r.setWidth(3)
-            painter.setPen(pen_r)
+            pen_pred.setWidth(3)
+            painter.setPen(pen_pred)
             painter.drawLine(p1, p2)
             painter.drawLine(p0, p3)
             # White center dot

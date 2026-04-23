@@ -43,6 +43,32 @@ def _env_optional_bool(name: str) -> Optional[bool]:
         return None
     return raw.strip().lower() not in ("0", "false", "no", "off", "")
 
+
+def _warn_ignored_legacy_gripper_tcp_z_offset(raw_value: object = None, *, source: str) -> None:
+    raw = raw_value
+    if raw is None:
+        raw = os.environ.get("PANEL_GRIPPER_TCP_Z_OFFSET")
+    if raw is None or not str(raw).strip():
+        return
+    try:
+        value = float(raw)
+    except Exception:
+        print(
+            "[PANEL][WARN] PANEL_GRIPPER_TCP_Z_OFFSET inválida en "
+            f"{source}; se ignora y se mantiene la geometría del URDF canónico.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
+    print(
+        "[PANEL][WARN] PANEL_GRIPPER_TCP_Z_OFFSET/gripper_tcp_z_offset es legacy. "
+        f"Valor ignorado ({value:.6f}) en {source}. "
+        "La fuente de verdad geométrica es el URDF canónico y el frame operativo "
+        "debe ser rg2_pinch_center.",
+        file=sys.stderr,
+        flush=True,
+    )
+
 def _load_yaml_overrides(path: str) -> Dict[str, object]:
     if not path:
         return {}
@@ -99,14 +125,16 @@ class PanelSettings:
     save_pose_info_positions: bool = False
     ur5_base_x: float = -0.85
     ur5_base_y: float = 0.0
-    ur5_base_z: float = 0.0
+    # Must match the UR5 spawn pose in the Gazebo world to keep world<->base
+    # fallbacks coherent when TF is temporarily unavailable.
+    ur5_base_z: float = 0.850
     ur5_reach_radius: float = 0.85
     gz_world: str = "ur5_mesa_objetos"
     gripper_attach_prefix: str = "/gripper"
     gz_partition_file: str = ""
     infer_script: str = ""
     infer_ckpt: str = ""
-    infer_roi_size: int = 0
+    infer_roi_size: int = 96
     infer_retry_err_px: float = 60.0
     fastrtps_profiles: str = ""
     ur5_controllers_yaml: str = ""
@@ -158,6 +186,7 @@ class PanelSettings:
     debug_poses_period_sec: float = 3.0
     pick_log_min_interval_sec: float = 2.0
     gripper_cmd_topic: str = "/gripper_controller/commands"
+    # Temporalmente restaurado a la escala histórica para validar la apertura completa.
     gripper_open_rad: float = 1.0
     gripper_closed_rad: float = 0.0
     gripper_joint2_sign: float = 1.0
@@ -207,7 +236,6 @@ class PanelSettings:
     pick_demo_grasp_z_offset: float = 0.02
     pick_demo_transport_z_offset: float = 0.28
     pick_demo_drop_z_offset: float = 0.05
-    gripper_tcp_z_offset: float = 0.0
     auto_calib_from_camera: bool = True
     reach_overlay_z: float = 0.850
     reach_overlay_points: int = 72
@@ -230,8 +258,18 @@ class PanelSettings:
         vision_dir = os.path.expanduser(os.environ.get("VISION_DIR", "~/TFM/agarre_inteligente"))
         vision_exp_dir = os.path.join(vision_dir, "experiments")
         vision_plots_dir = os.path.join(vision_exp_dir, "plots")
-        vision_summary = os.path.join(vision_exp_dir, "summary_base.csv")
+        tfm_root_dir = os.path.dirname(ws_dir)
+        vision_summary = os.path.join(
+            tfm_root_dir,
+            "reports",
+            "metrics",
+            "validated",
+            "chapter5_experiment_summary_validated.csv",
+        )
         vision_fig_dir = os.path.join(vision_exp_dir, "figures_memoria")
+        _warn_ignored_legacy_gripper_tcp_z_offset(
+            source="env:PANEL_GRIPPER_TCP_Z_OFFSET"
+        )
 
         settings = cls(
             ws_dir=ws_dir,
@@ -256,18 +294,8 @@ class PanelSettings:
             object_pos_path=os.path.join(scripts_dir, "object_positions.json"),
             save_pose_info_positions=_env_bool("PANEL_SAVE_POSE_INFO_POSITIONS", False),
             infer_script=os.path.join(vision_dir, "scripts", "predict.py"),
-            infer_ckpt=_env_str(
-                "INFER_CKPT",
-                os.path.join(
-                    vision_dir,
-                    "experiments",
-                    "EXP1_SIMPLE_RGB",
-                    "seed_0",
-                    "checkpoints",
-                    "best.pth",
-                ),
-            ),
-            infer_roi_size=max(0, int(os.environ.get("INFER_ROI_SIZE", "0"))),
+            infer_ckpt=_env_str("INFER_CKPT", ""),
+            infer_roi_size=max(0, int(os.environ.get("INFER_ROI_SIZE", "96"))),
             infer_retry_err_px=_env_float("INFER_RETRY_ERR_PX", 60.0),
             fastrtps_profiles=os.path.join(scripts_dir, "fastdds_no_shm.xml"),
             ur5_controllers_yaml=os.path.join(
@@ -385,7 +413,6 @@ class PanelSettings:
             pick_demo_grasp_z_offset=_env_float("PANEL_PICK_DEMO_GRASP_Z", 0.02),
             pick_demo_transport_z_offset=_env_float("PANEL_PICK_DEMO_TRANSPORT_Z", 0.28),
             pick_demo_drop_z_offset=_env_float("PANEL_PICK_DEMO_DROP_Z", 0.05),
-            gripper_tcp_z_offset=_env_float("PANEL_GRIPPER_TCP_Z_OFFSET", 0.0),
             auto_calib_from_camera=_env_bool("PANEL_CALIB_AUTO", True),
             reach_overlay_z=_env_float("PANEL_REACH_OVERLAY_Z", 0.850),
             reach_overlay_points=_env_int("PANEL_REACH_OVERLAY_POINTS", 72),
@@ -393,12 +420,19 @@ class PanelSettings:
             pickable_pre_grasp_z=_env_float("PANEL_PICKABLE_PRE_GRASP_Z", 0.12),
             pickable_min_clearance=_env_float("PANEL_PICKABLE_MIN_CLEARANCE", 0.05),
         )
-        overrides = _load_yaml_overrides(os.environ.get("PANEL_SETTINGS_YAML", ""))
+        yaml_path = os.environ.get("PANEL_SETTINGS_YAML", "")
+        overrides = _load_yaml_overrides(yaml_path)
         if not overrides:
             return settings
         data = settings.__dict__.copy()
         for key, value in overrides.items():
             if key not in data:
+                if key == "gripper_tcp_z_offset":
+                    _warn_ignored_legacy_gripper_tcp_z_offset(
+                        value,
+                        source=f"yaml:{os.path.expandvars(os.path.expanduser(yaml_path or '<inline>'))}",
+                    )
+                    continue
                 print(f"[PANEL][WARN] Clave desconocida en YAML: {key}", file=sys.stderr, flush=True)
                 continue
             data[key] = value

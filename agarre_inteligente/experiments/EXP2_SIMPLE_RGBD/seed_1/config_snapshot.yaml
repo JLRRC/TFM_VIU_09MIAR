@@ -4,6 +4,7 @@ experiment:
   seeds:
   - 0
   - 1
+  - 2
   split_protocol: object-wise
   train_size_expected: 2121
   val_size_expected: 531

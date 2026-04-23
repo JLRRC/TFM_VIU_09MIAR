@@ -13,7 +13,6 @@ from PyQt5.QtWidgets import QApplication
 from .calibration_service import CalibrationMode
 from .panel_config import AUTO_CALIB_FROM_CAMERA, CALIBRATION_CAMERA_TOPIC
 from .panel_objects import save_object_positions
-from .panel_readiness import tf_ready_status
 from .panel_utils import load_table_calib
 
 
@@ -34,20 +33,16 @@ def start_calibration(panel) -> None:
         panel._set_status("Calibración bloqueada: PICK Objeto en curso", error=False)
         return
 
-    if not panel._require_ready_basic("Calibración"):
-        return
-    tf_ok, tf_reason = tf_ready_status(panel)
-    if not tf_ok:
-        panel._set_status(f"TF no listo; esperando calibración ({tf_reason})", error=True)
-        panel._emit_log(f"[CALIB] Bloqueada: {panel._tf_not_ready_reason()}")
-        return
+    calib_ok, calib_reason = panel._calibration_action_status()
+    if not calib_ok:
+        panel._emit_log(
+            f"[CALIB] Aviso: se ignora gate de readiness para permitir calibración manual ({calib_reason})"
+        )
 
     if not panel._calibration_topic_allowed():
-        panel._set_status(
-            f"Calibración solo disponible en {CALIBRATION_CAMERA_TOPIC}",
-            error=True,
+        panel._emit_log(
+            f"[CALIB] Aviso: topic distinto al recomendado ({CALIBRATION_CAMERA_TOPIC}); continuando"
         )
-        return
 
     panel._capture_calibration_frame()
     if AUTO_CALIB_FROM_CAMERA and not (QApplication.keyboardModifiers() & Qt.ShiftModifier):
@@ -57,16 +52,13 @@ def start_calibration(panel) -> None:
     if not panel._objects_settled:
         panel._request_settle_snapshot("calibrar")
         panel._log_calib_blocked("esperando caída/estabilidad de objetos")
-        panel._set_status("Esperando caída/estabilización de objetos", error=False)
-        return
+        panel._set_status("Calibración: objetos no estabilizados (se permite modo manual)", error=False)
     if not panel._pose_info_ok:
         panel._log_calib_blocked("pose/info no disponible")
-        panel._set_status("Esperando pose/info", error=False)
-        return
+        panel._set_status("Calibración: pose/info no disponible (se permite modo manual)", error=False)
     if panel._camera_required and not panel._camera_stream_ok:
         panel._log_calib_blocked("cámara no publica")
-        panel._set_status("Esperando cámara", error=False)
-        return
+        panel._set_status("Calibración: cámara sin frames (se permite modo manual si está conectada)", error=False)
 
     if not (QApplication.keyboardModifiers() & Qt.ShiftModifier):
         try:

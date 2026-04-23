@@ -9,6 +9,19 @@ from pathlib import Path
 import pandas as pd
 
 
+OFFICIAL_EXPERIMENTS = (
+    "EXP1_SIMPLE_RGB",
+    "EXP2_SIMPLE_RGBD",
+    "EXP3_RESNET18_RGB_AUGMENT",
+    "EXP4_RESNET18_RGBD",
+)
+
+AUX_EXPERIMENTS = (
+    "EXP1.1_SIMPLEGRASP_RGB",
+    "EXP1.2_SIMPLEGRASP_RGBD",
+)
+
+
 def _agg(df: pd.DataFrame, exp_name: str) -> dict:
     return {
         "experiment": exp_name,
@@ -28,12 +41,15 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--experiments-root", default="experiments")
     ap.add_argument("--output", default="reports/tables/summary_results.csv")
+    ap.add_argument("--include-aux", action="store_true", help="Incluye experimentos auxiliares como EXP1.1 y EXP1.2.")
     args = ap.parse_args()
 
     root = Path(args.experiments_root)
     rows = []
     seed_rows = []
     for exp_dir in sorted(root.glob("EXP*")):
+        if not args.include_aux and exp_dir.name not in OFFICIAL_EXPERIMENTS:
+            continue
         best_csv = exp_dir / "best_epoch_summary.csv"
         if not best_csv.exists():
             continue
@@ -45,10 +61,20 @@ def main() -> int:
 
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(rows).to_csv(out, index=False)
+    summary_df = pd.DataFrame(rows)
+    if not args.include_aux and not summary_df.empty:
+        leaked = sorted(set(summary_df["experiment"].tolist()) - set(OFFICIAL_EXPERIMENTS))
+        if leaked:
+            raise ValueError(f"Se han colado experimentos no oficiales en el resumen: {leaked}")
+    summary_df.to_csv(out, index=False)
 
     if seed_rows:
-        pd.concat(seed_rows, ignore_index=True).to_csv(out.parent / "results_by_seed.csv", index=False)
+        by_seed = pd.concat(seed_rows, ignore_index=True)
+        if not args.include_aux and not by_seed.empty:
+            leaked = sorted(set(by_seed["experiment"].tolist()) - set(OFFICIAL_EXPERIMENTS))
+            if leaked:
+                raise ValueError(f"Se han colado experimentos no oficiales en results_by_seed.csv: {leaked}")
+        by_seed.to_csv(out.parent / "results_by_seed.csv", index=False)
 
     print(f"[OK] resumen agregado -> {out}")
     return 0

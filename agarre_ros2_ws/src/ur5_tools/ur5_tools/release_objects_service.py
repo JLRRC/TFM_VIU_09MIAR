@@ -21,6 +21,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from ros_gz_interfaces.msg import Entity
 from ros_gz_interfaces.srv import DeleteEntity, SpawnEntity
+from std_msgs.msg import Empty
 from std_srvs.srv import Trigger
 
 from .param_utils import (
@@ -49,8 +50,8 @@ class ReleaseObjectsService(Node):
     def __init__(self) -> None:
         super().__init__("release_objects_service")
         self.declare_parameter("object_names", DROP_OBJECTS)
-        self.declare_parameter("attempts", 1)
-        self.declare_parameter("attempt_sleep", 0.0)
+        self.declare_parameter("attempts", 2)
+        self.declare_parameter("attempt_sleep", 0.25)
         self.declare_parameter("world_sdf", "")
         self.declare_parameter("world_name", "")
         self.declare_parameter("delete_service", "")
@@ -62,9 +63,14 @@ class ReleaseObjectsService(Node):
         self.declare_parameter("gz_list_wait_sec", 0.15)
         self.declare_parameter("gz_list_total_sec", 0.6)
         self.declare_parameter("gz_cmd_timeout_sec", 3.5)
-        self.declare_parameter("gz_delete_timeout_ms", 300)
-        self.declare_parameter("gz_spawn_timeout_ms", 600)
+        self.declare_parameter("gz_delete_timeout_ms", 500)
+        self.declare_parameter("gz_spawn_timeout_ms", 1000)
         self.declare_parameter("drop_anchor_name", DROP_ANCHOR_NAME)
+        self.declare_parameter("detach_publish_retries", 4)
+        self.declare_parameter("detach_publish_retry_sec", 0.25)
+        self.declare_parameter("settle_timeout_sec", 12.0)
+        self.declare_parameter("settle_poll_sec", 0.25)
+        self.declare_parameter("settle_confirmations", 6)
         self._service = self.create_service(
             Trigger, "release_objects", self._handle_release
         )
@@ -81,6 +87,11 @@ class ReleaseObjectsService(Node):
         self._last_release_ok_ts: float = 0.0
         self._delete_client: Optional[object] = None
         self._spawn_client: Optional[object] = None
+        self._drop_detach_pubs: Dict[str, object] = {
+            name: self.create_publisher(Empty, f"/drop_anchor/{name}/detach", 10)
+            for name in DROP_OBJECTS
+        }
+        self._table_geom_cache: Optional[Tuple[float, float, float, float, float]] = None
 
     def _handle_release(
         self,
@@ -151,6 +162,13 @@ class ReleaseObjectsService(Node):
             return False
         if not self._guard_pose_info(world_name, names):
             return False
+        if self._detach_drop_objects(names):
+            if self._validate_release_entities(world_name, names):
+                return True
+            self.get_logger().warn(
+                "[PHYSICS][DROP] detach release no asentó todos los objetos; "
+                "activando fallback delete/spawn"
+            )
         use_gz = bool(self.get_parameter("use_gz_transport").value)
         if use_gz:
             return self._spawn_drop_objects_gz(world_name, names)
@@ -182,7 +200,9 @@ class ReleaseObjectsService(Node):
                 continue
             if not self._call_spawn(name, sdf, pose, timeout):
                 spawn_ok = False
-        return delete_ok and spawn_ok
+        if not (delete_ok and spawn_ok):
+            return False
+        return self._validate_release_entities(world_name, names)
 
     def _guard_pose_info(self, world_name: str, names: List[str]) -> bool:
         env_prefix = self._gz_env_prefix()
@@ -196,13 +216,40 @@ class ReleaseObjectsService(Node):
         pose_name_set = set(pose_names)
         missing_required = [name for name in required if name not in pose_name_set]
         if missing_required:
-            msg = (
-                "pose/info vacío o Gazebo no disponible: "
-                f"faltan entidades {missing_required}"
+            self.get_logger().warn(
+                "[PHYSICS][DROP] pose/info incompleto antes de release; "
+                f"se intentará reconstruir faltantes={missing_required}"
             )
+        return True
+
+    def _validate_release_entities(self, world_name: str, names: List[str]) -> bool:
+        env_prefix = self._gz_env_prefix()
+        pose_map = self._list_pose_info_entity_poses(env_prefix, world_name)
+        pose_names = list(pose_map.keys())
+        if not pose_names:
+            msg = "validacion release falló: pose/info vacío o Gazebo no disponible"
             self.get_logger().error(f"[PHYSICS][DROP] {msg}")
             self._set_error(msg)
             return False
+        required = [self._drop_anchor_name] + list(names)
+        pose_name_set = set(pose_names)
+        missing_required = [name for name in required if name not in pose_name_set]
+        if missing_required:
+            msg = f"validacion release falló: faltan entidades {missing_required}"
+            self.get_logger().error(f"[PHYSICS][DROP] {msg}")
+            self._set_error(msg)
+            return False
+        duplicates = [n for n in pose_names if n.startswith(f"{self._drop_anchor_name}(")]
+        if duplicates:
+            msg = f"validacion release falló: duplicados drop_anchor {duplicates}"
+            self.get_logger().error(f"[PHYSICS][DROP] {msg}")
+            self._set_error(msg)
+            return False
+        if not self._wait_release_settled(env_prefix, world_name, names):
+            return False
+        self.get_logger().info(
+            f"[PHYSICS][DROP] validacion release OK objs={len(names)} anchor={self._drop_anchor_name}"
+        )
         return True
 
     def _resolve_world_name(self) -> str:
@@ -391,7 +438,7 @@ class ReleaseObjectsService(Node):
             names = self._list_pose_info_entity_names(env_prefix, world_name)
             if anchor_name in names:
                 self.get_logger().info(
-                    "[PHYSICS][DROP] drop_anchor presente; se conserva sin respawn"
+                    "[PHYSICS][DROP] drop_anchor presente; se conserva para evitar reset inestable de Gazebo"
                 )
                 return True
         self.get_logger().info("[PHYSICS][DROP] drop_anchor pre-clean (gz)")
@@ -451,6 +498,13 @@ class ReleaseObjectsService(Node):
         return True
 
     def _list_pose_info_entity_names(self, env_prefix: str, world_name: str) -> List[str]:
+        return list(self._list_pose_info_entity_poses(env_prefix, world_name).keys())
+
+    def _list_pose_info_entity_poses(
+        self,
+        env_prefix: str,
+        world_name: str,
+    ) -> Dict[str, Tuple[float, float, float]]:
         cmd_timeout = read_float_param(self, "gz_cmd_timeout_sec", 3.0, min_value=0.5)
         topic = f"/world/{world_name}/pose/info"
         cmd = f"{env_prefix}gz topic -t {topic} -n 1 -e"
@@ -462,22 +516,195 @@ class ReleaseObjectsService(Node):
                 timeout=max(0.25, cmd_timeout),
             )
         except Exception:
-            return []
+            return {}
         if result.returncode != 0:
-            return []
-        names: List[str] = []
+            return {}
+        poses: Dict[str, Tuple[float, float, float]] = {}
+        current_name = ""
+        in_position = False
+        x: Optional[float] = None
+        y: Optional[float] = None
+        z: Optional[float] = None
         for line in (result.stdout or "").splitlines():
             line = line.strip()
-            if not line.startswith("name:"):
+            if line.startswith("name:"):
+                try:
+                    _, value = line.split(":", 1)
+                except ValueError:
+                    continue
+                current_name = value.strip().strip('"').strip("'")
+                continue
+            if line == "position {":
+                in_position = True
+                x = y = z = None
+                continue
+            if not in_position:
+                continue
+            if line.startswith("x:"):
+                try:
+                    x = float(line.split(":", 1)[1].strip())
+                except Exception:
+                    x = 0.0
+                continue
+            if line.startswith("y:"):
+                try:
+                    y = float(line.split(":", 1)[1].strip())
+                except Exception:
+                    y = 0.0
+                continue
+            if line.startswith("z:"):
+                try:
+                    z = float(line.split(":", 1)[1].strip())
+                except Exception:
+                    z = 0.0
+                continue
+            if line == "}":
+                if current_name:
+                    poses[current_name] = (x or 0.0, y or 0.0, z or 0.0)
+                in_position = False
+        return poses
+
+    def _detach_drop_objects(self, names: List[str]) -> bool:
+        retries = read_int_param(self, "detach_publish_retries", 1, min_value=1)
+        retry_sleep = read_float_param(self, "detach_publish_retry_sec", 0.1, min_value=0.0)
+        published_any = 0
+        for attempt in range(1, retries + 1):
+            ready, published = self._publish_detach_topics(
+                names,
+                label=f"attempt={attempt}/{retries}",
+            )
+            if published > 0:
+                published_any += published
+            if attempt < retries:
+                time.sleep(retry_sleep)
+        if published_any > 0:
+            return True
+        self.get_logger().warn(
+            "[PHYSICS][DROP] detach publish unavailable; fallback delete/spawn "
+            f"published_any={published_any}"
+        )
+        return False
+
+    def _publish_detach_topics(
+        self,
+        names: List[str],
+        *,
+        label: str,
+    ) -> Tuple[int, int]:
+        ready = 0
+        published = 0
+        for name in names:
+            pub = self._drop_detach_pubs.get(name)
+            if pub is None:
                 continue
             try:
-                _, value = line.split(":", 1)
-            except ValueError:
+                sub_count = int(pub.get_subscription_count())
+            except Exception:
+                sub_count = 0
+            if sub_count <= 0:
                 continue
-            value = value.strip().strip('"').strip("'")
-            if value:
-                names.append(value)
-        return names
+            ready += 1
+            pub.publish(Empty())
+            published += 1
+        if published > 0:
+            self.get_logger().info(
+                "[PHYSICS][DROP] detach publish "
+                f"sent={published} ready={ready}/{len(names)} {label}"
+            )
+        return ready, published
+
+    def _load_table_geometry(self) -> Optional[Tuple[float, float, float, float, float]]:
+        if self._table_geom_cache is not None:
+            return self._table_geom_cache
+        world_sdf = read_str_param(self, "world_sdf", "").strip()
+        if not world_sdf or not os.path.exists(world_sdf):
+            return None
+        try:
+            tree = ET.parse(world_sdf)
+            root = tree.getroot()
+            world_elem = root.find("world")
+            if world_elem is None:
+                return None
+            table_model = None
+            for model in world_elem.findall("model"):
+                if model.get("name", "") == "mesa_pro":
+                    table_model = model
+                    break
+            if table_model is None:
+                return None
+            model_pose = self._pose_from_text(table_model.findtext("pose", default="0 0 0 0 0 0"))
+            link = table_model.find("link")
+            if link is None:
+                return None
+            collision = link.find("collision[@name='tablero_collision']") or link.find("collision")
+            if collision is None:
+                return None
+            coll_pose = self._pose_from_text(collision.findtext("pose", default="0 0 0 0 0 0"))
+            size_text = collision.findtext("geometry/box/size", default="0.768 0.80 0.05")
+            vals = [float(v) for v in size_text.split()]
+            if len(vals) < 3:
+                return None
+            size_x, size_y, size_z = vals[:3]
+            center_x = float(model_pose.position.x + coll_pose.position.x)
+            center_y = float(model_pose.position.y + coll_pose.position.y)
+            table_z = float(model_pose.position.z + coll_pose.position.z + (size_z / 2.0))
+            self._table_geom_cache = (center_x, center_y, float(size_x), float(size_y), table_z)
+            return self._table_geom_cache
+        except Exception as exc:
+            self.get_logger().warn(f"[PHYSICS][DROP] table geometry unavailable: {exc}")
+            return None
+
+    def _is_pose_on_table(self, pose: Tuple[float, float, float]) -> bool:
+        geom = self._load_table_geometry()
+        if geom is None:
+            return False
+        center_x, center_y, size_x, size_y, table_z = geom
+        x, y, z = pose
+        half_x = (size_x / 2.0) + 0.09
+        half_y = (size_y / 2.0) + 0.09
+        dz = z - table_z
+        return (
+            abs(x - center_x) <= half_x
+            and abs(y - center_y) <= half_y
+            and 0.0 <= dz <= 0.08
+        )
+
+    def _wait_release_settled(self, env_prefix: str, world_name: str, names: List[str]) -> bool:
+        timeout_sec = read_float_param(self, "settle_timeout_sec", 6.0, min_value=0.5)
+        poll_sec = read_float_param(self, "settle_poll_sec", 0.2, min_value=0.05)
+        confirmations = read_int_param(self, "settle_confirmations", 1, min_value=1)
+        deadline = time.monotonic() + timeout_sec
+        stable_hits = 0
+        last_pending = "unknown"
+        while time.monotonic() < deadline:
+            pose_map = self._list_pose_info_entity_poses(env_prefix, world_name)
+            pending: List[str] = []
+            for name in names:
+                pose = pose_map.get(name)
+                if pose is None:
+                    pending.append(f"{name}:missing")
+                    continue
+                if not self._is_pose_on_table(pose):
+                    pending.append(
+                        f"{name}:({pose[0]:.3f},{pose[1]:.3f},{pose[2]:.3f})"
+                    )
+            if not pending:
+                stable_hits += 1
+                if stable_hits >= confirmations:
+                    return True
+            else:
+                stable_hits = 0
+                last_pending = ", ".join(pending[:4])
+                pending_names = [item.split(":", 1)[0] for item in pending]
+                self._publish_detach_topics(
+                    pending_names,
+                    label="pending_retry",
+                )
+            time.sleep(poll_sec)
+        msg = f"validacion release falló: objetos no asentados ({last_pending})"
+        self.get_logger().error(f"[PHYSICS][DROP] {msg}")
+        self._set_error(msg)
+        return False
 
     def _load_drop_models(self) -> bool:
         world_sdf = read_str_param(self, "world_sdf", "").strip()
@@ -590,7 +817,8 @@ class ReleaseObjectsService(Node):
             )
         if not spawn_ok:
             self._set_error("Fallo liberando DROP (spawn/delete gz)")
-        return spawn_ok
+            return False
+        return self._validate_release_entities(world_name, names)
 
     def _gz_service_exists(self, env_prefix: str, service: str) -> bool:
         cmd_timeout = read_float_param(self, "gz_cmd_timeout_sec", 3.5, min_value=0.2)

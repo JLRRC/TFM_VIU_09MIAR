@@ -463,9 +463,10 @@ def mark_object_grasped(name: str, *, reason: str = "", read_only: bool = False)
     if state and state.logical_state not in (
         ObjectLogicalState.ON_TABLE,
         ObjectLogicalState.SELECTED,
+        ObjectLogicalState.RELEASED,
     ):
         _log_state(
-            f"[OBJECTS][INVARIANT] GRASPED requires ON_TABLE/SELECTED ({name})",
+            f"[OBJECTS][INVARIANT] GRASPED requires ON_TABLE/SELECTED/RELEASED ({name})",
             key=f"grasp_gate:{name}",
         )
         return False
@@ -714,6 +715,28 @@ def _ensure_loaded() -> None:
         _LOADED_FROM_DISK = True
         _LOADING_FROM_DISK = False
     _log_object_types_once()
+
+
+def has_any_carried_objects() -> bool:
+    """Check if any object is in CARRIED state."""
+    _ensure_loaded()
+    with OBJECT_POS_LOCK:
+        for state in _OBJECT_STATES.values():
+            if state.logical_state == ObjectLogicalState.CARRIED:
+                return True
+    return False
+
+
+def are_all_objects_released() -> bool:
+    """Check if all objects are in RELEASED state (all released or none spawned)."""
+    _ensure_loaded()
+    with OBJECT_POS_LOCK:
+        if not _OBJECT_STATES:
+            return True  # No objetos = considerado "released"
+        for state in _OBJECT_STATES.values():
+            if state.logical_state != ObjectLogicalState.RELEASED:
+                return False
+    return True
 
 
 def save_object_positions() -> None:

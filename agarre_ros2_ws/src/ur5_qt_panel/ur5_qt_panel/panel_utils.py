@@ -207,7 +207,56 @@ def _log_tf_transform_warning(context: str, exc: Exception) -> None:
     print(timestamped_line(msg), flush=True)
 
 
+def _transform_xyz_via_tf(
+    coords: Tuple[float, float, float],
+    source_frame: str,
+    target_frame: str,
+    *,
+    timeout_sec: float = 0.05,
+) -> Optional[Tuple[float, float, float]]:
+    """Transform XYZ coordinates via TF when a live transform is available."""
+    helper = get_tf_helper()
+    if helper is None or PointStamped is None or rclpy is None:
+        return None
+    try:
+        point = PointStamped()
+        point.header.frame_id = str(source_frame or "").strip() or "world"
+        if BuiltinTime is not None:
+            point.header.stamp = BuiltinTime(sec=0, nanosec=0)
+        else:
+            point.header.stamp = rclpy.time.Time().to_msg()
+        point.point.x = float(coords[0])
+        point.point.y = float(coords[1])
+        point.point.z = float(coords[2])
+        converted = helper.transform_point(
+            point,
+            str(target_frame or "").strip() or "world",
+            timeout_sec=timeout_sec,
+        )
+        if not converted:
+            return None
+        return (
+            float(converted.point.x),
+            float(converted.point.y),
+            float(converted.point.z),
+        )
+    except Exception as exc:
+        _log_tf_transform_warning(
+            f"transform_xyz {source_frame}->{target_frame}",
+            exc,
+        )
+        return None
+
+
 def base_to_world(x: float, y: float, z: float) -> Tuple[float, float, float]:
+    world_frame = str(WORLD_FRAME or "world").strip() or "world"
+    transformed = _transform_xyz_via_tf(
+        (float(x), float(y), float(z)),
+        "base_link",
+        world_frame,
+    )
+    if transformed is not None:
+        return transformed
     return (x + UR5_BASE_X, y + UR5_BASE_Y, z + UR5_BASE_Z)
 
 def read_world_name(world_path: str) -> str:
@@ -602,6 +651,13 @@ def table_xy_to_pixel_float(x: float, y: float, w: int, h: int) -> Optional[Tupl
         out = _apply_homography(inv, float(x), float(y))
         if out:
             nx, ny = out
+            # Keep the inverse homography path consistent with _norm_to_pixel.
+            # Without these flips, the calibration grid can appear vertically
+            # or horizontally mirrored even if pixel->world is correct.
+            if TABLE_IMAGE_FLIP_Y:
+                ny = -ny
+            if TABLE_IMAGE_FLIP_X:
+                nx = -nx
             if TABLE_IMAGE_SWAP_XY:
                 nx, ny = ny, nx
             px = (nx + 0.5) * w
@@ -886,7 +942,21 @@ def object_out_of_reach(x: float, y: float) -> bool:
     return (dx * dx + dy * dy) > (UR5_REACH_RADIUS * UR5_REACH_RADIUS)
 
 
+def angle_shortest_diff_rad(current: float, target: float) -> float:
+    """Return the shortest signed angular distance between two angles."""
+    delta = float(current) - float(target)
+    return math.atan2(math.sin(delta), math.cos(delta))
+
+
 def world_to_base(x: float, y: float, z: float) -> Tuple[float, float, float]:
+    world_frame = str(WORLD_FRAME or "world").strip() or "world"
+    transformed = _transform_xyz_via_tf(
+        (float(x), float(y), float(z)),
+        world_frame,
+        "base_link",
+    )
+    if transformed is not None:
+        return transformed
     return (x - UR5_BASE_X, y - UR5_BASE_Y, z - UR5_BASE_Z)
 
 
@@ -1257,6 +1327,7 @@ _TF_YAML_HEAD_LOGGED = False
 _EE_UNAVAILABLE_LOGGED = False
 _TF_YAML_HEAD_LOGGED = False
 EE_FRAME_CANDIDATE_BASES = (
+    "rg2_pinch_center",
     "tool0",
     "rg2_tcp",
     "tcp",
@@ -1623,7 +1694,7 @@ def _select_ee_frame(
         add_candidate(preferred)
 
     # Align with tf_probe keepers priority.
-    for keeper in ("rg2_tcp", "tool0", "tcp", "ee_link", "flange", "wrist_3_link", "ft_frame", "rg2_hand"):
+    for keeper in ("rg2_pinch_center", "rg2_tcp", "tool0", "tcp", "ee_link", "flange", "wrist_3_link", "ft_frame", "rg2_hand"):
         add_candidate(keeper)
 
     prefixes = set()
@@ -1752,6 +1823,7 @@ BASE_FRAME_CANDIDATES = [
     "base_link",
 ]
 EE_FRAME_PREFERENCE = [
+    "rg2_pinch_center",
     "rg2_tcp",
     "tool0",
     "tcp",
@@ -1937,9 +2009,15 @@ def transform_point_to_frame(
         return None, None
     if PoseStamped is None:
         return None, None
+    target_frame_norm = str(target_frame or BASE_FRAME or "base_link").strip() or "base_link"
+    source_frame_norm = str(source_frame or WORLD_FRAME or "world").strip() or "world"
     if tf2_geometry_msgs is None:
         try:
-            transform = helper.lookup_transform(target_frame, source_frame, timeout_sec=timeout_sec)
+            transform = helper.lookup_transform(
+                target_frame_norm,
+                source_frame_norm,
+                timeout_sec=timeout_sec,
+            )
             if not transform:
                 return None, None
             coords = _apply_transform_to_tuple(world_pos, transform)
@@ -1949,16 +2027,20 @@ def transform_point_to_frame(
             return None, None
     try:
         pose = PoseStamped()
-        pose.header.frame_id = source_frame or ""
+        pose.header.frame_id = source_frame_norm
         if BuiltinTime is not None:
             pose.header.stamp = BuiltinTime(sec=0, nanosec=0)
         else:
             pose.header.stamp = rclpy.time.Time().to_msg()
         pose.pose.position.x, pose.pose.position.y, pose.pose.position.z = world_pos
         pose.pose.orientation.w = 1.0
-        transformed = helper.transform_pose(pose, target_frame, timeout_sec)
+        transformed = helper.transform_pose(pose, target_frame_norm, timeout_sec)
         if not transformed:
-            transform = helper.lookup_transform(target_frame, source_frame, timeout_sec=timeout_sec)
+            transform = helper.lookup_transform(
+                target_frame_norm,
+                source_frame_norm,
+                timeout_sec=timeout_sec,
+            )
             if not transform:
                 return None, None
             coords = _apply_transform_to_tuple(world_pos, transform)
@@ -1968,7 +2050,11 @@ def transform_point_to_frame(
             transformed.pose.position.y,
             transformed.pose.position.z,
         )
-        transform = helper.lookup_transform(target_frame, source_frame, timeout_sec=timeout_sec)
+        transform = helper.lookup_transform(
+            target_frame_norm,
+            source_frame_norm,
+            timeout_sec=timeout_sec,
+        )
         return coords, transform
     except Exception as exc:
         _log_tf_transform_warning("transform_point_to_frame", exc)

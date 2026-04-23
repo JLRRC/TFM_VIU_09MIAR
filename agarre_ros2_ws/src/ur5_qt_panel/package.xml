@@ -28,6 +28,7 @@
   <depend>moveit_msgs</depend>
   <depend>tfm_grasping</depend>
   <depend>ur5_panel_interfaces</depend>
+  <depend>ur5_tools</depend>
 
   <exec_depend>python3-pyqt5</exec_depend>
   <exec_depend>python3-numpy</exec_depend>

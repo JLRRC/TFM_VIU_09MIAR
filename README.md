@@ -1,186 +1,103 @@
-# Workspace TFM
+# TFM
 
-Este workspace contiene la version consolidada del TFM de agarre inteligente. La raiz se ha simplificado para dejar solo los elementos operativos y de entrega imprescindibles:
+Workspace principal del TFM de percepcion e inferencia de agarre para UR5 con ROS 2, Gazebo y MoveIt 2.
 
-- `agarre_inteligente/`: bloque experimental de vision y aprendizaje profundo.
-- `agarre_ros2_ws/`: bloque ROS 2, Gazebo, MoveIt y panel de control.
-- `reports/`: repositorio unico de artefactos, tablas, ilustraciones, validaciones y evidencias del TFM.
-- `lanzar_panelv2.sh`: script raiz para arrancar el panel V2.
-- `actualizar_reports.sh`: script raiz para actualizar el contenido consolidado de `reports/`.
+## Mapa rapido
 
-## 0. Clonado y puesta en marcha rapida
+- `agarre_inteligente/`: bloque de vision, entrenamiento, evaluacion y resultados por experimento.
+- `agarre_ros2_ws/`: workspace ROS 2 del panel, simulacion, planificacion e integracion del bloque TFM.
+- `reports/`: artefactos curados de memoria, metricas validadas, evidencias y exportaciones, incluyendo el PDF final actualmente tomado como referencia.
 
-Prerequisitos minimos:
+## Flujos principales
 
-- Linux con ROS 2 Jazzy disponible en `/opt/ros/jazzy`
-- Python 3 con soporte para `venv`
-- `git`
-
-Clonado:
+Arranque canónico, oficial y válido del panel completo:
 
 ```bash
-git clone https://github.com/JLRRC/TFM_VIU_09MIAR.git
-cd TFM_VIU_09MIAR
+./lanzar_panelc2.sh
 ```
 
-Preparacion del entorno de vision:
+`./lanzar_panelv2.sh` se mantiene como alias de compatibilidad.
+La repetición manual final de las pruebas operativas debe ejecutarse con `./lanzar_panelc2.sh`.
+
+Parar el stack ROS 2:
 
 ```bash
-cd agarre_inteligente
-./bootstrap.sh
-cd ..
+./agarre_ros2_ws/scripts/stop_panel_v2.sh
 ```
 
-Build del workspace ROS 2:
+Relanzar entrenamientos base del capitulo 5:
 
 ```bash
-cd agarre_ros2_ws
-source /opt/ros/jazzy/setup.bash
-colcon build --symlink-install
-cd ..
+./recrear_experimentos_cap5_gpu.sh
 ```
 
-Arranque recomendado:
+Regenerar artefactos curados del documento:
 
 ```bash
-./lanzar_panelv2.sh
+./recrear_artefactos_tfm.sh
 ```
 
-Arranque sin display grafico visible:
+Regenerar la tabla de latencia de inferencia:
 
 ```bash
-export PANEL_FORCE_OFFSCREEN=1
-./lanzar_panelv2.sh
+./recrear_tabla_5_3_latencia.sh
 ```
 
-## 1. Estructura del workspace
+## Fuente de verdad por area
 
-### `agarre_inteligente/`
+- Vision y resultados experimentales: `agarre_inteligente/`
+- Integracion ROS 2 y panel: `agarre_ros2_ws/`
+- Figuras, tablas y metricas que respaldan la memoria: `reports/`
 
-Contiene el bloque academico-experimental del TFM:
+En vision conviven dos familias ligeras:
 
-- configuraciones de experimentos (`config/`)
-- codigo fuente de modelos, entrenamiento y evaluacion (`src/`)
-- scripts de preparacion de dataset, resumen, figuras y tablas (`scripts/`)
-- datos procesados y dataset (`data/`)
-- experimentos entrenados y checkpoints (`experiments/`)
-- documentacion tecnica y de trazabilidad (`docs/`)
-- entorno Python reproducible (`venv/`)
+- `EXP1` y `EXP2`: referencia de resultados de la memoria; son los experimentos realmente usados en tablas, figuras y comparativas.
+- `EXP1.1` y `EXP1.2`: experimentos adicionales que materializan en codigo el diseño objetivo descrito en `4.6.2`.
 
-Este subproyecto es la fuente de verdad para las metricas, tablas y figuras del TFM. Los artefactos finales ya no se guardan aqui, sino en la carpeta raiz `reports/`.
+Notas de rigor:
 
-### `agarre_ros2_ws/`
+- La recreacion oficial del TFM se mantiene sobre `EXP1..EXP4`.
+- El PDF de referencia del TFM en este workspace es `reports/TFM_Lozano_Rodriguez-Jesus.pdf`.
+- Todos los experimentos disponibles pueden cargarse y usarse desde el panel de inferencia.
 
-Contiene el bloque robotico-operativo del TFM:
+## Convenciones utiles
 
-- paquetes ROS 2 (`src/`)
-- scripts de arranque, validacion, diagnosis y utilidades (`scripts/`)
-- herramientas auxiliares (`tools/`)
-- modelos y mundos de simulacion (`models/`, `worlds/`)
-- configuraciones de pruebas y desarrollo (`pytest.ini`, `ruff.toml`, `requirements-dev.txt`)
+- El codigo editable vive sobre todo en `agarre_inteligente/` y `agarre_ros2_ws/src/`.
+- Solo existen `README` en la raiz y en los bloques principales del proyecto; cada uno explica su zona.
 
-Este subproyecto proporciona el stack de simulacion y control del UR5 con RG2, junto con el panel Qt de operacion y el modulo de integracion con el bloque TFM.
+## Siguiente lectura
 
-### `reports/`
+- `agarre_inteligente/README.md`
+- `agarre_ros2_ws/README.md`
+- `reports/README.md`
 
-Es la carpeta unica de salida y consolidacion del TFM. Reune:
+## Nota final sobre el split Cornell
 
-- tablas finales (`reports/tables/`)
-- figuras generales (`reports/figures/`)
-- ilustraciones finales del capitulo 5 (`reports/tfm_figuras_cap5_1/`)
-- evidencia ROS 2 / Gazebo (`reports/tfm_ros_gazebo_results/`)
-- auditoria visual (`reports/tfm_visual_revision/`)
-- auditoria del panel (`reports/panel_audit/`)
-- episodios y logs del panel (`reports/panel_logs/`)
-- benchmark y auditoria Cornell (`reports/bench/`, `reports/cornell_audit/`)
-- documentos de validacion y trazabilidad del workspace (`reports/docs/workspace/`, `reports/validation/`)
-- archivo historico apartado (`reports/archive/`)
+- El TFM documenta el split final como `3542/1569`.
+- En el workspace actual se asume como estado operativo real `3541/1569`.
+- La causa es una anotacion corrupta en `agarre_inteligente/data/raw/cornell/01/pcd0165cpos.txt`, donde aparece un rectangulo con vertices `NaN NaN`.
+- El generador de CSV puede volver a materializar `3542` filas en `train.csv`, pero una de ellas queda no finita y el dataset efectivo la descarta al cargar.
+- Mientras no aparezca una version valida de esa anotacion dentro del propio workspace o de una copia externa fiable, la referencia tecnica real del repo debe considerarse `3541/1569`.
 
-El inventario maestro de lo que debe existir en esta carpeta esta en `reports/INVENTARIO_ARTEFACTOS_TFM.md`.
+## Nota de trazabilidad — módulo de panel Qt
 
-## 2. Scripts raiz permitidos
+El componente de interfaz gráfica del sistema de agarre es el módulo
+`ur5_qt_panel.panel_v2`, ubicado en
+`agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_v2.py`.
+Este módulo está registrado como entry point en `setup.py`
+(`panel_v2 = ur5_qt_panel.panel_v2:main`) y es invocado por
+`ur5_stack.launch.py` y por `scripts/start_panel_v2.sh`.
 
-### `lanzar_panelv2.sh`
+En versiones preliminares de la memoria del TFM se utilizó la
+denominación `main_panel.py` para referirse conceptualmente a este
+componente. Dicha denominación no tiene correspondencia en el historial
+git del repositorio. La diferencia es exclusivamente nominal y no afecta
+a los resultados experimentales presentados.
 
-Lanza el panel V2 del workspace ROS 2 usando el entorno virtual disponible. Detecta automaticamente alguno de estos entornos, por este orden:
+## Nota final sobre los desajustes metodologicos no aplicados
 
-- `agarre_inteligente/.venv-tfm`
-- `agarre_inteligente/venv`
-- `agarre_inteligente/.venv`
-
-Uso normal:
-
-```bash
-./lanzar_panelv2.sh
-```
-
-Uso sin entorno grafico visible:
-
-```bash
-export PANEL_FORCE_OFFSCREEN=1
-./lanzar_panelv2.sh
-```
-
-### `actualizar_reports.sh`
-
-Regenera y consolida el contenido de `reports/` desde el bloque experimental y desde cualquier salida temporal que haya aparecido en los subproyectos.
-
-Acciones principales:
-
-- regenera `summary_results.csv`, figuras y tablas del bloque experimental
-- sincroniza ilustraciones y artefactos historicos
-- consolida cualquier `reports/` que reaparezca dentro de subproyectos
-- elimina carpetas `reports/` fuera de la raiz
-- reconstruye el inventario `reports/INVENTARIO_ARTEFACTOS_TFM.md`
-
-Uso:
-
-```bash
-./actualizar_reports.sh
-```
-
-## 3. Flujo de trabajo recomendado
-
-### Para trabajar con el panel
-
-```bash
-./lanzar_panelv2.sh
-```
-
-### Para refrescar el material entregable del TFM
-
-```bash
-./actualizar_reports.sh
-```
-
-### Para revisar el inventario de entrega
-
-Consultar:
-
-- `reports/INVENTARIO_ARTEFACTOS_TFM.md`
-- `reports/docs/workspace/AUDITORIA_MOVEIT_GAZEBO_QT.md`
-- `reports/docs/workspace/VALIDACION_WORKSPACE_2026_03_16.md`
-- `reports/docs/workspace/ENTREGA_WORKSPACE_2026_03_16.md`
-
-## 4. Criterio de organizacion aplicado
-
-El workspace se ha reorganizado con estos objetivos:
-
-- una sola carpeta `reports/` como destino canonico de resultados
-- raiz minimizada para facilitar subida a git y entrega
-- separacion clara entre codigo fuente y artefactos finales
-- trazabilidad documental sin duplicar resultados en varias ubicaciones
-- posibilidad de reconstruir y actualizar `reports/` desde un unico punto de entrada
-
-## 5. Estado esperado tras la reorganizacion
-
-En la raiz del workspace deben quedar, como elementos visibles principales:
-
-- `agarre_inteligente/`
-- `agarre_ros2_ws/`
-- `reports/`
-- `lanzar_panelv2.sh`
-- `actualizar_reports.sh`
-- `README.md`
-
-Los artefactos auxiliares o historicos fuera de esta estructura se archivan dentro de `reports/archive/`.
+- Se reconocen tres desajustes metodologicos pendientes respecto a la memoria: la IoU Cornell con rectangulos orientados, el calculo de `grasp success` por imagen y una posible funcion de perdida mas alineada con la formulacion teorica.
+- No se aplican cambios sobre esos puntos en este workspace porque dejarian de ser estrictamente comparables los resultados ya presentados en el TFM.
+- Ajustar la IoU y el criterio de `grasp success` obligaria como minimo a reevaluar `EXP1..EXP4`.
+- Cambiar la funcion de perdida obligaria a reentrenar los experimentos oficiales.
+- Por tanto, el estado actual del repositorio conserva deliberadamente la base experimental ya consolidada en la memoria, y estos puntos quedan solo anotados como trabajo pendiente no ejecutado.

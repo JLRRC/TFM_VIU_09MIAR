@@ -2,7 +2,7 @@
 # Ruta/archivo: agarre_ros2_ws/src/ur5_tools/test/test_system_state_machine.py
 # Contenido: Codigo de herramientas, bridges y servicios auxiliares del stack UR5.
 # Uso breve: Se usa en build con colcon y como nodos/servicios ROS 2 del sistema.
-"""Unit tests for SystemStateMachine decision logic."""
+"""Tests unitarios de la logica de decision de SystemStateMachine."""
 
 import pytest
 
@@ -22,6 +22,7 @@ def _snapshot(
     pose_ok: bool = True,
     camera_ok: bool = True,
     tf_ok: bool = True,
+    geometry_ok: bool = True,
     controllers_ready: bool = True,
     missing_controllers=None,
     moveit_ready: bool = True,
@@ -41,7 +42,10 @@ def _snapshot(
         camera_age=0.0 if camera_ok else float("inf"),
         tf_ok=tf_ok,
         tf_reason="ok" if tf_ok else "missing",
+        geometry_ok=geometry_ok,
+        geometry_reason="ok" if geometry_ok else "mismatch",
         controllers_ready=controllers_ready,
+        controllers_reason="ok" if controllers_ready else "controllers missing",
         missing_controllers=missing_controllers,
         moveit_ready=moveit_ready,
     )
@@ -86,6 +90,15 @@ def test_decide_waiting_tf_when_tf_missing():
         SystemInputs(snapshot=snap, startup_expired=False, ever_ready=False)
     )
     assert decision.state == SystemState.WAITING_TF
+
+
+def test_decide_waiting_geometry_when_tf_ok_but_geometry_bad():
+    fsm = SystemStateMachine(required_controllers=[], moveit_required=False)
+    snap = _snapshot(geometry_ok=False)
+    decision = fsm.decide(
+        SystemInputs(snapshot=snap, startup_expired=False, ever_ready=False)
+    )
+    assert decision.state == SystemState.WAITING_GEOMETRY
 
 
 def test_decide_waiting_camera_when_camera_missing():

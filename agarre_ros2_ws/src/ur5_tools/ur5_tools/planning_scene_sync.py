@@ -214,6 +214,8 @@ class PlanningSceneSync(Node):
         self._attached_state: Dict[str, bool] = {name: False for name in self._object_names}
         self._last_signature = ""
         self._last_modes: Dict[str, str] = {}
+        self._pending_signature = ""
+        self._pending_modes: Optional[Dict[str, str]] = None
         self._last_service_log = 0.0
         self._last_attach_warn: Dict[str, float] = {}
         self._apply_future = None
@@ -501,7 +503,7 @@ class PlanningSceneSync(Node):
             f"[SCENE_SYNC] attach fallback a world collision para {name}; TF {self._world_frame}->{self._ee_frame} no disponible"
         )
 
-    def _build_scene_request(self) -> Tuple[ApplyPlanningScene.Request, str]:
+    def _build_scene_request(self) -> Tuple[ApplyPlanningScene.Request, str, Dict[str, str]]:
         scene = PlanningScene()
         scene.is_diff = True
         scene.robot_state.is_diff = True
@@ -552,8 +554,6 @@ class PlanningSceneSync(Node):
             if attached:
                 attached_object = self._attached_add(collision_world)
                 if attached_object is not None:
-                    if previous_mode == "world":
-                        scene.world.collision_objects.append(self._collision_remove(name))
                     scene.robot_state.attached_collision_objects.append(attached_object)
                     signature_parts.append(
                         "{}:attached:{:.3f}:{:.3f}:{:.3f}".format(
@@ -581,8 +581,7 @@ class PlanningSceneSync(Node):
 
         request = ApplyPlanningScene.Request()
         request.scene = scene
-        self._last_modes = next_modes
-        return request, "|".join(signature_parts)
+        return request, "|".join(signature_parts), next_modes
 
     def _timer_cb(self) -> None:
         if self._apply_future is not None and not self._apply_future.done():
@@ -596,21 +595,38 @@ class PlanningSceneSync(Node):
                 )
             return
 
-        request, signature = self._build_scene_request()
+        request, signature, next_modes = self._build_scene_request()
         if signature == self._last_signature:
             return
-        self._last_signature = signature
+        self._pending_signature = signature
+        self._pending_modes = next_modes
         self._apply_future = self._apply_client.call_async(request)
         self._apply_future.add_done_callback(self._on_apply_done)
 
     def _on_apply_done(self, future) -> None:
+        self._apply_future = None
         try:
             response = future.result()
         except Exception as exc:
+            self._pending_signature = ""
+            self._pending_modes = None
             self.get_logger().error(f"[SCENE_SYNC] apply_planning_scene failed: {exc}")
             return
         if response is None or not bool(getattr(response, "success", False)):
-            self.get_logger().warning("[SCENE_SYNC] apply_planning_scene devolvio success=false")
+            pending_signature = self._pending_signature or "<empty>"
+            self._pending_signature = ""
+            self._pending_modes = None
+            self.get_logger().warning(
+                "[SCENE_SYNC] apply_planning_scene devolvio success=false "
+                f"signature={pending_signature}"
+            )
+            return
+        if self._pending_signature:
+            self._last_signature = self._pending_signature
+        if self._pending_modes is not None:
+            self._last_modes = self._pending_modes
+        self._pending_signature = ""
+        self._pending_modes = None
 
 
 def main() -> None:

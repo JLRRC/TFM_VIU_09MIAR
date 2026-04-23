@@ -1,0 +1,279 @@
+{
+  "attach_state": {
+    "attach_topic_published": false,
+    "follow_confirmed": false,
+    "logical_attached": false,
+    "logical_state": "SELECTED",
+    "owner": "NONE"
+  },
+  "dist_target_tcp": 0.013877585187972743,
+  "dist_target_tcp_after": 0.013877585187972743,
+  "dist_target_tcp_before": 0.21674567055571115,
+  "dist_tcp_obj": 0.02433299126461214,
+  "dist_tcp_obj_after": 0.02433299126461214,
+  "dist_tcp_obj_before": 0.2073201381418372,
+  "frame_usado": "world",
+  "gripper_state": {
+    "closed_flag": false,
+    "expected_closed": false,
+    "force_estimate": 0.0,
+    "joint_positions": {
+      "rg2_finger_joint1": 0.49999999999999567,
+      "rg2_finger_joint2": 0.4999999999999989
+    },
+    "joint_state_age_sec": 0.0,
+    "max_abs_err": 4.3298697960381105e-15,
+    "measured_target_ok": true,
+    "opening_sum": 0.9999999999999946,
+    "target_mag": 0.5
+  },
+  "ik_solution": {
+    "err_norm": 0.13526870994464313,
+    "ik_ok": true,
+    "ik_solution": [
+      -0.7407230328996723,
+      -1.0020467422018469,
+      1.831225164921466,
+      -0.8866828927003175,
+      -0.7365982015622548,
+      -6.138389352316715
+    ],
+    "label": "APPROACH_COARSE",
+    "offset_vector": [
+      0.0,
+      -0.175,
+      1.071565949253934e-17
+    ],
+    "runtime_target_dist": 0.013877585187972708,
+    "runtime_target_ok": true,
+    "runtime_target_pos": [
+      0.4362200490089315,
+      0.007288565189177839,
+      0.04820668618855144
+    ],
+    "runtime_target_stable_dist": 0.013877585187972708,
+    "runtime_target_stable_elapsed_sec": 0.20213609200436622,
+    "runtime_target_stable_motion_delta_m": 0.0008186368938496207,
+    "runtime_target_stable_ok": true,
+    "runtime_target_stable_pos": [
+      0.4362200490089315,
+      0.007288565189177839,
+      0.04820668618855144
+    ],
+    "runtime_target_stable_pose_consistency": {
+      "fk_live_delta_m": 0.011022527926165824,
+      "fk_live_ok": true,
+      "fk_trace_delta_m": 0.011841016046803687,
+      "joint_state_age_sec": 0.0,
+      "joint_state_fresh_ok": true,
+      "ok_for_gate": true,
+      "panel_fk_age_sec": 0.05668727000011131,
+      "panel_fk_base": [
+        0.44334712101139057,
+        0.0007789718708289539,
+        0.05352891893285879
+      ],
+      "panel_fk_fresh_ok": true,
+      "panel_trace_base": [
+        0.43568001705267373,
+        0.0077697742664737685,
+        0.04782331994835789
+      ],
+      "phase": "none",
+      "phase_end_age_sec": null,
+      "phase_end_delta_m": null,
+      "phase_jump_ok": true,
+      "phase_jump_tol_m": 1.0,
+      "source_age_tol_sec": 300.0,
+      "source_sync_delta_sec": 0.0596611860091798,
+      "source_sync_ok": true,
+      "source_sync_tol_sec": 300.0,
+      "source_tol_m": 1.0,
+      "sources_fresh_ok": true,
+      "sources_ok": true,
+      "target_base": [
+        0.4355986544822348,
+        -6.151402686148624e-07,
+        0.0599994419994907
+      ],
+      "target_live_delta_m": 0.013877585187972708,
+      "tcp_base": [
+        0.4362200490089315,
+        0.007288565189177839,
+        0.04820668618855144
+      ],
+      "tf_stamp_age_sec": 1.809,
+      "trace_age_sec": 0.11634845600929111,
+      "trace_fresh_ok": true,
+      "trace_live_delta_m": 0.0008186368938496207,
+      "trace_live_ok": true
+    },
+    "runtime_target_stable_samples": 3,
+    "runtime_target_wait_dist": 0.014444497900735953,
+    "runtime_target_wait_ok": true,
+    "runtime_target_wait_pos": [
+      0.43568001705267373,
+      0.0077697742664737685,
+      0.04782331994835789
+    ],
+    "seed": [
+      0.0,
+      -1.5708,
+      0.0,
+      -1.5708,
+      0.0,
+      -3.07
+    ],
+    "target_execution_frame": "tool0",
+    "target_ik": [
+      -0.4355986544822348,
+      0.1750006151402686,
+      0.059999441999490685
+    ],
+    "target_source_frame": "rg2_pinch_center",
+    "target_tcp_runtime": [
+      0.4355986544822348,
+      -6.151402686148624e-07,
+      0.0599994419994907
+    ],
+    "target_tcp_world": [
+      -0.4144013455177652,
+      -6.151402686148624e-07,
+      0.9099994419994907
+    ],
+    "tcp_offset_m": 0.175
+  },
+  "joint_goal": [
+    -0.7407230328996723,
+    -1.0020467422018469,
+    1.831225164921466,
+    -0.8866828927003175,
+    -0.7365982015622548,
+    -6.138389352316715
+  ],
+  "note": "direct_ik_move",
+  "object_name": "pick_demo",
+  "object_pose_base_after": [
+    0.4355986544822348,
+    -6.151402686148624e-07,
+    0.024999441999490668
+  ],
+  "object_pose_world": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "object_pose_world_after": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "object_pose_world_before": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "offsets_aplicados": {
+    "coarse_extra_z_m": 0.035,
+    "mode": "direct_rg2_tcp",
+    "relative_mode": "keep_current_xy_when_aligned",
+    "tcp_z_offset_m": 0.0
+  },
+  "phase": "APPROACH_COARSE",
+  "pose_consistency": {
+    "fk_live_delta_m": 0.011022527926165824,
+    "fk_live_ok": true,
+    "fk_trace_delta_m": 0.011841016046803687,
+    "joint_state_age_sec": 0.0,
+    "joint_state_fresh_ok": true,
+    "ok_for_gate": true,
+    "panel_fk_age_sec": 0.0577202650019899,
+    "panel_fk_base": [
+      0.44334712101139057,
+      0.0007789718708289539,
+      0.05352891893285879
+    ],
+    "panel_fk_fresh_ok": true,
+    "panel_trace_base": [
+      0.43568001705267373,
+      0.0077697742664737685,
+      0.04782331994835789
+    ],
+    "phase": "APPROACH_COARSE",
+    "phase_end_age_sec": null,
+    "phase_end_delta_m": null,
+    "phase_jump_ok": true,
+    "phase_jump_tol_m": 1.0,
+    "source_age_tol_sec": 300.0,
+    "source_sync_delta_sec": 0.0596611860091798,
+    "source_sync_ok": true,
+    "source_sync_tol_sec": 300.0,
+    "source_tol_m": 1.0,
+    "sources_fresh_ok": true,
+    "sources_ok": true,
+    "target_base": [
+      0.4355986544822348,
+      -6.151402686148624e-07,
+      0.0599994419994907
+    ],
+    "target_live_delta_m": 0.013877585187972708,
+    "tcp_base": [
+      0.4362200490089315,
+      0.007288565189177839,
+      0.04820668618855144
+    ],
+    "tf_stamp_age_sec": 1.809,
+    "trace_age_sec": 0.1173814510111697,
+    "trace_fresh_ok": true,
+    "trace_live_delta_m": 0.0008186368938496207,
+    "trace_live_ok": true
+  },
+  "result": "ok",
+  "seq": 1,
+  "target_minus_tcp_after": [
+    -0.0006213945266967391,
+    -0.007289180329446454,
+    0.011792755810939304
+  ],
+  "target_minus_tcp_before": [
+    0.19651893521040864,
+    -0.05285580108111105,
+    0.0746006575070629
+  ],
+  "target_pose_base": [
+    0.4355986544822348,
+    -6.151402686148624e-07,
+    0.0599994419994907
+  ],
+  "target_pose_world": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.9099994419994907
+  ],
+  "tcp_obj_dx_base": 0.0006213945266967391,
+  "tcp_obj_dy_base": 0.007289180329446454,
+  "tcp_obj_dz_base": 0.02320724418906077,
+  "tcp_obj_xy_dist_base": 0.007315618978117831,
+  "tcp_pose_base_after": [
+    0.4362200490089315,
+    0.007288565189177839,
+    0.04820668618855144
+  ],
+  "tcp_pose_base_before": [
+    0.23907971927182617,
+    0.05285518594084244,
+    -0.01460121550757218
+  ],
+  "tcp_pose_world_after": [
+    -0.41377995099106846,
+    0.007288565189177839,
+    0.8982066861885514
+  ],
+  "tcp_pose_world_before": [
+    -0.6109202807281738,
+    0.05285518594084244,
+    0.8353987844924278
+  ],
+  "timestamp_enter": "2026-04-20T15:55:08.597+02:00",
+  "timestamp_exit": "2026-04-20T15:55:46.256+02:00"
+}

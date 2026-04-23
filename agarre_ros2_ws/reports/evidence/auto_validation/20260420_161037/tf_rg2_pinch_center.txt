@@ -1,0 +1,4 @@
+[INFO] [1776695372.032865796] [tf2_echo]: Waiting for transform base_link ->  rg2_pinch_center: Invalid frame ID "base_link" passed to canTransform argument target_frame - frame does not exist
+[INFO] [1776695374.019801092] [tf2_echo]: Waiting for transform base_link ->  rg2_pinch_center: Invalid frame ID "base_link" passed to canTransform argument target_frame - frame does not exist
+[INFO] [1776695376.020022653] [tf2_echo]: Waiting for transform base_link ->  rg2_pinch_center: Invalid frame ID "base_link" passed to canTransform argument target_frame - frame does not exist
+[INFO] [1776695377.860752430] [rclcpp]: signal_handler(SIGINT/SIGTERM)

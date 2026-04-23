@@ -5,6 +5,7 @@
 """Startup orchestration helpers for the panel."""
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from typing import Callable, Optional
@@ -45,7 +46,7 @@ class StartSequence:
     bridge_timeout_sec: float = 30.0
     controllers_timeout_sec: float = 20.0
     controllers_stable_sec: float = 2.0
-    moveit_timeout_sec: float = 40.0
+    moveit_timeout_sec: float = float(os.environ.get("PANEL_MOVEIT_STARTUP_TIMEOUT_SEC", "40.0") or "40.0")
     clock_timeout_sec: float = 12.0
     pose_timeout_sec: float = 20.0
     tf_timeout_sec: float = 12.0
@@ -172,12 +173,27 @@ class StartSequence:
         timeout_sec: float,
     ) -> bool:
         start = time.monotonic()
+        if label == "moveit":
+            self.emit_log(
+                "[MOVEIT2][START_WAIT] "
+                f"stage=begin label={label} timeout_sec={timeout_sec:.1f} poll_sec={self.poll_sec:.1f}"
+            )
         ok = self._wait_until(predicate, timeout_sec)
         elapsed = time.monotonic() - start
         if ok:
             self.emit_log(f"[AUTO][WAIT] {label}=OK t={elapsed:.2f}s")
+            if label == "moveit":
+                self.emit_log(
+                    "[MOVEIT2][START_WAIT] "
+                    f"stage=end label={label} result=ok elapsed_sec={elapsed:.2f}"
+                )
         else:
             self.emit_log(f"[AUTO][WAIT] {label}=FAIL t={elapsed:.2f}s timeout={timeout_sec:.1f}s")
+            if label == "moveit":
+                self.emit_log(
+                    "[MOVEIT2][START_WAIT] "
+                    f"stage=end label={label} result=fail elapsed_sec={elapsed:.2f} timeout_sec={timeout_sec:.1f}"
+                )
         return ok
 
     @staticmethod
@@ -191,16 +207,22 @@ class StartSequence:
 
     def _wait_until(self, predicate: Callable[[], bool], timeout_sec: float) -> bool:
         deadline = time.monotonic() + max(0.1, timeout_sec)
-        while time.monotonic() < deadline:
+        while True:
             if self.is_closing():
                 return False
             if predicate():
                 return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                break
+            wait_sec = min(self.poll_sec, remaining)
             if self.wait_for_change is not None:
-                self.wait_for_change(self.poll_sec)
+                self.wait_for_change(wait_sec)
             else:
-                time.sleep(self.poll_sec)
-        return False
+                time.sleep(wait_sec)
+        if self.is_closing():
+            return False
+        return bool(predicate())
 
     def _wait_until_stable(
         self,
@@ -211,20 +233,32 @@ class StartSequence:
         deadline = time.monotonic() + max(0.1, timeout_sec)
         stable_start: Optional[float] = None
         stable_required = max(0.1, stable_sec)
-        while time.monotonic() < deadline:
+        while True:
             if self.is_closing():
                 return False
+            now = time.monotonic()
             if predicate():
                 if stable_start is None:
-                    stable_start = time.monotonic()
-                if (time.monotonic() - stable_start) >= stable_required:
+                    stable_start = now
+                if (now - stable_start) >= stable_required:
                     return True
             else:
                 stable_start = None
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                break
+            wait_sec = min(self.poll_sec, remaining)
             if self.wait_for_change is not None:
-                self.wait_for_change(self.poll_sec)
+                self.wait_for_change(wait_sec)
             else:
-                time.sleep(self.poll_sec)
+                time.sleep(wait_sec)
+        if self.is_closing():
+            return False
+        now = time.monotonic()
+        if predicate():
+            if stable_start is None:
+                stable_start = now
+            return (now - stable_start) >= stable_required
         return False
 
     def _notify_moveit_autostart_blocked(self, reason: str) -> None:

@@ -122,6 +122,13 @@ class TfHelper:
                     rclpy.init(args=None)
             except Exception:
                 pass
+            # Si rclpy sigue sin estar inicializado (el init falló silenciosamente),
+            # no intentar crear el nodo — evita NotInitializedException en cascada.
+            if not rclpy.ok():
+                print(timestamped_line(
+                    "[TF][WARN] _start: rclpy no inicializado, TfHelper inactivo"
+                ), flush=True)
+                return
             use_sim_time = bool(USE_SIM_TIME)
             overrides = None
             if Parameter is not None:
@@ -416,7 +423,12 @@ def get_tf_helper() -> Optional[TfHelper]:
     if not ROS_AVAILABLE or Buffer is None:
         return None
     if _TF_HELPER is None:
-        _TF_HELPER = TfHelper()
+        try:
+            _TF_HELPER = TfHelper()
+        except Exception as exc:
+            print(timestamped_line(
+                f"[TF][WARN] get_tf_helper: creación fallida ({exc})"
+            ), flush=True)
     return _TF_HELPER
 
 

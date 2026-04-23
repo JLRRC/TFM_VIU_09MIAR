@@ -24,6 +24,7 @@ from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from rosgraph_msgs.msg import Clock
+from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
 
 from .param_utils import read_float_param, read_str_list_param, read_str_param
@@ -49,6 +50,19 @@ class ControllerBootstrap(Node):
         self.declare_parameter("autostart", True)
         self.declare_parameter("stay_alive", False)
         self.declare_parameter("retry_period_sec", 1.0)
+        self.declare_parameter(
+            "expected_arm_joints",
+            [
+                "shoulder_pan_joint",
+                "shoulder_lift_joint",
+                "elbow_joint",
+                "wrist_1_joint",
+                "wrist_2_joint",
+                "wrist_3_joint",
+            ],
+        )
+        self.declare_parameter("enforce_joint_identity", True)
+        self.declare_parameter("joint_identity_timeout_sec", 3.0)
 
         self._cm = read_str_param(self, "controller_manager", "/controller_manager")
         self._required = read_str_list_param(self, "required_controllers")
@@ -62,7 +76,15 @@ class ControllerBootstrap(Node):
         self._retry_period = read_float_param(
             self, "retry_period_sec", 1.0, min_value=0.2
         )
+        self._expected_arm_joints = set(read_str_list_param(self, "expected_arm_joints"))
+        self._enforce_joint_identity = bool(
+            self.get_parameter("enforce_joint_identity").value
+        )
+        self._joint_identity_timeout = read_float_param(
+            self, "joint_identity_timeout_sec", 3.0, min_value=0.2
+        )
         self._last_clock_wall = 0.0
+        self._last_joint_names = set()
         self._lock = threading.Lock()
         self._running = False
         self._retry_timer = None
@@ -79,6 +101,13 @@ class ControllerBootstrap(Node):
             Clock,
             "/clock",
             self._on_clock,
+            qos_profile_sensor_data,
+            callback_group=self._cb_group,
+        )
+        self.create_subscription(
+            JointState,
+            "/joint_states",
+            self._on_joint_states,
             qos_profile_sensor_data,
             callback_group=self._cb_group,
         )
@@ -112,6 +141,10 @@ class ControllerBootstrap(Node):
 
     def _on_clock(self, _msg: Clock) -> None:
         self._last_clock_wall = time.monotonic()
+
+    def _on_joint_states(self, msg: JointState) -> None:
+        names = {str(name).strip() for name in (msg.name or []) if str(name).strip()}
+        self._last_joint_names = names
 
     def _clock_ok(self) -> bool:
         if not self._wait_clock:
@@ -187,6 +220,24 @@ class ControllerBootstrap(Node):
         if not state_map:
             return False
         return all(state_map.get(name) == "active" for name in self._required)
+
+    def _wait_joint_identity(self) -> bool:
+        if not self._enforce_joint_identity or not self._expected_arm_joints:
+            return True
+        deadline = time.monotonic() + self._joint_identity_timeout
+        while time.monotonic() < deadline:
+            current = set(self._last_joint_names)
+            if self._expected_arm_joints.issubset(current):
+                return True
+            rclpy.spin_once(self, timeout_sec=0.1)
+        missing = sorted(self._expected_arm_joints.difference(self._last_joint_names))
+        sample = sorted(list(self._last_joint_names))[:8]
+        self.get_logger().error(
+            "[CTRL] joint identity mismatch missing=%s sample=%s",
+            ",".join(missing),
+            ",".join(sample),
+        )
+        return False
 
     def _start_retry_timer(self) -> None:
         if self._retry_timer is not None:
@@ -299,6 +350,8 @@ class ControllerBootstrap(Node):
                     f"[CTRL] activate reported failed; {name} state=active"
                 )
             self.get_logger().info(f"[CTRL] {name} activo")
+        if ok_all and not self._wait_joint_identity():
+            ok_all = False
         with self._lock:
             self._running = False
         return ok_all
