@@ -1,7 +1,7 @@
 # Cierre tecnico del incidente TCP RG2 en UR5
 
-Fecha de cierre: 2026-04-22
-Estado: cerrado y validado
+Fecha de cierre geometrico: 2026-04-23
+Estado: incidente TCP cerrado; follow-up funcional de cesta abierto
 Sistema: UR5 + RG2 + ROS 2 Jazzy + Gazebo Sim + MoveIt 2
 
 ## Resumen ejecutivo
@@ -30,111 +30,117 @@ La lectura runtime y el consumo programatico quedan centralizados en:
 
 - `src/ur5_tools/ur5_tools/gripper_geometry.py`
 
-Queda explicitamente descartado volver a tocar este TCP para ajustar comportamiento de planificacion, grasp, attach o transporte sin una nueva validacion visual dedicada.
+Queda explicitamente descartado volver a tocar este TCP para ajustar planificacion, grasp, attach o transporte sin una nueva validacion visual dedicada.
 
 ## Implementacion aplicada
 
-1. Se elimino el uso operativo de offsets legacy o duplicados en panel, DIRECTO y fallbacks FK.
+1. Se elimino el uso operativo de offsets legacy o duplicados en panel, DIRECTO y launch.
 2. Se promovio el self-check geometrico a gate de arranque con publicacion detallada en `/system_diag`.
-3. Se endurecio MoveIt y el bridge sin cambiar `ee_frame` ni la geometria del TCP.
-4. Se alineo el harness de validacion DIRECTO con el launcher canonico `./lanzar_panelc2.sh`, incluyendo el mismo margen de `home_with_object`.
+3. Se centralizo el perfil runtime validado en `scripts/panel_runtime_validated.env`.
+4. Se endurecio DIRECTO en transporte con retries, replan segmentado y post-check runtime/modelo sin volver a tocar el TCP.
+5. Se alineo la repeticion manual final con el launcher canonico `./lanzar_panelc2.sh`.
 
-## Archivos clave afectados
+## Evidencia de cierre del incidente TCP
 
-- `src/ur5_tools/ur5_tools/gripper_geometry.py`
-- `src/ur5_tools/ur5_tools/system_state_manager.py`
-- `src/ur5_tools/ur5_tools/ur5_moveit_bridge.py`
-- `src/ur5_bringup/config/system_state_manager.yaml`
-- `src/ur5_bringup/launch/ur5_stack.launch.py`
-- `src/ur5_qt_panel/ur5_qt_panel/panel_settings.py`
-- `src/ur5_qt_panel/ur5_qt_panel/panel_v2.py`
-- `src/ur5_qt_panel/ur5_qt_panel/panel_direct2.py`
-- `src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py`
-- `scripts/capture_system_diag.py`
-- `scripts/run_directo_validation.sh`
-- `scripts/summarize_directo_batch.py`
-- `scripts/diag_tf_tcp.sh`
-- `scripts/diag_startup_health.sh`
-- `scripts/validate_panel_flow.sh`
-- `../lanzar_panelv2.sh`
+### 1. Gate geometrico de arranque
 
-## Gate geometrico de arranque
+En las corridas manuales recientes el sistema solo avanzo a `READY` cuando la geometria runtime coincidio con el URDF canonico. Snapshots representativos:
 
-El sistema no debe declarar `READY` si la geometria runtime no coincide con la geometria canonica. El snapshot publicado en `/system_diag` incluye:
+- `../auditoria/manual_directo_20260423_053012/system_diag_startup.json`
+- `../auditoria/manual_directo_startupretry_20260423_090729/system_diag_startup.json`
+- `../auditoria/manual_directo_postcheck_20260423_092724/system_diag_startup.json`
 
-- `geometry_ok`
-- `geometry_reason`
-- `geometry_expected_xyz`
-- `geometry_actual_xyz`
-- `geometry_frame_error_m`
-- `geometry_pair_error_m`
-- `geometry_urdf_source`
+En todos ellos:
 
-## Validacion ejecutada
-
-### 1. Validacion DIRECTO
-
-- Corrida unica de comprobacion: OK
-- Batch `RUNS=5`: OK
-- Batch `RUNS=10`: OK
-
-Artefacto agregado final:
-
-- `../auditoria/directo_batch_20260422_144041/batch_summary.json`
-
-Resultado final del batch largo:
-
-- `runs=10`
-- `passed=10`
-- `failed=0`
-
-Todas las corridas aceptadas cerraron con:
-
-- `helper_rc=0`
-- `benchmark_rc=0`
 - `geometry_ok=true`
-- `system_state=READY`
-- smoke visual completo con `pre_grasp`, `grasp_confirmed`, `lift_with_object` y `basket_drop`
+- `rg2_tcp = rg2_pinch_center = +0.0050885`
+- `state=READY`
 
-### 2. Repeticion final con launcher canonico
+### 2. Evidencia visual minima del fix TCP
 
-Se repitio la validacion final usando:
+La evidencia visual reciente valida el comportamiento geometrico hasta lift:
 
-```bash
-./lanzar_panelc2.sh
-```
+- `../auditoria/manual_directo_startupretry_20260423_090729/visual_smoke/pre_grasp.png`
+- `../auditoria/manual_directo_startupretry_20260423_090729/visual_smoke/grasp_confirmed.png`
+- `../auditoria/manual_directo_startupretry_20260423_090729/visual_smoke/lift_with_object.png`
 
-Resultado:
+La secuencia se ve consistente con el nuevo TCP:
 
-- seleccion de objeto: `success=True`
-- arranque de `pick_demo`: `success=True`
-- cierre de secuencia: `SECUENCIA COMPLETADA EXITOSAMENTE route=basket`
-- confirmacion de cesta: `confirmacion cesta OK`
+- el pinch center queda alineado con el objeto en `pre_grasp`;
+- el objeto queda entre dedos en `grasp_confirmed`;
+- el objeto se eleva con el gripper en `lift_with_object`.
 
-Artefactos de cierre:
+Esto cierra el incidente TCP como problema geometrico.
 
-- `../auditoria/panelc2_final_20260422_141028/system_diag_ready.json`
-- `../auditoria/panelc2_final_20260422_141028/visual_smoke/visual_capture_manifest.json`
-- `../auditoria/panelc2_final_20260422_141028/visual_smoke/pre_grasp.png`
-- `../auditoria/panelc2_final_20260422_141028/visual_smoke/grasp_confirmed.png`
-- `../auditoria/panelc2_final_20260422_141028/visual_smoke/lift_with_object.png`
-- `../auditoria/panelc2_final_20260422_141028/visual_smoke/basket_drop.png`
+## Estado funcional residual
 
-## Criterios de aceptacion cumplidos
+El flujo DIRECTO completo a cesta sigue bloqueado, pero ya no por el TCP.
+
+### 1. Evidencia de que el bloqueo ya no es geometrico
+
+Corrida:
+
+- `../auditoria/manual_directo_postcheck_20260423_092724`
+
+Hallazgo principal en `helper.log`:
+
+- `CESTA_STAGE_1_RECOVER_1_postcheck_failed`
+- `runtime_target_dist=0.055/0.040`
+- `model_target_err=0.055/0.040`
+
+Interpretacion:
+
+- el TCP runtime ya esta bien;
+- el sub-stage de transporte falla porque el objetivo articular ejecutado no deja el modelo ni el runtime dentro de tolerancia.
+
+### 2. Evidencia de que mas granularidad sola no resuelve
+
+Corrida con micro-replan adicional:
+
+- `../auditoria/manual_directo_postcheck_min035_20260423_093612`
+
+Hallazgos en `helper.log`:
+
+- `CESTA_STAGE_1_RECOVER_1_RECOVER_2` entro en tolerancia con `runtime_target_dist=0.038/0.040`
+- `CESTA_STAGE_1_RECOVER_1_RECOVER_3` volvio a fallar con `runtime_target_dist=0.050/0.040`
+- el cierre quedo en `cesta_stage_1_recover_1_recover_3_postcheck_failed`
+
+Interpretacion:
+
+- bajar `PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MIN_REMAINING_DIST_M` ayuda;
+- pero el cuello ya no es de simple segmentacion;
+- el problema residual esta en la consistencia/calidad del IK y del seed/branch en el corredor de cesta.
+
+## Criterios de aceptacion del fix geometrico cumplidos
 
 - `tool0 -> rg2_tcp` y `tool0 -> rg2_pinch_center` coinciden con `+0.0050885`
-- el self-check geometrico bloquea el arranque si la geometria no coincide
+- el self-check geometrico bloquea `READY` si la geometria no coincide
+- ya no quedan overrides editables del TCP en panel/launch/runtime
 - MoveIt quedo endurecido sin retocar el TCP
-- DIRECTO paso `5/5` y despues `10/10`
-- la evidencia visual minima quedo completa
-- la repeticion final se ejecuto con `./lanzar_panelc2.sh`
+- la evidencia visual valida el fix hasta `lift_with_object`
 
-## Riesgos residuales y politica futura
+## Criterios funcionales pendientes
 
-- La evidencia visual sigue teniendo prioridad sobre logs parciales.
-- Si en el futuro aparece inestabilidad de carry o planificacion, el primer sitio a tocar no es el TCP.
-- Cualquier ajuste futuro de tolerancias de transporte o de validacion de `home_with_object` debe validarse contra el launcher canonico y con evidencia visual.
+- completar `basket_drop` con evidencia visual valida
+- cerrar `helper_final_rc=0` en DIRECTO end-to-end
+- pasar `RUNS=5`
+- pasar `RUNS=10`
+- repetir la validacion manual final con `./lanzar_panelc2.sh`
+
+## Follow-up abierto
+
+El incidente residual queda separado de este cierre y pasa a:
+
+- `reports/incidents/2026-04-23_directo_basket_transport_ik_followup.md`
+
+Ese follow-up cubre:
+
+- consistencia `fk_ur5(solved_q)` vs `target_ik` en `CESTA_STAGE_1`
+- estrategia de seed/branch para transporte a cesta
+- criterios para revalidar `RUNS=5`, `RUNS=10` y la repeticion final con `./lanzar_panelc2.sh`
 
 ## Declaracion de cierre
 
-El incidente queda cerrado como un problema de definicion geometrica del TCP, ya corregido, congelado y validado en arranque, en DIRECTO y en el launcher canonico del sistema.
+El incidente de geometria del TCP queda cerrado como problema de definicion geometrica ya corregido, congelado y validado.
+
+La aceptacion funcional completa del flujo DIRECTO no queda cerrada por este documento. Permanece bloqueada por un incidente distinto de transporte/IK en cesta, que debe resolverse y volver a validarse con `./lanzar_panelc2.sh`.
