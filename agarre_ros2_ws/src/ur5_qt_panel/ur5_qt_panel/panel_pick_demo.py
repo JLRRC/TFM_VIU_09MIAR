@@ -3001,6 +3001,15 @@ def run_pick_demo(panel) -> None:
                 panel._emit_log(f"[COMPARE][DIRECT2][GOOD_REF] error={_exc_compare}")
 
             def _current_joint_seed(*, return_source: bool = False):
+                _seed_override_str = os.environ.get("PANEL_PICK_DEMO_IK_SEED_JOINTS", "").strip()
+                if _seed_override_str:
+                    try:
+                        _override = [float(v.strip()) for v in _seed_override_str.split(",")]
+                        if len(_override) == 6:
+                            return (_override, "env_override") if return_source else _override
+                    except Exception:
+                        pass
+
                 _live_seed = []
                 try:
                     _joint_snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
@@ -3013,15 +3022,6 @@ def run_pick_demo(panel) -> None:
                     _live_seed = []
                 if len(_live_seed) == 6 and all(math.isfinite(v) for v in _live_seed):
                     return (_live_seed, "live_joints") if return_source else _live_seed
-
-                _seed_override_str = os.environ.get("PANEL_PICK_DEMO_IK_SEED_JOINTS", "").strip()
-                if _seed_override_str:
-                    try:
-                        _override = [float(v.strip()) for v in _seed_override_str.split(",")]
-                        if len(_override) == 6:
-                            return (_override, "env_override") if return_source else _override
-                    except Exception:
-                        pass
 
                 preset_seed = list(JOINT_GRASP_DOWN_POSE_RAD)
                 return (preset_seed, "preset_grasp_down_mesa") if return_source else preset_seed
@@ -7944,36 +7944,26 @@ def run_pick_demo(panel) -> None:
                         object_position=mesa_wait_object,
                     )
             else:
-                _append_trace(
-                    "[PICK][DIRECT][WAIT] "
-                    "state=WAITING_FOR_APPROACH_CONFIRMATION "
+                _clear_wait_fn = getattr(panel, "_direct_clear_waiting_for_approach_confirmation", None)
+                if callable(_clear_wait_fn):
+                    panel.signal_run_ui.emit(
+                        lambda: _clear_wait_fn(reason="auto_mode_no_manual_approach_gate")
+                    )
+                _auto_continue_msg = (
+                    "[PICK][DIRECT][STATE] "
+                    "state=AUTO_CONTINUE_APPROACH "
                     f"request_id={run_id} "
                     f"tcp_base={_fmt_vec(mesa_wait_tcp)} "
-                    f"object_base={_fmt_vec(mesa_wait_object)}"
+                    f"object_base={_fmt_vec(mesa_wait_object)} "
+                    "reason=auto_mode_skips_manual_approach_confirmation"
                 )
-                _enter_wait_fn = getattr(panel, "_direct_enter_waiting_for_approach_confirmation", None)
-                if callable(_enter_wait_fn):
-                    panel.signal_run_ui.emit(
-                        lambda _request_id=run_id,
-                               _tcp_base=mesa_wait_tcp,
-                               _object_base=mesa_wait_object: _enter_wait_fn(
-                                   request_id=_request_id,
-                                   tcp_base=_tcp_base,
-                                   object_base=_object_base,
-                               )
+                panel._emit_log(_auto_continue_msg)
+                _append_trace(_auto_continue_msg)
+                panel.signal_run_ui.emit(
+                    lambda: panel._ui_set_status(
+                        "Directo AUTO: HOME_INITIAL completado; continuando a APPROACH_COARSE",
+                        error=False,
                     )
-                mesa_wait_event = getattr(panel, "_direct_wait_for_approach_event", None)
-                while True:
-                    if bool(getattr(panel, "_closing", False)):
-                        raise RuntimeError("direct_wait_cancelled_closing")
-                    if mesa_wait_event is None:
-                        break
-                    if mesa_wait_event.wait(timeout=0.1):
-                        break
-                _append_trace(
-                    "[PICK][DIRECT][WAIT] "
-                    "state=WAITING_FOR_APPROACH_CONFIRMATION "
-                    f"request_id={run_id} released=true"
                 )
 
             # INICIO eliminado: el robot ya está en MESA antes de llegar aquí.
@@ -8152,96 +8142,19 @@ def run_pick_demo(panel) -> None:
                         f"z_error={_fmt_scalar(ref_metrics.get('z_error'))}"
                     )
             if route_selected != "manual_reference" or not manual_reference_ok:
-                # PICK_IMAGE es una preparación interna del APPROACH. En STEP_BY_STEP
-                # ya no puede ejecutarse antes del gate manual de APPROACH_COARSE,
-                # porque eso rompería la autoridad única del panel paso a paso y haría
-                # que el robot abandonase MESA antes de que la fase fuese lanzada.
-                if True:
-                    _run_joint_step("PICK_IMAGE", JOINT_PICK_IMAGE_POSE_RAD)
-
-                    # ── [FIX] Verificación cartesiana post-PICK_IMAGE ──────────────────
-                    _pick_image_tcp_expected = None
-                    try:
-                        _fk_pos, _fk_rot = fk_ur5(list(JOINT_PICK_IMAGE_POSE_RAD))
-                        _fk_pinch = (
-                            float(_fk_pos[0])
-                            + float(_fk_rot[0, 0]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[0])
-                            + float(_fk_rot[0, 1]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[1])
-                            + float(_fk_rot[0, 2]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[2]),
-                            float(_fk_pos[1])
-                            + float(_fk_rot[1, 0]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[0])
-                            + float(_fk_rot[1, 1]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[1])
-                            + float(_fk_rot[1, 2]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[2]),
-                            float(_fk_pos[2])
-                            + float(_fk_rot[2, 0]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[0])
-                            + float(_fk_rot[2, 1]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[1])
-                            + float(_fk_rot[2, 2]) * float(_DIRECT_TOOL0_TO_SOURCE_OFFSET[2]),
-                        )
-                        _pick_image_tcp_expected = _fk_pinch
-                    except Exception as _fk_exc:
-                        _append_trace(f"[STEP][PICK_IMAGE_EXPECTED_TCP] fk_failed={_fk_exc}")
-                    panel._emit_log(
-                        f"[STEP][PICK_IMAGE_EXPECTED_TCP] expected={_fmt_vec(_pick_image_tcp_expected)}"
-                    )
-                    _pi_tol_m = max(
-                        0.01,
-                        float(os.environ.get("PANEL_PICK_DEMO_PICK_IMAGE_TCP_TOL_M", "0.030") or 0.030),
-                    )
-                    _pi_settle_sec = max(
-                        1.0,
-                        float(os.environ.get("PANEL_PICK_DEMO_PICK_IMAGE_SETTLE_SEC", "3.0") or 3.0),
-                    )
-                    _t_pi_start = time.monotonic()
-                    _pi_gate_open = False
-                    while time.monotonic() - _t_pi_start < _pi_settle_sec:
-                        _tcp_now = _live_tcp_base()
-                        _delta_now = (
-                            _dist(_tcp_now, _pick_image_tcp_expected)
-                            if (_tcp_now is not None and _pick_image_tcp_expected is not None)
-                            else None
-                        )
-                        panel._emit_log(
-                            f"[STEP][PICK_IMAGE_MEASURED_TCP] "
-                            f"tcp={_fmt_vec(_tcp_now)} "
-                            f"delta={f'{_delta_now:.3f}m' if _delta_now is not None else 'n/a'}"
-                        )
-                        if _pick_image_tcp_expected is None:
-                            _pi_gate_open = True
-                            break
-                        if _delta_now is not None and _delta_now <= _pi_tol_m:
-                            _pi_gate_open = True
-                            break
-                        time.sleep(0.15)
-                    _tcp_pi_final = _live_tcp_base()
-                    _delta_pi_final = (
-                        _dist(_tcp_pi_final, _pick_image_tcp_expected)
-                        if (_tcp_pi_final is not None and _pick_image_tcp_expected is not None)
-                        else None
-                    )
-                    panel._emit_log(
-                        f"[STEP][PICK_IMAGE_TCP_DELTA] "
-                        f"expected={_fmt_vec(_pick_image_tcp_expected)} "
-                        f"actual={_fmt_vec(_tcp_pi_final)} "
-                        f"delta={f'{_delta_pi_final:.3f}m' if _delta_pi_final is not None else 'n/a'} "
-                        f"tol={_pi_tol_m:.3f}m "
-                        f"gate={'open' if _pi_gate_open else 'timeout_continue'}"
-                    )
-                    if not _pi_gate_open:
-                        panel._emit_log(
-                            f"[STEP][APPROACH_COARSE_GATE_TIMEOUT_CONTINUE] "
-                            f"reason=pick_image_tcp_not_settled "
-                            f"delta={f'{_delta_pi_final:.3f}m' if _delta_pi_final is not None else 'n/a'} "
-                            f"tol={_pi_tol_m:.3f}m "
-                            f"elapsed={time.monotonic() - _t_pi_start:.1f}s"
-                        )
-                    else:
-                        panel._emit_log(
-                            f"[STEP][APPROACH_COARSE_GATE_OPEN] "
-                            f"tcp={_fmt_vec(_tcp_pi_final)} "
-                            f"delta={f'{_delta_pi_final:.3f}m' if _delta_pi_final is not None else 'n/a'}"
-                        )
-                    # ── [/FIX] ──────────────────────────────────────────────────────────
-
+                _approach_ik_seed_prev = os.environ.get("PANEL_PICK_DEMO_IK_SEED_JOINTS")
+                _approach_ik_seed_injected = False
+                _pi_seed_str = ",".join(
+                    f"{float(v):.8f}" for v in JOINT_PICK_IMAGE_POSE_RAD
+                )
+                os.environ["PANEL_PICK_DEMO_IK_SEED_JOINTS"] = _pi_seed_str
+                _approach_ik_seed_injected = True
+                panel._emit_log(
+                    "[PICK][DIRECT][APPROACH_IK_SEED] "
+                    "source=pick_image_pose "
+                    "no_robot_move=true "
+                    f"joints={_pi_seed_str}"
+                )
                 panel._emit_log("[DEMO] Bajando a pose de grasp (joints)")
                 coarse_extra_z_m = float(
                     os.environ.get(
@@ -8369,26 +8282,11 @@ def run_pick_demo(panel) -> None:
                     execution_type="hibrido",
                     decision="phase_enter",
                 )
-                # En SBS: inyectar joints de PICK_IMAGE como semilla del IK.
-                # El movimiento a PICK_IMAGE ya se ejecutó dentro de la misma fase
-                # APPROACH_COARSE, después del gate manual del panel paso a paso.
-                _sbs_ik_seed_injected = False
-                if getattr(panel, "_step_mode", "") == "STEP_BY_STEP":
-                    _pi_seed_str = ",".join(
-                        f"{float(v):.8f}" for v in JOINT_PICK_IMAGE_POSE_RAD
-                    )
-                    os.environ["PANEL_PICK_DEMO_IK_SEED_JOINTS"] = _pi_seed_str
-                    _sbs_ik_seed_injected = True
-                    panel._emit_log(
-                        "[PICK][DIRECT][SBS_IK_SEED] "
-                        f"injected PICK_IMAGE joints as IK seed (no robot move): {_pi_seed_str}"
-                    )
-
                 approach_debug = None
                 approach_decision = "direct_ik_move"
-                # PICK_IMAGE corre en ambos modos como preparación interna de
-                # APPROACH_COARSE, pero el gate manual en STEP_BY_STEP ocurre
-                # antes de este movimiento para dejar una única autoridad de disparo.
+                # PICK_IMAGE ya no se ejecuta como movimiento físico dentro de
+                # APPROACH_COARSE. Solo se usa como semilla IK para mantener una
+                # trayectoria visualmente monotónica hacia el objeto.
                 # TCP canónico después del gate: usar el valor capturado POR _phase_begin
                 # justo después de que el usuario pulsó "Sigue".  Evita el bug de TF stale
                 # donde una segunda llamada a _live_tcp_base() devuelve un valor cacheado
@@ -8550,10 +8448,13 @@ def run_pick_demo(panel) -> None:
                                     f"phase=APPROACH_COARSE direct_ik_failed={exc} fallback=rejected"
                                 )
                                 raise
-                # Limpiar semilla inyectada para SBS (no afectar fases siguientes)
-                if _sbs_ik_seed_injected:
-                    os.environ.pop("PANEL_PICK_DEMO_IK_SEED_JOINTS", None)
-                    _sbs_ik_seed_injected = False
+                # Restaurar semilla previa tras APPROACH_COARSE.
+                if _approach_ik_seed_injected:
+                    if _approach_ik_seed_prev is not None:
+                        os.environ["PANEL_PICK_DEMO_IK_SEED_JOINTS"] = _approach_ik_seed_prev
+                    else:
+                        os.environ.pop("PANEL_PICK_DEMO_IK_SEED_JOINTS", None)
+                    _approach_ik_seed_injected = False
 
                 _phase_end(
                     "APPROACH_COARSE",
@@ -9018,7 +8919,7 @@ def run_pick_demo(panel) -> None:
                     _coarse_refine_runtime_target_dist = None
                     _coarse_refine_runtime_z_error = None
                     _coarse_refine_accept_result = False
-                    _coarse_refine_target_z_strategy = "object_z_plus_0p010"
+                    _coarse_refine_target_z_strategy = "object_z_plus_0p009"
                     _coarse_refine_object_z = None
                     _coarse_refine_tcp_obj_dist_after = None
                     _coarse_refine_dz_obj_after = None
@@ -9043,7 +8944,7 @@ def run_pick_demo(panel) -> None:
 
                     if _coarse_refine_needed and _coarse_phase_check.get("tcp_base") is not None and _coarse_phase_check.get("object_base") is not None:
                         _coarse_refine_object_z = float(_coarse_phase_check.get("object_z"))
-                        _coarse_refine_target_z = float(_coarse_refine_object_z) + 0.010
+                        _coarse_refine_target_z = float(_coarse_refine_object_z) + 0.009
                         _coarse_refine_runtime_target_tol = _direct_runtime_target_tol_m("APPROACH_COARSE_REFINE")
                         _phase_check_target_base = (
                             float(_coarse_phase_check.get("tcp_base")[0]),

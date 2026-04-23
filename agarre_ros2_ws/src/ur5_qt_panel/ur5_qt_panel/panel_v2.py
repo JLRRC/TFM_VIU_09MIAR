@@ -4996,6 +4996,7 @@ class ControlPanelV2(QMainWindow):
 
         # AUTO always releases any gate currently waiting.
         self._step_wait_event.set()
+        self._direct_clear_waiting_for_approach_confirmation(reason="step_mode_auto")
         self.signal_run_ui.emit(self._step_window_hide)
         if emit_log and previous != normalized:
             self._emit_log("[STEP] mode=AUTO")
