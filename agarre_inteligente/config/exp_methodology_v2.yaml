@@ -1,0 +1,73 @@
+# Experimento metodológicamente alineado — ENTREGA.V2
+#
+# Este YAML NO pertenece a los experimentos oficiales del TFM (EXP1..EXP4).
+# Sirve para demostrar la variante metodológica posterior que corrige las
+# tres discrepancias identificadas:
+#
+#   A. IoU con rectángulos orientados (evaluación vía EvaluatorOriented)
+#   B. grasp success calculado por imagen (ya implementado en EvaluatorOriented)
+#   C. Función de pérdida con simetría de ángulo (GraspLoss)
+#
+# Los resultados de este experimento son AUXILIARES y no deben compararse
+# directamente con los de EXP1..EXP4 (diferente función de pérdida y métrica).
+# Salidas: experiments/EXP_METHOD_V2_*/
+
+experiment:
+  name: "EXP_METHOD_V2_RGB"
+  description: "Variante metodológica: GraspLoss + IoU orientada + success por imagen"
+  seeds: [0]
+  split_protocol: "object-wise"
+  train_size_expected: 3542
+  val_size_expected: 1569
+  methodology_note: >
+    Alineación metodológica posterior al TFM (ENTREGA.V2).
+    No sustituye ni invalida EXP1..EXP4.
+
+model:
+  name: "SimpleGraspCNN"
+  architecture: "simple_cnn"
+  input_channels: 3
+  output_params: ["cx", "cy", "w", "h", "angle_deg"]
+  dropout: 0.2
+
+data:
+  modality: "rgb"
+  data_root: "."
+  train_csv: "data/processed/cornell/splits/object_wise/train.csv"
+  val_csv: "data/processed/cornell/splits/object_wise/val.csv"
+  image_size: 224
+  augmentation: false
+
+training:
+  epochs: 10
+  batch_size: 32
+  optimizer:
+    name: "adam"
+    lr: 0.0005
+    weight_decay: 0.0001
+  scheduler:
+    name: "none"
+  # GraspLoss: SmoothL1 para (cx,cy,w,h) + coseno periódico para ángulo
+  criterion: "grasp_loss"
+  criterion_kwargs:
+    angle_weight: 1.0
+    geom_weight: 1.0
+    beta: 1.0
+  device: "cuda"
+
+metrics:
+  protocol: "cornell_oriented"
+  iou_threshold: 0.25
+  angle_threshold_deg: 30.0
+  monitor: "val_success"
+
+checkpointing:
+  save_best: true
+  save_last: true
+
+outputs:
+  experiments_root: "experiments"
+  reports_root: "reports_v2"
+
+benchmark:
+  device: "cpu"
