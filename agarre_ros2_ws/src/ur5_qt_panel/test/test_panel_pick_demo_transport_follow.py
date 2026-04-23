@@ -499,3 +499,54 @@ def test_evaluate_transport_stage_postcheck_flags_unconfirmed_runtime_target() -
 
     assert result["ok"] is False
     assert result["reason"] == "runtime_target=unconfirmed"
+
+
+def test_build_transport_seed_candidates_adds_live_last_ok_prep_and_corridor_variants() -> None:
+    base_seed = [0.0, -1.57, 0.0, -1.57, 0.0, 0.0]
+    live_seed = [0.1, -1.40, 0.2, -1.30, -0.2, 0.1]
+    last_ok = [0.2, -1.30, 0.4, -1.10, -0.3, 0.2]
+    prep_seed = [0.3, -1.20, 0.5, -1.00, -0.4, 0.3]
+
+    candidates = pick_demo._build_transport_seed_candidates(
+        base_seed=base_seed,
+        live_seed=live_seed,
+        last_transport_joint_goal=last_ok,
+        prep_reference_seed=prep_seed,
+    )
+
+    labels = [label for _seed, label in candidates]
+    assert labels[:4] == [
+        "base_seed",
+        "live_joints",
+        "last_transport_ok",
+        "prep_reference",
+    ]
+    assert "corridor_wrist2" in labels
+    assert "corridor_shoulder_elbow" in labels
+
+
+def test_evaluate_transport_stage_preexec_model_guard_accepts_in_tolerance() -> None:
+    result = pick_demo._evaluate_transport_stage_preexec_model_guard(
+        label="CESTA_STAGE_1",
+        target_ik=(0.10, 0.20, 0.30),
+        joint_goal=[0.0, -1.57, 0.0, -1.57, 0.0, 0.0],
+        tol_m=0.02,
+        fk_fn=lambda _q: ((0.11, 0.19, 0.30), None),
+    )
+
+    assert result["ok"] is True
+    assert result["reason"] == "ok"
+    assert result["model_target_err_m"] == pytest.approx((0.01**2 + 0.01**2) ** 0.5)
+
+
+def test_evaluate_transport_stage_preexec_model_guard_rejects_bad_model_target() -> None:
+    result = pick_demo._evaluate_transport_stage_preexec_model_guard(
+        label="CESTA_STAGE_1_RECOVER_1",
+        target_ik=(0.10, 0.20, 0.30),
+        joint_goal=[0.0, -1.57, 0.0, -1.57, 0.0, 0.0],
+        tol_m=0.02,
+        fk_fn=lambda _q: ((0.16, 0.24, 0.30), None),
+    )
+
+    assert result["ok"] is False
+    assert result["reason"] == "model_target_err=0.072/0.020"

@@ -217,6 +217,154 @@ def _pick_demo_env_flag(name: str, default: bool) -> bool:
     return str(raw).strip().lower() not in {"", "0", "false", "no", "off"}
 
 
+def _coerce_ur5_joint_vector(values) -> list[float] | None:
+    try:
+        joints = [float(value) for value in values]
+    except Exception:
+        return None
+    if len(joints) != len(UR5_JOINT_NAMES):
+        return None
+    if not all(math.isfinite(value) for value in joints):
+        return None
+    return joints
+
+
+def _live_joint_seed_or_none(panel) -> list[float] | None:
+    try:
+        joint_snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
+    except Exception:
+        return None
+    live_seed = [
+        float(joint_snapshot[name])
+        for name in UR5_JOINT_NAMES
+        if name in joint_snapshot
+    ]
+    return _coerce_ur5_joint_vector(live_seed)
+
+
+def _normalize_joint_goal_near_seed(joint_goal, seed) -> list[float]:
+    joint_goal_list = [float(value) for value in joint_goal]
+    seed_list = [float(value) for value in seed]
+    two_pi = 2.0 * math.pi
+    return [
+        float(q) + two_pi * round((float(s) - float(q)) / two_pi)
+        for q, s in zip(joint_goal_list, seed_list)
+    ]
+
+
+def _build_transport_seed_candidates(
+    *,
+    base_seed,
+    live_seed=None,
+    last_transport_joint_goal=None,
+    prep_reference_seed=None,
+) -> list[tuple[list[float], str]]:
+    candidates: list[tuple[list[float], str]] = []
+    seen: set[tuple[float, ...]] = set()
+
+    def _append(seed_values, source: str) -> None:
+        joints = _coerce_ur5_joint_vector(seed_values)
+        if joints is None:
+            return
+        key = tuple(round(float(value), 6) for value in joints)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append((joints, source))
+
+    _append(base_seed, "base_seed")
+    _append(live_seed, "live_joints")
+    _append(last_transport_joint_goal, "last_transport_ok")
+    _append(prep_reference_seed, "prep_reference")
+
+    corridor_seed = (
+        _coerce_ur5_joint_vector(last_transport_joint_goal)
+        or _coerce_ur5_joint_vector(prep_reference_seed)
+        or _coerce_ur5_joint_vector(live_seed)
+        or _coerce_ur5_joint_vector(base_seed)
+    )
+    if corridor_seed is None:
+        return candidates
+
+    wrist_variant = list(corridor_seed)
+    wrist_variant[4] = -(math.pi / 2.0)
+    if abs(float(wrist_variant[5])) > math.radians(5.0):
+        wrist_variant[5] = 0.0
+    _append(wrist_variant, "corridor_wrist2")
+
+    shoulder_elbow_variant = list(corridor_seed)
+    shoulder_elbow_variant[0] = float(corridor_seed[0]) - math.radians(18.0)
+    shoulder_elbow_variant[1] = float(corridor_seed[1]) - math.radians(8.0)
+    shoulder_elbow_variant[2] = float(corridor_seed[2]) + math.radians(16.0)
+    shoulder_elbow_variant[4] = -(math.pi / 2.0)
+    shoulder_elbow_variant[5] = 0.0
+    _append(shoulder_elbow_variant, "corridor_shoulder_elbow")
+    return candidates
+
+
+def _evaluate_transport_stage_preexec_model_guard(
+    *,
+    label: str,
+    target_ik,
+    joint_goal,
+    tol_m: float,
+    fk_fn=fk_ur5,
+) -> dict:
+    safe_tol_m = max(0.001, float(tol_m))
+    if not _is_demo_basket_transport_stage(label):
+        return {
+            "ok": True,
+            "reason": "skipped_non_transport_stage",
+            "model_target_tol_m": safe_tol_m,
+            "model_target_err_m": None,
+            "fk_target": None,
+        }
+    target_ik_3 = _pick_demo_tuple3(target_ik)
+    joint_goal_list = _coerce_ur5_joint_vector(joint_goal)
+    if target_ik_3 is None or joint_goal_list is None:
+        return {
+            "ok": False,
+            "reason": "invalid_input",
+            "model_target_tol_m": safe_tol_m,
+            "model_target_err_m": None,
+            "fk_target": None,
+        }
+    try:
+        fk_target, _fk_rot = fk_fn(joint_goal_list)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "reason": f"fk_error:{exc}",
+            "model_target_tol_m": safe_tol_m,
+            "model_target_err_m": None,
+            "fk_target": None,
+        }
+    fk_target_3 = _pick_demo_tuple3(fk_target)
+    if fk_target_3 is None:
+        return {
+            "ok": False,
+            "reason": "fk_invalid",
+            "model_target_tol_m": safe_tol_m,
+            "model_target_err_m": None,
+            "fk_target": None,
+        }
+    model_target_err_m = math.sqrt(
+        (float(fk_target_3[0]) - float(target_ik_3[0])) ** 2
+        + (float(fk_target_3[1]) - float(target_ik_3[1])) ** 2
+        + (float(fk_target_3[2]) - float(target_ik_3[2])) ** 2
+    )
+    reason = "ok"
+    if model_target_err_m > safe_tol_m:
+        reason = f"model_target_err={_pick_demo_fmt_scalar(model_target_err_m)}/{safe_tol_m:.3f}"
+    return {
+        "ok": bool(model_target_err_m <= safe_tol_m),
+        "reason": reason,
+        "model_target_tol_m": safe_tol_m,
+        "model_target_err_m": float(model_target_err_m),
+        "fk_target": fk_target_3,
+    }
+
+
 def _direct_pregrasp_gate_caps(phase: str | None) -> dict[str, float] | None:
     phase_name = str(phase or "").strip().upper()
     if phase_name not in {"APPROACH_COARSE", "GRASP_DOWN_JOINT"}:
@@ -3010,16 +3158,7 @@ def run_pick_demo(panel) -> None:
                     except Exception:
                         pass
 
-                _live_seed = []
-                try:
-                    _joint_snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
-                    _live_seed = [
-                        float(_joint_snapshot[name])
-                        for name in UR5_JOINT_NAMES
-                        if name in _joint_snapshot
-                    ]
-                except Exception:
-                    _live_seed = []
+                _live_seed = _live_joint_seed_or_none(panel) or []
                 if len(_live_seed) == 6 and all(math.isfinite(v) for v in _live_seed):
                     return (_live_seed, "live_joints") if return_source else _live_seed
 
@@ -4827,36 +4966,25 @@ def run_pick_demo(panel) -> None:
                 _retry_due_to_accuracy = (not bool(ik_ok)) or pos_err_m > float(effective_ik_err_tol)
                 if _retry_due_to_branch or _retry_due_to_accuracy:
                     _best_q, _best_err, _best_ok = solved_q, pos_err_m, ik_ok
-                    # Build a list of (seed_variant, seed_weight) pairs to try.
-                    # The first group uses the original seed with escalating weights.
-                    # The second group uses diverse seeds derived from known good
-                    # configurations (e.g. run-4 APPROACH_COARSE solution that had
-                    # wrist_2≈-π/2, which lands in the wrist_3≈0° branch).
-                    _PI_H = _math_ik_retry.pi / 2
-                    _diverse_seeds = []
-                    try:
-                        _joint_snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
-                        _live_seed = [
-                            float(_joint_snapshot[name])
-                            for name in UR5_JOINT_NAMES
-                            if name in _joint_snapshot
-                        ]
-                        if len(_live_seed) == 6 and all(math.isfinite(v) for v in _live_seed):
-                            _diverse_seeds.append(_live_seed)
-                    except Exception:
-                        pass
-                    _diverse_seeds.extend([
-                        # wrist_2 flipped to -π/2 (mimics run-4 elbow configuration)
-                        [seed[0], seed[1], seed[2], seed[3], -_PI_H, seed[5]],
-                        # wrist_2 at -π/2, shoulder_pan slightly negative
-                        [-0.26, seed[1], seed[2], seed[3], -_PI_H, 0.0],
-                    ])
-                    _retry_schedule = (
-                        [(seed, sw) for sw in [0.08, 0.15, 0.25, 0.35]]
-                        + [(_ds, 0.035) for _ds in _diverse_seeds]
-                        + [(_ds, 0.08) for _ds in _diverse_seeds]
+                    _transport_retry_seeds = _build_transport_seed_candidates(
+                        base_seed=seed,
+                        live_seed=_live_joint_seed_or_none(panel),
+                        last_transport_joint_goal=getattr(
+                            panel,
+                            "_pick_demo_last_transport_joint_goal",
+                            None,
+                        ),
+                        prep_reference_seed=getattr(
+                            panel,
+                            "_pick_demo_last_transport_prep_seed",
+                            None,
+                        ),
                     )
-                    for _rseed, _retry_sw in _retry_schedule:
+                    _retry_schedule = [(seed, sw, seed_source) for sw in [0.08, 0.15, 0.25, 0.35]]
+                    for _candidate_seed, _candidate_source in _transport_retry_seeds:
+                        for _retry_sw in (0.035, 0.08):
+                            _retry_schedule.append((_candidate_seed, _retry_sw, _candidate_source))
+                    for _rseed, _retry_sw, _retry_source in _retry_schedule:
                         _rq, _re_norm, _rok = ik_ur5(
                             target_ik,
                             target_rot,
@@ -4873,7 +5001,7 @@ def run_pick_demo(panel) -> None:
                         ))
                         panel._emit_log(
                             f"[PICK][DIRECT][IK_RETRY] label={label} retry_seed_weight={_retry_sw:.3f} "
-                            f"seed={'diverse' if _rseed is not seed else 'home'} "
+                            f"seed={_retry_source} "
                             f"pos_err_m={_rpos_err:.4f} ok={str(bool(_rok)).lower()} "
                             f"max_dev_rad={_seed_max_dev(_rq, seed):.3f}"
                         )
@@ -5026,17 +5154,7 @@ def run_pick_demo(panel) -> None:
                         f"{label.lower()}_ik_failed pos_err_m={pos_err_m:.4f}"
                     )
                 solved_q_list = [float(v) for v in solved_q.tolist()]
-                # Normalize each joint angle to the equivalent value closest to the
-                # seed.  The IK solver is free to return any angle modulo 2π; without
-                # this step a solution like wrist_3=-3.28 rad (equivalent to +0.1 rad)
-                # makes the trajectory controller attempt a 187° rotation that it cannot
-                # follow within the allotted time.
-                import math as _math_norm
-                _TWO_PI = 2.0 * _math_norm.pi
-                solved_q_list = [
-                    float(q) + _TWO_PI * round((float(s) - float(q)) / _TWO_PI)
-                    for q, s in zip(solved_q_list, seed)
-                ]
+                solved_q_list = _normalize_joint_goal_near_seed(solved_q_list, seed)
                 panel._emit_log(
                     "[PICK][DIRECT][JOINT_GOAL] "
                     f"label={label} joints={json.dumps(_json_safe(solved_q_list), ensure_ascii=True)} "
@@ -5137,6 +5255,41 @@ def run_pick_demo(panel) -> None:
                     )
                     return recovery_result
 
+                preexec_model_guard = None
+                if _is_demo_basket_transport_stage(label_name):
+                    preexec_model_guard = _evaluate_transport_stage_preexec_model_guard(
+                        label=label,
+                        target_ik=target_ik,
+                        joint_goal=solved_q_list,
+                        tol_m=max(
+                            float(effective_ik_err_tol),
+                            _pick_demo_env_float(
+                                "PANEL_PICK_DEMO_TRANSPORT_PREEXEC_MODEL_TOL_M",
+                                0.012,
+                                minimum=0.005,
+                            ),
+                        ),
+                    )
+                    panel._emit_log(
+                        "[PICK][DIRECT][TRANSPORT_PREEXEC] "
+                        f"label={label} ok={str(bool(preexec_model_guard.get('ok'))).lower()} "
+                        f"reason={preexec_model_guard.get('reason', 'ok')} "
+                        f"fk_target={_fmt_vec(preexec_model_guard.get('fk_target'))} "
+                        f"target_ik={_fmt_vec(target_ik)} "
+                        f"model_target_err={_pick_demo_fmt_scalar(preexec_model_guard.get('model_target_err_m'))}/"
+                        f"{float(preexec_model_guard.get('model_target_tol_m', 0.0)):.3f}"
+                    )
+                    if not bool(preexec_model_guard.get("ok")):
+                        preexec_exc = RuntimeError(
+                            f"{str(label or '').lower()}_preexec_model_guard_failed "
+                            f"{preexec_model_guard.get('reason', 'transport_preexec_failed')}"
+                        )
+                        recovery_result = _attempt_transport_replan(preexec_exc)
+                        if recovery_result is not None:
+                            return recovery_result
+                        raise preexec_exc
+
+                transport_prep_seed_reference = [float(value) for value in seed]
                 prep_replan_exc = None
                 if _is_demo_basket_transport_stage(label_name):
                     prep_enabled = _pick_demo_env_flag(
@@ -5267,6 +5420,7 @@ def run_pick_demo(panel) -> None:
                                     apply_step_timeout_extra=False,
                                 )
                                 prep_prev_joints = [float(v) for v in prep_joints]
+                                transport_prep_seed_reference = [float(v) for v in prep_prev_joints]
                             except Exception as prep_exc:
                                 panel._emit_log(
                                     "[PICK][DIRECT][TRANSPORT_PREP] "
@@ -5449,9 +5603,9 @@ def run_pick_demo(panel) -> None:
                     if runtime_target_stable_dist is not None
                     else runtime_target_wait_dist
                 )
-                q_after = _current_joint_seed()
+                q_after = _live_joint_seed_or_none(panel) or _current_joint_seed()
                 fk_after_pos, _fk_after_rot = fk_ur5(q_after)
-                solved_q_list = [float(v) for v in solved_q.tolist()]
+                solved_q_list = [float(v) for v in solved_q_list]
                 joint_goal_diffs: List[str] = []
                 for idx, name in enumerate(UR5_JOINT_NAMES):
                     if idx >= len(solved_q_list) or idx >= len(q_after):
@@ -5559,6 +5713,15 @@ def run_pick_demo(panel) -> None:
                         if recovery_result is not None:
                             return recovery_result
                         raise transport_postcheck_exc
+                if _is_demo_basket_transport_stage(label_name):
+                    panel._pick_demo_last_transport_joint_goal = (
+                        _live_joint_seed_or_none(panel)
+                        or _coerce_ur5_joint_vector(solved_q_list)
+                        or [float(v) for v in solved_q_list]
+                    )
+                    panel._pick_demo_last_transport_prep_seed = [
+                        float(v) for v in transport_prep_seed_reference
+                    ]
                 if tcp_after is not None:
                     obj_after = _live_object_base()
                     target_err = _dist(tcp_after, target_tcp_runtime_3)
@@ -5621,6 +5784,16 @@ def run_pick_demo(panel) -> None:
                     ),
                     "runtime_target_stable_pose_consistency": _json_safe(runtime_target_stable_pose),
                     "model_target_err_m": float(model_target_err),
+                    "transport_preexec_ok": (
+                        bool(preexec_model_guard.get("ok"))
+                        if preexec_model_guard is not None
+                        else None
+                    ),
+                    "transport_preexec_reason": (
+                        str(preexec_model_guard.get("reason", "ok"))
+                        if preexec_model_guard is not None
+                        else None
+                    ),
                     "transport_postcheck_ok": (
                         bool(transport_postcheck.get("ok"))
                         if transport_postcheck is not None
@@ -11517,6 +11690,8 @@ def run_pick_demo(panel) -> None:
                 f"transport_z_offset={float(PICK_DEMO_TRANSPORT_Z_OFFSET):.3f} "
                 f"release_z_offset={float(PICK_DEMO_DROP_Z_OFFSET):.3f}"
             )
+            panel._pick_demo_last_transport_joint_goal = None
+            panel._pick_demo_last_transport_prep_seed = None
             for stage_idx, stage_target_base in enumerate(
                 basket_transport_stage_targets,
                 start=1,
