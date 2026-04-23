@@ -1799,23 +1799,94 @@ def run_pick_demo(panel) -> None:
     _sync_gate_emit("require_ready_basic", True)
     selected_name = str(getattr(panel, "_selected_object", "") or "").strip()
     user_selected = str(getattr(panel, "_selection_last_user_name", "") or "").strip()
-    if selected_name != PICK_DEMO_OBJECT_NAME or user_selected != PICK_DEMO_OBJECT_NAME:
+    if not selected_name or not user_selected:
         _sync_gate_emit(
             "selection",
             False,
-            f"selected={selected_name or 'none'} user_selected={user_selected or 'none'} required={PICK_DEMO_OBJECT_NAME}",
+            f"selected={selected_name or 'none'} user_selected={user_selected or 'none'} reason=missing_selection",
         )
         panel._emit_log(
             "[PICK][DIRECT][ABORT] "
             f"selected={selected_name or 'none'} user_selected={user_selected or 'none'} "
-            f"required={PICK_DEMO_OBJECT_NAME}"
+            "reason=missing_selection"
         )
         panel._ui_set_status(
-            "Directo: selecciona pick_demo antes de ejecutar",
+            "Directo: selecciona un objeto antes de ejecutar",
             error=True,
         )
         return
-    _sync_gate_emit("selection", True, f"target={PICK_DEMO_OBJECT_NAME}")
+    if selected_name != user_selected:
+        _sync_gate_emit(
+            "selection",
+            False,
+            f"selected={selected_name or 'none'} user_selected={user_selected or 'none'} reason=selection_mismatch",
+        )
+        panel._emit_log(
+            "[PICK][DIRECT][ABORT] "
+            f"selected={selected_name or 'none'} user_selected={user_selected or 'none'} "
+            "reason=selection_mismatch"
+        )
+        panel._ui_set_status(
+            "Directo: seleccion inconsistente, vuelve a seleccionar el objeto",
+            error=True,
+        )
+        return
+    target_object_name = str(selected_name or "").strip()
+    target_object_id = f"name:{target_object_name}"
+    target_state = get_object_state(target_object_name)
+    if target_state is None:
+        _sync_gate_emit(
+            "selection",
+            False,
+            f"target={target_object_name or 'none'} reason=missing_state",
+        )
+        panel._emit_log(
+            "[PICK][DIRECT][ABORT] "
+            f"target={target_object_name or 'none'} reason=missing_state"
+        )
+        panel._ui_set_status(
+            "Directo: el objeto seleccionado no existe en store",
+            error=True,
+        )
+        return
+    if target_state.logical_state not in (
+        ObjectLogicalState.SELECTED,
+        ObjectLogicalState.ON_TABLE,
+    ):
+        _sync_gate_emit(
+            "selection",
+            False,
+            f"target={target_object_name} state={target_state.logical_state.value} reason=invalid_state",
+        )
+        panel._emit_log(
+            "[PICK][DIRECT][ABORT] "
+            f"target={target_object_name} state={target_state.logical_state.value} reason=invalid_state"
+        )
+        panel._ui_set_status(
+            "Directo: el objeto seleccionado no esta disponible para pick",
+            error=True,
+        )
+        return
+    if not is_on_table(target_state.position):
+        _sync_gate_emit(
+            "selection",
+            False,
+            f"target={target_object_name} reason=not_on_table",
+        )
+        panel._emit_log(
+            "[PICK][DIRECT][ABORT] "
+            f"target={target_object_name} reason=not_on_table pos={_pick_demo_fmt_vec(target_state.position)}"
+        )
+        panel._ui_set_status(
+            "Directo: el objeto seleccionado no esta sobre la mesa",
+            error=True,
+        )
+        return
+    _sync_gate_emit(
+        "selection",
+        True,
+        f"target={target_object_name} object_id={target_object_id}",
+    )
     # Si _require_ready_basic pasó, el sistema está en READY_BASIC o superior.
     # Solo verificar que TF y EE frame estén disponibles (necesarios para pick).
     tf_ok, tf_reason = tf_ready_status(panel)
@@ -1833,25 +1904,25 @@ def run_pick_demo(panel) -> None:
         True,
         f"ee_frame={getattr(panel, '_ee_frame_effective', None) or 'none'}",
     )
-    # Normalizar estado previo del objeto demo antes del grasp manual.
-    obj_state = get_object_state(PICK_DEMO_OBJECT_NAME)
+    # Normalizar estado previo del objeto seleccionado antes del grasp manual.
+    obj_state = get_object_state(target_object_name)
     if obj_state:
         if obj_state.logical_state in (ObjectLogicalState.GRASPED, ObjectLogicalState.CARRIED):
-            panel._emit_log(f"[PICK] Limpiando estado anterior: {PICK_DEMO_OBJECT_NAME} era {obj_state.logical_state.value}")
+            panel._emit_log(f"[PICK] Limpiando estado anterior: {target_object_name} era {obj_state.logical_state.value}")
             update_object_state(
-                PICK_DEMO_OBJECT_NAME,
+                target_object_name,
                 logical_state=ObjectLogicalState.ON_TABLE,
                 owner=ObjectOwner.NONE,
                 attached=False,
                 reason="pick_demo_cleanup"
             )
-            panel._emit_log(f"[PICK] Estado limpiado: {PICK_DEMO_OBJECT_NAME} → ON_TABLE")
+            panel._emit_log(f"[PICK] Estado limpiado: {target_object_name} -> ON_TABLE")
         elif obj_state.logical_state in (ObjectLogicalState.SPAWNED, ObjectLogicalState.RELEASED):
             panel._emit_log(
-                f"[PICK] Normalizando estado previo: {PICK_DEMO_OBJECT_NAME} era {obj_state.logical_state.value} → ON_TABLE"
+                f"[PICK] Normalizando estado previo: {target_object_name} era {obj_state.logical_state.value} -> ON_TABLE"
             )
             update_object_state(
-                PICK_DEMO_OBJECT_NAME,
+                target_object_name,
                 logical_state=ObjectLogicalState.ON_TABLE,
                 owner=ObjectOwner.NONE,
                 attached=False,
@@ -1900,12 +1971,33 @@ def run_pick_demo(panel) -> None:
         f"route_reason={route_reason}"
     )
     panel._emit_log(
-        f"[PICK][DIRECT] selection_ok=true target={PICK_DEMO_OBJECT_NAME} route={route_selected}"
+        f"[PICK][DIRECT] selection_ok=true target={target_object_name} object_id={target_object_id} route={route_selected}"
     )
     _sync_gate_emit("route_selected", True, f"route={route_selected} reason={route_reason}")
     panel._emit_log("[PICK] Secuencia manual iniciada (ruta directa con DIRECT IK trazable)")
     panel._emit_log("[PICK] target_source=selected_demo_object")
     panel._set_status("Pick demo: ejecutando secuencia manual…")
+    target_lock_id = uuid.uuid4().hex[:12]
+    target_selected_ts = max(
+        float(getattr(panel, "_selection_timestamp", 0.0) or 0.0),
+        float(getattr(panel, "_selection_last_user_ts", 0.0) or 0.0),
+        float(getattr(target_state, "last_update_ts", 0.0) or 0.0),
+        float(time.time()),
+    )
+    setattr(panel, "_pick_target_lock_active", True)
+    setattr(panel, "_pick_target_lock_name", target_object_name)
+    setattr(panel, "_pick_target_lock_object_id", target_object_id)
+    setattr(panel, "_pick_target_lock_ts", target_selected_ts)
+    setattr(panel, "_pick_target_lock_id", target_lock_id)
+    setattr(panel, "_pick_target_lock_source", "direct_pick_sequence")
+    setattr(panel, "_pick_target_lock_reason", "pick_demo_sequence")
+    setattr(panel, "_pick_target_lock_world", _pick_demo_tuple3(getattr(panel, "_selected_world", None)))
+    setattr(panel, "_pick_target_lock_base", _pick_demo_tuple3(getattr(panel, "_selected_base", None)))
+    panel._emit_log(
+        "[PICK][TARGET_LOCK] activate "
+        f"lock_id={target_lock_id} object_id={target_object_id} name={target_object_name} "
+        f"source=direct_pick_sequence ts={target_selected_ts:.3f}"
+    )
     panel._set_motion_lock(True)
     _sync_gate_emit(
         "motion_lock_set",
@@ -2654,6 +2746,11 @@ def run_pick_demo(panel) -> None:
                 return math.sqrt(dx * dx + dy * dy + dz * dz)
 
             def _live_object_world():
+                lock_name = str(getattr(panel, "_pick_target_lock_name", "") or target_object_name)
+                if lock_name and lock_name != target_object_name:
+                    raise RuntimeError(
+                        f"target_lock_changed_during_pick expected={target_object_name} got={lock_name}"
+                    )
                 if _pick_demo_cycle_object_world is not None:
                     _append_trace(
                         "[PICK][DIRECT][CYCLE_REF][USE] tag=[DIRECT][CYCLE_REF][USE] "
@@ -2665,12 +2762,17 @@ def run_pick_demo(panel) -> None:
                     return _tuple3(_pick_demo_cycle_object_world)
                 result = _resolve_live_object_world(
                     panel,
-                    PICK_DEMO_OBJECT_NAME,
+                    target_object_name,
                     trace_fn=_append_trace,
                 )
                 return _tuple3(result.get("world"))
 
             def _live_object_base():
+                lock_name = str(getattr(panel, "_pick_target_lock_name", "") or target_object_name)
+                if lock_name and lock_name != target_object_name:
+                    raise RuntimeError(
+                        f"target_lock_changed_during_pick expected={target_object_name} got={lock_name}"
+                    )
                 if _pick_demo_cycle_object_base is not None:
                     _append_trace(
                         "[PICK][DIRECT][CYCLE_REF][USE] tag=[DIRECT][CYCLE_REF][USE] "
@@ -2682,7 +2784,7 @@ def run_pick_demo(panel) -> None:
                     return _tuple3(_pick_demo_cycle_object_base)
                 result = _resolve_live_object_base(
                     panel,
-                    PICK_DEMO_OBJECT_NAME,
+                    target_object_name,
                     trace_fn=_append_trace,
                 )
                 return _tuple3(result.get("base"))
@@ -2729,7 +2831,7 @@ def run_pick_demo(panel) -> None:
                         and getattr(panel, "ros_worker", None) is not None
                     ):
                         pose_map, _ = panel.ros_worker.pose_snapshot()
-                        live = (pose_map or {}).get(PICK_DEMO_OBJECT_NAME)
+                        live = (pose_map or {}).get(target_object_name)
                         if live is not None and len(live) >= 3:
                             return (float(live[0]), float(live[1]), float(live[2]))
                 except Exception:
@@ -2772,7 +2874,7 @@ def run_pick_demo(panel) -> None:
                         and getattr(panel, "ros_worker", None) is not None
                     ):
                         pose_map, _ = panel.ros_worker.pose_snapshot()
-                        live = (pose_map or {}).get(PICK_DEMO_OBJECT_NAME)
+                        live = (pose_map or {}).get(target_object_name)
                         if live is not None and len(live) >= 3:
                             return (float(live[0]), float(live[1]), float(live[2]))
                 except Exception:
@@ -2910,7 +3012,7 @@ def run_pick_demo(panel) -> None:
                     f"request_id={run_id} "
                     f"grasp_mode=direct_object "
                     f"selected_object_name={selected_name or 'none'} "
-                    f"selected_object_id=n/a "
+                    f"selected_object_id={target_object_id} "
                     f"user_selected_name={user_selected or 'none'} "
                     f"selection_age_sec={_fmt_scalar(selection_age)} "
                     f"target_source={target_source or 'none'} "
@@ -3063,7 +3165,7 @@ def run_pick_demo(panel) -> None:
 
             cycle_ref = _select_pick_demo_cycle_object_reference(
                 panel,
-                PICK_DEMO_OBJECT_NAME,
+                target_object_name,
                 selected_base_anchor=selected_base_anchor,
                 trace_fn=_append_trace,
             )
@@ -3415,7 +3517,7 @@ def run_pick_demo(panel) -> None:
                 return False, timeout_state
 
             def _read_attach_state():
-                st = get_object_state(PICK_DEMO_OBJECT_NAME)
+                st = get_object_state(target_object_name)
                 logical_state = None
                 owner = None
                 attached = None
@@ -4593,7 +4695,7 @@ def run_pick_demo(panel) -> None:
                     "seq": int(phase_seq["value"]),
                     "phase": phase,
                     "timestamp_enter": _iso_now(),
-                    "object_name": PICK_DEMO_OBJECT_NAME,
+                    "object_name": target_object_name,
                     "object_pose_world_before": _tuple3(_live_object_world()),
                     "tcp_pose_world_before": _tuple3(_live_tcp_world()),
                     "tcp_pose_base_before": _tuple3(_live_tcp_base()),
@@ -4637,7 +4739,7 @@ def run_pick_demo(panel) -> None:
                         "seq": int(phase_seq["value"]) + 1,
                         "phase": phase,
                         "timestamp_enter": _iso_now(),
-                        "object_name": PICK_DEMO_OBJECT_NAME,
+                        "object_name": target_object_name,
                     }
                 target_world_3, target_base_3 = _target_world_base_pair(
                     target_world=target_world or data.get("target_pose_world") or last_target.get("target_world"),
@@ -4792,7 +4894,7 @@ def run_pick_demo(panel) -> None:
                     "phase": phase,
                     "failure_mode": mode,
                     "note": note,
-                    "object_name": PICK_DEMO_OBJECT_NAME,
+                    "object_name": target_object_name,
                     "tcp_pose_world": tcp_world,
                     "tcp_pose_base": tcp_base,
                     "object_pose_world": obj_world,
@@ -12365,7 +12467,7 @@ def run_pick_demo(panel) -> None:
                 _detach_demo_object("error_recovery")
                 if demo_logical_attached:
                     try:
-                        mark_object_released(PICK_DEMO_OBJECT_NAME, reason="demo_error_recovery")
+                        mark_object_released(target_object_name, reason="demo_error_recovery")
                     except Exception:
                         pass
             try:
@@ -12389,6 +12491,22 @@ def run_pick_demo(panel) -> None:
                 panel.signal_run_ui.emit(
                     lambda: _clear_wait_fn(reason="worker_finally")
                 )
+            prev_lock_id = str(getattr(panel, "_pick_target_lock_id", "") or target_lock_id)
+            prev_lock_name = str(getattr(panel, "_pick_target_lock_name", "") or target_object_name)
+            prev_lock_object_id = str(getattr(panel, "_pick_target_lock_object_id", "") or target_object_id)
+            setattr(panel, "_pick_target_lock_active", False)
+            setattr(panel, "_pick_target_lock_name", "")
+            setattr(panel, "_pick_target_lock_object_id", "")
+            setattr(panel, "_pick_target_lock_ts", 0.0)
+            setattr(panel, "_pick_target_lock_id", "")
+            setattr(panel, "_pick_target_lock_source", "")
+            setattr(panel, "_pick_target_lock_reason", "")
+            setattr(panel, "_pick_target_lock_world", None)
+            setattr(panel, "_pick_target_lock_base", None)
+            panel._emit_log(
+                "[PICK][TARGET_LOCK] release "
+                f"lock_id={prev_lock_id} object_id={prev_lock_object_id} name={prev_lock_name}"
+            )
             panel._set_motion_lock(False)
 
     try:
@@ -12397,6 +12515,15 @@ def run_pick_demo(panel) -> None:
         _sync_gate_emit("worker_dispatch", False, f"exception={exc}")
         panel._emit_log(f"[PICK] ✗ Error lanzando worker: {exc}")
         panel._ui_set_status(f"Error lanzando pick demo: {exc}", error=True)
+        setattr(panel, "_pick_target_lock_active", False)
+        setattr(panel, "_pick_target_lock_name", "")
+        setattr(panel, "_pick_target_lock_object_id", "")
+        setattr(panel, "_pick_target_lock_ts", 0.0)
+        setattr(panel, "_pick_target_lock_id", "")
+        setattr(panel, "_pick_target_lock_source", "")
+        setattr(panel, "_pick_target_lock_reason", "")
+        setattr(panel, "_pick_target_lock_world", None)
+        setattr(panel, "_pick_target_lock_base", None)
         panel._set_motion_lock(False)
         return
     _sync_gate_emit("worker_dispatch", True, "async_started")
