@@ -17,7 +17,7 @@ model:
 
 data:
   modality: "rgb"
-  data_root: "."
+  data_root: ".."
   train_csv: "data/processed/cornell/splits/object_wise/train.csv"
   val_csv: "data/processed/cornell/splits/object_wise/val.csv"
   image_size: 224
