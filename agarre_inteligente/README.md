@@ -97,38 +97,44 @@ Por tanto, a efectos del workspace actual:
 Preparar CSVs del Cornell:
 
 ```bash
-python scripts/prepare_cornell_csv.py
+python3 scripts/prepare_cornell_csv.py
 ```
 
 Lanzar un experimento:
 
 ```bash
-python scripts/run_experiment.py --config config/exp3_resnet18_rgb_augment.yaml
+python3 scripts/run_experiment.py --config config/exp3_resnet18_rgb_augment.yaml
 ```
 
 Lanzar `EXP1.1` o `EXP1.2`:
 
 ```bash
-python scripts/run_experiment.py --config config/exp1_1_simplegrasp_rgb.yaml
-python scripts/run_experiment.py --config config/exp1_2_simplegrasp_rgbd.yaml
+python3 scripts/run_experiment.py --config config/exp1_1_simplegrasp_rgb.yaml
+python3 scripts/run_experiment.py --config config/exp1_2_simplegrasp_rgbd.yaml
 ```
 
 Entrenamiento directo:
 
 ```bash
-python scripts/train.py --config config/exp3_resnet18_rgb_augment.yaml --seed 0
+python3 scripts/train.py --config config/exp3_resnet18_rgb_augment.yaml --seed 0
 ```
 
 Evaluar un experimento:
 
 ```bash
-python scripts/evaluate.py --experiment experiments/EXP3_RESNET18_RGB_AUGMENT
+python3 scripts/evaluate.py \
+  --config config/exp3_resnet18_rgb_augment.yaml \
+  --checkpoint experiments/EXP3_RESNET18_RGB_AUGMENT/seed_0/checkpoints/best.pth \
+  --output reports/eval_exp3_seed0.csv
 ```
 
 Bench de latencia:
 
 ```bash
-python scripts/benchmark_latency.py --config config/exp3_resnet18_rgb_augment.yaml
+python3 scripts/benchmark_latency.py \
+  --config config/exp3_resnet18_rgb_augment.yaml \
+  --checkpoint experiments/EXP3_RESNET18_RGB_AUGMENT/seed_0/checkpoints/best.pth \
+  --output reports/bench/latency_exp3_seed0.csv
 ```
 
 ## Fuente de verdad

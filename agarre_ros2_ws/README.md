@@ -156,14 +156,12 @@ Benchmark y trazas:
 - Evidencias curadas del sistema ROS 2: `../reports/evidence/ros2/`
 - Evidencias del bloque del TFM en resultados: `../reports/evidence/chapter5/`
 - Logs de reproducibilidad: `../reports/logs/reproducibility/`
-- Cierre tecnico del incidente TCP RG2 UR5: `reports/incidents/2026-04-22_rg2_tcp_incident_closure.md`
 
 Artefactos operativos utiles del panel:
 
-- `../auditoria/panel_audit/artifacts/tfm_session_last.json`: ultima aplicacion efectiva de experimento TFM.
-- `../auditoria/panel_audit/artifacts/grasp_last.json`: ultima inferencia con contexto experimental y metrica Cornell.
-- `../auditoria/panel_audit/logs/apply_experiment.log`
-- `../auditoria/panel_audit/logs/infer.log`
+- `../reports/evidence/ros2/panel_audit/artifacts/checkpoints_index.json`
+- `../reports/evidence/ros2/panel_audit/artifacts/grasp_last.json`
+- `../reports/evidence/ros2/panel_audit/figures/overlay_last.png`
 - `../reports/evidence/ros2/tfm_session_exports/`: exportaciones curadas de sesiones TFM listas para compartir o revisar.
 
 La fuente editable del workspace esta en `src/`, `scripts/`, `worlds/` y `models/`. Los artefactos de compilacion o de ejecucion no deben editarse a mano.
