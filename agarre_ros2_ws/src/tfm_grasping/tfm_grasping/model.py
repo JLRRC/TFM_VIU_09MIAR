@@ -340,6 +340,11 @@ class GraspModel:
             tensor = tensor.to(self._device)
         with torch.no_grad():
             pred = self._model(tensor).squeeze(0).cpu().numpy()
+        if self.info.model_name == "simple_grasp":
+            # SimpleGrasp was trained on normalized targets: cx/cy/w/h ∈ [0,1], angle ∈ [-1,1].
+            # Clip diverged outputs to the decoder threshold so _decode_model_axis always
+            # multiplies by img_size instead of treating values as raw pixel coordinates.
+            pred = pred.clip(-1.5, 1.5)
         return self._decode_prediction(pred, frame, roi_info)
 
     def last_error(self) -> str:
