@@ -173,12 +173,21 @@ def _pick_demo_fmt_scalar(value, *, digits: int = 3) -> str:
         return "none"
 
 
-def _pick_demo_env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
+def _pick_demo_env_float(
+    name: str,
+    default: float,
+    *,
+    minimum: float = 0.0,
+    maximum: float | None = None,
+) -> float:
     try:
         value = float(os.environ.get(name, str(default)) or default)
     except Exception:
         value = float(default)
-    return max(float(minimum), float(value))
+    value = max(float(minimum), float(value))
+    if maximum is not None:
+        value = min(float(maximum), float(value))
+    return float(value)
 
 
 def _pick_demo_env_int(name: str, default: int, *, minimum: int = 0) -> int:
@@ -194,6 +203,25 @@ def _pick_demo_env_flag(name: str, default: bool) -> bool:
     if raw is None:
         return bool(default)
     return str(raw).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def _direct_pregrasp_gate_caps(phase: str | None) -> dict[str, float] | None:
+    phase_name = str(phase or "").strip().upper()
+    if phase_name not in {"APPROACH_COARSE", "GRASP_DOWN_JOINT"}:
+        return None
+    # Hard diagnostic caps for the handoff that leads into GRASP_DOWN.
+    # Runtime profiles may relax generic defaults, but this interval must keep
+    # tight source freshness and jump checks or the phase boundary becomes
+    # meaningless.
+    return {
+        "source_tol_m": 0.006,
+        "source_age_tol_sec": 0.400,
+        "source_sync_tol_sec": 0.400,
+        "phase_jump_tol_m": 0.010,
+        "coarse_xy_tol_m": 0.006,
+        "keep_xy_tol_m": 0.005,
+        "object_divergence_tol_m": 0.020,
+    }
 
 
 def _should_transport_prep_failure_jump_to_replan(
@@ -3365,26 +3393,35 @@ def run_pick_demo(panel) -> None:
                 panel_fk_3 = _tuple3(panel_fk_base) or _tuple3(getattr(panel, "_last_tcp_base", None))
                 panel_trace_3 = _tuple3(panel_trace_base) or _tuple3(getattr(panel, "_last_trace_tcp_base", None))
                 target_base_3 = _tuple3(target_base)
+                _pose_caps = _direct_pregrasp_gate_caps(phase)
                 now_mono = float(time.monotonic())
                 fk_live_delta = _vec_norm(_vector_minus(panel_fk_3, tcp_base_3))
                 trace_live_delta = _vec_norm(_vector_minus(panel_trace_3, tcp_base_3))
                 fk_trace_delta = _vec_norm(_vector_minus(panel_fk_3, panel_trace_3))
                 target_live_delta = _vec_norm(_vector_minus(target_base_3, tcp_base_3))
-                source_tol = max(
-                    0.003,
-                    float(os.environ.get("PANEL_PICK_DEMO_POSE_SOURCE_TOL_M", "0.006") or 0.006),
+                source_tol = _pick_demo_env_float(
+                    "PANEL_PICK_DEMO_POSE_SOURCE_TOL_M",
+                    0.006,
+                    minimum=0.003,
+                    maximum=(_pose_caps or {}).get("source_tol_m"),
                 )
-                source_age_tol = max(
-                    0.05,
-                    float(os.environ.get("PANEL_PICK_DEMO_POSE_SOURCE_AGE_TOL_SEC", "0.20") or 0.20),
+                source_age_tol = _pick_demo_env_float(
+                    "PANEL_PICK_DEMO_POSE_SOURCE_AGE_TOL_SEC",
+                    0.20,
+                    minimum=0.05,
+                    maximum=(_pose_caps or {}).get("source_age_tol_sec"),
                 )
-                source_sync_tol = max(
-                    0.02,
-                    float(os.environ.get("PANEL_PICK_DEMO_POSE_SOURCE_SYNC_TOL_SEC", "0.20") or 0.20),
+                source_sync_tol = _pick_demo_env_float(
+                    "PANEL_PICK_DEMO_POSE_SOURCE_SYNC_TOL_SEC",
+                    0.20,
+                    minimum=0.02,
+                    maximum=(_pose_caps or {}).get("source_sync_tol_sec"),
                 )
-                phase_jump_tol = max(
-                    source_tol,
-                    float(os.environ.get("PANEL_PICK_DEMO_PHASE_JUMP_TOL_M", "0.010") or 0.010),
+                phase_jump_tol = _pick_demo_env_float(
+                    "PANEL_PICK_DEMO_PHASE_JUMP_TOL_M",
+                    0.010,
+                    minimum=source_tol,
+                    maximum=(_pose_caps or {}).get("phase_jump_tol_m"),
                 )
                 panel_fk_age_sec = None
                 if float(getattr(panel, "_last_tcp_fk_ts", 0.0) or 0.0) > 0.0:
@@ -3486,6 +3523,11 @@ def run_pick_demo(panel) -> None:
                     "phase_jump_ok": bool(phase_jump_ok),
                     "sources_ok": bool(sources_ok),
                     "ok_for_gate": bool(ok_for_gate),
+                    "pose_gate_profile": (
+                        "pregrasp_strict"
+                        if _pose_caps is not None
+                        else "runtime_profile"
+                    ),
                 }
 
             def _emit_pose_consistency(
@@ -3510,6 +3552,7 @@ def run_pick_demo(panel) -> None:
                     f"phase_end_jump={_fmt_scalar(metrics.get('phase_end_delta_m'))}/{_fmt_scalar(metrics.get('phase_jump_tol_m'))} "
                     f"phase_end_age={_fmt_scalar(metrics.get('phase_end_age_sec'))} "
                     f"target_live={_fmt_scalar(metrics.get('target_live_delta_m'))} "
+                    f"profile={metrics.get('pose_gate_profile') or 'runtime_profile'} "
                     f"fresh_ok={str(bool(metrics.get('sources_fresh_ok'))).lower()} "
                     f"sources_ok={str(bool(metrics.get('sources_ok'))).lower()} "
                     f"jump_ok={str(bool(metrics.get('phase_jump_ok'))).lower()} "
@@ -8272,10 +8315,13 @@ def run_pick_demo(panel) -> None:
                 coarse_gate_xy_err: float = float("inf")
                 _cg_z_err: float = float("inf")
                 coarse_pose_metrics = {}
+                _coarse_caps = _direct_pregrasp_gate_caps("APPROACH_COARSE") or {}
                 if _coarse_check_tcp is not None and _coarse_check_obj is not None and target_base_coarse is not None:
-                    _cg_xy_tol = max(
-                        0.006,
-                        float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M", "0.012") or 0.012),
+                    _cg_xy_tol = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M",
+                        0.012,
+                        minimum=0.006,
+                        maximum=_coarse_caps.get("coarse_xy_tol_m"),
                     )
                     _cg_z_tol = max(
                         0.006,
@@ -8548,6 +8594,20 @@ def run_pick_demo(panel) -> None:
                         "phase=APPROACH_COARSE result=PEND reason=pose_unavailable"
                     )
 
+                _grasp_down_caps = _direct_pregrasp_gate_caps("GRASP_DOWN_JOINT") or {}
+                _grasp_down_object_div_tol = _pick_demo_env_float(
+                    "PANEL_PICK_DEMO_OBJECT_SOURCE_DIVERGENCE_TOL_M",
+                    0.020,
+                    minimum=0.005,
+                    maximum=_grasp_down_caps.get("object_divergence_tol_m"),
+                )
+                _grasp_down_phase_jump_tol = _pick_demo_env_float(
+                    "PANEL_PICK_DEMO_PHASE_JUMP_TOL_M",
+                    0.010,
+                    minimum=0.003,
+                    maximum=_grasp_down_caps.get("phase_jump_tol_m"),
+                )
+
                 # Refrescar target desde Gazebo ground truth justo antes del descenso.
                 # _fresh_gazebo_object_world() ignora el cycle reference congelado y lee
                 # directamente de /world/.../pose/info — crítico si el objeto se movió
@@ -8572,6 +8632,22 @@ def run_pick_demo(panel) -> None:
                         f"drift_m={_fmt_scalar(_drift_m)} "
                         "using=fresh_gazebo"
                     )
+                    if (
+                        _cycle_world_frozen is not None
+                        and _drift_m is not None
+                        and float(_drift_m) > float(_grasp_down_object_div_tol)
+                    ):
+                        _abort_grasp(
+                            code="GRASP_DOWN_OBJECT_SOURCE_DIVERGENCE",
+                            phase="GRASP_DOWN_JOINT",
+                            note="fresh Gazebo object pose diverged from the cycle reference before GRASP_DOWN",
+                            metrics={
+                                "cycle_world": _tuple3(_cycle_world_frozen),
+                                "fresh_gazebo_world": _tuple3(_fresh_gd_world),
+                                "drift_m": float(_drift_m),
+                                "drift_tol_m": float(_grasp_down_object_div_tol),
+                            },
+                        )
                     obj_world_before_grasp_down = _fresh_gd_world
                     obj_base_before_grasp_down = _fresh_gd_base
                     # Update cycle reference so ATTACH_GATE (_live_object_base) uses the
@@ -8593,20 +8669,69 @@ def run_pick_demo(panel) -> None:
                     raise RuntimeError("demo_live_object_pose_unavailable_before_grasp_down")
                 target_base_grasp_down = None
                 target_world_grasp_down = None
-                tcp_world_before_grasp_down = _live_tcp_world()
-                tcp_before_grasp_down = _live_tcp_base()
-                tcp_before_grasp_down_source = "live_tcp"
+                tcp_before_grasp_down = _tuple3(_coarse_check_tcp)
+                tcp_before_grasp_down_source = "approach_coarse_phase_check"
+                tcp_world_before_grasp_down = _target_world_from_base(tcp_before_grasp_down)
+                tcp_live_before_grasp_down = _tuple3(_live_tcp_base())
+                if tcp_before_grasp_down is None:
+                    _abort_grasp(
+                        code="GRASP_DOWN_HANDOFF_POSE_MISSING",
+                        phase="GRASP_DOWN_JOINT",
+                        note="validated APPROACH_COARSE pose unavailable for GRASP_DOWN handoff",
+                        metrics={
+                            "coarse_check_tcp": _tuple3(_coarse_check_tcp),
+                            "coarse_gate_xy_ok": bool(coarse_gate_xy_ok),
+                            "coarse_gate_z_ok": bool(coarse_gate_z_ok),
+                            "coarse_gate_pose_ok": bool(coarse_gate_pose_ok),
+                        },
+                    )
+                if tcp_live_before_grasp_down is None:
+                    _abort_grasp(
+                        code="GRASP_DOWN_HANDOFF_LIVE_TCP_MISSING",
+                        phase="GRASP_DOWN_JOINT",
+                        note="live rg2_pinch_center unavailable at APPROACH_COARSE -> GRASP_DOWN handoff",
+                        metrics={
+                            "coarse_check_tcp": _tuple3(_coarse_check_tcp),
+                        },
+                    )
+                _handoff_jump_m = _dist(tcp_live_before_grasp_down, tcp_before_grasp_down)
+                _handoff_log = (
+                    "[PICK][DIRECT][HANDOFF] "
+                    "phase=GRASP_DOWN_JOINT "
+                    f"source={tcp_before_grasp_down_source} "
+                    f"coarse_tcp={_fmt_vec(tcp_before_grasp_down)} "
+                    f"live_tcp={_fmt_vec(tcp_live_before_grasp_down)} "
+                    f"jump_m={_fmt_scalar(_handoff_jump_m)}/{float(_grasp_down_phase_jump_tol):.3f}"
+                )
+                panel._emit_log(_handoff_log)
+                _append_trace(_handoff_log)
+                if (
+                    _handoff_jump_m is not None
+                    and float(_handoff_jump_m) > float(_grasp_down_phase_jump_tol)
+                ):
+                    _abort_grasp(
+                        code="GRASP_DOWN_HANDOFF_PHASE_JUMP",
+                        phase="GRASP_DOWN_JOINT",
+                        note="live TCP drifted away from the validated APPROACH_COARSE pose before GRASP_DOWN",
+                        metrics={
+                            "coarse_tcp": _tuple3(tcp_before_grasp_down),
+                            "live_tcp": _tuple3(tcp_live_before_grasp_down),
+                            "jump_m": float(_handoff_jump_m),
+                            "jump_tol_m": float(_grasp_down_phase_jump_tol),
+                        },
+                    )
+                if tcp_world_before_grasp_down is None:
+                    _abort_grasp(
+                        code="GRASP_DOWN_HANDOFF_WORLD_PROJECTION_FAILED",
+                        phase="GRASP_DOWN_JOINT",
+                        note="could not project validated APPROACH_COARSE pose from base_link into world",
+                        metrics={
+                            "coarse_tcp": _tuple3(tcp_before_grasp_down),
+                        },
+                    )
                 target_mode = "object_xy_plus_object_z"
                 grasp_down_relative_mode = "object_xy_plus_object_z"
                 grasp_down_target_source = "live_object_world"
-                if tcp_before_grasp_down is None:
-                    tcp_before_grasp_down = _tuple3(getattr(panel, "_last_trace_tcp_base", None))
-                    if tcp_before_grasp_down is not None:
-                        tcp_before_grasp_down_source = "panel_last_trace_tcp_base"
-                if tcp_before_grasp_down is None:
-                    tcp_before_grasp_down = _tuple3(getattr(panel, "_last_tcp_base", None))
-                    if tcp_before_grasp_down is not None:
-                        tcp_before_grasp_down_source = "panel_last_tcp_base"
                 if obj_world_before_grasp_down is not None:
                     target_x = float(obj_world_before_grasp_down[0])
                     target_y = float(obj_world_before_grasp_down[1])
@@ -8620,9 +8745,11 @@ def run_pick_demo(panel) -> None:
                         f"contact_offset_reserved_for_align={grasp_contact_z_offset_m:.4f}"
                     )
                     if tcp_before_grasp_down is not None and tcp_world_before_grasp_down is not None and obj_base_before_grasp_down is not None:
-                        keep_xy_tol = max(
-                            0.001,
-                            float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M", "0.005") or 0.005),
+                        keep_xy_tol = _pick_demo_env_float(
+                            "PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M",
+                            0.005,
+                            minimum=0.001,
+                            maximum=_grasp_down_caps.get("keep_xy_tol_m"),
                         )
                         tcp_obj_xy = math.hypot(
                             float(tcp_before_grasp_down[0]) - float(obj_base_before_grasp_down[0]),
@@ -8640,23 +8767,27 @@ def run_pick_demo(panel) -> None:
                             )
                             or "0"
                         ).strip().lower() in {"1", "true", "yes", "on"}
+                        # Once APPROACH_COARSE has already passed its own strict
+                        # geometric gate and the pre-GRASP_DOWN handoff is coherent,
+                        # GRASP_DOWN must inherit that validated XY instead of
+                        # re-anchoring to a second object source with a tighter
+                        # threshold.
                         _can_inherit_xy = (
                             coarse_gate_xy_ok
                             and coarse_gate_z_ok
                             and coarse_gate_pose_ok
                             and not _coarse_was_fallback
-                            and (_force_inherit_xy or tcp_obj_xy <= keep_xy_tol)
                         )
                         if _can_inherit_xy:
                             target_x = float(tcp_world_before_grasp_down[0])
                             target_y = float(tcp_world_before_grasp_down[1])
-                            target_mode = "keep_current_xy_plus_object_z"
-                            grasp_down_relative_mode = "keep_current_xy_plus_object_z"
+                            target_mode = "keep_approach_coarse_xy_plus_object_z"
+                            grasp_down_relative_mode = "keep_approach_coarse_xy_plus_object_z"
                             grasp_down_target_source = f"{tcp_before_grasp_down_source}_world+live_object_world_z"
                             _gd_reason = (
                                 "approach_coarse_forced"
-                                if _force_inherit_xy and tcp_obj_xy > keep_xy_tol
-                                else "approach_coarse_valid"
+                                if _force_inherit_xy
+                                else "approach_coarse_validated_handoff"
                             )
                             _gd_gate_msg = (
                                 "[PICK][DIRECT][PHASE_GATE] "
@@ -8692,6 +8823,28 @@ def run_pick_demo(panel) -> None:
                             )
                             panel._emit_log(_gd_gate_msg)
                             _append_trace(_gd_gate_msg)
+                            if (
+                                coarse_gate_xy_ok
+                                and coarse_gate_z_ok
+                                and coarse_gate_pose_ok
+                                and not _coarse_was_fallback
+                            ):
+                                _abort_grasp(
+                                    code="GRASP_DOWN_HANDOFF_REANCHOR_BLOCKED",
+                                    phase="GRASP_DOWN_JOINT",
+                                    note="GRASP_DOWN must inherit the validated APPROACH_COARSE XY; live object XY reanchor is blocked in this handoff",
+                                    metrics={
+                                        "tcp_source": str(tcp_before_grasp_down_source),
+                                        "tcp_before": _tuple3(tcp_before_grasp_down),
+                                        "obj_before": _tuple3(obj_base_before_grasp_down),
+                                        "xy_err": float(tcp_obj_xy),
+                                        "keep_xy_tol": float(keep_xy_tol),
+                                        "dz": float(tcp_obj_dz_gate),
+                                        "coarse_xy_ok": bool(coarse_gate_xy_ok),
+                                        "coarse_z_ok": bool(coarse_gate_z_ok),
+                                        "coarse_pose_ok": bool(coarse_gate_pose_ok),
+                                    },
+                                )
                             panel._emit_log(
                                 "[PICK][DIRECT][GRASP_DOWN_RECENTER] "
                                 f"tcp_source={tcp_before_grasp_down_source} "
