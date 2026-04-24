@@ -14,11 +14,16 @@ if TYPE_CHECKING:
 
 
 def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effective_reason: str) -> None:
+    btn_test_robot = getattr(panel, "btn_test_robot", None)
     btn_tfm_apply = getattr(panel, "btn_tfm_apply", None)
     btn_tfm_infer = getattr(panel, "btn_tfm_infer", None)
     btn_tfm_visualize = getattr(panel, "btn_tfm_visualize", None)
     btn_tfm_publish = getattr(panel, "btn_tfm_publish", None)
     btn_tfm_reset = getattr(panel, "btn_tfm_reset", None)
+
+    def _set_test_robot_btn_state(enabled: bool, tooltip: str) -> None:
+        if btn_test_robot is not None:
+            panel._set_btn_state(btn_test_robot, enabled, tooltip)
 
     def _set_optional_btn_state(button, enabled: bool, tooltip: str) -> None:
         if button is not None:
