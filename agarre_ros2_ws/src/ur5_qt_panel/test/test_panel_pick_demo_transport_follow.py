@@ -242,6 +242,29 @@ def test_compute_demo_transport_recovery_stage_targets_skips_short_residuals() -
     assert targets == []
 
 
+def test_compute_demo_transport_micro_recovery_target_steps_along_residual() -> None:
+    target = pick_demo._compute_demo_transport_micro_recovery_target(
+        (0.261, 0.329, 0.885),
+        (0.133, 0.336, 0.912),
+        step_m=0.015,
+        minimum_remaining_dist_m=0.040,
+    )
+
+    assert target is not None
+    assert target == pytest.approx((0.246343, 0.329801, 0.888091), abs=1e-6)
+
+
+def test_compute_demo_transport_micro_recovery_target_skips_short_residual() -> None:
+    target = pick_demo._compute_demo_transport_micro_recovery_target(
+        (0.252, 0.330, 0.891),
+        (0.202, 0.334, 0.894),
+        step_m=0.015,
+        minimum_remaining_dist_m=0.040,
+    )
+
+    assert target is None
+
+
 def test_compute_demo_joint_prep_waypoint_blends_shortest_joint_deltas() -> None:
     prep = pick_demo._compute_demo_joint_prep_waypoint(
         [0.0, -1.50, 0.0],
@@ -426,6 +449,39 @@ def test_wait_for_demo_runtime_target_progress_fails_fast_on_no_progress(monkeyp
     assert result["elapsed_sec"] == pytest.approx(0.20, abs=0.05)
 
 
+def test_wait_for_demo_runtime_target_progress_allows_initial_detour_before_converging(monkeypatch) -> None:
+    panel = _FakePanel()
+    harness = _RuntimeTargetHarness(
+        [
+            (0.100, 0.000, 0.000),
+            (0.115, 0.000, 0.000),
+            (0.131, 0.000, 0.000),
+            (0.090, 0.000, 0.000),
+            (0.030, 0.000, 0.000),
+        ]
+    )
+    monkeypatch.setenv("PANEL_PICK_DEMO_TRANSPORT_RUNTIME_PROGRESS_POLL_SEC", "0.05")
+    monkeypatch.setenv("PANEL_PICK_DEMO_TRANSPORT_RUNTIME_PROGRESS_ARM_SEC", "0.10")
+    monkeypatch.setenv("PANEL_PICK_DEMO_TRANSPORT_RUNTIME_STALL_TIMEOUT_SEC", "0.30")
+    monkeypatch.setenv("PANEL_PICK_DEMO_TRANSPORT_RUNTIME_MIN_PROGRESS_M", "0.01")
+    monkeypatch.setenv("PANEL_PICK_DEMO_TRANSPORT_RUNTIME_WRONG_DIRECTION_TOL_M", "0.02")
+
+    result = pick_demo._wait_for_demo_runtime_target_progress(
+        panel,
+        label="CESTA_STAGE_1",
+        target_xyz=(0.0, 0.0, 0.0),
+        timeout_sec=2.0,
+        tol_xyz_m=0.04,
+        live_tcp_base_fn=harness.live_tcp_base,
+        clock_fn=harness.clock,
+        sleep_fn=harness.sleep,
+    )
+
+    assert result["ok"] is True
+    assert result["reason"] == "target_reached"
+    assert result["dist_m"] == pytest.approx(0.03)
+
+
 def test_transport_prep_failure_policy_defaults_to_soft_continue() -> None:
     assert (
         pick_demo._transport_prep_failure_policy(strict_mode=False)
@@ -460,6 +516,7 @@ def test_should_transport_prep_failure_jump_to_replan_ignores_early_failure() ->
 
 def test_evaluate_transport_stage_postcheck_accepts_runtime_and_model_in_tol() -> None:
     result = pick_demo._evaluate_transport_stage_postcheck(
+        label="CESTA_STAGE_1",
         runtime_target_ok=True,
         runtime_target_dist_m=0.031,
         runtime_target_tol_m=0.040,
@@ -472,11 +529,13 @@ def test_evaluate_transport_stage_postcheck_accepts_runtime_and_model_in_tol() -
         "reason": "ok",
         "runtime_target_tol_m": pytest.approx(0.040),
         "model_target_tol_m": pytest.approx(0.040),
+        "model_target_bypassed": False,
     }
 
 
 def test_evaluate_transport_stage_postcheck_flags_runtime_and_model_miss() -> None:
     result = pick_demo._evaluate_transport_stage_postcheck(
+        label="CESTA_STAGE_1",
         runtime_target_ok=False,
         runtime_target_dist_m=0.048,
         runtime_target_tol_m=0.040,
@@ -490,6 +549,7 @@ def test_evaluate_transport_stage_postcheck_flags_runtime_and_model_miss() -> No
 
 def test_evaluate_transport_stage_postcheck_flags_unconfirmed_runtime_target() -> None:
     result = pick_demo._evaluate_transport_stage_postcheck(
+        label="CESTA_STAGE_1",
         runtime_target_ok=False,
         runtime_target_dist_m=None,
         runtime_target_tol_m=0.040,

@@ -14,6 +14,16 @@ if TYPE_CHECKING:
 
 
 def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effective_reason: str) -> None:
+    btn_tfm_apply = getattr(panel, "btn_tfm_apply", None)
+    btn_tfm_infer = getattr(panel, "btn_tfm_infer", None)
+    btn_tfm_visualize = getattr(panel, "btn_tfm_visualize", None)
+    btn_tfm_publish = getattr(panel, "btn_tfm_publish", None)
+    btn_tfm_reset = getattr(panel, "btn_tfm_reset", None)
+
+    def _set_optional_btn_state(button, enabled: bool, tooltip: str) -> None:
+        if button is not None:
+            panel._set_btn_state(button, enabled, tooltip)
+
     ready_basic = effective_state in (SystemState.READY_BASIC, SystemState.READY_VISION, SystemState.READY_MOVEIT)
     system_error = effective_state == SystemState.ERROR_FATAL
     gz_state = panel._gazebo_state()
@@ -211,7 +221,7 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
 
     if external_block and not moveit_only:
         block_tip = f"Bloqueado: {external_tip}"
-        panel._set_btn_state(panel.btn_test_robot, False, test_locked_tip if test_locked else block_tip)
+        _set_test_robot_btn_state(False, test_locked_tip if test_locked else block_tip)
         panel._set_btn_state(panel.btn_home, False, block_tip)
         panel._set_btn_state(panel.btn_table, False, block_tip)
         panel._set_btn_state(panel.btn_basket, False, block_tip)
@@ -219,7 +229,7 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     elif moveit_only:
         panel._set_robot_test_blocked(None)
         moveit_tip = "MoveIt bridge activo; se pausará antes de AUTO TUNE"
-        panel._set_btn_state(panel.btn_test_robot, False if test_locked else motion_enabled, test_locked_tip if test_locked else moveit_tip)
+        _set_test_robot_btn_state(False if test_locked else motion_enabled, test_locked_tip if test_locked else moveit_tip)
         # HOME/MESA/CESTA habilitados si test ya completado
         if panel._robot_test_done:
             panel._set_btn_state(panel.btn_home, motion_enabled, motion_tip)
@@ -235,9 +245,9 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         block_tip = "Cámara no lista"
         # Deshabilitar si ya se ejecutó
         if test_locked:
-            panel._set_btn_state(panel.btn_test_robot, False, test_locked_tip)
+            _set_test_robot_btn_state(False, test_locked_tip)
         else:
-            panel._set_btn_state(panel.btn_test_robot, False, block_tip)
+            _set_test_robot_btn_state(False, block_tip)
         panel._set_btn_state(panel.btn_home, False, block_tip)
         panel._set_btn_state(panel.btn_table, False, block_tip)
         panel._set_btn_state(panel.btn_basket, False, block_tip)
@@ -246,9 +256,9 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         block_tip = "Ejecuta AUTO TUNE para habilitar"
         # Deshabilitar si ya se ejecutó
         if test_locked:
-            panel._set_btn_state(panel.btn_test_robot, False, test_locked_tip)
+            _set_test_robot_btn_state(False, test_locked_tip)
         else:
-            panel._set_btn_state(panel.btn_test_robot, motion_enabled, motion_tip)
+            _set_test_robot_btn_state(motion_enabled, motion_tip)
         panel._set_btn_state(panel.btn_home, False, block_tip)
         panel._set_btn_state(panel.btn_table, False, block_tip)
         panel._set_btn_state(panel.btn_basket, False, block_tip)
@@ -256,9 +266,9 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     else:
         # Deshabilitar si ya se ejecutó
         if test_locked:
-            panel._set_btn_state(panel.btn_test_robot, False, test_locked_tip)
+            _set_test_robot_btn_state(False, test_locked_tip)
         else:
-            panel._set_btn_state(panel.btn_test_robot, motion_enabled, motion_tip)
+            _set_test_robot_btn_state(motion_enabled, motion_tip)
         panel._set_btn_state(panel.btn_home, motion_enabled, motion_tip)
         panel._set_btn_state(panel.btn_table, motion_enabled, motion_tip)
         panel._set_btn_state(panel.btn_basket, motion_enabled, motion_tip)
@@ -334,22 +344,22 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         panel.chk_tfm_repro_mode.setEnabled(tfm_selector_ready)
     if hasattr(panel, "chk_tfm_raw_output"):
         panel.chk_tfm_raw_output.setEnabled(tfm_selector_ready)
-    panel._set_btn_state(panel.btn_tfm_apply, tfm_selector_ready, tfm_selector_tip)
-    panel._set_btn_state(panel.btn_tfm_infer, tfm_action_ready, "" if tfm_action_ready else tfm_block_tip)
-    panel._set_btn_state(
-        panel.btn_tfm_visualize,
+    _set_optional_btn_state(btn_tfm_apply, tfm_selector_ready, tfm_selector_tip)
+    _set_optional_btn_state(btn_tfm_infer, tfm_action_ready, "" if tfm_action_ready else tfm_block_tip)
+    _set_optional_btn_state(
+        btn_tfm_visualize,
         tfm_action_ready,
         "" if tfm_action_ready else tfm_controls_tip,
     )
-    panel._set_btn_state(
-        panel.btn_tfm_publish,
+    _set_optional_btn_state(
+        btn_tfm_publish,
         tfm_action_ready,
         "" if tfm_action_ready else tfm_controls_tip,
     )
-    panel._set_btn_state(panel.btn_tfm_reset, tfm_action_ready, tfm_controls_tip)
+    _set_optional_btn_state(btn_tfm_reset, tfm_action_ready, tfm_controls_tip)
     if panel._script_motion_active:
         busy_tip = "Robot en movimiento"
-        panel._set_btn_state(panel.btn_test_robot, False, busy_tip)
+        _set_test_robot_btn_state(False, busy_tip)
         panel._set_btn_state(panel.btn_home, False, busy_tip)
         panel._set_btn_state(panel.btn_table, False, busy_tip)
         panel._set_btn_state(panel.btn_basket, False, busy_tip)
@@ -360,9 +370,9 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
             panel._set_btn_state(panel.btn_pick_demo2, False, busy_tip)
         panel._set_btn_state(panel.btn_pick_object, False, busy_tip)
         if panel.tfm_module:
-            panel._set_btn_state(panel.btn_tfm_infer, False, busy_tip)
-            panel._set_btn_state(panel.btn_tfm_visualize, False, busy_tip)
-            panel._set_btn_state(panel.btn_tfm_publish, False, busy_tip)
+            _set_optional_btn_state(btn_tfm_infer, False, busy_tip)
+            _set_optional_btn_state(btn_tfm_visualize, False, busy_tip)
+            _set_optional_btn_state(btn_tfm_publish, False, busy_tip)
     # La lista de objetos solo necesita pose_info; no debe quedar bloqueada si
     # la vista de camara tarda en marcarse como ready.
     pick_ui_enabled = panel._pose_info_ok

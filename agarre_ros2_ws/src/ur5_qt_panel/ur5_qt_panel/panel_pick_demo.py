@@ -1483,6 +1483,37 @@ def _compute_demo_transport_recovery_stage_targets(
     )
 
 
+def _compute_demo_transport_micro_recovery_target(
+    current_tcp_base,
+    target_tcp_base,
+    *,
+    step_m: float,
+    minimum_remaining_dist_m: float,
+) -> tuple[float, float, float] | None:
+    current_tcp_base_3 = _pick_demo_tuple3(current_tcp_base)
+    target_tcp_base_3 = _pick_demo_tuple3(target_tcp_base)
+    if current_tcp_base_3 is None or target_tcp_base_3 is None:
+        raise ValueError("transport_micro_recovery_target_unavailable")
+    remaining_dist_m = math.sqrt(
+        (float(target_tcp_base_3[0]) - float(current_tcp_base_3[0])) ** 2
+        + (float(target_tcp_base_3[1]) - float(current_tcp_base_3[1])) ** 2
+        + (float(target_tcp_base_3[2]) - float(current_tcp_base_3[2])) ** 2
+    )
+    safe_step_m = max(0.001, float(step_m))
+    safe_min_remaining_dist_m = max(0.0, float(minimum_remaining_dist_m))
+    if remaining_dist_m <= safe_step_m + safe_min_remaining_dist_m:
+        return None
+    scale = safe_step_m / remaining_dist_m
+    return (
+        float(current_tcp_base_3[0])
+        + (float(target_tcp_base_3[0]) - float(current_tcp_base_3[0])) * scale,
+        float(current_tcp_base_3[1])
+        + (float(target_tcp_base_3[1]) - float(current_tcp_base_3[1])) * scale,
+        float(current_tcp_base_3[2])
+        + (float(target_tcp_base_3[2]) - float(current_tcp_base_3[2])) * scale,
+    )
+
+
 def _compute_demo_joint_prep_waypoint(
     seed_joints,
     target_joints,
@@ -1714,7 +1745,9 @@ def _wait_for_demo_runtime_target_progress(
             if elapsed_sec >= float(arm_sec):
                 if (
                     start_dist_m is not None
-                    and float(last_dist_m) > float(start_dist_m) + float(wrong_direction_tol_m)
+                    and float(best_dist_m)
+                    < float(start_dist_m) - float(min_progress_m)
+                    and float(last_dist_m) > float(best_dist_m) + float(wrong_direction_tol_m)
                 ):
                     return {
                         "ok": False,
@@ -5737,13 +5770,104 @@ def run_pick_demo(panel) -> None:
                     )
                     recovery_result = {}
                     for recovery_idx, recovery_target in enumerate(recovery_targets, start=1):
+                        recovery_label = f"{label}_RECOVER_{recovery_idx}"
+                        recovery_source = (
+                            f"{str(audit_target_source or 'runtime_target')}_replan_{recovery_idx}"
+                        )
+                        if (
+                            recovery_label == "CESTA_STAGE_1_RECOVER_2"
+                            and _pick_demo_env_flag(
+                                "PANEL_PICK_DEMO_TRANSPORT_RECOVER2_MICRO_ENABLED",
+                                True,
+                            )
+                        ):
+                            recovery_live_tcp_before_micro = _tuple3(_live_tcp_base())
+                            micro_step_m = _pick_demo_env_float(
+                                "PANEL_PICK_DEMO_TRANSPORT_RECOVER2_MICRO_STEP_M",
+                                0.015,
+                                minimum=0.010,
+                            )
+                            micro_min_remaining_m = _pick_demo_env_float(
+                                "PANEL_PICK_DEMO_TRANSPORT_RECOVER2_MICRO_MIN_REMAINING_M",
+                                0.040,
+                                minimum=0.0,
+                            )
+                            micro_target = _compute_demo_transport_micro_recovery_target(
+                                recovery_live_tcp_before_micro,
+                                recovery_target,
+                                step_m=micro_step_m,
+                                minimum_remaining_dist_m=micro_min_remaining_m,
+                            )
+                            if micro_target is not None:
+                                remaining_before_micro = _dist(
+                                    recovery_live_tcp_before_micro,
+                                    recovery_target,
+                                )
+                                panel._emit_log(
+                                    "[PICK][DIRECT][RECOVER2_MICRO] "
+                                    f"label={recovery_label} status=start "
+                                    f"live_tcp_before={_fmt_vec(recovery_live_tcp_before_micro)} "
+                                    f"target_before={_fmt_vec(recovery_target)} "
+                                    f"micro_target={_fmt_vec(micro_target)} "
+                                    f"remaining_dist_before={_fmt_scalar(remaining_before_micro)} "
+                                    f"step_m={micro_step_m:.3f}"
+                                )
+                                try:
+                                    _move_tcp_direct(
+                                        label=f"{recovery_label}_MICRO",
+                                        target_tcp_runtime=micro_target,
+                                        timeout_sec=per_stage_timeout_sec,
+                                        audit_target_source=f"{recovery_source}_micro",
+                                        target_pose_original=target_pose_original,
+                                        target_frame_original=target_frame_original,
+                                        rot_weight=rot_weight,
+                                        ik_err_tol=ik_err_tol,
+                                        joint_weight=joint_weight,
+                                        force_send=True,
+                                        transport_replan_remaining=0,
+                                    )
+                                except Exception as micro_exc:
+                                    recovery_live_tcp_after_micro = _tuple3(_live_tcp_base())
+                                    remaining_after_micro = _dist(
+                                        recovery_live_tcp_after_micro,
+                                        recovery_target,
+                                    )
+                                    panel._emit_log(
+                                        "[PICK][DIRECT][RECOVER2_MICRO] "
+                                        f"label={recovery_label} status=failed "
+                                        f"reason={micro_exc} "
+                                        f"live_tcp_after={_fmt_vec(recovery_live_tcp_after_micro)} "
+                                        f"target_after={_fmt_vec(recovery_target)} "
+                                        f"remaining_dist_after={_fmt_scalar(remaining_after_micro)}"
+                                    )
+                                else:
+                                    recovery_live_tcp_after_micro = _tuple3(_live_tcp_base())
+                                    remaining_after_micro = _dist(
+                                        recovery_live_tcp_after_micro,
+                                        recovery_target,
+                                    )
+                                    progress_after_micro = None
+                                    if (
+                                        remaining_before_micro is not None
+                                        and remaining_after_micro is not None
+                                    ):
+                                        progress_after_micro = (
+                                            float(remaining_before_micro)
+                                            - float(remaining_after_micro)
+                                        )
+                                    panel._emit_log(
+                                        "[PICK][DIRECT][RECOVER2_MICRO] "
+                                        f"label={recovery_label} status=ok "
+                                        f"live_tcp_after={_fmt_vec(recovery_live_tcp_after_micro)} "
+                                        f"target_after={_fmt_vec(recovery_target)} "
+                                        f"remaining_dist_after={_fmt_scalar(remaining_after_micro)} "
+                                        f"progress_m={_fmt_scalar(progress_after_micro)}"
+                                    )
                         recovery_result = _move_tcp_direct(
-                            label=f"{label}_RECOVER_{recovery_idx}",
+                            label=recovery_label,
                             target_tcp_runtime=recovery_target,
                             timeout_sec=per_stage_timeout_sec,
-                            audit_target_source=(
-                                f"{str(audit_target_source or 'runtime_target')}_replan_{recovery_idx}"
-                            ),
+                            audit_target_source=recovery_source,
                             target_pose_original=target_pose_original,
                             target_frame_original=target_frame_original,
                             rot_weight=rot_weight,
@@ -5941,7 +6065,7 @@ def run_pick_demo(panel) -> None:
                                 prep_failure_info = {
                                     "prep_label": prep_label,
                                     "segment_index": int(prep_idx),
-                                    "segment_count": int(len(prep_waypoints)),
+                                    "segment_count": int(prep_segment_count),
                                     "reason": str(prep_exc),
                                 }
                                 break
