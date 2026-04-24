@@ -4001,11 +4001,13 @@ class ControlPanelV2(QMainWindow):
             "Fija el caso principal documentado: EXP3_RESNET18_RGB_AUGMENT / seed_0"
         )
         self.chk_tfm_repro_mode.setChecked(self._tfm_repro_profile_env() == "exp3_seed0")
+        self.chk_tfm_repro_mode.setVisible(False)
         self.chk_tfm_raw_output = QCheckBox("Predicción raw (sin ajustes panel)")
         self.chk_tfm_raw_output.setToolTip(
             "Desactiva los ajustes heurísticos posteriores de ángulo, centro y tamaño"
         )
         self.chk_tfm_raw_output.setChecked(self._tfm_raw_output_env_enabled())
+        self.chk_tfm_raw_output.setVisible(False)
         self.btn_tfm_memoria_case = QPushButton("Caso TFM Memoria")
         self.btn_tfm_memoria_case.setToolTip(
             "Activa de una vez EXP3_RESNET18_RGB_AUGMENT / seed_0 + salida raw y aplica el experimento"
