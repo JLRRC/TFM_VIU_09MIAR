@@ -3757,6 +3757,7 @@ class ControlPanelV2(QMainWindow):
         slider_grid.setColumnStretch(2, 1)
         self.joint_sliders = []
         self.joint_value_labels = []
+        self.joint_step_buttons: list = []   # pares (btn_minus, btn_plus) por joint
         slider_min = int(JOINT_SLIDER_DEG_MIN * JOINT_SLIDER_SCALE)
         slider_max = int(JOINT_SLIDER_DEG_MAX * JOINT_SLIDER_SCALE)
         home_pose = load_home_pose()
@@ -3772,6 +3773,7 @@ class ControlPanelV2(QMainWindow):
                 b.setStyleSheet("font-size:9px; padding:0;")
             btn_minus.clicked.connect(lambda _=False, i=idx: self._step_joint(i, -1))
             btn_plus.clicked.connect(lambda _=False, i=idx: self._step_joint(i, 1))
+            self.joint_step_buttons.append((btn_minus, btn_plus))
             slider = QSlider(Qt.Horizontal)
             slider.setRange(slider_min, slider_max)
             slider.setSingleStep(1)

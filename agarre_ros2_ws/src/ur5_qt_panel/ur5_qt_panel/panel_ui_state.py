@@ -166,6 +166,9 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     panel.chk_auto_joints.setEnabled(manual_enabled)
     for slider in panel.joint_sliders:
         slider.setEnabled(manual_enabled)
+    for btn_minus, btn_plus in getattr(panel, "joint_step_buttons", []):
+        btn_minus.setEnabled(manual_enabled)
+        btn_plus.setEnabled(manual_enabled)
 
     motion_enabled = manual_ok and not panel._script_motion_active
     gripper_motion_enabled = manual_ok and (
