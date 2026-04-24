@@ -13491,17 +13491,13 @@ class ControlPanelV2(QMainWindow):
         *,
         ready_basic: bool,
         camera_ready: bool,
-        test_pending: bool,
         pick_enabled: bool,
         system_error: bool,
     ) -> None:
         if system_error:
             self._set_panel_flow_state("ERROR", self._system_state_reason or "error_fatal")
             return
-        if self._robot_test_active:
-            self._set_panel_flow_state("TEST_RUNNING", "test_robot_active")
-            return
-        if self._script_motion_active and self._robot_test_done:
+        if self._script_motion_active:
             self._set_panel_flow_state("PICK_RUNNING", "script_motion_active")
             return
         if not ready_basic:
@@ -13513,16 +13509,10 @@ class ControlPanelV2(QMainWindow):
             reason = tf_reason if not tf_ok else ("controllers_not_ready" if not self._controllers_ok else "camera_not_ready")
             self._set_panel_flow_state("READY_BASIC", reason)
             return
-        if test_pending:
-            self._set_panel_flow_state("READY_TEST", "awaiting_test_robot")
-            return
-        if self._robot_test_done and not pick_enabled:
+        if not pick_enabled:
             self._set_panel_flow_state("TEST_PASSED", "awaiting_pick_ready")
             return
-        if self._robot_test_done and pick_enabled:
-            self._set_panel_flow_state("PICK_READY", "pick_enabled")
-            return
-        self._set_panel_flow_state("READY_TEST", "default")
+        self._set_panel_flow_state("PICK_READY", "pick_enabled")
 
     def _compute_reach_overlay_points(self, w: int, h: int) -> List[Tuple[int, int]]:
         if w <= 0 or h <= 0:

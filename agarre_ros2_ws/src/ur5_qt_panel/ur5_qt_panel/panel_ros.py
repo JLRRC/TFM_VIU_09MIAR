@@ -101,14 +101,12 @@ class RosWorker(QObject):
     joint_state = pyqtSignal(object)
     grasp_rect = pyqtSignal(object)
     system_state = pyqtSignal(str, str)
-    robot_test_request = pyqtSignal(str)
     camera_connect_request = pyqtSignal(str)
     camera_disconnect_request = pyqtSignal(str)
     recover_request = pyqtSignal(str)
     tfm_infer_request = pyqtSignal(str)
     tfm_execute_request = pyqtSignal(str)
     pick_demo_request = pyqtSignal(str)
-    direct2_request = pyqtSignal(str)
     pick_object_request = pyqtSignal(str)
     object_select_request = pyqtSignal(str, str)
 
@@ -152,12 +150,6 @@ class RosWorker(QObject):
         self._last_joint_wall: float = 0.0
         self._depth_cache: Dict[str, Tuple[float, float, int]] = {}
         self._latest_depth_frame: Dict[str, Tuple[object, float]] = {}
-        self._test_robot_topic = str(
-            os.environ.get("PANEL_TEST_TRIGGER_TOPIC", "/panel/test_robot") or "/panel/test_robot"
-        ).strip() or "/panel/test_robot"
-        self._test_robot_service = str(
-            os.environ.get("PANEL_TEST_TRIGGER_SERVICE", "/panel/test_robot") or "/panel/test_robot"
-        ).strip() or "/panel/test_robot"
         self._camera_connect_service = str(
             os.environ.get("PANEL_CAMERA_CONNECT_TRIGGER_SERVICE", "/panel/camera_connect")
             or "/panel/camera_connect"
@@ -187,9 +179,6 @@ class RosWorker(QObject):
         self._pick_demo_service = str(
             os.environ.get("PANEL_PICK_DEMO_TRIGGER_SERVICE", "/panel/pick_demo") or "/panel/pick_demo"
         ).strip() or "/panel/pick_demo"
-        self._direct2_service = str(
-            os.environ.get("PANEL_DIRECT2_TRIGGER_SERVICE", "/panel/directo2") or "/panel/directo2"
-        ).strip() or "/panel/directo2"
         self._pick_object_topic = str(
             os.environ.get("PANEL_PICK_OBJECT_TRIGGER_TOPIC", "/panel/pick_object") or "/panel/pick_object"
         ).strip() or "/panel/pick_object"
@@ -202,8 +191,6 @@ class RosWorker(QObject):
         self._select_object_service = str(
             os.environ.get("PANEL_SELECT_OBJECT_SERVICE", "/panel/select_object") or "/panel/select_object"
         ).strip() or "/panel/select_object"
-        self._test_robot_sub = None
-        self._test_robot_srv = None
         self._camera_connect_srv = None
         self._camera_disconnect_srv = None
         self._recover_sub = None
@@ -213,7 +200,6 @@ class RosWorker(QObject):
         self._tfm_execute_sub = None
         self._tfm_execute_srv = None
         self._pick_demo_srv = None
-        self._direct2_srv = None
         self._pick_object_sub = None
         self._pick_object_srv = None
         self._select_object_sub = None
@@ -222,10 +208,6 @@ class RosWorker(QObject):
             os.environ.get("PANEL_PICK_DEMO_SERVICE_TIMEOUT_SEC", "120.0") or "120.0"
         )
         self._pick_demo_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
-        self._direct2_timeout_sec = float(
-            os.environ.get("PANEL_DIRECT2_SERVICE_TIMEOUT_SEC", "120.0") or "120.0"
-        )
-        self._direct2_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
         self._object_select_timeout_sec = float(
             os.environ.get("PANEL_SELECT_OBJECT_SERVICE_TIMEOUT_SEC", "10.0") or "10.0"
         )
@@ -917,12 +899,6 @@ class RosWorker(QObject):
         except RuntimeError:
             pass
 
-    def _emit_robot_test_request(self, source: str) -> None:
-        try:
-            self.robot_test_request.emit(source)
-        except RuntimeError:
-            pass
-
     def _emit_camera_disconnect_request(self, source: str) -> None:
         try:
             self.camera_disconnect_request.emit(source)
@@ -965,29 +941,11 @@ class RosWorker(QObject):
         except RuntimeError:
             pass
 
-    def _emit_direct2_request(self, source: str) -> None:
-        try:
-            self.direct2_request.emit(source)
-        except RuntimeError:
-            pass
-
     def _emit_object_select_request(self, name: str, source: str) -> None:
         try:
             self.object_select_request.emit(name, source)
         except RuntimeError:
             pass
-
-    def _on_test_robot_topic(self, _msg: "Empty") -> None:
-        self._emit_robot_test_request(f"topic:{self._test_robot_topic}")
-
-    def _on_test_robot_service(self, _request: object, response: object) -> object:
-        self._emit_robot_test_request(f"service:{self._test_robot_service}")
-        try:
-            response.success = True
-            response.message = "test_robot_triggered"
-        except Exception:
-            pass
-        return response
 
     def _on_camera_disconnect_service(self, _request: object, response: object) -> object:
         self._emit_camera_disconnect_request(f"service:{self._camera_disconnect_service}")
@@ -1133,38 +1091,6 @@ class RosWorker(QObject):
             pass
         return response
 
-    def _on_direct2_service(self, _request: object, response: object) -> object:
-        request_id = f"direct2-{time.monotonic_ns()}"
-        done = threading.Event()
-        result: Dict[str, object] = {
-            "success": False,
-            "message": "timeout esperando confirmacion del panel",
-        }
-        with self._lock:
-            self._direct2_pending[request_id] = (done, result)
-        self._safe_log(
-            f"[ROS][DIRECT2][SERVICE] request_id={request_id} waiting_ack=true"
-        )
-        self._emit_direct2_request(f"service:{self._direct2_service}#{request_id}")
-        ack_ok = done.wait(timeout=max(0.1, self._direct2_timeout_sec))
-        with self._lock:
-            _pending = self._direct2_pending.pop(request_id, None)
-        if _pending is not None:
-            _done, payload = _pending
-            result = payload
-        self._safe_log(
-            "[ROS][DIRECT2][SERVICE] "
-            f"request_id={request_id} ack={str(bool(ack_ok)).lower()} "
-            f"success={str(bool(result.get('success', False))).lower()} "
-            f"message={str(result.get('message', '') or 'n/a')}"
-        )
-        try:
-            response.success = bool(result.get("success", False))
-            response.message = str(result.get("message", "") or "")
-        except Exception:
-            pass
-        return response
-
     def _on_select_object_topic(self, msg: "String") -> None:
         try:
             name = str(getattr(msg, "data", "") or "").strip()
@@ -1229,25 +1155,6 @@ class RosWorker(QObject):
         payload["message"] = str(message or "")
         self._safe_log(
             f"[ROS][PICK_DEMO][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
-        )
-        done.set()
-
-    def complete_direct2_request(self, request_id: str, success: bool, message: str) -> None:
-        req_id = str(request_id or "").strip()
-        if not req_id:
-            return
-        with self._lock:
-            pending = self._direct2_pending.get(req_id)
-        if pending is None:
-            self._safe_log(
-                f"[ROS][DIRECT2][ACK] request_id={req_id} pending=false success={str(bool(success)).lower()} message={message or 'n/a'}"
-            )
-            return
-        done, payload = pending
-        payload["success"] = bool(success)
-        payload["message"] = str(message or "")
-        self._safe_log(
-            f"[ROS][DIRECT2][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
         )
         done.set()
 
@@ -1678,18 +1585,6 @@ class RosWorker(QObject):
                     pass
             if Empty is not None:
                 try:
-                    self._test_robot_sub = self._node.create_subscription(
-                        Empty,
-                        self._test_robot_topic,
-                        self._on_test_robot_topic,
-                        10,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger topic listo: {self._test_robot_topic} (std_msgs/Empty)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create test_robot topic", exc)
-                try:
                     self._tfm_infer_sub = self._node.create_subscription(
                         Empty,
                         self._tfm_infer_topic,
@@ -1751,18 +1646,6 @@ class RosWorker(QObject):
                 except Exception as exc:
                     self._log_exception("create select_object topic", exc)
             if Trigger is not None:
-                try:
-                    self._test_robot_srv = self._node.create_service(
-                        Trigger,
-                        self._test_robot_service,
-                        self._on_test_robot_service,
-                        callback_group=self._service_callback_group,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._test_robot_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create test_robot service", exc)
                 try:
                     self._camera_connect_srv = self._node.create_service(
                         Trigger,
@@ -1835,18 +1718,6 @@ class RosWorker(QObject):
                     )
                 except Exception as exc:
                     self._log_exception("create pick_demo service", exc)
-                try:
-                    self._direct2_srv = self._node.create_service(
-                        Trigger,
-                        self._direct2_service,
-                        self._on_direct2_service,
-                        callback_group=self._service_callback_group,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._direct2_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create direct2 service", exc)
                 try:
                     self._pick_object_srv = self._node.create_service(
                         Trigger,
@@ -1966,18 +1837,6 @@ class RosWorker(QObject):
                 self._grasp_rect_type = ""
                 self._grasp_rect_last_wall = 0.0
                 self._grasp_rect_count = 0
-            if self._node and self._test_robot_sub is not None:
-                try:
-                    self._node.destroy_subscription(self._test_robot_sub)
-                except Exception as exc:
-                    self._log_exception("destroy test_robot subscription", exc)
-                self._test_robot_sub = None
-            if self._node and self._test_robot_srv is not None:
-                try:
-                    self._node.destroy_service(self._test_robot_srv)
-                except Exception as exc:
-                    self._log_exception("destroy test_robot service", exc)
-                self._test_robot_srv = None
             if self._node and self._camera_connect_srv is not None:
                 try:
                     self._node.destroy_service(self._camera_connect_srv)

@@ -13,7 +13,6 @@ def step_present_flow_name(flow: str) -> str:
     flow_name = str(flow or "").strip().upper()
     mapping = {
         "DIRECT": "DIRECTO",
-        "DIRECT2": "DIRECTO2",
         "PICK_OBJECT": "MOVEIT",
         "MOVEIT": "MOVEIT",
         "AGARRE": "AGARRE",
@@ -38,7 +37,6 @@ def step_phase_sequence(flow: str) -> List[str]:
             "RELEASE",
             "HOME_FINAL",
         ],
-        "DIRECT2": ["MESA_1", "POSE_BUENA", "MESA_2", "CESTA"],
         "PICK_OBJECT": [
             "INICIO",
             "APPROACH",
@@ -98,12 +96,6 @@ def step_phase_intent(flow: str, phase: str) -> str:
             "CARRY": "Transportar el objeto hacia la cesta.",
             "RELEASE": "Soltar el objeto en la cesta.",
             "HOME_FINAL": "Volver a la pose final segura.",
-        },
-        "DIRECT2": {
-            "MESA_1": "Ir al primer punto fijo sobre la mesa.",
-            "POSE_BUENA": "Ir a la pose buena de referencia.",
-            "MESA_2": "Salir de la mesa con el objeto.",
-            "CESTA": "Ir a la cesta para dejar el objeto.",
         },
         "PICK_OBJECT": {
             "INICIO": "Confirmar inicio e ir a MESA antes del agarre.",
@@ -192,12 +184,6 @@ def step_phase_gripper_state(flow: str, phase: str) -> str:
             "CARRY": "Cerrada",
             "RELEASE": "Abierta",
             "HOME_FINAL": "Abierta",
-        },
-        "DIRECT2": {
-            "MESA_1": "Abierta",
-            "POSE_BUENA": "Cerrada",
-            "MESA_2": "Cerrada",
-            "CESTA": "Abierta",
         },
         "PICK_OBJECT": {
             "APPROACH": "Abierta",
