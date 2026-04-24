@@ -17,9 +17,12 @@
       <shadows>true</shadows>
     </scene>
 
-    <physics name="ode_physics" type="ode">
+    <physics name="ode_physics" type="ignored">
       <max_step_size>0.001</max_step_size>
       <real_time_update_rate>1000</real_time_update_rate>
+      <dart>
+        <collision_detector>bullet</collision_detector>
+      </dart>
     </physics>
 
     
