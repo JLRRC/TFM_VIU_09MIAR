@@ -425,15 +425,22 @@ def _should_transport_prep_failure_jump_to_replan(
 
 def _evaluate_transport_stage_postcheck(
     *,
+    label: str,
     runtime_target_ok: bool | None,
     runtime_target_dist_m: float | None,
     runtime_target_tol_m: float,
     model_target_err_m: float | None,
     model_target_tol_m: float,
+    joint_accept_source: str | None = None,
 ) -> dict:
     safe_runtime_target_tol_m = max(0.001, float(runtime_target_tol_m))
     safe_model_target_tol_m = max(0.001, float(model_target_tol_m))
     reasons: list[str] = []
+    bypass_model_target_err = bool(
+        "_RECOVER_" in str(label or "").strip().upper()
+        and str(joint_accept_source or "").strip().lower() == "runtime_target"
+        and runtime_target_ok is True
+    )
     if runtime_target_ok is False:
         if runtime_target_dist_m is None:
             reasons.append("runtime_target=unconfirmed")
@@ -442,16 +449,25 @@ def _evaluate_transport_stage_postcheck(
                 "runtime_target_dist="
                 f"{_pick_demo_fmt_scalar(runtime_target_dist_m)}/{safe_runtime_target_tol_m:.3f}"
             )
-    if model_target_err_m is not None and float(model_target_err_m) > safe_model_target_tol_m:
+    if (
+        not bypass_model_target_err
+        and model_target_err_m is not None
+        and float(model_target_err_m) > safe_model_target_tol_m
+    ):
         reasons.append(
             "model_target_err="
             f"{_pick_demo_fmt_scalar(model_target_err_m)}/{safe_model_target_tol_m:.3f}"
         )
     return {
         "ok": not reasons,
-        "reason": "ok" if not reasons else " ".join(reasons),
+        "reason": (
+            "runtime_target_ok_recovery_model_guard_bypassed"
+            if not reasons and bypass_model_target_err
+            else ("ok" if not reasons else " ".join(reasons))
+        ),
         "runtime_target_tol_m": safe_runtime_target_tol_m,
         "model_target_tol_m": safe_model_target_tol_m,
+        "model_target_bypassed": bool(bypass_model_target_err),
     }
 
 
@@ -2470,6 +2486,7 @@ def run_pick_demo(panel) -> None:
                     if _strict_refine_runtime_label
                     else None
                 )
+                panel._pick_demo_last_joint_target_accept_source = None
 
                 def _local_joint_target_ok(local_tol_rad: float):
                     snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
@@ -2569,6 +2586,7 @@ def run_pick_demo(panel) -> None:
                         not _strict_refine_runtime_label
                         or bool((_strict_refine_before or {}).get("accept_result"))
                     ):
+                        panel._pick_demo_last_joint_target_accept_source = "local_joint_state"
                         panel._emit_log(
                             "[PICK][DIRECT][ROUTE] "
                             f"phase={label} joint_target_already_satisfied=true "
@@ -2633,8 +2651,10 @@ def run_pick_demo(panel) -> None:
                 )
                 joint_wait_ok = panel._wait_for_joint_target(joints, wait_timeout, tol_rad=tol_rad)
                 if joint_wait_ok and not _strict_refine_runtime_label:
+                    panel._pick_demo_last_joint_target_accept_source = "joint_wait"
                     return
                 if joint_wait_ok and _strict_refine_runtime_label:
+                    panel._pick_demo_last_joint_target_accept_source = "joint_wait"
                     _emit_strict_refine_runtime_log("after_joint_wait", True)
                 local_ok_after_wait, local_diffs_after_wait = _local_joint_target_ok(max(tol_rad, 0.02))
                 runtime_ok_after_wait, runtime_info_after_wait = _runtime_target_ok()
@@ -2644,6 +2664,7 @@ def run_pick_demo(panel) -> None:
                 )
                 if _strict_refine_runtime_label:
                     if bool((_strict_refine_after_wait or {}).get("accept_result")):
+                        panel._pick_demo_last_joint_target_accept_source = "runtime_target"
                         panel._emit_log(
                             "[PICK][DIRECT][ROUTE] "
                             "phase=APPROACH_COARSE_REFINE "
@@ -2659,6 +2680,7 @@ def run_pick_demo(panel) -> None:
                     )
                     return
                 if local_ok_after_wait and runtime_ok_after_wait:
+                    panel._pick_demo_last_joint_target_accept_source = "local_joint_state"
                     panel._emit_log(
                         "[PICK][DIRECT][ROUTE] "
                         f"phase={label} joint_target_accept_after_wait_timeout=true "
@@ -2703,6 +2725,7 @@ def run_pick_demo(panel) -> None:
                             f"elapsed_sec={_fmt_scalar(runtime_grace.get('elapsed_sec'))}"
                         )
                         if runtime_grace_ok:
+                            panel._pick_demo_last_joint_target_accept_source = "runtime_target"
                             return
                 if (
                     label in {"HOME", "MESA", "PICK_IMAGE", "PICK_PRE_CLOSE_REF", "HOME_WITH_OBJECT", "CESTA", "CESTA_RELEASE", "HOME_FINAL"}
@@ -2717,6 +2740,7 @@ def run_pick_demo(panel) -> None:
                     retry_timeout = max(wait_timeout, effective_move_sec + 4.0)
                     retry_tol = max(tol_rad, 0.10 if is_basket_transport_motion else 0.06)
                     if panel._wait_for_joint_target(joints, retry_timeout, tol_rad=retry_tol):
+                        panel._pick_demo_last_joint_target_accept_source = "joint_wait_retry"
                         panel._emit_log(f"[PICK][RECOVERY] {label} alcanzado tras reintento")
                         return
                     local_ok_after_retry, local_diffs_after_retry = _local_joint_target_ok(retry_tol)
@@ -2728,6 +2752,11 @@ def run_pick_demo(panel) -> None:
                         and runtime_ok_after_retry
                     )
                     if local_ok_after_retry or accept_via_runtime_target:
+                        panel._pick_demo_last_joint_target_accept_source = (
+                            "runtime_target"
+                            if (accept_via_runtime_target and not local_ok_after_retry)
+                            else "local_joint_state"
+                        )
                         panel._emit_log(
                             "[PICK][DIRECT][ROUTE] "
                             f"phase={label} joint_target_accept_after_retry_timeout=true "
@@ -5082,6 +5111,8 @@ def run_pick_demo(panel) -> None:
                 def _resolve_direct_execution_target(
                     tcp_target_base,
                     tool_rot,
+                    *,
+                    tool_rot_source: str,
                 ) -> dict:
                     # DIRECT keeps rg2_pinch_center as the operational grasp semantics.
                     # Numeric UR5 IK still solves in tool0, so the only allowed
@@ -5191,6 +5222,7 @@ def run_pick_demo(panel) -> None:
                         "offset_m": float(tcp_offset_m),
                         "offset_source": str(offset_source or "unknown"),
                         "offset_mode": "fixed_subtract",
+                        "tool_rot_source": str(tool_rot_source or "unknown"),
                         "model_frame_note": "base_link_to_base_link_inertia_rz_pi",
                         "ik_mode": DIRECT_EXECUTION_IK_MODE,
                     }
@@ -5226,6 +5258,16 @@ def run_pick_demo(panel) -> None:
                     transport_replan_remaining = max(0, int(transport_replan_remaining))
                 seed, seed_source = _current_joint_seed(return_source=True)
                 _seed_pos, target_rot = fk_ur5(seed)
+                execution_rot = target_rot
+                execution_rot_source = f"seed:{seed_source}"
+                live_execution_seed = _live_joint_seed_or_none(panel)
+                if label == "APPROACH_COARSE_REFINE" and live_execution_seed is not None:
+                    try:
+                        _live_exec_pos, execution_rot = fk_ur5(live_execution_seed)
+                        execution_rot_source = "live_joints"
+                    except Exception:
+                        execution_rot = target_rot
+                        execution_rot_source = f"seed:{seed_source}"
                 panel._emit_log(
                     "[PICK][DIRECT][IK_SEED] "
                     f"label={label} source={seed_source} "
@@ -5264,9 +5306,11 @@ def run_pick_demo(panel) -> None:
                 panel._emit_log(_ik_tol_log)
                 if _ik_tol_warn:
                     _append_trace(_ik_tol_log)
+                ik_target_rot = execution_rot
                 execution_semantics = _resolve_direct_execution_target(
                     target_tcp_runtime_3,
-                    target_rot,
+                    execution_rot,
+                    tool_rot_source=execution_rot_source,
                 )
                 target_ik = execution_semantics["execution_pose"]
                 target_ik_base = _tuple3(execution_semantics.get("execution_pose_base"))
@@ -5291,6 +5335,7 @@ def run_pick_demo(panel) -> None:
                     f"offset_vector={_fmt_vec(offset_vector)} "
                     f"offset_m={tcp_offset_m:.3f} "
                     f"offset_source={execution_semantics['offset_source']} "
+                    f"tool_rot_source={execution_semantics['tool_rot_source']} "
                     f"offset_mode={execution_semantics['offset_mode']} "
                     f"execution_pose={_fmt_vec(target_ik)}"
                 )
@@ -5336,7 +5381,7 @@ def run_pick_demo(panel) -> None:
                 )
                 solved_q, err_norm, ik_ok = ik_ur5(
                     target_ik,
-                    target_rot,
+                    ik_target_rot,
                     seed,
                     max_iter=240,
                     pos_weight=1.0,
@@ -5402,7 +5447,7 @@ def run_pick_demo(panel) -> None:
                     for _rseed, _retry_sw, _retry_source in _retry_schedule:
                         _rq, _re_norm, _rok = ik_ur5(
                             target_ik,
-                            target_rot,
+                            ik_target_rot,
                             _rseed,
                             max_iter=360,
                             pos_weight=1.0,
@@ -5901,7 +5946,10 @@ def run_pick_demo(panel) -> None:
                                 0.10,
                                 minimum=0.02,
                             )
-                            if prep_failure_info and _should_transport_prep_failure_jump_to_replan(
+                            if (
+                                prep_failure_info
+                                and transport_replan_remaining > 0
+                                and _should_transport_prep_failure_jump_to_replan(
                                 failed_segment_index=int(prep_failure_info["segment_index"]),
                                 total_segments=int(prep_failure_info["segment_count"]),
                                 max_joint_residual_rad=prep_metrics.get("max_diff_rad"),
@@ -5909,6 +5957,7 @@ def run_pick_demo(panel) -> None:
                                 min_failed_segment_fraction=prep_replan_min_failed_fraction,
                                 max_joint_residual_threshold_rad=prep_replan_max_residual_rad,
                                 shoulder_joint_residual_threshold_rad=prep_replan_max_shoulder_residual_rad,
+                                )
                             ):
                                 failed_fraction = (
                                     float(prep_failure_info["segment_index"])
@@ -6123,6 +6172,7 @@ def run_pick_demo(panel) -> None:
                 transport_postcheck = None
                 if is_transport_stage:
                     transport_postcheck = _evaluate_transport_stage_postcheck(
+                        label=label,
                         runtime_target_ok=runtime_target_ok,
                         runtime_target_dist_m=runtime_target_dist,
                         runtime_target_tol_m=runtime_target_tol_m,
@@ -6134,6 +6184,11 @@ def run_pick_demo(panel) -> None:
                                 0.040,
                                 minimum=0.01,
                             ),
+                        ),
+                        joint_accept_source=getattr(
+                            panel,
+                            "_pick_demo_last_joint_target_accept_source",
+                            None,
                         ),
                     )
                     panel._emit_log(
@@ -9696,6 +9751,11 @@ def run_pick_demo(panel) -> None:
                             and float(_coarse_refine_runtime_z_error) <= float(_coarse_refine_runtime_target_tol)
                         )
                         if _coarse_refine_accept_result:
+                            _store_phase_pose_sample(
+                                "APPROACH_COARSE",
+                                stage="phase_end",
+                                tcp_base=_coarse_refine_result_tcp,
+                            )
                             _coarse_gate = _wait_phase_gate_ready(
                                 phase="APPROACH_COARSE",
                                 target_base=_phase_check_target_base,
@@ -9729,6 +9789,24 @@ def run_pick_demo(panel) -> None:
                                 _phase_check_target_base,
                                 _coarse_gate,
                             )
+                            if (
+                                _coarse_phase_check.get("tcp_base") is not None
+                                and _coarse_phase_check.get("object_base") is not None
+                            ):
+                                _refined_grasp_down_target_base = (
+                                    float(_coarse_phase_check.get("tcp_base")[0]),
+                                    float(_coarse_phase_check.get("tcp_base")[1]),
+                                    float(_coarse_phase_check.get("object_base")[2]),
+                                )
+                                _direct_debug_state["approach_grasp_down_target_base"] = _tuple3(
+                                    _refined_grasp_down_target_base
+                                )
+                                _direct_debug_state["approach_grasp_down_target_world"] = _tuple3(
+                                    _target_world_from_base(_refined_grasp_down_target_base)
+                                )
+                                _direct_debug_state["approach_grasp_down_target_source"] = (
+                                    "approach_coarse_refine_handoff_xy"
+                                )
                             _coarse_refine_result_tcp = _coarse_phase_check.get("tcp_base")
                             if _coarse_refine_result_tcp is not None and _coarse_phase_check.get("object_base") is not None:
                                 _coarse_refine_dx = float(_coarse_refine_result_tcp[0]) - float(_coarse_phase_check.get("object_base")[0])
