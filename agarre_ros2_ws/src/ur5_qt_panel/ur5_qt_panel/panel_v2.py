@@ -5172,86 +5172,77 @@ class ControlPanelV2(QMainWindow):
         lbl_runtime_help.setWordWrap(True)
         lbl_runtime_help.setStyleSheet("color:#475569; font-size:12px;")
         runtime_group = QGroupBox("Verificacion runtime Gazebo/TF")
-        runtime_group.setMinimumHeight(500)
+        runtime_group.setStyleSheet("QGroupBox { font-weight: 700; }")
         runtime_group_layout = QVBoxLayout(runtime_group)
-        runtime_group_layout.setContentsMargins(8, 8, 8, 8)
-        runtime_group_layout.setSpacing(8)
+        runtime_group_layout.setContentsMargins(4, 4, 4, 4)
+        runtime_group_layout.setSpacing(4)
         runtime_blocks: Dict[str, Dict[str, QLabel]] = {}
 
         def _add_runtime_block(block_key: str, title: str) -> None:
             block_box = QGroupBox(title)
-            block_box.setMinimumHeight(150)
             block_layout = QVBoxLayout(block_box)
-            block_layout.setContentsMargins(8, 8, 8, 8)
-            block_layout.setSpacing(8)
+            block_layout.setContentsMargins(4, 6, 4, 4)
+            block_layout.setSpacing(4)
             status_lbl = QLabel("STALE")
             status_lbl.setStyleSheet(runtime_status_style("STALE"))
             summary_lbl = QLabel("sin dato")
             summary_lbl.setWordWrap(True)
-            summary_lbl.setStyleSheet("color:#475569; font-size:12px;")
+            summary_lbl.setStyleSheet("color:#475569; font-size:11px;")
             planned_lbl = QLabel("sin dato")
             planned_lbl.setWordWrap(True)
             planned_lbl.setAlignment(Qt.AlignTop | Qt.AlignLeft)
             planned_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            planned_lbl.setMinimumHeight(84)
-            planned_lbl.setStyleSheet(
-                "color:#0f172a;"
-            )
+            planned_lbl.setStyleSheet("color:#0f172a; font-size:11px;")
             runtime_lbl = QLabel("sin dato")
             runtime_lbl.setWordWrap(True)
             runtime_lbl.setAlignment(Qt.AlignTop | Qt.AlignLeft)
             runtime_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            runtime_lbl.setMinimumHeight(84)
-            runtime_lbl.setStyleSheet(
-                "color:#0f172a;"
-            )
+            runtime_lbl.setStyleSheet("color:#0f172a; font-size:11px;")
 
             meta_row = QHBoxLayout()
-            meta_row.setSpacing(10)
+            meta_row.setSpacing(6)
             meta_row.addWidget(status_lbl, 0, Qt.AlignTop)
             meta_row.addWidget(summary_lbl, 1)
             block_layout.addLayout(meta_row)
 
             columns_grid = QGridLayout()
-            columns_grid.setHorizontalSpacing(12)
+            columns_grid.setHorizontalSpacing(8)
             columns_grid.setVerticalSpacing(0)
 
             plan_box = QGroupBox("PLANIFICADO / PANEL")
-            plan_box.setMinimumHeight(110)
             plan_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             plan_box.setStyleSheet(
                 "QGroupBox {"
                 "font-weight:700; color:#0f172a;"
-                "border:1px solid #cbd5e1; border-radius:8px;"
-                "margin-top:10px; padding:10px 8px 8px 8px;"
+                "border:1px solid #cbd5e1; border-radius:6px;"
+                "margin-top:6px; padding:6px 6px 4px 6px;"
                 "background:#f8fafc;"
                 "}"
                 "QGroupBox::title {"
-                "subcontrol-origin: margin; left:10px; padding:0 4px;"
+                "subcontrol-origin: margin; left:8px; padding:0 4px;"
                 "}"
             )
             plan_layout = QVBoxLayout(plan_box)
-            plan_layout.setContentsMargins(10, 14, 10, 10)
-            plan_layout.setSpacing(4)
+            plan_layout.setContentsMargins(6, 10, 6, 4)
+            plan_layout.setSpacing(2)
             plan_layout.addWidget(planned_lbl)
 
             runtime_box = QGroupBox("MEDIDO / RUNTIME")
-            runtime_box.setMinimumHeight(110)
             runtime_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             runtime_box.setStyleSheet(
                 "QGroupBox {"
                 "font-weight:700; color:#0f172a;"
-                "border:1px solid #cbd5e1; border-radius:8px;"
-                "margin-top:10px; padding:10px 8px 8px 8px;"
+                "border:1px solid #cbd5e1; border-radius:6px;"
+                "margin-top:6px; padding:6px 6px 4px 6px;"
                 "background:#ffffff;"
                 "}"
                 "QGroupBox::title {"
-                "subcontrol-origin: margin; left:10px; padding:0 4px;"
+                "subcontrol-origin: margin; left:8px; padding:0 4px;"
                 "}"
             )
             runtime_layout = QVBoxLayout(runtime_box)
-            runtime_layout.setContentsMargins(10, 14, 10, 10)
-            runtime_layout.setSpacing(4)
+            runtime_layout.setContentsMargins(6, 10, 6, 4)
+            runtime_layout.setSpacing(2)
             runtime_layout.addWidget(runtime_lbl)
 
             columns_grid.addWidget(plan_box, 0, 0)
@@ -5348,8 +5339,6 @@ class ControlPanelV2(QMainWindow):
 
         layout.addWidget(lbl_title)
         layout.addLayout(info_grid)
-        layout.addWidget(lbl_runtime_title)
-        layout.addWidget(lbl_runtime_help)
         layout.addWidget(runtime_group)
         layout.addWidget(lbl_pipeline_title)
         layout.addWidget(pipeline_table)
@@ -6536,6 +6525,7 @@ class ControlPanelV2(QMainWindow):
                 # Sin fallback a caché stale: si TF no devuelve pose, actual queda None
                 # y la tabla muestra PEND en vez de datos inventados.
                 last_row["actual"] = actual_pose
+                self._step_update_row_object_metrics(last_row, actual_pose)
                 last_row["reached"] = self._step_assess_target_reached(last_row.get("target"), actual_pose)
                 if str(last_row.get("row_kind") or "").strip().upper() == "PHASE":
                     last_row["row_state"] = (
