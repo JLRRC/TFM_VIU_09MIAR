@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="/home/laboratorio/TFM"
 PROJECT_ROOT="$ROOT/agarre_inteligente"
 PYTHON_BIN="${PYTHON_BIN:-/home/laboratorio/.venv-tfm/bin/python}"
-DEVICES="${DEVICES:-cpu}"
+DEVICES="${DEVICES:-cpu,cuda}"
 WARMUP="${WARMUP:-5}"
 REPEATS="${REPEATS:-20}"
 STAMP="${STAMP:-$(date +%Y%m%d_%H%M%S)}"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lanzar_panelv2.sh — Alias de compatibilidad del entrypoint operativo ./lanzar_panelc2.sh.
+# lanzar_panelv2.sh — Implementación del lanzador canónico. El entrypoint para el usuario es ./lanzar_panelc2.sh.
 # Uso recomendado: ./lanzar_panelc2.sh
 
 set -eo pipefail
@@ -71,6 +71,7 @@ fi
 
 # ── Activar venv ──────────────────────────────────────────────────────────────
 for venv_dir in \
+  "/home/laboratorio/.venv-tfm" \
   "/home/laboratorio/TFM/agarre_inteligente/.venv-tfm" \
   "/home/laboratorio/TFM/agarre_inteligente/venv" \
   "/home/laboratorio/TFM/agarre_inteligente/.venv"; do
