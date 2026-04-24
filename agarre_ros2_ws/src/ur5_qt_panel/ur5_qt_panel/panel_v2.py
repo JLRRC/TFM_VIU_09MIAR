@@ -470,6 +470,54 @@ def _env_flag(name: str, default: bool) -> bool:
     return str(raw).strip().lower() in ("1", "true", "yes", "on")
 
 
+# ── TFM Grasp geometry helpers ─────────────────────────────────────────────
+
+def _tfm_clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def _tfm_normalize_angle(angle: float) -> float:
+    while angle > math.pi:
+        angle -= 2.0 * math.pi
+    while angle < -math.pi:
+        angle += 2.0 * math.pi
+    return angle
+
+
+def _compute_minor_axis_from_grasp_rect(
+    w_px: float, h_px: float, theta_img: float
+):
+    """Calcula el eje fino del rectángulo rojo de inferencia.
+
+    Devuelve (minor_px, opening_axis_theta_img).
+    opening_axis_theta_img es la dirección de apertura/cierre de la pinza en imagen.
+    """
+    if w_px <= h_px:
+        minor_px = w_px
+        opening_axis_theta_img = _tfm_normalize_angle(theta_img + math.pi / 2.0)
+    else:
+        minor_px = h_px
+        opening_axis_theta_img = _tfm_normalize_angle(theta_img)
+    return minor_px, opening_axis_theta_img
+
+
+def _compute_rg2_preopen_from_minor_width(
+    minor_width_m: float,
+    safety_margin_m: float = 0.015,
+    min_open_m: float = 0.015,
+    max_open_m: float = 0.110,
+    max_finger_rad: float = 1.18,
+):
+    """Calcula la apertura previa del RG2 desde el ancho fino del rectángulo rojo."""
+    pre_open_width_m = _tfm_clamp(
+        minor_width_m + safety_margin_m, min_open_m, max_open_m
+    )
+    finger_cmd_rad = _tfm_clamp(
+        (pre_open_width_m / max_open_m) * max_finger_rad, 0.0, max_finger_rad
+    )
+    return pre_open_width_m, finger_cmd_rad
+
+
 SETTLE_MANUAL = {"pick_demo"}
 CONTROLLER_CHECK_INTERVAL_SEC = 3.0
 CONTROLLER_LIST_RETRY_WINDOW_SEC = max(
@@ -2707,6 +2755,31 @@ class ControlPanelV2(QMainWindow):
             f"[GRIPPER] cmd target={target:.3f} rad topic={GRIPPER_CMD_TOPIC}{force_tag}"
         )
         self._set_status(f"Gripper -> {target:.3f} rad{force_tag}", error=False)
+        return True
+
+    def _command_gripper_preopen(self, rad: float, *, log_action: str = "Gripper") -> bool:
+        """Publica un ángulo de apertura previa del RG2 antes del descenso de agarre."""
+        self._gripper_closed = False
+        self._gripper_is_closed = False
+        if self.btn_gripper is not None:
+            self.btn_gripper.blockSignals(True)
+            self.btn_gripper.setChecked(False)
+            self.btn_gripper.setText("Cerrar gripper")
+            self.btn_gripper.blockSignals(False)
+        if log_action:
+            self._log_button(f"{log_action} pre_open rad={rad:.3f}")
+        self._ensure_moveit_node()
+        pub = self._get_gripper_publisher(GRIPPER_CMD_TOPIC)
+        if pub is None:
+            self._emit_log("[GRIPPER] pre_open publisher no disponible")
+            return False
+        msg = Float64MultiArray()
+        msg.data = [float(rad), float(rad) * GRIPPER_JOINT2_SIGN]
+        pub.publish(msg)
+        self._emit_log(
+            f"[GRIPPER] pre_open target={rad:.4f} rad topic={GRIPPER_CMD_TOPIC}"
+        )
+        self._set_status(f"Gripper pre-open -> {rad:.3f} rad", error=False)
         return True
 
     def _traj_action_target(self, traj_topic: str) -> str:
@@ -11950,6 +12023,11 @@ class ControlPanelV2(QMainWindow):
             return True
 
         self._tfm_execute_inflight = True
+        _minor_yaw_override = getattr(self, "_tfm_grasp_minor_yaw_deg", None)
+        _preopen_rad_override = getattr(self, "_tfm_grasp_preopen_rad", None)
+        _grasp_orientation_tag = "minor_axis" if _minor_yaw_override is not None else "direct_angle"
+        self._tfm_grasp_minor_yaw_deg = None
+        self._tfm_grasp_preopen_rad = None
 
         def _env_float(name: str, default: float) -> float:
             try:
@@ -12037,7 +12115,10 @@ class ControlPanelV2(QMainWindow):
                 x = float(grasp_base.get("x", 0.0))
                 y = float(grasp_base.get("y", 0.0))
                 z_raw = float(grasp_base.get("z", 0.0))
-                yaw_deg = float(grasp_base.get("yaw_deg", 0.0) or 0.0)
+                yaw_deg = (
+                    float(_minor_yaw_override) if _minor_yaw_override is not None
+                    else float(grasp_base.get("yaw_deg", 0.0) or 0.0)
+                )
                 proj_z_source = str(grasp_base.get("proj_z_source", "unknown") or "unknown")
                 grasp_semantics = str(
                     grasp_base.get("grasp_semantics", "projection_surface") or "projection_surface"
@@ -12134,7 +12215,13 @@ class ControlPanelV2(QMainWindow):
                     f"result_timeout={result_timeout:.1f} grasp_mode={grasp_mode}",
                 )
 
-                self.signal_run_ui.emit(lambda: self._command_gripper(False, log_action="PICK", force=True))
+                if _preopen_rad_override is not None:
+                    _pr = float(_preopen_rad_override)
+                    self.signal_run_ui.emit(
+                        lambda _r=_pr: self._command_gripper_preopen(_r, log_action="PICK")
+                    )
+                else:
+                    self.signal_run_ui.emit(lambda: self._command_gripper(False, log_action="PICK", force=True))
                 self._emit_log(
                     "[PICK][MOVEIT] sequence=HOME->PREGRASP->DESCENT->GRASP->RETREAT "
                     f"frame={frame} z_approach={z_approach:.3f} z_grasp_offset={z_grasp_offset:+.3f} "
@@ -12183,9 +12270,19 @@ class ControlPanelV2(QMainWindow):
                 pose_subs_now = int(self.ros_worker.topic_subscriber_count(MOVEIT_POSE_TOPIC)) if has_results else 1
                 if pose_subs_now <= 0:
                     raise RuntimeError(f"no_pose_subscribers_before_grasp topic={MOVEIT_POSE_TOPIC}")
+                if _grasp_orientation_tag == "minor_axis":
+                    self._emit_log(
+                        "[TFM_GRASP][MOVEIT] publish topic=/desired_grasp/request "
+                        "mode=moveit_sequence source=infer_model step=grasp_descent"
+                    )
                 if not self._publish_moveit_pose("TFM_GRASP", grasp_pose_send, cartesian=tfm_grasp_cartesian):
                     raise RuntimeError("publish_grasp_failed")
                 if has_results:
+                    if _grasp_orientation_tag == "minor_axis":
+                        self._emit_log(
+                            "[TFM_GRASP][MOVEIT] waiting topic=/desired_grasp/result "
+                            f"step=grasp_descent timeout_sec={result_timeout:.1f}"
+                        )
                     ok_grasp, msg_grasp = self._wait_tfm_moveit_result(
                         "TFM_GRASP",
                         since_wall=since_wall,
@@ -12194,6 +12291,11 @@ class ControlPanelV2(QMainWindow):
                         expected_request_id=grasp_request_id,
                         expected_request_uuid=grasp_request_uuid,
                     )
+                    if _grasp_orientation_tag == "minor_axis":
+                        self._emit_log(
+                            f"[TFM_GRASP][MOVEIT] result={'OK' if ok_grasp else 'FAIL'} "
+                            f"step=grasp_descent reason={msg_grasp or 'ok'}"
+                        )
                     if not ok_grasp:
                         if not tfm_grasp_cartesian:
                             raise RuntimeError(f"grasp_result_failed:{msg_grasp}")
@@ -12273,13 +12375,27 @@ class ControlPanelV2(QMainWindow):
                     f"target=({x:.3f},{y:.3f},{z_grasp:.3f}) pre=({x:.3f},{y:.3f},{z_pre:.3f}) "
                     f"retreat=({x:.3f},{y:.3f},{z_retreat:.3f}) yaw={yaw_deg:.1f}",
                 )
-                self._ui_set_status("TFM: PREGRASP + DESCENT + GRASP + RETREAT ejecutados", error=False)
+                if _grasp_orientation_tag == "minor_axis":
+                    self._emit_log(
+                        "[TFM_GRASP][EXECUTE] status=OK mode=moveit_sequence "
+                        "source=infer_model grasp_orientation=minor_axis"
+                    )
+                    self._ui_set_status(
+                        "TFM: agarre completado (MoveIt + inferencia)", error=False
+                    )
+                else:
+                    self._ui_set_status("TFM: PREGRASP + DESCENT + GRASP + RETREAT ejecutados", error=False)
                 self._complete_pending_tfm_execute_request(
                     True,
                     "PREGRASP + DESCENT + GRASP + RETREAT ejecutados",
                 )
             except Exception as exc:
                 self._audit_append("logs/execute.log", f"[TFM] execute FAIL mode=moveit_sequence err={exc}")
+                if _grasp_orientation_tag == "minor_axis":
+                    self._emit_log(
+                        f"[TFM_GRASP][EXECUTE] status=FAIL mode=moveit_sequence "
+                        f"source=infer_model grasp_orientation=minor_axis reason={exc}"
+                    )
                 self._ui_set_status(f"TFM: ejecución fallida ({exc})", error=True)
                 self._complete_pending_tfm_execute_request(False, f"ejecución fallida ({exc})")
             finally:
@@ -12289,21 +12405,28 @@ class ControlPanelV2(QMainWindow):
         return True
 
     def _on_tfm_grasp_object_clicked(self) -> None:
-        """Botón 'Agarre objeto': ejecuta agarre MoveIt con el objeto señalado por la inferencia.
+        """Botón 'Agarre objeto': ejecuta agarre MoveIt usando inferencia del rectángulo rojo.
 
-        Flujo trazable para el TFM:
-          experiment_check → inference_check → base_link_check → target_log → moveit_execute
-          mode=moveit  source=infer_model  tcp=rg2_pinch_center  frame=base_link
+        Flujo trazable:
+          experiment_check → inference_check → rect_validate → minor_axis →
+          preopen_compute → base_link_pose → moveit_execute
+          mode=moveit_sequence  source=infer_model  grasp_source=red_inference_rect
+          tcp=rg2_pinch_center  frame=base_link
         """
         self._log_button("TFM Agarre objeto")
         source = str(getattr(self, "_last_grasp_source", "") or "unknown")
         experiment_applied = bool(getattr(self, "_tfm_experiment_applied", False))
         has_grasp = bool(getattr(self, "_last_grasp_px", None))
-        selected = str(getattr(self, "_selected_object", "") or getattr(self, "_last_grasp_selection_name", "") or "none")
+        selected = str(
+            getattr(self, "_selected_object", "")
+            or getattr(self, "_last_grasp_selection_name", "")
+            or "none"
+        )
 
         self._emit_log(
-            "[TFM_GRASP][BUTTON] clicked button=agarre_objeto mode=moveit "
-            f"source={source} experiment_applied={str(experiment_applied).lower()} "
+            "[TFM_GRASP][BUTTON] clicked button=agarre_objeto mode=moveit_sequence "
+            "source=infer_model grasp_source=red_inference_rect "
+            f"experiment_applied={str(experiment_applied).lower()} "
             f"has_grasp={str(has_grasp).lower()} selected={selected}"
         )
 
@@ -12314,28 +12437,37 @@ class ControlPanelV2(QMainWindow):
             f"reason={experiment_reason or 'ok'}"
         )
         if not experiment_ready:
-            self._set_status(f"TFM bloqueado: {experiment_reason}", error=True)
+            if "aplica" in experiment_reason.lower() or "experiment" in experiment_reason.lower():
+                msg_ui = "No hay experimento aplicado. Aplica primero un experimento."
+            else:
+                msg_ui = f"TFM bloqueado: {experiment_reason}"
+            self._set_status(f"TFM: {msg_ui}", error=True)
             self._audit_append(
                 "logs/execute.log",
-                f"[TFM_GRASP] execute FAIL mode=moveit reason={experiment_reason}",
+                f"[TFM_GRASP] execute FAIL mode=moveit_sequence source=infer_model "
+                f"reason={experiment_reason}",
             )
             return
 
         # CHECK 2: inferencia válida y no expirada
+        grasp_ts = float(getattr(self, "_last_grasp_update_ts", 0.0) or 0.0)
+        age_sec = max(0.0, _runtime_time() - grasp_ts) if grasp_ts > 0.0 else -1.0
         grasp_ok, grasp_reason = self._current_grasp_status()
         self._emit_log(
             f"[TFM_GRASP][CHECK] inference_valid={str(grasp_ok).lower()} "
-            f"source={source} reason={grasp_reason or 'ok'}"
+            f"source={source} age_sec={age_sec:.1f} reason={grasp_reason or 'ok'}"
         )
         if not grasp_ok:
             if grasp_reason == "sin grasp":
-                msg_ui = "No hay inferencia válida aplicada. Ejecuta primero inferencia del experimento."
+                msg_ui = "No hay inferencia válida. Ejecuta primero la inferencia."
+            elif "expirado" in grasp_reason or "stale" in grasp_reason.lower():
+                msg_ui = "La inferencia no es reciente. Ejecuta de nuevo la inferencia."
             else:
                 msg_ui = f"No hay inferencia válida ({grasp_reason})."
             self._set_status(f"TFM: {msg_ui}", error=True)
             self._audit_append(
                 "logs/execute.log",
-                f"[TFM_GRASP] execute FAIL mode=moveit source={source} reason={grasp_reason}",
+                f"[TFM_GRASP] execute FAIL mode=moveit_sequence source={source} reason={grasp_reason}",
             )
             return
 
@@ -12348,9 +12480,167 @@ class ControlPanelV2(QMainWindow):
             )
             self._audit_append(
                 "logs/execute.log",
-                "[TFM_GRASP] execute FAIL mode=moveit source={source} reason=base_link_unavailable",
+                f"[TFM_GRASP] execute FAIL mode=moveit_sequence source={source} "
+                "reason=base_link_unavailable",
             )
             return
+
+        # RECT: leer y validar rectángulo de inferencia (Cx, Cy, w, h, θ)
+        grasp_px = dict(self._last_grasp_px or {})
+        cx_px = float(grasp_px.get("cx", 0.0))
+        cy_px = float(grasp_px.get("cy", 0.0))
+        w_px = float(grasp_px.get("w", 0.0))
+        h_px = float(grasp_px.get("h", 0.0))
+        angle_deg = float(grasp_px.get("angle_deg", 0.0))
+        theta_img = math.radians(angle_deg)
+
+        self._emit_log(
+            f"[TFM_GRASP][RECT] cx={cx_px:.1f} cy={cy_px:.1f} "
+            f"w={w_px:.1f} h={h_px:.1f} theta={angle_deg:.2f}deg"
+        )
+
+        if not (
+            math.isfinite(cx_px) and math.isfinite(cy_px)
+            and w_px > 0 and h_px > 0 and math.isfinite(theta_img)
+        ):
+            self._set_status("TFM: rectángulo de inferencia inválido.", error=True)
+            self._audit_append(
+                "logs/execute.log",
+                f"[TFM_GRASP] execute FAIL mode=moveit_sequence source={source} reason=rect_invalid",
+            )
+            return
+
+        # AXIS: calcular eje fino del rectángulo rojo
+        minor_px, opening_axis_theta_img = _compute_minor_axis_from_grasp_rect(
+            w_px, h_px, theta_img
+        )
+        self._emit_log(
+            f"[TFM_GRASP][AXIS] minor_px={minor_px:.1f} "
+            f"opening_axis_theta_img={math.degrees(opening_axis_theta_img):.2f}deg"
+        )
+
+        if minor_px <= 0:
+            self._set_status("TFM: eje fino del rectángulo inválido.", error=True)
+            self._audit_append(
+                "logs/execute.log",
+                f"[TFM_GRASP] execute FAIL mode=moveit_sequence source={source} "
+                "reason=minor_axis_invalid",
+            )
+            return
+
+        # Obtener dimensiones del frame para conversión pixel → metro
+        fw = fh = 0
+        frame_snap = getattr(self, "_last_camera_frame", None)
+        if frame_snap:
+            try:
+                _qimg, fw, fh, _fts = frame_snap
+            except Exception:
+                fw = fh = 0
+        proj_z = float((self._last_grasp_world or {}).get("proj_z_target", 0.0))
+
+        # Convertir minor_px a metros usando pixel_to_table_xy
+        minor_width_m = 0.04  # fallback 40mm
+        width_conversion_ok = False
+        if fw > 0 and fh > 0:
+            try:
+                wx_c, wy_c = pixel_to_table_xy(
+                    int(round(cx_px)), int(round(cy_px)), fw, fh, z_target=proj_z
+                )
+                wx_e, wy_e = pixel_to_table_xy(
+                    int(round(cx_px + minor_px)), int(round(cy_px)), fw, fh, z_target=proj_z
+                )
+                if wx_c is not None and wx_e is not None:
+                    minor_width_m = math.hypot(
+                        float(wx_e) - float(wx_c), float(wy_e) - float(wy_c)
+                    )
+                    width_conversion_ok = True
+            except Exception as _exc:
+                self._emit_log(f"[TFM_GRASP] width_conversion_err={_exc}")
+
+        # WIDTH log
+        self._emit_log(
+            f"[TFM_GRASP][WIDTH] minor_width_m={minor_width_m:.4f} "
+            f"conversion_ok={str(width_conversion_ok).lower()}"
+        )
+
+        # Calcular apertura previa RG2
+        pre_open_width_m, finger_cmd_rad = _compute_rg2_preopen_from_minor_width(minor_width_m)
+
+        self._emit_log(
+            f"[TFM_GRASP][WIDTH] pre_open_width_m={pre_open_width_m:.4f}"
+        )
+
+        # Validar apertura RG2
+        if not (0.015 <= pre_open_width_m <= 0.110):
+            self._set_status("TFM: apertura RG2 fuera de rango válido.", error=True)
+            self._audit_append(
+                "logs/execute.log",
+                f"[TFM_GRASP] execute FAIL mode=moveit_sequence source={source} "
+                f"reason=preopen_out_of_range pre_open_width_m={pre_open_width_m:.4f}",
+            )
+            return
+
+        if not (0.0 <= finger_cmd_rad <= 1.18):
+            self._set_status("TFM: ángulo RG2 fuera de rango.", error=True)
+            self._audit_append(
+                "logs/execute.log",
+                f"[TFM_GRASP] execute FAIL mode=moveit_sequence source={source} "
+                f"reason=finger_rad_out_of_range finger_cmd_rad={finger_cmd_rad:.4f}",
+            )
+            return
+
+        # GRIPPER log
+        self._emit_log(
+            f"[TFM_GRASP][GRIPPER] pre_open_cmd_rad={finger_cmd_rad:.4f}"
+        )
+
+        # Calcular yaw_base desde el eje fino (opening_axis_theta_img → base_link)
+        grasp_base_d = dict(grasp_base)
+        minor_axis_yaw_deg = float(grasp_base_d.get("yaw_deg", 0.0))  # fallback
+        yaw_conversion_ok = False
+        if fw > 0 and fh > 0:
+            try:
+                step = 10.0
+                dx = math.cos(opening_axis_theta_img) * step
+                dy = math.sin(opening_axis_theta_img) * step
+                wx_c2, wy_c2 = pixel_to_table_xy(
+                    int(round(cx_px)), int(round(cy_px)), fw, fh, z_target=proj_z
+                )
+                wx2, wy2 = pixel_to_table_xy(
+                    int(round(cx_px + dx)), int(round(cy_px + dy)), fw, fh, z_target=proj_z
+                )
+                if wx_c2 is not None and wx2 is not None:
+                    minor_axis_yaw_deg = math.degrees(
+                        math.atan2(float(wy2) - float(wy_c2), float(wx2) - float(wx_c2))
+                    )
+                    yaw_conversion_ok = True
+            except Exception as _exc:
+                self._emit_log(f"[TFM_GRASP] yaw_conversion_err={_exc}")
+        else:
+            # Sin frame disponible: usar el yaw ya calculado en _last_grasp_base (fallback)
+            yaw_conversion_ok = grasp_base_d.get("yaw_deg") is not None
+
+        if not yaw_conversion_ok:
+            self._set_status(
+                "TFM: No se pudo convertir la inferencia a pose base_link.", error=True
+            )
+            self._audit_append(
+                "logs/execute.log",
+                f"[TFM_GRASP] execute FAIL mode=moveit_sequence source={source} "
+                "reason=yaw_base_link_conversion_failed",
+            )
+            return
+
+        # POSE log
+        self._emit_log(
+            f"[TFM_GRASP][POSE] frame=base_link tcp=rg2_pinch_center "
+            f"x={grasp_base_d.get('x', 0.0):.3f} y={grasp_base_d.get('y', 0.0):.3f} "
+            f"z={grasp_base_d.get('z', 0.0):.3f} yaw_base={minor_axis_yaw_deg:.2f}deg"
+        )
+
+        # Almacenar overrides para _execute_tfm_world_grasp
+        self._tfm_grasp_minor_yaw_deg = minor_axis_yaw_deg
+        self._tfm_grasp_preopen_rad = finger_cmd_rad
 
         # TARGET: registra el objeto y la hipótesis de agarre
         object_id = str(
@@ -12358,59 +12648,65 @@ class ControlPanelV2(QMainWindow):
             or getattr(self, "_last_grasp_selection_name", "")
             or "unknown"
         ).strip()
-        grasp_px = dict(self._last_grasp_px or {})
-        grasp_base_d = dict(grasp_base)
-
         self._emit_log(
             "[TFM_GRASP][TARGET] "
             f"object_id={object_id} "
-            f"grasp_rect=cx={grasp_px.get('cx', 0.0):.1f},"
-            f"cy={grasp_px.get('cy', 0.0):.1f},"
-            f"w={grasp_px.get('w', 0.0):.1f},"
-            f"h={grasp_px.get('h', 0.0):.1f},"
-            f"angle={grasp_px.get('angle_deg', 0.0):.1f}deg "
+            f"grasp_rect=cx={cx_px:.1f},"
+            f"cy={cy_px:.1f},"
+            f"w={w_px:.1f},"
+            f"h={h_px:.1f},"
+            f"angle={angle_deg:.1f}deg "
             f"base=({grasp_base_d.get('x', 0.0):.3f},"
             f"{grasp_base_d.get('y', 0.0):.3f},"
             f"{grasp_base_d.get('z', 0.0):.3f}) "
-            f"source={source} mode=moveit"
+            f"source=infer_model mode=moveit_sequence"
         )
         self._audit_append(
             "logs/execute.log",
             "[TFM_GRASP] execute TARGET "
-            f"object_id={object_id} source=infer_model mode=moveit "
-            f"grasp_px=({grasp_px.get('cx', 0.0):.1f},{grasp_px.get('cy', 0.0):.1f},"
-            f"w={grasp_px.get('w', 0.0):.1f},h={grasp_px.get('h', 0.0):.1f},"
-            f"angle={grasp_px.get('angle_deg', 0.0):.1f}deg) "
+            f"object_id={object_id} source=infer_model mode=moveit_sequence "
+            f"grasp_px=({cx_px:.1f},{cy_px:.1f},"
+            f"w={w_px:.1f},h={h_px:.1f},"
+            f"angle={angle_deg:.1f}deg) "
+            f"minor_px={minor_px:.1f} "
+            f"opening_axis_theta_img={math.degrees(opening_axis_theta_img):.2f}deg "
+            f"minor_width_m={minor_width_m:.4f} "
+            f"pre_open_width_m={pre_open_width_m:.4f} "
+            f"finger_cmd_rad={finger_cmd_rad:.4f} "
             f"base=({grasp_base_d.get('x', 0.0):.3f},{grasp_base_d.get('y', 0.0):.3f},"
-            f"{grasp_base_d.get('z', 0.0):.3f}) yaw={grasp_base_d.get('yaw_deg', 0.0):.1f}",
+            f"{grasp_base_d.get('z', 0.0):.3f}) yaw_base={minor_axis_yaw_deg:.1f}",
         )
 
-        # MOVEIT: publicar petición (delega a _execute_tfm_world_grasp que gestiona la secuencia)
+        # MOVEIT: publicar petición
         self._emit_log(
-            "[TFM_GRASP][MOVEIT] publish /desired_grasp/request "
-            f"mode=moveit source=infer_model object_id={object_id} "
-            f"frame=base_link tcp=rg2_pinch_center"
+            "[TFM_GRASP][MOVEIT] publish topic=/desired_grasp/request "
+            f"mode=moveit_sequence source=infer_model object_id={object_id} "
+            f"frame=base_link tcp=rg2_pinch_center "
+            f"yaw_base={minor_axis_yaw_deg:.2f}deg"
         )
         self._audit_append(
             "logs/execute.log",
             "[TFM_GRASP] execute REQUEST "
-            f"object_id={object_id} source=infer_model mode=moveit "
+            f"object_id={object_id} source=infer_model mode=moveit_sequence "
             f"pose_topic={MOVEIT_POSE_TOPIC} result_topic=/desired_grasp/result",
         )
 
         handled = self._execute_tfm_world_grasp()
         if not handled:
             self._emit_log(
-                "[TFM_GRASP][MOVEIT] result=FAIL mode=moveit source=infer_model "
+                "[TFM_GRASP][MOVEIT] result=FAIL mode=moveit_sequence source=infer_model "
                 f"object_id={object_id} reason=execute_not_started"
+            )
+            self._emit_log(
+                "[TFM_GRASP][EXECUTE] status=FAIL mode=moveit_sequence source=infer_model "
+                "grasp_orientation=minor_axis reason=execute_not_started"
             )
             self._audit_append(
                 "logs/execute.log",
-                "[TFM_GRASP] execute FAIL mode=moveit source=infer_model "
+                "[TFM_GRASP] execute FAIL mode=moveit_sequence source=infer_model "
                 f"object_id={object_id} reason=execute_not_started",
             )
-        # El resultado final (OK/FAIL) lo registra _execute_tfm_world_grasp en su audit log
-        # con: [TFM] execute OK/FAIL mode=moveit_sequence source=infer_model
+        # El resultado final (OK/FAIL) lo registra _execute_tfm_world_grasp vía [TFM_GRASP][EXECUTE]
 
     def _tfm_publish_grasp(self):
         self._log_button("TFM Ejecutar agarre")
