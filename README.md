@@ -52,7 +52,7 @@ Regenerar la tabla de latencia de inferencia:
 En vision conviven dos familias ligeras:
 
 - `EXP1` y `EXP2`: referencia de resultados de la memoria; son los experimentos realmente usados en tablas, figuras y comparativas.
-- `EXP1.1` y `EXP1.2`: experimentos adicionales que materializan en codigo el diseño objetivo descrito en `4.6.2`.
+- `EXP1.1` y `EXP1.2`: experimentos adicionales que materializan en codigo el diseño objetivo descrito en `4.6.2` del TFM.
 
 Notas de rigor:
 
