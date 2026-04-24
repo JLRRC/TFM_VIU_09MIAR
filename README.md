@@ -73,11 +73,11 @@ Notas de rigor:
 
 ## Nota final sobre el split Cornell
 
-- El TFM documenta el split final como `3542/1569`.
-- En el workspace actual se asume como estado operativo real `3541/1569`.
+- El TFM y algunos artefactos historicos documentan el split final como `3542/1569`.
+- En el workspace actual, el estado operativo verificable y el dataset efectivo son `3541/1569`.
 - La causa es una anotacion corrupta en `agarre_inteligente/data/raw/cornell/01/pcd0165cpos.txt`, donde aparece un rectangulo con vertices `NaN NaN`.
 - El generador de CSV puede volver a materializar `3542` filas en `train.csv`, pero una de ellas queda no finita y el dataset efectivo la descarta al cargar.
-- Mientras no aparezca una version valida de esa anotacion dentro del propio workspace o de una copia externa fiable, la referencia tecnica real del repo debe considerarse `3541/1569`.
+- Mientras no aparezca una version valida de esa anotacion dentro del propio workspace o de una copia externa fiable, la referencia tecnica canonica del repo para ejecucion y validacion debe considerarse `3541/1569`; `3542/1569` debe leerse como cifra historica del documento.
 
 ## Nota final sobre desajustes metodológicos no aplicados
 
@@ -98,9 +98,12 @@ Este módulo está registrado como entry point en `setup.py`
 
 En versiones preliminares de la memoria del TFM se utilizó la
 denominación `main_panel.py` para referirse conceptualmente a este
-componente. Dicha denominación no tiene correspondencia en el historial
-git del repositorio. La diferencia es exclusivamente nominal y no afecta
-a los resultados experimentales presentados.
+componente. En el workspace actual si existe un wrapper real en
+`agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/main_panel.py`, registrado
+ademas como entry point alternativo en `setup.py`
+(`main_panel = ur5_qt_panel.main_panel:main`). Toda la logica operativa
+sigue residiendo en `panel_v2.py`; la diferencia entre ambos nombres es
+de nomenclatura y empaquetado, no de comportamiento experimental.
 
 ## ENTREGA.V2 — nota de cierre
 

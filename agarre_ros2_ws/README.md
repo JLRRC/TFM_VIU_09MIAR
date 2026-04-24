@@ -32,6 +32,12 @@ Desde la raiz del proyecto, flujo canónico oficial:
 
 (`./lanzar_panelv2.sh` se mantiene como alias de compatibilidad.)
 
+Notas de ejecucion canonica:
+
+- La repeticion manual final y cualquier demo de defensa deben arrancarse con `./lanzar_panelc2.sh` desde la raiz del proyecto.
+- Ese launcher activa el overlay de `install/setup.bash` del workspace y es la referencia operativa valida para reproducibilidad.
+- `./scripts/start_panel_v2.sh --fg` y variantes `--tfm-repro` o `--tfm-raw` se mantienen como wrappers internos de depuracion, validacion y QA; no sustituyen al launcher canonico para una repeticion final.
+
 Desde este workspace, wrapper interno para depuración:
 
 ```bash
@@ -163,5 +169,11 @@ Artefactos operativos utiles del panel:
 - `../reports/evidence/ros2/panel_audit/artifacts/grasp_last.json`
 - `../reports/evidence/ros2/panel_audit/figures/overlay_last.png`
 - `../reports/evidence/ros2/tfm_session_exports/`: exportaciones curadas de sesiones TFM listas para compartir o revisar.
+
+Notas de uso de estos artefactos:
+
+- `checkpoints_index.json`, `grasp_last.json` y `overlay_last.png` son snapshots del ultimo uso exportado del bloque TFM y deben leerse junto a su timestamp.
+- Si esos artefactos no estan frescos, la referencia operativa mas reciente del runtime no es este bloque curado sino `../auditoria/`.
+- `tfm_session_exports/` puede estar vacio si no se ha ejecutado una exportacion reciente con `scripts/export_tfm_evidence.py`.
 
 La fuente editable del workspace esta en `src/`, `scripts/`, `worlds/` y `models/`. Los artefactos de compilacion o de ejecucion no deben editarse a mano.

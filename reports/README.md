@@ -28,8 +28,9 @@ Directorio curado del documento del TFM y de los artefactos que respaldan la mem
   - `evidence/chapter5/`
 - Evidencia ROS 2 y auditoria del panel:
   - `evidence/ros2/`
-  - `evidence/ros2/tfm_panel_repro_seed0_raw_trace_20260415.md`
-  - `evidence/ros2/tfm_session_exports/`
+  - `evidence/ros2/moveit2_system_status.json`
+  - `evidence/ros2/panel_audit/artifacts/`
+  - `evidence/ros2/pick_traces/`
 - Nota de rigor del workspace:
   - `evidence/workspace_rigour_notes_20260415.md`
 - Trazabilidad de `EXP1.1` y `EXP1.2` como implementacion de `4.6.2`:
@@ -43,6 +44,9 @@ Directorio curado del documento del TFM y de los artefactos que respaldan la mem
 - La recreacion del bloque experimental presentado en la memoria sigue apoyandose en `EXP1`, `EXP2`, `EXP3` y `EXP4`.
 - `EXP1.1` y `EXP1.2` se conservan en el repo como experimentos adicionales asociados a la implementacion del diseño ligero descrito en `4.6.2`.
 - En el panel pueden cargarse y usarse todos los experimentos disponibles sin distincion visual entre ellos.
+- `evidence/ros2/moveit2_system_status.json` debe interpretarse como snapshot historico de auditoria, no como veredicto final unico del estado actual.
+- `evidence/ros2/tfm_session_exports/` se reserva para exportaciones de sesion del panel y puede estar vacio si no se ha ejecutado una exportacion reciente.
+- Los artefactos de `evidence/ros2/panel_audit/artifacts/` deben leerse junto a su timestamp; si estan desactualizados, la referencia mas reciente de runtime vive en `auditoria/`.
 
 ## Uso esperado
 

@@ -447,7 +447,7 @@ def build_chapters() -> tuple[Chapter, ...]:
             ),
             artifacts=(
                 Item("artifact", "5-A1", "Resumen tecnico para la redaccion de la subseccion ROS 2 + Gazebo", assets=("reports/tfm_ros_gazebo_results/final_pack/resumen_para_redaccion.md",), references=(validation_ref, release_ref)),
-                Item("artifact", "5-A2", "Artefacto principal de inferencia y grasp publicado", assets=("reports/panel_audit/artifacts/grasp_last.json",), references=(validation_ref,)),
+                Item("artifact", "5-A2", "Artefacto principal de inferencia y grasp publicado", assets=("reports/evidence/ros2/panel_audit/artifacts/grasp_last.json",), references=(validation_ref,)),
                 Item("artifact", "5-A3", "Resumen tabular completo del bloque experimental", assets=("reports/tables/TABLES_SUMMARY.md",), references=(trace_ref,)),
             ),
         ),

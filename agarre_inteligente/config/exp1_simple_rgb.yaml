@@ -8,7 +8,7 @@ experiment:
   description: "SimpleGraspCNN con RGB (linea base)"
   seeds: [0, 1, 2]
   split_protocol: "object-wise"
-  train_size_expected: 3542
+  train_size_expected: 3541
   val_size_expected: 1569
 
 model:

@@ -62,6 +62,12 @@ La justificacion practica es sencilla:
 - `EXP1.1` y `EXP1.2` amplian el workspace sin cambiar el bloque experimental presentado
 - mantener ambos niveles separados preserva a la vez la fidelidad teorica del apartado `4.6.2` y la trazabilidad del bloque de resultados
 
+Regla de lectura para memoria, resultados y defensa:
+
+- los resultados oficiales ya publicados en `reports/`, incluidas las tablas y figuras del capitulo 5, deben interpretarse con el pipeline historico oficial de `EXP1`, `EXP2`, `EXP3` y `EXP4`
+- la via metodologicamente alineada con la formulacion geometrica completa del TFM vive hoy en `EXP1.1`, `EXP1.2` y en los componentes añadidos posteriormente (`EvaluatorOriented`, `cornell_success_oriented`, `GraspLoss`, `exp_methodology_v2.yaml`)
+- ambos niveles conviven en el workspace, pero no deben mezclarse al justificar resultados: lo historico respalda la memoria publicada y lo alineado posterior funciona como implementacion y extension metodologica del repo
+
 Resumen practico:
 
 - `SimpleGraspCNN` / `simple_cnn`:
