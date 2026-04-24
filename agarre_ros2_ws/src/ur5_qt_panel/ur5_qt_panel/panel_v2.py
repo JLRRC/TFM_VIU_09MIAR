@@ -3995,6 +3995,7 @@ class ControlPanelV2(QMainWindow):
         self.chk_tfm_use_depth.setToolTip("Se muestran EXP1-EXP4 con su mejor checkpoint")
         self.chk_tfm_use_depth.setChecked(True)
         self.chk_tfm_use_depth.setEnabled(False)
+        self.chk_tfm_use_depth.setVisible(False)
         self.chk_tfm_repro_mode = QCheckBox("Modo reproducción TFM")
         self.chk_tfm_repro_mode.setToolTip(
             "Fija el caso principal documentado: EXP3_RESNET18_RGB_AUGMENT / seed_0"
