@@ -12557,17 +12557,15 @@ class ControlPanelV2(QMainWindow):
             except Exception as _exc:
                 self._emit_log(f"[TFM_GRASP] width_conversion_err={_exc}")
 
-        # WIDTH log
-        self._emit_log(
-            f"[TFM_GRASP][WIDTH] minor_width_m={minor_width_m:.4f} "
-            f"conversion_ok={str(width_conversion_ok).lower()}"
-        )
-
         # Calcular apertura previa RG2
         pre_open_width_m, finger_cmd_rad = _compute_rg2_preopen_from_minor_width(minor_width_m)
 
+        # WIDTH log con fuente explícita (para trazabilidad en la memoria del TFM)
+        _width_source = "calibrated" if width_conversion_ok else "fallback"
         self._emit_log(
-            f"[TFM_GRASP][WIDTH] pre_open_width_m={pre_open_width_m:.4f}"
+            f"[TFM_GRASP][WIDTH] source={_width_source} "
+            f"minor_width_m={minor_width_m:.4f} "
+            f"pre_open_width_m={pre_open_width_m:.4f}"
         )
 
         # Validar apertura RG2
@@ -12598,6 +12596,11 @@ class ControlPanelV2(QMainWindow):
         grasp_base_d = dict(grasp_base)
         minor_axis_yaw_deg = float(grasp_base_d.get("yaw_deg", 0.0))  # fallback
         yaw_conversion_ok = False
+        _yaw_method = "fallback_grasp_base"
+        _p0_px = (cx_px, cy_px)
+        _p1_px = (cx_px, cy_px)
+        _p0_base = (0.0, 0.0)
+        _p1_base = (0.0, 0.0)
         if fw > 0 and fh > 0:
             try:
                 step = 10.0
@@ -12610,15 +12613,28 @@ class ControlPanelV2(QMainWindow):
                     int(round(cx_px + dx)), int(round(cy_px + dy)), fw, fh, z_target=proj_z
                 )
                 if wx_c2 is not None and wx2 is not None:
+                    _p1_px = (cx_px + dx, cy_px + dy)
+                    _p0_base = (float(wx_c2), float(wy_c2))
+                    _p1_base = (float(wx2), float(wy2))
                     minor_axis_yaw_deg = math.degrees(
                         math.atan2(float(wy2) - float(wy_c2), float(wx2) - float(wx_c2))
                     )
                     yaw_conversion_ok = True
+                    _yaw_method = "minor_axis_projection"
             except Exception as _exc:
                 self._emit_log(f"[TFM_GRASP] yaw_conversion_err={_exc}")
         else:
             # Sin frame disponible: usar el yaw ya calculado en _last_grasp_base (fallback)
             yaw_conversion_ok = grasp_base_d.get("yaw_deg") is not None
+
+        self._emit_log(
+            f"[TFM_GRASP][YAW_SOURCE] method={_yaw_method} "
+            f"p0_px=({_p0_px[0]:.1f},{_p0_px[1]:.1f}) "
+            f"p1_px=({_p1_px[0]:.1f},{_p1_px[1]:.1f}) "
+            f"p0_base=({_p0_base[0]:.3f},{_p0_base[1]:.3f}) "
+            f"p1_base=({_p1_base[0]:.3f},{_p1_base[1]:.3f}) "
+            f"yaw_base_deg={minor_axis_yaw_deg:.2f}"
+        )
 
         if not yaw_conversion_ok:
             self._set_status(
