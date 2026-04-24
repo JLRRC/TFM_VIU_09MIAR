@@ -265,17 +265,22 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     pick_enabled = pick_ok and bool(panel._ee_frame_effective)
     pick_tip = "Requiere MoveIt, cámara y objetos estables"
     # Demo pick: NO requiere MoveIt (usa trayectoria de joints directa).
+    # Requiere objeto seleccionado igual que btn_pick_object.
     demo_ready = (
         panel._controllers_ok
         and panel._tf_ready_state
         and bool(panel._ee_frame_effective)
         and not panel._pick_demo_executed  # Deshabilitar si ya se ejecutó
+        and bool(panel._selected_object)   # igual que btn_pick_object
     )
     demo_tip = "Demo (secuencia joints, sin MoveIt)"
     if panel._pick_demo_executed:
         panel._set_btn_state(panel.btn_pick_demo, False, "PICK DEMO ya ejecutado (una sola vez)")
     else:
-        demo_block_tip = "Demo directa: espera controladores/TF"
+        if not panel._selected_object:
+            demo_block_tip = "Selecciona un objeto"
+        else:
+            demo_block_tip = "Demo directa: espera controladores/TF"
         panel._set_btn_state(
             panel.btn_pick_demo,
             demo_ready,
