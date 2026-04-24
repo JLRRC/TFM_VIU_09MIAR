@@ -5257,6 +5257,27 @@ def run_pick_demo(panel) -> None:
                 else:
                     transport_replan_remaining = max(0, int(transport_replan_remaining))
                 seed, seed_source = _current_joint_seed(return_source=True)
+                if is_transport_stage and seed_source == "env_override":
+                    transport_seed = _coerce_ur5_joint_vector(
+                        getattr(panel, "_pick_demo_last_transport_joint_goal", None)
+                    )
+                    transport_seed_source = "last_transport_ok"
+                    if transport_seed is None:
+                        transport_seed = _coerce_ur5_joint_vector(
+                            getattr(panel, "_pick_demo_last_transport_prep_seed", None)
+                        )
+                        transport_seed_source = "prep_reference"
+                    if transport_seed is None:
+                        transport_seed = _live_joint_seed_or_none(panel)
+                        transport_seed_source = "live_joints"
+                    if transport_seed is not None:
+                        seed = [float(value) for value in transport_seed]
+                        seed_source = f"transport_{transport_seed_source}"
+                        panel._emit_log(
+                            "[PICK][DIRECT][IK_SEED_OVERRIDE] "
+                            f"label={label} ignored=env_override "
+                            f"replacement_source={transport_seed_source}"
+                        )
                 _seed_pos, target_rot = fk_ur5(seed)
                 execution_rot = target_rot
                 execution_rot_source = f"seed:{seed_source}"
