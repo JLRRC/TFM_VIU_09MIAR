@@ -3945,10 +3945,9 @@ class ControlPanelV2(QMainWindow):
             self.btn_basket,
         ):
             b.setMinimumHeight(32)
-        # Keep TEST ROBOT for internal state handling, but do not show it in the panel.
+        # TEST ROBOT, AUTO TUNE TOUCH y DEBUG MOVIMIENTO: ocultos de la UI del operador.
         self.btn_test_robot.setVisible(False)
-        # DEBUG MOVIMIENTO is only useful for niche manual pause/resume diagnostics.
-        # Keep the implementation available, but remove the button from the operator UI.
+        self.btn_auto_tune_touch.setVisible(False)
         self.btn_debug_motion.setVisible(False)
         self.btn_debug_motion.setToolTip(
             "Pausa manual de depuración: cuando haya una pausa activa, pulsa para continuar."
@@ -3981,6 +3980,7 @@ class ControlPanelV2(QMainWindow):
             "Secuencia fija: Mesa -> abrir -> Pose Buena -> cerrar -> Mesa -> Cesta -> abrir"
         )
         self.btn_pick_demo2.clicked.connect(self._run_pick_demo2)
+        self.btn_pick_demo2.setVisible(False)
         self.btn_pick_object = QPushButton("Agarre Objeto (MoveIT)")
         self.btn_pick_object.setMinimumHeight(32)
         self.btn_pick_object.setToolTip("Coger objeto seleccionado y llevarlo a la cesta")
