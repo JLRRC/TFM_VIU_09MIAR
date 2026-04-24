@@ -27,7 +27,7 @@ def test_load_gripper_geometry_matches_validated_tcp_fix() -> None:
     tcp_xyz = geometry.xyz_for_frame(RG2_TCP_FRAME)
     pinch_xyz = geometry.xyz_for_frame(RG2_PINCH_CENTER_FRAME)
     assert tcp_xyz[2] == pinch_xyz[2]
-    assert tcp_xyz[2] == 0.0050885
+    assert tcp_xyz[2] == 0.175
     assert vector_distance(tcp_xyz, pinch_xyz) == 0.0
 
 
@@ -44,7 +44,7 @@ def test_contact_z_correction_is_urdf_driven() -> None:
     geometry = load_gripper_geometry(str(ROOT))
     assert contact_z_correction_for_frame(RG2_PINCH_CENTER_FRAME, geometry=geometry) == 0.0
     assert contact_z_correction_for_frame(RG2_TCP_FRAME, geometry=geometry) == 0.0
-    assert contact_z_correction_for_frame(TOOL0_FRAME, geometry=geometry) == 0.0050885
+    assert contact_z_correction_for_frame(TOOL0_FRAME, geometry=geometry) == 0.175
 
 
 def test_tool0_offset_for_contact_frames_is_urdf_driven() -> None:
@@ -52,12 +52,12 @@ def test_tool0_offset_for_contact_frames_is_urdf_driven() -> None:
     assert tool0_offset_for_frame(RG2_PINCH_CENTER_FRAME, geometry=geometry) == (
         0.0,
         0.0,
-        0.0050885,
+        0.175,
     )
     assert tool0_offset_for_frame(RG2_TCP_FRAME, geometry=geometry) == (
         0.0,
         0.0,
-        0.0050885,
+        0.175,
     )
 
 
@@ -80,7 +80,7 @@ def test_evaluate_geometry_snapshot_rejects_runtime_mismatch() -> None:
     geometry = load_gripper_geometry(str(ROOT))
     ok, reason, snapshot = evaluate_geometry_snapshot(
         {
-            RG2_TCP_FRAME: (0.0, 0.0, 0.1050885),
+            RG2_TCP_FRAME: (0.0, 0.0, 0.070),
             RG2_PINCH_CENTER_FRAME: geometry.xyz_for_frame(RG2_PINCH_CENTER_FRAME),
         },
         geometry=geometry,

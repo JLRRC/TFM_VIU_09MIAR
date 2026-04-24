@@ -15,9 +15,9 @@
   <xacro:property name="ur_pkg_share" value="$(optenv UR_DESCRIPTION_SHARE /opt/ros/jazzy/share/ur_description)"/>
   <xacro:property name="robot_name" value="ur5_rg2"/>
   <xacro:property name="tf_prefix_value" value=""/>
-  <!-- Offset operativo canónico del TCP validado el 2026-04-21.
-       No retocar sin una nueva revalidación visual. -->
-  <xacro:property name="rg2_contact_tcp_xyz" value="0 0 0.0050885"/>
+  <!-- Offset físico real flange→yemas: 0.175 m (ur5_hand_joint Z=0.07 + finger_joint X=0.105).
+       Corregido con Opción 3 SDF fix (2026-04-24). -->
+  <xacro:property name="rg2_contact_tcp_xyz" value="0 0 0.175"/>
   <xacro:property name="joint_limits_file" value="${ur_pkg_share}/config/${ur_type}/joint_limits.yaml"/>
   <xacro:property name="kinematics_file" value="${ur_pkg_share}/config/${ur_type}/default_kinematics.yaml"/>
   <xacro:property name="physical_file" value="${ur_pkg_share}/config/${ur_type}/physical_parameters.yaml"/>
