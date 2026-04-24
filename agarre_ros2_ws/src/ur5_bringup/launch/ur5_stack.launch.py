@@ -851,6 +851,30 @@ def generate_launch_description():
     # world_tf_publisher is helpful but non-critical; do not shutdown whole stack if it exits.
     world_tf_guard = GroupAction(actions=[])
 
+    # Monitor TF freshness for the critical kinematic chain.  Logs stale/missing
+    # transforms at INFO level; never shuts down the stack.  Only active when RSP is launched.
+    tf_probe = Node(
+        package="ur5_tools",
+        executable="tf_probe",
+        output="screen",
+        parameters=[
+            {
+                "pairs": [
+                    "world,base_link",
+                    "base_link,tool0",
+                    "base_link,rg2_pinch_center",
+                    "tool0,rg2_pinch_center",
+                ]
+            },
+            {"max_age_sec": 0.5},
+            {"period_sec": 0.5},
+            {"timeout_sec": 0.2},
+            {"log_every_sec": 10.0},
+            {"use_sim_time": use_sim_time},
+        ],
+        condition=IfCondition(launch_rsp),
+    )
+
     system_state = Node(
         package="ur5_tools",
         executable="system_state_manager",
@@ -1165,6 +1189,7 @@ def generate_launch_description():
             gz_pose_guard,
             world_tf,
             world_tf_guard,
+            tf_probe,
             system_state,
             system_state_guard,
             release_service,

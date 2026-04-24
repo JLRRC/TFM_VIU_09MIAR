@@ -413,6 +413,63 @@ class TfHelper:
                 time.sleep(0.05)
         return None
 
+    def lookup_transform_fresh(
+        self,
+        target_frame: str,
+        source_frame: str,
+        timeout_sec: float = 1.0,
+        max_age_sec: float = 0.5,
+        allow_static: bool = False,
+    ) -> Tuple[object, float, str, str]:
+        """Lookup a transform and validate its freshness.
+
+        Returns (transform_or_None, age_sec, verdict, reason).
+        Verdicts: UNAVAILABLE | ZERO_STAMP | AGE_UNKNOWN | STALE | OK
+        age_sec is -1.0 when stamp is zero or age cannot be determined.
+        allow_static: if True, a stamp-zero transform (static TF) is accepted as OK.
+        """
+        if not ROS_AVAILABLE or not self._buffer or rclpy is None:
+            return None, -1.0, "UNAVAILABLE", "ros_not_available"
+
+        tf = None
+        end = time.time() + timeout_sec
+        while time.time() < end:
+            try:
+                tf = self._buffer.lookup_transform(target_frame, source_frame, rclpy.time.Time())
+                break
+            except (LookupException, ConnectivityException, ExtrapolationException):
+                time.sleep(0.05)
+
+        if tf is None:
+            return None, -1.0, "UNAVAILABLE", "lookup_timeout"
+
+        # Compute stamp age vs current ROS clock
+        try:
+            stamp_ros = rclpy.time.Time.from_msg(tf.header.stamp)
+            stamp_ns = stamp_ros.nanoseconds
+        except Exception:
+            return tf, -1.0, "AGE_UNKNOWN", "stamp_parse_error"
+
+        if stamp_ns == 0:
+            if allow_static:
+                return tf, -1.0, "OK", "static_tf_accepted"
+            return tf, -1.0, "ZERO_STAMP", "stamp_zero_may_be_static"
+
+        try:
+            now_ros = self._node.get_clock().now()
+            age_sec = (now_ros - stamp_ros).nanoseconds / 1e9
+        except Exception:
+            return tf, -1.0, "AGE_UNKNOWN", "clock_error"
+
+        if age_sec < 0.0:
+            # Clock jumped backwards — accept with warning
+            return tf, age_sec, "OK", f"clock_backwards_{age_sec:.3f}s"
+
+        if age_sec > max_age_sec:
+            return tf, age_sec, "STALE", f"age_{age_sec:.3f}s_gt_{max_age_sec:.3f}s"
+
+        return tf, age_sec, "OK", f"age_{age_sec:.3f}s"
+
 
 _TF_HELPER: Optional[TfHelper] = None
 

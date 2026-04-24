@@ -211,6 +211,7 @@ class SystemStateManager(Node):
         self.declare_parameter("camera_timeout_sec", 1.5)
         self.declare_parameter("tf_timeout_sec", 0.2)
         self.declare_parameter("tf_drop_grace_sec", 4.0)
+        self.declare_parameter("tf_max_age_sec", 0.5)
         self.declare_parameter("geometry_required", True)
         self.declare_parameter("geometry_tool_frame", TOOL0_FRAME)
         self.declare_parameter("geometry_offset_tol_m", 0.002)
@@ -261,6 +262,7 @@ class SystemStateManager(Node):
             4.0,
             min_value=0.0,
         )
+        self._tf_max_age = read_float_param(self, "tf_max_age_sec", 0.5, min_value=0.05)
         self._geometry_required = bool(self.get_parameter("geometry_required").value)
         self._geometry_tool_frame = read_str_param(
             self,
@@ -559,6 +561,16 @@ class SystemStateManager(Node):
         self._controllers_ready = ready
         self._controllers_reason = reason
 
+    def _transform_age_sec(self, tf: "TransformStamped") -> float:
+        """Return age of a TF stamp in seconds relative to current ROS clock."""
+        try:
+            stamp = rclpy.time.Time.from_msg(tf.header.stamp)
+            now = self.get_clock().now()
+            age_ns = (now - stamp).nanoseconds
+            return age_ns / 1e9
+        except Exception:
+            return -1.0
+
     def _tf_ok(self) -> Tuple[bool, str]:
         timeout = Duration(seconds=self._tf_timeout)
         try:
@@ -571,6 +583,17 @@ class SystemStateManager(Node):
             )
             if self._is_identity(tf):
                 return False, "world->base identity"
+            # Freshness check: base_link→tool0 is a dynamic transform (RSP + joint_states).
+            # If RSP is dead, this stamp becomes stale even though the buffer retains the last value.
+            if self._tf_buffer.can_transform(
+                self._base_frame, TOOL0_FRAME, rclpy.time.Time(), timeout=timeout
+            ):
+                tf_dyn = self._tf_buffer.lookup_transform(
+                    self._base_frame, TOOL0_FRAME, rclpy.time.Time(), timeout=timeout
+                )
+                age = self._transform_age_sec(tf_dyn)
+                if age > self._tf_max_age:
+                    return False, f"base->tool0 stale {age:.2f}s"
             if self._ee_frame:
                 if not self._tf_buffer.can_transform(
                     self._base_frame, self._ee_frame, rclpy.time.Time(), timeout=timeout

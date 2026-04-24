@@ -71,6 +71,7 @@ from .panel_readiness import tf_ready_status
 from .panel_utils import (
     angle_shortest_diff_rad,
     get_pose,
+    get_tf_helper,
     transform_point_to_frame,
     world_to_base,
     world_xyz_to_pixel_float,
@@ -4777,6 +4778,237 @@ def run_pick_demo(panel) -> None:
                     f"px_dist={_fmt_scalar(px_dist)} "
                     f"snapshot={snap_path or 'none'}"
                 )
+
+            def _emit_rg2_visual_audit(phase: str) -> None:
+                """Log visual pose audit comparing TF TCP vs Gazebo physical fingers.
+
+                [PICK][RG2_VISUAL_AUDIT] logs for APPROACH_COARSE, GRASP_DOWN,
+                GRASP_ALIGN_IK and PRE_CLOSE phases.  No motion is blocked.
+                """
+                try:
+                    # ── TF freshness snapshot for this phase ───────────────────
+                    _tf_fresh_verdict = "UNAVAILABLE"
+                    _tf_fresh_age_str = "N/A"
+                    _tf_fresh_stamp_str = "N/A"
+                    _tf_fresh_reason = "not_checked"
+                    try:
+                        _tfh = get_tf_helper()
+                        if _tfh is not None:
+                            _tf_max = float(
+                                os.environ.get("PANEL_PICK_DEMO_TF_MAX_AGE_SEC", "0.5") or 0.5
+                            )
+                            _tf_r, _tf_age, _tf_verd, _tf_rsn = _tfh.lookup_transform_fresh(
+                                "tool0", BASE_FRAME, timeout_sec=0.15,
+                                max_age_sec=_tf_max, allow_static=False,
+                            )
+                            _tf_fresh_verdict = _tf_verd
+                            _tf_fresh_reason = _tf_rsn
+                            _tf_fresh_age_str = f"{_tf_age:.3f}" if _tf_age >= 0 else "N/A"
+                            if _tf_r is not None:
+                                try:
+                                    _tf_fresh_stamp_str = (
+                                        f"{_tf_r.header.stamp.sec}"
+                                        f".{_tf_r.header.stamp.nanosec:09d}"
+                                    )
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+
+                    wf = str(
+                        getattr(
+                            panel,
+                            "_world_frame_last_first",
+                            lambda fallback=None: WORLD_FRAME or "world",
+                        )(WORLD_FRAME or "world")
+                    ).strip() or "world"
+
+                    # ── TF: URDF semantic frames ──────────────────────────────
+                    pinch_w = _pose_position(wf, "rg2_pinch_center", timeout_sec=0.08)
+                    tool0_w = _pose_position(wf, "tool0", timeout_sec=0.08)
+                    fl1_w = _pose_position(wf, "rg2_finger_link1", timeout_sec=0.05)
+                    fl2_w = _pose_position(wf, "rg2_finger_link2", timeout_sec=0.05)
+
+                    # URDF finger midpoint (prismatic joints)
+                    urdf_mid = None
+                    if fl1_w is not None and fl2_w is not None:
+                        urdf_mid = (
+                            (float(fl1_w[0]) + float(fl2_w[0])) / 2.0,
+                            (float(fl1_w[1]) + float(fl2_w[1])) / 2.0,
+                            (float(fl1_w[2]) + float(fl2_w[2])) / 2.0,
+                        )
+
+                    # ── Gazebo: SDF visual/physical links ─────────────────────
+                    gz_snap: dict = {}
+                    if (
+                        getattr(panel, "_ros_worker_started", False)
+                        and getattr(panel, "ros_worker", None) is not None
+                    ):
+                        try:
+                            gz_snap, _ = panel.ros_worker.pose_snapshot()
+                        except Exception:
+                            gz_snap = {}
+
+                    gz_hand = _tuple3(gz_snap.get("rg2_hand"))
+                    gz_left = _tuple3(gz_snap.get("rg2_leftfinger"))
+                    gz_right = _tuple3(gz_snap.get("rg2_rightfinger"))
+                    gz_obj = _tuple3(gz_snap.get(target_object_name))
+
+                    # Gazebo visual finger midpoint (revolute joints in SDF)
+                    gz_mid = None
+                    if gz_left is not None and gz_right is not None:
+                        gz_mid = (
+                            (float(gz_left[0]) + float(gz_right[0])) / 2.0,
+                            (float(gz_left[1]) + float(gz_right[1])) / 2.0,
+                            (float(gz_left[2]) + float(gz_right[2])) / 2.0,
+                        )
+
+                    # fallback: object from live object world if not in gz_snap
+                    if gz_obj is None:
+                        gz_obj = _tuple3(_live_object_world())
+
+                    # ── Gripper joint opening ─────────────────────────────────
+                    gs = _read_gripper_state()
+                    opening_sum = gs.get("opening_sum")
+
+                    # ── Distances ─────────────────────────────────────────────
+                    def _d3(a, b):
+                        av, bv = _tuple3(a), _tuple3(b)
+                        if av is None or bv is None:
+                            return None
+                        return math.sqrt(
+                            (float(av[0]) - float(bv[0])) ** 2
+                            + (float(av[1]) - float(bv[1])) ** 2
+                            + (float(av[2]) - float(bv[2])) ** 2
+                        )
+
+                    dist_pinch_obj = _d3(pinch_w, gz_obj)
+                    dist_gz_mid_obj = _d3(gz_mid, gz_obj)
+                    dist_urdf_mid_obj = _d3(urdf_mid, gz_obj)
+                    dist_pinch_gz_mid = _d3(pinch_w, gz_mid)
+                    dist_pinch_urdf_mid = _d3(pinch_w, urdf_mid)
+
+                    # ── Verdict ───────────────────────────────────────────────
+                    MAX_PINCH_VIS_MID = float(
+                        os.environ.get("PANEL_RG2_AUDIT_MAX_PINCH_VIS_MID_M", "0.010") or 0.010
+                    )
+                    MAX_VIS_MID_OBJ = float(
+                        os.environ.get("PANEL_RG2_AUDIT_MAX_VIS_MID_OBJ_M", "0.020") or 0.020
+                    )
+
+                    if gz_left is None or gz_right is None:
+                        verdict = "UNKNOWN"
+                        reason = "missing_gazebo_finger_pose"
+                    elif dist_pinch_gz_mid is None:
+                        verdict = "UNKNOWN"
+                        reason = "dist_pinch_gz_mid_unavailable"
+                    elif float(dist_pinch_gz_mid) > MAX_PINCH_VIS_MID:
+                        verdict = "FAIL"
+                        reason = (
+                            f"dist_pinch_gz_mid={dist_pinch_gz_mid:.4f}m"
+                            f">{MAX_PINCH_VIS_MID:.3f}m"
+                            "_gripper_visual_not_following_tcp"
+                        )
+                    elif dist_gz_mid_obj is not None and float(dist_gz_mid_obj) > MAX_VIS_MID_OBJ:
+                        verdict = "FAIL"
+                        reason = (
+                            f"dist_gz_mid_obj={dist_gz_mid_obj:.4f}m"
+                            f">{MAX_VIS_MID_OBJ:.3f}m"
+                            "_finger_visual_far_from_object"
+                        )
+                    else:
+                        verdict = "OK"
+                        reason = (
+                            f"pinch_gz_mid={_fmt_scalar(dist_pinch_gz_mid)}"
+                            f"_gz_mid_obj={_fmt_scalar(dist_gz_mid_obj)}"
+                        )
+
+                    panel._emit_log(
+                        "[PICK][RG2_VISUAL_AUDIT] "
+                        f"phase={phase} "
+                        f"pinch_tf={_fmt_vec(pinch_w)} "
+                        f"tool0_tf={_fmt_vec(tool0_w)} "
+                        f"gz_hand={_fmt_vec(gz_hand)} "
+                        f"urdf_finger_mid={_fmt_vec(urdf_mid)} "
+                        f"gz_visual_mid={_fmt_vec(gz_mid)} "
+                        f"obj_world={_fmt_vec(gz_obj)} "
+                        f"dist_pinch_obj={_fmt_scalar(dist_pinch_obj)} "
+                        f"dist_gz_mid_obj={_fmt_scalar(dist_gz_mid_obj)} "
+                        f"dist_urdf_mid_obj={_fmt_scalar(dist_urdf_mid_obj)} "
+                        f"dist_pinch_gz_mid={_fmt_scalar(dist_pinch_gz_mid)} "
+                        f"dist_pinch_urdf_mid={_fmt_scalar(dist_pinch_urdf_mid)} "
+                        f"finger_opening_sum={_fmt_scalar(opening_sum)} "
+                        f"tf_fresh={_tf_fresh_verdict} "
+                        f"tf_age_sec={_tf_fresh_age_str} "
+                        f"tf_stamp={_tf_fresh_stamp_str} "
+                        f"tf_reason={_tf_fresh_reason} "
+                        f"verdict={verdict} "
+                        f"reason={reason}"
+                    )
+                except Exception as _audit_exc:
+                    panel._emit_log(
+                        f"[PICK][RG2_VISUAL_AUDIT] phase={phase} "
+                        f"verdict=UNKNOWN reason=audit_exception:{_audit_exc!s}"
+                    )
+
+            def _check_pick_tf_freshness(phase: str) -> bool:
+                """Check base_link→tool0 TF freshness and log [PICK][TF_FRESHNESS].
+
+                Returns True if TF is fresh (or enforcement is disabled).
+                Raises RuntimeError if PANEL_PICK_DEMO_REQUIRE_FRESH_TF=1 and TF is stale.
+                """
+                tf_max_age = float(
+                    os.environ.get("PANEL_PICK_DEMO_TF_MAX_AGE_SEC", "0.5") or 0.5
+                )
+                require_fresh = (
+                    os.environ.get("PANEL_PICK_DEMO_REQUIRE_FRESH_TF", "0").strip() == "1"
+                )
+                try:
+                    helper = get_tf_helper()
+                    if helper is None:
+                        panel._emit_log(
+                            f"[PICK][TF_FRESHNESS] phase={phase} "
+                            f"frame=base_link->tool0 verdict=UNAVAILABLE "
+                            f"reason=tf_helper_none max_age_sec={tf_max_age:.3f}"
+                        )
+                        return True  # no helper → can't check, allow
+
+                    _tf, age_sec, verdict, reason = helper.lookup_transform_fresh(
+                        "tool0",
+                        BASE_FRAME,
+                        timeout_sec=0.2,
+                        max_age_sec=tf_max_age,
+                        allow_static=False,
+                    )
+                    stamp_str = "N/A"
+                    if _tf is not None:
+                        try:
+                            stamp_str = (
+                                f"{_tf.header.stamp.sec}.{_tf.header.stamp.nanosec:09d}"
+                            )
+                        except Exception:
+                            pass
+                    age_str = f"{age_sec:.3f}" if age_sec >= 0 else "N/A"
+                    panel._emit_log(
+                        f"[PICK][TF_FRESHNESS] phase={phase} "
+                        f"frame=base_link->tool0 stamp={stamp_str} "
+                        f"age_sec={age_str} max_age_sec={tf_max_age:.3f} "
+                        f"verdict={verdict} reason={reason}"
+                    )
+                    if verdict == "STALE" and require_fresh:
+                        raise RuntimeError(
+                            f"TF stale at phase {phase}: base_link->tool0 age={age_str}s"
+                        )
+                    return verdict != "STALE"
+                except RuntimeError:
+                    raise
+                except Exception as _tf_exc:
+                    panel._emit_log(
+                        f"[PICK][TF_FRESHNESS] phase={phase} "
+                        f"frame=base_link->tool0 verdict=UNAVAILABLE "
+                        f"reason=exception:{_tf_exc!s}"
+                    )
+                    return True  # exceptions → non-blocking
 
             def _write_json_snapshot(path: Path, payload: dict) -> None:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -9550,6 +9782,8 @@ def run_pick_demo(panel) -> None:
                         os.environ.pop("PANEL_PICK_DEMO_IK_SEED_JOINTS", None)
                     _approach_ik_seed_injected = False
 
+                _check_pick_tf_freshness("APPROACH_COARSE")
+                _emit_rg2_visual_audit("APPROACH_COARSE")
                 _phase_end(
                     "APPROACH_COARSE",
                     result="ok",
@@ -10855,6 +11089,8 @@ def run_pick_demo(panel) -> None:
                         f"xy_dist={xy_dist:.3f} "
                         f"tcp_obj_dist={_dist(tcp_after_joint, obj_after_joint):.3f}"
                     )
+                _check_pick_tf_freshness("GRASP_DOWN_JOINT")
+                _emit_rg2_visual_audit("GRASP_DOWN_JOINT")
                 _phase_end(
                     "GRASP_DOWN_JOINT",
                     result="ok",
@@ -11094,6 +11330,8 @@ def run_pick_demo(panel) -> None:
                     decision="phase_enter_skip",
                 )
                 _debug_pause_grasp_align_if_enabled(trigger="phase_enter_skip")
+                _check_pick_tf_freshness("GRASP_ALIGN_IK")
+                _emit_rg2_visual_audit("GRASP_ALIGN_IK")
                 _phase_end(
                     "GRASP_ALIGN_IK",
                     note=json.dumps(_json_safe(pre_align_metrics), ensure_ascii=False, sort_keys=True),
@@ -11239,6 +11477,8 @@ def run_pick_demo(panel) -> None:
                             f"xy_dist={_fmt_scalar(align_metrics.get('xy_dist'))} "
                             f"z_error={_fmt_scalar(align_metrics.get('z_error'))}"
                         )
+                _check_pick_tf_freshness("GRASP_ALIGN_IK")
+                _emit_rg2_visual_audit("GRASP_ALIGN_IK")
                 _phase_end(
                     "GRASP_ALIGN_IK",
                     ik_solution=align_debug.get("ik_solution") if isinstance(align_debug, dict) else None,
@@ -11581,6 +11821,8 @@ def run_pick_demo(panel) -> None:
                 logical_state=str((_read_attach_state() or {}).get("logical_state") or "none"),
                 physical_state=f"xy={_fmt_scalar(pre_close_metrics.get('xy_dist'))},z={_fmt_scalar(pre_close_metrics.get('z_error'))}",
             )
+            _check_pick_tf_freshness("PRE_CLOSE")
+            _emit_rg2_visual_audit("PRE_CLOSE")
             _phase_end(
                 "PRE_CLOSE",
                 note=json.dumps(_json_safe(pre_close_metrics), ensure_ascii=False, sort_keys=True),

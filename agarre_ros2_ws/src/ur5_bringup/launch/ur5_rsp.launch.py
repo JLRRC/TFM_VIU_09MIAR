@@ -50,7 +50,10 @@ def generate_launch_description():
     rsp = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
-        output="screen",
+        output="both",
+        emulate_tty=True,
+        respawn=True,
+        respawn_delay=2.0,
         parameters=[
             {"use_sim_time": use_sim_time},
             {"robot_description": robot_description_content},
