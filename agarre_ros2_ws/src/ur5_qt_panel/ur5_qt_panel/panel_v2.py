@@ -11203,30 +11203,151 @@ class ControlPanelV2(QMainWindow):
             self._log(f"[GRIPPER] Error leyendo fuerza: {e}")
             return 0.0
 
-    def _go_home(self):
-        self._log_button("Go HOME")
-        if not self._require_manual_ready("HOME"):
+    def _wait_for_joint_convergence(
+        self,
+        target_pose: list,
+        timeout_sec: float,
+        tolerance_rad: float = 0.03,
+        label: str = "BASELINE",
+    ) -> tuple:
+        """Espera (en hilo worker) a que los joints UR5 converjan a target_pose.
+
+        - Lee self._last_joint_positions (dict {nombre: rad}, actualizado por _on_joint_state).
+        - Mapea por UR5_JOINT_NAMES, sin asumir el orden del mensaje /joint_states.
+        - Sondea cada 50 ms; emite [JOINT_ERR] una vez por segundo para no saturar el log.
+
+        Retorna:
+            (True,  "converged")         todos los joints dentro de tolerance_rad
+            (False, "timeout ...")       se agotó timeout_sec
+            (False, "no_joint_state")    sin datos de joint_states durante todo el timeout
+        """
+        self._log(
+            f"[BASELINE][WAIT_JOINTS] target={label} "
+            f"timeout={timeout_sec:.1f}s tol={tolerance_rad:.4f}rad"
+        )
+        deadline      = time.time() + timeout_sec
+        poll_interval = 0.05   # 50 ms
+        log_interval  = 1.0    # emitir JOINT_ERR cada 1 s
+        next_log_t    = time.time() + log_interval
+
+        while time.time() < deadline:
+            pos_map = dict(getattr(self, "_last_joint_positions", {}) or {})
+
+            if not pos_map:
+                time.sleep(poll_interval)
+                continue
+
+            errors: list = []
+            missing: list = []
+            for idx, name in enumerate(UR5_JOINT_NAMES):
+                if idx >= len(target_pose):
+                    break
+                curr = pos_map.get(name)
+                if curr is None:
+                    missing.append(name)
+                else:
+                    errors.append(abs(curr - target_pose[idx]))
+
+            if missing:
+                # Joints aún no recibidos; esperar siguiente ciclo
+                time.sleep(poll_interval)
+                continue
+
+            max_err = max(errors) if errors else 0.0
+
+            if time.time() >= next_log_t:
+                self._log(
+                    f"[BASELINE][JOINT_ERR] target={label} max_err={max_err:.4f}rad"
+                )
+                next_log_t = time.time() + log_interval
+
+            if max_err <= tolerance_rad:
+                self._log(
+                    f"[BASELINE][CONVERGED] target={label} max_err={max_err:.4f}rad"
+                )
+                return True, "converged"
+
+            time.sleep(poll_interval)
+
+        # ── timeout ────────────────────────────────────────────────────────────
+        pos_map = dict(getattr(self, "_last_joint_positions", {}) or {})
+        if not pos_map:
+            self._log(f"[BASELINE][TIMEOUT] target={label} no_joint_state")
+            return False, "no_joint_state"
+
+        errors = []
+        for idx, name in enumerate(UR5_JOINT_NAMES):
+            if idx >= len(target_pose):
+                break
+            curr = pos_map.get(name)
+            if curr is not None:
+                errors.append(abs(curr - target_pose[idx]))
+
+        max_err = max(errors) if errors else float("nan")
+        self._log(f"[BASELINE][TIMEOUT] target={label} max_err={max_err:.4f}rad")
+        return False, f"timeout after {timeout_sec:.1f}s max_err={max_err:.4f}rad"
+
+    def _run_baseline_motion(self, target_name: str, pose_fn) -> None:
+        """Ejecuta un movimiento Baseline (HOME/MESA/CESTA) con bloqueo de UI y logs estandarizados.
+
+        Garantías:
+        - Rechaza doble pulsación mediante _baseline_busy.
+        - Bloquea joint sliders, gripper y todos los botones via _script_motion_active.
+        - Valida llegada real con _wait_for_joint_convergence en vez de time.sleep fijo.
+        - Restaura siempre la UI en el bloque finally, incluso ante excepción.
+        """
+        if getattr(self, "_baseline_busy", False):
+            self._log(
+                f"[BASELINE][BUSY] target={target_name} "
+                "Robot ocupado: espere a que termine el movimiento actual"
+            )
             return
-        self._log("[ROBOT] Iniciando movimiento a HOME")
-        self._set_status("Moviendo a HOME…")
+        if not self._require_manual_ready(target_name):
+            return
+        self._log(f"[BASELINE][START] target={target_name}")
+        self._set_status(f"Moviendo a {target_name}…")
         move_sec = float(self.joint_time.value()) if self.joint_time else 3.0
+        self._baseline_busy = True
         self._set_motion_lock(True)
+        self._log("[BASELINE][UI_LOCK] enabled=False")
 
         def worker():
             try:
-                ok, info = self._publish_joint_trajectory(self._get_home_joint_pose(), move_sec)
-                if ok:
-                    time.sleep(move_sec + 0.15)
-                    self._ui_set_status("HOME ejecutado (JointTrajectory)")
-                    self._log(f"[ROBOT] HOME: JointTrajectory en {info}")
+                pose = pose_fn()
+                ok, info = self._publish_joint_trajectory(pose, move_sec)
+                if not ok:
+                    self._ui_set_status(f"{target_name} falló: {info}", error=True)
+                    self._log(f"[BASELINE][ERROR] target={target_name} error={info}")
+                    self._log(f"[BASELINE][DONE] target={target_name} success=False")
+                    return
+                converged, reason = self._wait_for_joint_convergence(
+                    pose,
+                    timeout_sec=move_sec + 2.0,
+                    tolerance_rad=0.03,
+                    label=target_name,
+                )
+                if converged:
+                    self._ui_set_status(f"{target_name} ejecutado (JointTrajectory)")
+                    self._log(f"[BASELINE][DONE] target={target_name} success=True")
                 else:
-                    self._ui_set_status(f"HOME falló: {info}", error=True)
-                    self._log_warning(f"[ROBOT] HOME falló: {info}")
+                    self._ui_set_status(
+                        f"{target_name} no confirmó convergencia: {reason}", error=True
+                    )
+                    self._log(f"[BASELINE][ERROR] target={target_name} error={reason}")
+                    self._log(f"[BASELINE][DONE] target={target_name} success=False")
+            except Exception as exc:
+                self._log(f"[BASELINE][ERROR] target={target_name} error={exc}")
             finally:
+                self._baseline_busy = False
                 self._set_motion_lock(False)
+                self._log("[BASELINE][UI_LOCK] enabled=True")
                 recalc_object_states("manual_move")
 
         self._run_async(worker)
+
+    def _go_home(self):
+        self._log_button("Go HOME")
+        self._run_baseline_motion("HOME", self._get_home_joint_pose)
 
     def _tfm_infer_grasp(self):
         self._log_button("TFM Inferir agarre")
@@ -16004,51 +16125,11 @@ class ControlPanelV2(QMainWindow):
 
     def _go_table(self):
         self._log_button("Go Mesa")
-        if not self._require_manual_ready("Mesa"):
-            return
-        self._log("[ROBOT] Iniciando movimiento a Mesa")
-        self._set_status("Moviendo a Mesa…")
-        move_sec = float(self.joint_time.value()) if self.joint_time else 3.0
-        self._set_motion_lock(True)
-
-        def worker():
-            try:
-                ok, info = self._publish_joint_trajectory(JOINT_TABLE_POSE_RAD, move_sec)
-                if ok:
-                    time.sleep(move_sec + 0.15)
-                    self._ui_set_status("Mesa ejecutado (JointTrajectory)")
-                    self._log(f"[ROBOT] Mesa: JointTrajectory en {info}")
-                else:
-                    self._ui_set_status(f"Mesa falló: {info}", error=True)
-                    self._log_warning(f"[ROBOT] Mesa falló: {info}")
-            finally:
-                self._set_motion_lock(False)
-                recalc_object_states("manual_move")
-
-        self._run_async(worker)
+        self._run_baseline_motion("MESA", lambda: list(JOINT_TABLE_POSE_RAD))
 
     def _go_basket(self):
         self._log_button("Go Cesta")
-        if not self._require_manual_ready("Cesta"):
-            return
-        self._set_status("Moviendo a Cesta…")
-        move_sec = float(self.joint_time.value()) if self.joint_time else 3.0
-        self._set_motion_lock(True)
-
-        def worker():
-            try:
-                ok, info = self._publish_joint_trajectory(JOINT_BASKET_POSE_RAD, move_sec)
-                if ok:
-                    time.sleep(move_sec + 0.15)
-                    self._ui_set_status("Cesta ejecutado (JointTrajectory)")
-                    self._log(f"[ROBOT] Cesta: JointTrajectory en {info}")
-                else:
-                    self._ui_set_status(f"Cesta falló: {info}", error=True)
-                    self._log_warning(f"[ROBOT] Cesta falló: {info}")
-            finally:
-                self._set_motion_lock(False)
-
-        self._run_async(worker)
+        self._run_baseline_motion("CESTA", lambda: list(JOINT_BASKET_POSE_RAD))
 
     def _toggle_gripper_button(self, checked: bool):
         if not self._command_gripper(checked, log_action="Gripper"):
