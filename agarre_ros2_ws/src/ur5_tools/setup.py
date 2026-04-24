@@ -38,6 +38,7 @@ setup(
             "tf_probe = ur5_tools.tf_probe:main",
             "clock_probe = ur5_tools.clock_probe:main",
             "jt_smoke_test = ur5_tools.jt_smoke_test:main",
+            "validate_dh_vs_tf = ur5_tools.validate_dh_vs_tf:main",
         ],
     },
 )

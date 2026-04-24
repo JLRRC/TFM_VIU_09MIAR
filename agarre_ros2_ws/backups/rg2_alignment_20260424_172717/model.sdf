@@ -404,11 +404,12 @@
         </joint>
         <!-- Arm-Hand Fixed Joint -->
         <joint name="ur5_hand_joint" type="fixed">
-              <!-- Keep the RG2 body close to the wrist flange. The URDF canonical
-                  geometry is flange/tool0 +Z = 0.07 m to rg2_hand and then
-                  +0.105 m to the finger midpoint, for a total tool0->contact
-                  distance of 0.175 m. -->
-              <pose relative_to="wrist_3_link">0 0.07 0 1.570796325 0 1.570796325</pose>
+              <!-- rg2_hand at UR5 d6 = 0.0823 m: places the gripper body at the physical
+                  flange face (wrist3.dae mesh ends at Y≈0.082m), visually connecting
+                  it to the wrist_3 body. The semantic TCP (rg2_tcp/rg2_pinch_center)
+                  lives in the URDF TF chain and is unaffected by this SDF offset.
+                  pick_demo_anchor is relative_to="tool0" (SDF), also unaffected. -->
+              <pose relative_to="wrist_3_link">0 0.0823 0 1.570796325 0 1.570796325</pose>
             <parent>wrist_3_link</parent>
             <child>rg2_hand</child>
         </joint>
@@ -602,9 +603,7 @@
             <pose relative_to="end_effector_frame_fixed_joint">0 0 0 0 0 0</pose>
         </link>
         <joint name="end_effector_frame_fixed_joint" type="fixed">
-            <!-- Match the URDF ur_description chain: wrist_3_link -> flange -> tool0
-                 has zero translation and only orientation changes. -->
-            <pose relative_to="wrist_3_link">0 0 0 -1.570796325 0 0</pose>
+            <pose relative_to="wrist_3_link">0 0.275 0 -1.570796325 0 0</pose>
             <parent>wrist_3_link</parent>
             <child>tool0</child>
         </joint>

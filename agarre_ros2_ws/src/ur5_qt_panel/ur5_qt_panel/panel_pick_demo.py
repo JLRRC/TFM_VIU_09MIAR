@@ -3760,6 +3760,88 @@ def run_pick_demo(panel) -> None:
                     "object_base": _tuple3(obj_base),
                 }
 
+            def _pre_close_volume_check() -> dict:
+                """Comprueba si el objeto está dentro del volumen físico de agarre del RG2.
+
+                Usa frames ya disponibles (base_link), no añade offsets externos.
+                Estimaciones conservadoras: no modifica el flujo, solo genera diagnóstico.
+                """
+                tcp_base = _live_tcp_base()
+                obj_base = _live_object_base()
+                gripper = _read_gripper_state()
+                if tcp_base is None or obj_base is None:
+                    panel._emit_log(
+                        "[PICK][PRE_CLOSE_VOLUME] status=unavailable reason=pose_missing"
+                    )
+                    return {"ok": None, "reason": "pose_missing"}
+
+                # Distancias
+                xy_dist = math.hypot(
+                    float(tcp_base[0]) - float(obj_base[0]),
+                    float(tcp_base[1]) - float(obj_base[1]),
+                )
+                z_dist = abs(float(tcp_base[2]) - float(obj_base[2]))
+                dist_3d = math.sqrt(xy_dist ** 2 + z_dist ** 2)
+
+                # Apertura de dedos: URDF usa posición prismática [0, 0.04] m.
+                # 0.0 = cerrada, 0.04 = apertura máxima (~110 mm RG2).
+                # Convertimos a apertura estimada entre puntas (× factor empírico).
+                finger_opening_rad = float(gripper.get("opening_sum") or 0.0)
+                finger_opening_mm = finger_opening_rad * 1000.0
+
+                # Límites conservadores del volumen de agarre (estimaciones RG2 a 0.175 m de tool0):
+                #   - Separación mínima entre dedos en cierre: ~0 mm
+                #   - Separación máxima: ~110 mm
+                #   - Radio lateral del volumen: ~55 mm en apertura máxima → escala con apertura
+                #   - Radio lateral TCP-objeto para agarre seguro: < 20 mm
+                # Para cilindro típico de r=25 mm, necesitamos xy_dist < r + margen ~30 mm
+                xy_grasp_threshold_m = float(
+                    os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_VOLUME_XY_M", "0.030") or 0.030
+                )
+                z_grasp_threshold_m = float(
+                    os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_VOLUME_Z_M", "0.020") or 0.020
+                )
+
+                obj_in_xy = xy_dist <= xy_grasp_threshold_m
+                obj_in_z = z_dist <= z_grasp_threshold_m
+                obj_in_volume = obj_in_xy and obj_in_z
+
+                # TF de rg2_pinch_center en world para log adicional
+                try:
+                    pinch_world = _pose_position(world_frame, DIRECT_SOURCE_FRAME, timeout_sec=0.10)
+                    tool0_world = _pose_position(world_frame, DIRECT_EXECUTION_FRAME, timeout_sec=0.10)
+                    obj_world = _live_object_world()
+                    extra = (
+                        f"pinch_world={_fmt_vec(pinch_world)} "
+                        f"tool0_world={_fmt_vec(tool0_world)} "
+                        f"obj_world={_fmt_vec(obj_world)}"
+                    )
+                except Exception:
+                    extra = "world_frames=unavailable"
+
+                panel._emit_log(
+                    "[PICK][PRE_CLOSE_VOLUME] "
+                    f"obj_in_grasp_volume={obj_in_volume} "
+                    f"lateral_err_mm={xy_dist*1000:.1f} "
+                    f"vertical_err_mm={z_dist*1000:.1f} "
+                    f"dist_3d_mm={dist_3d*1000:.1f} "
+                    f"finger_opening_mm={finger_opening_mm:.1f} "
+                    f"xy_threshold_mm={xy_grasp_threshold_m*1000:.0f} "
+                    f"z_threshold_mm={z_grasp_threshold_m*1000:.0f} "
+                    f"{extra}"
+                )
+                return {
+                    "ok": obj_in_volume,
+                    "obj_in_xy": obj_in_xy,
+                    "obj_in_z": obj_in_z,
+                    "xy_dist_m": float(xy_dist),
+                    "z_dist_m": float(z_dist),
+                    "finger_opening_mm": float(finger_opening_mm),
+                    "reason": "ok" if obj_in_volume else (
+                        "lateral_error" if not obj_in_xy else "vertical_error"
+                    ),
+                }
+
             def _pre_close_alignment_metrics():
                 obj_base = _live_object_base()
                 tcp_base = _live_tcp_base()
@@ -5360,6 +5442,20 @@ def run_pick_demo(panel) -> None:
                 else:
                     transport_replan_remaining = max(0, int(transport_replan_remaining))
                 seed, seed_source = _current_joint_seed(return_source=True)
+                is_grasp_down = "GRASP_DOWN" in label_name
+                if is_grasp_down:
+                    _gd_live = _live_joint_seed_or_none(panel)
+                    if _gd_live is not None:
+                        seed = list(_gd_live)
+                        seed_source = "live_joints"
+                        panel._emit_log(
+                            "[PICK][DIRECT][SEED] phase=GRASP_DOWN source=live_joints"
+                        )
+                    else:
+                        panel._emit_log(
+                            "[PICK][DIRECT][SEED] phase=GRASP_DOWN source=fallback"
+                            " reason=no_live_joints"
+                        )
                 if is_transport_stage and seed_source == "env_override":
                     transport_seed = _coerce_ur5_joint_vector(
                         getattr(panel, "_pick_demo_last_transport_joint_goal", None)
@@ -5381,6 +5477,17 @@ def run_pick_demo(panel) -> None:
                             f"label={label} ignored=env_override "
                             f"replacement_source={transport_seed_source}"
                         )
+                    elif label_name == "GRASP_DOWN_JOINT" and seed_source == "env_override":
+                        grasp_down_seed = _live_joint_seed_or_none(panel)
+                        if grasp_down_seed is not None:
+                            seed = [float(value) for value in grasp_down_seed]
+                            seed_source = "grasp_down_live_joints"
+                            panel._emit_log(
+                                "[PICK][DIRECT][IK_SEED_OVERRIDE] "
+                                f"label={label} ignored=env_override "
+                                "replacement_source=live_joints "
+                                "reason=grasp_down_local_descent"
+                            )
                 _seed_pos, target_rot = fk_ur5(seed)
                 execution_rot = target_rot
                 execution_rot_source = f"seed:{seed_source}"
@@ -5397,6 +5504,38 @@ def run_pick_demo(panel) -> None:
                     f"label={label} source={seed_source} "
                     f"joints={json.dumps(_json_safe(seed), ensure_ascii=True)}"
                 )
+                try:
+                    _fa_tcp_tf = _pose_position(base_frame, DIRECT_SOURCE_FRAME, timeout_sec=0.10)
+                    _fa_tool0_tf = _pose_position(base_frame, DIRECT_EXECUTION_FRAME, timeout_sec=0.10)
+                    _fa_obj = _live_object_base()
+                    _fa_target = _tuple3(target_tcp_runtime_3) if target_tcp_runtime_3 is not None else None
+                    _fa_xy = (
+                        math.hypot(
+                            float(_fa_tcp_tf[0]) - float(_fa_obj[0]),
+                            float(_fa_tcp_tf[1]) - float(_fa_obj[1]),
+                        )
+                        if _fa_tcp_tf and _fa_obj
+                        else None
+                    )
+                    _fa_z = (
+                        abs(float(_fa_tcp_tf[2]) - float(_fa_obj[2]))
+                        if _fa_tcp_tf and _fa_obj
+                        else None
+                    )
+                    panel._emit_log(
+                        "[PICK][FRAME_AUDIT] "
+                        f"phase={label_name} "
+                        f"target_frame=base_link tcp_frame={DIRECT_SOURCE_FRAME} "
+                        f"exec_frame={DIRECT_EXECUTION_FRAME} "
+                        f"target={_fmt_vec(_fa_target)} "
+                        f"tf_tcp={_fmt_vec(_fa_tcp_tf)} "
+                        f"tf_tool0={_fmt_vec(_fa_tool0_tf)} "
+                        f"obj={_fmt_vec(_fa_obj)} "
+                        f"err_xy={f'{_fa_xy*1000:.1f}mm' if _fa_xy is not None else '--'} "
+                        f"err_z={f'{_fa_z*1000:.1f}mm' if _fa_z is not None else '--'}"
+                    )
+                except Exception as _fa_exc:
+                    panel._emit_log(f"[PICK][FRAME_AUDIT] phase={label_name} exception={_fa_exc}")
                 delta_runtime = (
                     float(target_tcp_runtime_3[0]) - float(tcp_base[0]),
                     float(target_tcp_runtime_3[1]) - float(tcp_base[1]),
@@ -6240,6 +6379,16 @@ def run_pick_demo(panel) -> None:
                             or 0.03
                         ),
                     )
+                runtime_target_tol_m = _direct_runtime_target_tol_m(label)
+                if "_RECOVER_" in label_name:
+                    # Avoid accepting recovery segments with almost no progress.
+                    current_stage_tcp = _tuple3(_live_tcp_base())
+                    current_stage_dist_m = _dist(current_stage_tcp, target_tcp_runtime_3)
+                    if current_stage_dist_m is not None and math.isfinite(float(current_stage_dist_m)):
+                        runtime_target_tol_m = max(
+                            0.01,
+                            min(float(runtime_target_tol_m), 0.5 * float(current_stage_dist_m)),
+                        )
                 try:
                     _run_joint_step(
                         label,
@@ -6247,7 +6396,7 @@ def run_pick_demo(panel) -> None:
                         timeout_sec=max(float(timeout_sec), move_sec + 2.0),
                         tol_rad=align_joint_tol_rad,
                         runtime_target_base=target_tcp_runtime_3,
-                        runtime_target_tol_m=_direct_runtime_target_tol_m(label),
+                        runtime_target_tol_m=runtime_target_tol_m,
                         force_send=force_send,
                     )
                 except Exception as exec_exc:
@@ -6268,7 +6417,6 @@ def run_pick_demo(panel) -> None:
                 runtime_target_stable_samples = None
                 runtime_target_stable_motion = None
                 runtime_target_stable_pose = None
-                runtime_target_tol_m = _direct_runtime_target_tol_m(label)
                 runtime_target_timeout_sec = max(
                     0.5,
                     float(
@@ -6912,12 +7060,15 @@ def run_pick_demo(panel) -> None:
                     0.0,
                     float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_ROT_WEIGHT", "0.10") or 0.10),
                 )
-                ik_err_tol = max(
-                    0.035,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL", "0.080") or 0.080),
+                ik_err_tol = min(
+                    0.025,
+                    max(
+                        0.015,
+                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL", "0.015") or 0.015),
+                    ),
                 )
                 joint_weight = max(
-                    0.0,
+                    0.65,
                     float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT", "0.65") or 0.65),
                 )
 
@@ -9637,8 +9788,8 @@ def run_pick_demo(panel) -> None:
                         and coarse_gate_xy_err <= _ac_xy_corr_max_m
                     ):
                         _ac_xy_corr_target = (
-                            float(_coarse_check_obj[0]) - (float(_coarse_check_tcp[0]) - float(_coarse_check_obj[0])),
-                            float(_coarse_check_obj[1]) - (float(_coarse_check_tcp[1]) - float(_coarse_check_obj[1])),
+                            float(_coarse_check_obj[0]),
+                            float(_coarse_check_obj[1]),
                             float(_cg_z_target),
                         )
                         _ac_xyc_log = (
@@ -9941,8 +10092,8 @@ def run_pick_demo(panel) -> None:
                         _coarse_refine_target_z = float(_coarse_refine_object_z) + 0.009
                         _coarse_refine_runtime_target_tol = _direct_runtime_target_tol_m("APPROACH_COARSE_REFINE")
                         _phase_check_target_base = (
-                            float(_coarse_phase_check.get("tcp_base")[0]),
-                            float(_coarse_phase_check.get("tcp_base")[1]),
+                            float(_coarse_phase_check.get("object_base")[0]),
+                            float(_coarse_phase_check.get("object_base")[1]),
                             float(_coarse_refine_target_z),
                         )
                         _refine_start_msg = (
@@ -11277,6 +11428,7 @@ def run_pick_demo(panel) -> None:
                     condition="initial_obj_world_available",
                     metrics=_pre_close_alignment_metrics(),
                 )
+                _pre_close_volume_check()
             obj_base_pre = _live_object_base()
             target_base_pre = None
             target_world_pre = None
