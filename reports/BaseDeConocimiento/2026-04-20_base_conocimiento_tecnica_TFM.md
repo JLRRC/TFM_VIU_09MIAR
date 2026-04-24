@@ -12,6 +12,9 @@ Documento generado como base acumulativa y no sustitutiva. Esta versión une el 
 - Recuperación histórica: se reincorporan arquitectura extendida, tabla amplia de frames, geometría, flujo fase por fase, inventario amplio de variables, controladores/topics, bugs legacy y troubleshooting operativo de 2026-04-18.
 - Discrepancias abiertas resaltadas: world->base_link actual=-0.85 0 0.850 frente a simplificaciones históricas; attach backend launch=0.08 / wrapper runtime=0.06; max_pose_age launch=1.5 / wrapper runtime=2.5.
 - Regla de trazabilidad aplicada: cuando una fuente histórica difiere de la actual, se conserva como histórico/documentado previamente en lugar de borrarla.
+ - Documento histórico-acumulativo: no debe leerse como guía operativa final cerrada del workspace a fecha 2026-04-24.
+ - Arranque canónico vigente: `./lanzar_panelc2.sh` desde la raíz del proyecto. Los comandos manuales con `install/setup.bash`, `ros2 launch` o `ros2 run` se conservan aquí solo como descomposición técnica y troubleshooting.
+ - Estado DIRECTO vigente: el cierre runtime actualizado y los pendientes de `RECOVER_1/RECOVER_2` quedan consolidados en `auditoria/informe_auditoria_global_20260424.md`.
 
 ### Detalle histórico recuperado (2026-04-18)
 
@@ -75,7 +78,7 @@ ros2 run ur5_qt_panel panel_v2
 4. Usuario selecciona objeto en UI
 5. Usuario pulsa "Run Pick Demo"
 6. El panel ejecuta ciclo secuencial de fases (Sección 5)
-7. Al finalizar: objeto en cesta, robot en HOME_FINAL
+7. Objetivo nominal del flujo: objeto en cesta, robot en HOME_FINAL
 
 ---
 
@@ -1859,6 +1862,15 @@ CLOSE → ATTACH_GATE → LIFT → TRANSPORT → CESTA → HOME_FINAL
 ##### 1.4 Cómo se lanza
 
 ```bash
+cd /home/laboratorio/TFM
+./lanzar_panelc2.sh
+```
+
+Ese launcher aplica el overlay correcto de `agarre_ros2_ws/install/setup.bash` y es la referencia operativa válida para reproducibilidad final.
+
+Para depuración a bajo nivel, esta base conserva también la secuencia manual:
+
+```bash
 cd /home/laboratorio/TFM/agarre_ros2_ws
 source install/setup.bash
 
@@ -1866,7 +1878,7 @@ source install/setup.bash
 ros2 launch ur5_bringup ur5_stack.launch.py
 
 # El panel Qt arranca automáticamente
-# Alternativamente, lanzar panel por separado:
+# Solo para aislamiento o troubleshooting:
 ros2 run ur5_qt_panel panel_v2
 ```
 
@@ -1880,7 +1892,7 @@ ros2 run ur5_qt_panel panel_v2
 4. Usuario selecciona objeto en UI
 5. Usuario pulsa "Run Pick Demo"
 6. El panel ejecuta ciclo secuencial de fases (Sección 5)
-7. Al finalizar: objeto en cesta, robot en HOME_FINAL
+7. Objetivo nominal del flujo: objeto en cesta, robot en HOME_FINAL
 
 ---
 

@@ -12,6 +12,14 @@ La causa raíz real fue una definición incorrecta del frame TCP respecto a `too
 
 No fue un salto de rama IK ni una recomposición lateral en `GRASP_DOWN`. Esos síntomas eran secundarios al desacoplo entre el target semántico y la geometría visible de la pinza.
 
+## Alcance documental
+
+Este informe congela evidencia histórica del incidente TCP y de las corridas asociadas a ese cierre geométrico. No debe leerse como veredicto final del estado actual del pipeline DIRECTO ni como prueba suficiente del cierre de cesta/recoveries a fecha 2026-04-24.
+
+Para el estado canónico vigente del runtime y de los pendientes `CESTA_STAGE_1_RECOVER_1/RECOVER_2`, la referencia válida es `auditoria/informe_auditoria_global_20260424.md`.
+
+Cuando aquí aparezca `./lanzar_panelv2.sh`, debe leerse como alias histórico equivalente al launcher canónico actual `./lanzar_panelc2.sh`.
+
 ## Evidencia de referencia
 
 - Logs previos con offset incorrecto:

@@ -14,6 +14,8 @@ Documento generado como base acumulativa y no sustitutiva. Esta versión une el 
 - Cronología reciente incorporada: `2026-04-22` cerró operativamente el incidente TCP con valor canónico `+0.0050885`; `2026-04-23` lo ratifica geométricamente en el workspace y deja abierto un follow-up separado de cesta / IK (`abierto`).
 - Nuevas fuentes de detalle incorporadas al generador: `gripper_geometry.py`, `panel_runtime_validated.env`, `validate_startup_repro.sh` y los incidentes recientes de 2026-04-21/22/23.
 - Regla de trazabilidad aplicada: cuando una fuente histórica difiere de la actual, se conserva como histórico/documentado previamente en lugar de borrarla.
+ - Arranque canónico vigente: `./lanzar_panelc2.sh` desde la raíz del proyecto. Los comandos manuales con `install/setup.bash`, `ros2 launch` o `ros2 run` se conservan aquí como descomposición técnica y troubleshooting, no como secuencia operativa final recomendada.
+ - Estado DIRECTO vigente: esta base describe arquitectura, flujo nominal y evidencia histórica; el veredicto actualizado de cierre runtime queda consolidado en `auditoria/informe_auditoria_global_20260424.md`.
 
 ### Detalle histórico recuperado (2026-04-18)
 
@@ -56,14 +58,21 @@ CLOSE → ATTACH_GATE → LIFT → TRANSPORT → CESTA → HOME_FINAL
 #### 1.4 Cómo se lanza
 
 ```bash
+cd /home/laboratorio/TFM
+./lanzar_panelc2.sh
+```
+
+Ese launcher aplica el overlay correcto de `agarre_ros2_ws/install/setup.bash` y es la referencia operativa válida para reproducibilidad final.
+
+Si hace falta depuración a bajo nivel, esta base mantiene también la descomposición manual:
+
+```bash
 cd /home/laboratorio/TFM/agarre_ros2_ws
 source install/setup.bash
-
-# Lanzar stack completo
 ros2 launch ur5_bringup ur5_stack.launch.py
 
-# El panel Qt arranca automáticamente
-# Alternativamente, lanzar panel por separado:
+# El panel Qt arranca automáticamente.
+# Solo para aislamiento o troubleshooting:
 ros2 run ur5_qt_panel panel_v2
 ```
 
@@ -77,7 +86,7 @@ ros2 run ur5_qt_panel panel_v2
 4. Usuario selecciona objeto en UI
 5. Usuario pulsa "Run Pick Demo"
 6. El panel ejecuta ciclo secuencial de fases (Sección 5)
-7. Al finalizar: objeto en cesta, robot en HOME_FINAL
+7. Objetivo nominal del flujo: objeto en cesta, robot en HOME_FINAL
 
 ---
 
