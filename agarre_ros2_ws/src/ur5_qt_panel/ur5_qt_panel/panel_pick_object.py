@@ -1152,11 +1152,16 @@ def run_pick_object(panel) -> None:
         moveit_result_topic = "/desired_grasp/result"
         moveit_pose_topic = "/desired_grasp"
         moveit_hb_topic = "/ur5_moveit_bridge/heartbeat"
-        # Fallback usa RG2_TCP_FRAME (no RG2_PINCH_CENTER_FRAME) porque el bridge
-        # devuelve ee_link="rg2_tcp". rg2_tcp y rg2_pinch_center son coubicados
-        # (misma posición Z=0.175 desde tool0), pero la comparación de strings en
-        # el check de EE link debe coincidir con lo que retorna el bridge.
-        measured_ee_frame = panel._ee_frame_effective or RG2_TCP_FRAME
+        # El bridge publica ee_link="rg2_tcp" en todos sus resultados.
+        # _ee_frame_effective es "rg2_pinch_center" en runtime (orden de preferencia TF).
+        # Ambos frames son coubicados (Z=0.175, distance=0.0); usar RG2_TCP_FRAME
+        # en modo MOVEIT garantiza que el check de mismatch (línea ~3486) pase.
+        _raw_ee = str(panel._ee_frame_effective or RG2_TCP_FRAME).strip()
+        measured_ee_frame = (
+            RG2_TCP_FRAME
+            if _raw_ee in (RG2_TCP_FRAME, RG2_PINCH_CENTER_FRAME)
+            else _raw_ee
+        )
         panel._emit_log(
             "[PICK][MOVEIT][LIFECYCLE] stage=worker_start "
             f"obj={obj_name} ee_frame={measured_ee_frame} "

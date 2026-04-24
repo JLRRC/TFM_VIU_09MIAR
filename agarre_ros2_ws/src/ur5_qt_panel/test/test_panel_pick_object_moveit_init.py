@@ -127,21 +127,32 @@ def test_moveit_error_log_prefix_present() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_worker_ee_frame_fallback_uses_rg2_tcp_frame() -> None:
-    """El fallback de measured_ee_frame en el worker debe usar RG2_TCP_FRAME."""
-    lines = _SOURCE_TEXT.splitlines()
-    pattern = re.compile(
-        r"measured_ee_frame\s*=\s*.*panel\._ee_frame_effective.*or\s+RG2_TCP_FRAME"
+def test_worker_ee_frame_resolves_to_rg2_tcp() -> None:
+    """El worker MOVEIT debe resolver measured_ee_frame a RG2_TCP_FRAME.
+
+    El bridge siempre devuelve ee_link='rg2_tcp'. panel._ee_frame_effective en runtime
+    es 'rg2_pinch_center' (orden de preferencia TF). El fix mapea ambos frames canónicos
+    a RG2_TCP_FRAME para que el check de mismatch (línea ~3486) pase siempre.
+    """
+    assert "RG2_TCP_FRAME" in _SOURCE_TEXT, "RG2_TCP_FRAME no importado"
+    assert "RG2_PINCH_CENTER_FRAME" in _SOURCE_TEXT, "RG2_PINCH_CENTER_FRAME referenciado"
+    # El bloque de resolución debe contener la cláusula de alias canónica
+    assert "if _raw_ee in (RG2_TCP_FRAME, RG2_PINCH_CENTER_FRAME)" in _SOURCE_TEXT, (
+        "No se encontró la cláusula de alias canónico en panel_pick_object.py. "
+        "El check de mismatch ee_link fallaría siempre en runtime (bridge=rg2_tcp, panel=rg2_pinch_center)."
     )
-    matches = [ln.strip() for ln in lines if pattern.search(ln)]
-    assert len(matches) >= 1, (
-        "No se encontró ninguna asignación 'measured_ee_frame = panel._ee_frame_effective or RG2_TCP_FRAME' "
-        "en panel_pick_object.py — el fallback incorrecto (RG2_PINCH_CENTER_FRAME) puede estar activo"
+
+
+def test_worker_ee_frame_mismatch_guard_exists() -> None:
+    """El worker debe tener el guard de ee_link mismatch con mensaje de log claro."""
+    assert "ee_link mismatch" in _SOURCE_TEXT, (
+        "No se encontró 'ee_link mismatch' en panel_pick_object.py — "
+        "el guard de integridad del bridge puede estar ausente"
     )
 
 
 def test_worker_ee_frame_fallback_never_uses_rg2_pinch_center_as_default() -> None:
-    """No debe quedar ningún fallback medido con RG2_PINCH_CENTER_FRAME como valor por defecto."""
+    """No debe quedar ninguna asignación de measured_ee_frame con fallback RG2_PINCH_CENTER_FRAME."""
     lines = _SOURCE_TEXT.splitlines()
     bad_pattern = re.compile(
         r"measured_ee_frame\s*=\s*.*panel\._ee_frame_effective\s*or\s+RG2_PINCH_CENTER_FRAME"
