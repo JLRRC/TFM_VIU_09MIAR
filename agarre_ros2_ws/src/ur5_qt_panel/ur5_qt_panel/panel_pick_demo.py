@@ -9525,13 +9525,13 @@ def run_pick_demo(panel) -> None:
                     _coarse_handoff_dz_tol = 0.015
                     _coarse_relaxed_handoff_dist_tol = _pick_demo_env_float(
                         "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_DIST_TOL_M",
-                        0.030,
+                            0.033,
                         minimum=_coarse_handoff_dist_tol,
                         maximum=0.050,
                     )
                     _coarse_relaxed_handoff_dz_tol = _pick_demo_env_float(
                         "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_DZ_TOL_M",
-                        0.030,
+                            0.033,
                         minimum=_coarse_handoff_dz_tol,
                         maximum=0.050,
                     )
