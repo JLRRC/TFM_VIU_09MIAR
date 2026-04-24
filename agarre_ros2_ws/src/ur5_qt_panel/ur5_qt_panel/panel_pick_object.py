@@ -27,6 +27,7 @@ except Exception:  # pragma: no cover - ROS not available in unit contexts
 
 from ur5_tools.gripper_geometry import (
     RG2_PINCH_CENTER_FRAME,
+    RG2_TCP_FRAME,
     contact_z_correction_for_frame,
     load_gripper_geometry,
 )
@@ -66,7 +67,7 @@ from .panel_objects import (
     mark_object_released,
     update_object_state,
 )
-from .panel_readiness import pick_ui_status
+from .panel_readiness import pick_ui_status, tf_ready_status
 from .panel_state import MoveItState
 
 
@@ -123,8 +124,16 @@ def run_pick_object(panel) -> None:
         elif label == "PRE_GRASP_RECENTER":
             label = "PRE_GRASP"
         if _step_last_phase["value"] == label:
+            panel._emit_log(
+                f"[PICK][MOVEIT][STEP] gate_reuse phase={label} decision={decision or 'n/a'}"
+            )
             return
         _step_last_phase["value"] = label
+        panel._emit_log(
+            "[PICK][MOVEIT][STEP] "
+            f"phase={label} decision={decision or 'n/a'} "
+            f"step_mode={str(getattr(panel, '_step_mode', 'AUTO'))}"
+        )
         gate_fn(
             f"PICK_OBJ.{label}",
             flow="PICK_OBJECT",
@@ -283,7 +292,49 @@ def run_pick_object(panel) -> None:
             error=False,
         )
         panel._emit_log(f"[PICK] controladores no listos ({reason})")
+        panel._emit_log(
+            "[PICK][MOVEIT][INIT] controllers=FAIL "
+            f"reason={reason or 'n/a'}"
+        )
         return
+
+    # -- [PICK][MOVEIT][INIT] BLOQUE TF EXPLÍCITO --
+    # Equivalente al sync_gate stage=tf_and_ee de DIRECTO.
+    # Valida que TF world→base_link y base_link→ee estén disponibles antes de
+    # continuar, evitando fallos silenciosos en _selection_to_base() más adelante.
+    _moveit_init_tf_ok, _moveit_init_tf_reason = tf_ready_status(panel)
+    _moveit_init_ee_frame = str(getattr(panel, "_ee_frame_effective", None) or "").strip()
+    _moveit_init_base_frame = str(BASE_FRAME or "base_link")
+    _moveit_init_sim_time = bool(getattr(panel, "_use_sim_time", True))
+    panel._emit_log(
+        "[PICK][MOVEIT][INIT] "
+        f"ts={time.time():.6f} mode=moveit "
+        f"controllers=OK "
+        f"moveit_state={getattr(getattr(panel, '_moveit_state', None), 'value', str(getattr(panel, '_moveit_state', 'n/a')))} "
+        f"tf_ok={str(bool(_moveit_init_tf_ok)).lower()} "
+        f"tf_reason={_moveit_init_tf_reason or 'ok'} "
+        f"ee_frame={_moveit_init_ee_frame or 'none'} "
+        f"base_frame={_moveit_init_base_frame} "
+        f"use_sim_time={str(_moveit_init_sim_time).lower()}"
+    )
+    if not _moveit_init_tf_ok or not _moveit_init_ee_frame:
+        _block(
+            f"tf_or_ee_not_ready:{_moveit_init_tf_reason or 'unknown'}",
+            status_text=f"MOVEIT: TF no listo ({_moveit_init_tf_reason or 'ee_frame_missing'})",
+            error=True,
+        )
+        panel._emit_log(
+            "[PICK][MOVEIT][INIT] tf_and_ee=FAIL "
+            f"tf_ok={str(bool(_moveit_init_tf_ok)).lower()} "
+            f"tf_reason={_moveit_init_tf_reason or 'n/a'} "
+            f"ee_frame={_moveit_init_ee_frame or 'none'}"
+        )
+        return
+    panel._emit_log(
+        "[PICK][MOVEIT][INIT] tf_and_ee=OK "
+        f"ee_frame={_moveit_init_ee_frame} base_frame={_moveit_init_base_frame}"
+    )
+    # -- FIN BLOQUE TF EXPLÍCITO --
 
     def _world_ready_scope() -> str:
         raw = str(os.environ.get("PANEL_PICK_OBJECT_WORLD_READY_SCOPE", "target") or "target").strip().lower()
@@ -1101,7 +1152,19 @@ def run_pick_object(panel) -> None:
         moveit_result_topic = "/desired_grasp/result"
         moveit_pose_topic = "/desired_grasp"
         moveit_hb_topic = "/ur5_moveit_bridge/heartbeat"
-        measured_ee_frame = panel._ee_frame_effective or RG2_PINCH_CENTER_FRAME
+        # Fallback usa RG2_TCP_FRAME (no RG2_PINCH_CENTER_FRAME) porque el bridge
+        # devuelve ee_link="rg2_tcp". rg2_tcp y rg2_pinch_center son coubicados
+        # (misma posición Z=0.175 desde tool0), pero la comparación de strings en
+        # el check de EE link debe coincidir con lo que retorna el bridge.
+        measured_ee_frame = panel._ee_frame_effective or RG2_TCP_FRAME
+        panel._emit_log(
+            "[PICK][MOVEIT][LIFECYCLE] stage=worker_start "
+            f"obj={obj_name} ee_frame={measured_ee_frame} "
+            f"base_frame={base_frame} "
+            f"world=({float(obj_x):.3f},{float(obj_y):.3f},{float(obj_z):.3f}) "
+            f"base=({float(bx):.3f},{float(by):.3f},{float(bz):.3f}) "
+            f"moveit_result_topic={moveit_result_topic}"
+        )
         target_snapshot_name = obj_name
         target_snapshot_ts = selected_ts
         target_lock_id_local = str(getattr(panel, "_pick_target_lock_id", "") or target_lock_id)
@@ -4204,7 +4267,7 @@ def run_pick_object(panel) -> None:
             obj_center_z = float(bz)
             obj_top_z = obj_center_z + (float(height or 0.0) * 0.5 if float(height or 0.0) > 0.0 else 0.0)
             obj_ref_z = (obj_center_z if attach_z_ref_mode == "center" else obj_top_z) + float(attach_z_clearance)
-            measured_ee_frame = str(panel._ee_frame_effective or RG2_PINCH_CENTER_FRAME).strip() or RG2_PINCH_CENTER_FRAME
+            measured_ee_frame = str(panel._ee_frame_effective or RG2_TCP_FRAME).strip() or RG2_TCP_FRAME
             tcp_z_correction = contact_z_correction_for_frame(
                 measured_ee_frame,
                 geometry=_PICK_OBJECT_GRIPPER_GEOMETRY,
@@ -4759,6 +4822,9 @@ def run_pick_object(panel) -> None:
                 fail_kind = "height_insufficient_z"
             panel._emit_log(
                 f"[PICK_OBJ][FAIL_CLASS] type={fail_kind} detail={err_txt}"
+            )
+            panel._emit_log(
+                f"[PICK][MOVEIT][ERROR] type={fail_kind} detail={err_txt}"
             )
             _moveit2_log("FAIL", f"type={fail_kind} detail={err_txt}")
             try:
