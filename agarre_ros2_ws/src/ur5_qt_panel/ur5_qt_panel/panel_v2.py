@@ -3940,6 +3940,11 @@ class ControlPanelV2(QMainWindow):
         )
         self.btn_tfm_publish = QPushButton("Ejecutar agarre")
         self.btn_tfm_reset = QPushButton("Reset TFM")
+        self.btn_tfm_grasp_object = QPushButton("Agarre objeto")
+        self.btn_tfm_grasp_object.setToolTip(
+            "Ejecutar agarre MoveIt usando el objeto señalado por la inferencia del experimento aplicado\n"
+            "mode=moveit  source=infer_model  tcp=rg2_pinch_center  frame=base_link"
+        )
         for b in (
             self.btn_tfm_memoria_case,
             self.btn_tfm_apply,
@@ -3947,6 +3952,7 @@ class ControlPanelV2(QMainWindow):
             self.btn_tfm_visualize,
             self.btn_tfm_publish,
             self.btn_tfm_reset,
+            self.btn_tfm_grasp_object,
         ):
             b.setMinimumHeight(32)
         self.btn_tfm_apply.clicked.connect(self._tfm_apply_experiment)
@@ -3955,6 +3961,7 @@ class ControlPanelV2(QMainWindow):
         self.btn_tfm_visualize.clicked.connect(self._tfm_visualize_grasp)
         self.btn_tfm_publish.clicked.connect(self._tfm_publish_grasp)
         self.btn_tfm_reset.clicked.connect(self._tfm_reset_grasp)
+        self.btn_tfm_grasp_object.clicked.connect(self._on_tfm_grasp_object_clicked)
         self.combo_tfm_experiment.currentIndexChanged.connect(lambda _idx: self._on_tfm_checkpoint_selection_changed())
         self.chk_tfm_use_depth.stateChanged.connect(lambda _state: self._refresh_tfm_checkpoint_options())
         self.chk_tfm_repro_mode.stateChanged.connect(lambda _state: self._on_tfm_repro_mode_changed())
@@ -3971,6 +3978,9 @@ class ControlPanelV2(QMainWindow):
             self.btn_tfm_visualize.setEnabled(False)
             self.btn_tfm_publish.setEnabled(False)
             self.btn_tfm_reset.setEnabled(False)
+            self.btn_tfm_grasp_object.setEnabled(False)
+        # "Agarre objeto" solo se habilita tras inferencia OK (independientemente del módulo)
+        self.btn_tfm_grasp_object.setEnabled(False)
 
         baseline_title = QLabel("Baseline (UR5 / Demo)")
         baseline_title.setStyleSheet("font-weight:700;")
@@ -4007,6 +4017,7 @@ class ControlPanelV2(QMainWindow):
         tfm_col.addWidget(self.btn_tfm_infer)
         tfm_col.addWidget(self.btn_tfm_visualize)
         tfm_col.addWidget(self.btn_tfm_publish)
+        tfm_col.addWidget(self.btn_tfm_grasp_object)
         tfm_col.addWidget(self.btn_tfm_reset)
         tfm_col.addWidget(tfm_info)
         tfm_col.addStretch(1)
@@ -11391,12 +11402,16 @@ class ControlPanelV2(QMainWindow):
                 f"[TFM] infer_end session={self._infer_session_id} status=FAIL "
                 f"infer_ms={infer_ms:.2f} total_ms={total_ms:.2f} err={err}",
             )
+            if hasattr(self, "btn_tfm_grasp_object"):
+                self.btn_tfm_grasp_object.setEnabled(False)
             self._complete_pending_tfm_infer_request(False, f"inferencia fallida ({err})")
             return
         pred = result.get("pred") if isinstance(result.get("pred"), dict) else None
         if not pred:
             self._set_status("TFM: salida inválida", error=True)
             self._audit_append("logs/infer.log", "[TFM] infer_end status=FAIL err=salida_invalida")
+            if hasattr(self, "btn_tfm_grasp_object"):
+                self.btn_tfm_grasp_object.setEnabled(False)
             self._complete_pending_tfm_infer_request(False, "salida inválida")
             return
         raw_pred = dict(pred)
@@ -11656,6 +11671,8 @@ class ControlPanelV2(QMainWindow):
             f"cornell_reason={self._last_cornell_reason!r}",
         )
         self._complete_pending_tfm_infer_request(True, infer_message)
+        if hasattr(self, "btn_tfm_grasp_object"):
+            self.btn_tfm_grasp_object.setEnabled(True)
 
     def _sync_tfm_module_grasp_state(self) -> None:
         if not self.tfm_module or not self._last_grasp_px:
@@ -12270,6 +12287,130 @@ class ControlPanelV2(QMainWindow):
 
         self._run_async(worker)
         return True
+
+    def _on_tfm_grasp_object_clicked(self) -> None:
+        """Botón 'Agarre objeto': ejecuta agarre MoveIt con el objeto señalado por la inferencia.
+
+        Flujo trazable para el TFM:
+          experiment_check → inference_check → base_link_check → target_log → moveit_execute
+          mode=moveit  source=infer_model  tcp=rg2_pinch_center  frame=base_link
+        """
+        self._log_button("TFM Agarre objeto")
+        source = str(getattr(self, "_last_grasp_source", "") or "unknown")
+        experiment_applied = bool(getattr(self, "_tfm_experiment_applied", False))
+        has_grasp = bool(getattr(self, "_last_grasp_px", None))
+        selected = str(getattr(self, "_selected_object", "") or getattr(self, "_last_grasp_selection_name", "") or "none")
+
+        self._emit_log(
+            "[TFM_GRASP][BUTTON] clicked button=agarre_objeto mode=moveit "
+            f"source={source} experiment_applied={str(experiment_applied).lower()} "
+            f"has_grasp={str(has_grasp).lower()} selected={selected}"
+        )
+
+        # CHECK 1: experimento aplicado
+        experiment_ready, experiment_reason = self._tfm_experiment_ready_status()
+        self._emit_log(
+            f"[TFM_GRASP][CHECK] experiment_applied={str(experiment_ready).lower()} "
+            f"reason={experiment_reason or 'ok'}"
+        )
+        if not experiment_ready:
+            self._set_status(f"TFM bloqueado: {experiment_reason}", error=True)
+            self._audit_append(
+                "logs/execute.log",
+                f"[TFM_GRASP] execute FAIL mode=moveit reason={experiment_reason}",
+            )
+            return
+
+        # CHECK 2: inferencia válida y no expirada
+        grasp_ok, grasp_reason = self._current_grasp_status()
+        self._emit_log(
+            f"[TFM_GRASP][CHECK] inference_valid={str(grasp_ok).lower()} "
+            f"source={source} reason={grasp_reason or 'ok'}"
+        )
+        if not grasp_ok:
+            if grasp_reason == "sin grasp":
+                msg_ui = "No hay inferencia válida aplicada. Ejecuta primero inferencia del experimento."
+            else:
+                msg_ui = f"No hay inferencia válida ({grasp_reason})."
+            self._set_status(f"TFM: {msg_ui}", error=True)
+            self._audit_append(
+                "logs/execute.log",
+                f"[TFM_GRASP] execute FAIL mode=moveit source={source} reason={grasp_reason}",
+            )
+            return
+
+        # CHECK 3: conversión a base_link disponible
+        grasp_base = getattr(self, "_last_grasp_base", None)
+        if not grasp_base:
+            self._emit_log("[TFM_GRASP][CHECK] base_link=unavailable")
+            self._set_status(
+                "TFM: No se pudo convertir la hipótesis de agarre a objetivo MoveIt.", error=True
+            )
+            self._audit_append(
+                "logs/execute.log",
+                "[TFM_GRASP] execute FAIL mode=moveit source={source} reason=base_link_unavailable",
+            )
+            return
+
+        # TARGET: registra el objeto y la hipótesis de agarre
+        object_id = str(
+            getattr(self, "_selected_object", "")
+            or getattr(self, "_last_grasp_selection_name", "")
+            or "unknown"
+        ).strip()
+        grasp_px = dict(self._last_grasp_px or {})
+        grasp_base_d = dict(grasp_base)
+
+        self._emit_log(
+            "[TFM_GRASP][TARGET] "
+            f"object_id={object_id} "
+            f"grasp_rect=cx={grasp_px.get('cx', 0.0):.1f},"
+            f"cy={grasp_px.get('cy', 0.0):.1f},"
+            f"w={grasp_px.get('w', 0.0):.1f},"
+            f"h={grasp_px.get('h', 0.0):.1f},"
+            f"angle={grasp_px.get('angle_deg', 0.0):.1f}deg "
+            f"base=({grasp_base_d.get('x', 0.0):.3f},"
+            f"{grasp_base_d.get('y', 0.0):.3f},"
+            f"{grasp_base_d.get('z', 0.0):.3f}) "
+            f"source={source} mode=moveit"
+        )
+        self._audit_append(
+            "logs/execute.log",
+            "[TFM_GRASP] execute TARGET "
+            f"object_id={object_id} source=infer_model mode=moveit "
+            f"grasp_px=({grasp_px.get('cx', 0.0):.1f},{grasp_px.get('cy', 0.0):.1f},"
+            f"w={grasp_px.get('w', 0.0):.1f},h={grasp_px.get('h', 0.0):.1f},"
+            f"angle={grasp_px.get('angle_deg', 0.0):.1f}deg) "
+            f"base=({grasp_base_d.get('x', 0.0):.3f},{grasp_base_d.get('y', 0.0):.3f},"
+            f"{grasp_base_d.get('z', 0.0):.3f}) yaw={grasp_base_d.get('yaw_deg', 0.0):.1f}",
+        )
+
+        # MOVEIT: publicar petición (delega a _execute_tfm_world_grasp que gestiona la secuencia)
+        self._emit_log(
+            "[TFM_GRASP][MOVEIT] publish /desired_grasp/request "
+            f"mode=moveit source=infer_model object_id={object_id} "
+            f"frame=base_link tcp=rg2_pinch_center"
+        )
+        self._audit_append(
+            "logs/execute.log",
+            "[TFM_GRASP] execute REQUEST "
+            f"object_id={object_id} source=infer_model mode=moveit "
+            f"pose_topic={MOVEIT_POSE_TOPIC} result_topic=/desired_grasp/result",
+        )
+
+        handled = self._execute_tfm_world_grasp()
+        if not handled:
+            self._emit_log(
+                "[TFM_GRASP][MOVEIT] result=FAIL mode=moveit source=infer_model "
+                f"object_id={object_id} reason=execute_not_started"
+            )
+            self._audit_append(
+                "logs/execute.log",
+                "[TFM_GRASP] execute FAIL mode=moveit source=infer_model "
+                f"object_id={object_id} reason=execute_not_started",
+            )
+        # El resultado final (OK/FAIL) lo registra _execute_tfm_world_grasp en su audit log
+        # con: [TFM] execute OK/FAIL mode=moveit_sequence source=infer_model
 
     def _tfm_publish_grasp(self):
         self._log_button("TFM Ejecutar agarre")
@@ -18181,6 +18322,8 @@ class ControlPanelV2(QMainWindow):
         self._last_tfm_postprocess_note = ""
         if self.tfm_module:
             self.tfm_module.reset()
+        if hasattr(self, "btn_tfm_grasp_object"):
+            self.btn_tfm_grasp_object.setEnabled(False)
         self._refresh_science_ui()
         self._refresh_controls()
         self._refresh_camera_display()

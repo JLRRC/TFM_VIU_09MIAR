@@ -8862,6 +8862,10 @@ def run_pick_demo(panel) -> None:
                 target_base_grasp_down = None
                 target_world_grasp_down = None
                 coarse_target_mode = "object_xy_plus_object_z"
+                keep_xy_tol = None
+                tcp_obj_xy = None
+                keep_xy_active = False
+                approach_object_source = str(_pick_demo_cycle_object_source or "live_lookup")
                 if obj_world_before_coarse is not None:
                     target_x_coarse = float(obj_world_before_coarse[0])
                     target_y_coarse = float(obj_world_before_coarse[1])
@@ -8876,6 +8880,7 @@ def run_pick_demo(panel) -> None:
                             float(tcp_before_coarse[1]) - float(obj_base_before_coarse[1]),
                         )
                         if tcp_obj_xy <= keep_xy_tol:
+                            keep_xy_active = True
                             target_x_coarse = float(tcp_world_before_coarse[0])
                             target_y_coarse = float(tcp_world_before_coarse[1])
                             coarse_target_mode = "keep_current_xy_plus_object_z"
@@ -8913,6 +8918,16 @@ def run_pick_demo(panel) -> None:
                         f"obj_before_world={_fmt_vec(obj_world_before_coarse)} "
                         f"obj_before_base={_fmt_vec(obj_base_before_coarse)} "
                         f"target_world={_fmt_vec(target_world_coarse)} target_base={_fmt_vec(target_base_coarse)}"
+                    )
+                    _append_trace(
+                        "[PICK][DIRECT][APPROACH_DIAG] "
+                        f"object_source={approach_object_source} "
+                        f"cycle_world={_fmt_vec(_pick_demo_cycle_object_world)} "
+                        f"fresh_world={_fmt_vec(obj_world_before_coarse)} "
+                        f"keep_current_xy={str(keep_xy_active).lower() if tcp_obj_xy is not None else 'none'} "
+                        f"tcp_obj_xy={_fmt_scalar(tcp_obj_xy)} "
+                        f"keep_xy_tol={_fmt_scalar(keep_xy_tol)} "
+                        f"world_to_base_path={_direct_debug_state.get('world_to_base_path', 'unset')}"
                     )
                 _direct_debug_state["target_semantic_world"] = _tuple3(target_world_coarse)
                 _direct_debug_state["target_semantic_base"] = _tuple3(target_base_coarse)
@@ -9560,8 +9575,11 @@ def run_pick_demo(panel) -> None:
                             and abs(float(dz_obj_local)) <= _coarse_handoff_dz_tol
                         )
                         gate_ok_local = bool(gate_metrics_for_check.get("ok"))
+                        relaxed_handoff_xy_ok_local = bool(
+                            coarse_gate_xy_err <= 0.010
+                        )
                         relaxed_handoff_ok_local = bool(
-                            coarse_gate_xy_ok
+                            relaxed_handoff_xy_ok_local
                             and coarse_gate_pose_ok
                             and tcp_obj_dist_local is not None
                             and float(tcp_obj_dist_local) <= float(_coarse_relaxed_handoff_dist_tol)
