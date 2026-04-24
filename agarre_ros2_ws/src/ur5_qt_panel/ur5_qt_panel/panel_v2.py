@@ -54,6 +54,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSizePolicy,
     QWidget,
@@ -351,6 +352,11 @@ from . import panel_launch_control
 from .panel_fatal import abort_local_stack
 from .panel_external_state import external_state_active, resolve_external_state, apply_external_system_state
 from .panel_pick_demo import run_pick_demo
+from .panel_runtime_pose_auditor import (
+    build_runtime_audit_snapshot,
+    compute_step_history_metrics,
+    runtime_status_style,
+)
 from .panel_pick_object import run_pick_object
 from .panel_env import (
     collect_env_diagnostics,
@@ -1519,6 +1525,9 @@ class ControlPanelV2(QMainWindow):
         self._step_live_gripper_label = None
         self._step_object_label = None
         self._step_start_pose_label = None
+        self._step_runtime_section = None
+        self._step_runtime_help_label = None
+        self._step_runtime_block_labels: Dict[str, Dict[str, QLabel]] = {}
         self._step_history_table = None
         self._step_continue_btn = None
         self._step_continue_help_label = None
@@ -2006,6 +2015,9 @@ class ControlPanelV2(QMainWindow):
         self._controllers_state = "STARTING"
         self._last_controller_check = 0.0
         self._controllers_last_ok_ts = 0.0
+        self._controller_state_map: Dict[str, str] = {}
+        self._controller_state_source = ""
+        self._controller_state_ts = 0.0
         self._controller_spawn_inflight = False
         self._controller_spawn_done = False
         self._selected_px = None  # Píxel seleccionado (px, py)
@@ -5076,7 +5088,18 @@ class ControlPanelV2(QMainWindow):
         dlg.setAttribute(Qt.WA_DeleteOnClose, False)
         dlg.resize(980, 760)
 
-        layout = QVBoxLayout(dlg)
+        root_layout = QVBoxLayout(dlg)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        scroll = QScrollArea(dlg)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QAbstractScrollArea.NoFrame)
+        content = QWidget()
+        root_layout.addWidget(scroll)
+        scroll.setWidget(content)
+
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
 
@@ -5095,6 +5118,159 @@ class ControlPanelV2(QMainWindow):
         lbl_gripper_live = QLabel("Pinza live: --")
         lbl_object = QLabel("Objeto activo (world): --")
         lbl_start_pose = QLabel("Pose inicial del robot al lanzar la secuencia: --")
+        info_labels = [
+            lbl_mode,
+            lbl_phase,
+            lbl_current,
+            lbl_next,
+            lbl_intent,
+            lbl_decision,
+            lbl_target,
+            lbl_live_operational,
+            lbl_live_visual,
+            lbl_gripper_expected,
+            lbl_gripper_live,
+            lbl_object,
+            lbl_start_pose,
+        ]
+        for info_label in info_labels:
+            info_label.setWordWrap(True)
+
+        info_grid = QGridLayout()
+        info_grid.setHorizontalSpacing(20)
+        info_grid.setVerticalSpacing(6)
+        left_info_labels = [
+            lbl_mode,
+            lbl_phase,
+            lbl_current,
+            lbl_next,
+            lbl_intent,
+            lbl_decision,
+            lbl_target,
+        ]
+        right_info_labels = [
+            lbl_live_operational,
+            lbl_live_visual,
+            lbl_gripper_expected,
+            lbl_gripper_live,
+            lbl_object,
+            lbl_start_pose,
+        ]
+        for row, info_label in enumerate(left_info_labels):
+            info_grid.addWidget(info_label, row, 0)
+        for row, info_label in enumerate(right_info_labels):
+            info_grid.addWidget(info_label, row, 1)
+        info_grid.setColumnStretch(0, 1)
+        info_grid.setColumnStretch(1, 1)
+
+        lbl_runtime_title = QLabel("Verificacion runtime Gazebo/TF")
+        lbl_runtime_title.setStyleSheet("font-weight:700;")
+        lbl_runtime_help = QLabel(
+            "Izquierda: PLANIFICADO / PANEL | Derecha: MEDIDO / RUNTIME. "
+            "Fuentes: [PANEL] [TF] [JOINTS] [GAZEBO] [URDF/SDF]."
+        )
+        lbl_runtime_help.setWordWrap(True)
+        lbl_runtime_help.setStyleSheet("color:#475569; font-size:12px;")
+        runtime_group = QGroupBox("Verificacion runtime Gazebo/TF")
+        runtime_group.setMinimumHeight(500)
+        runtime_group_layout = QVBoxLayout(runtime_group)
+        runtime_group_layout.setContentsMargins(8, 8, 8, 8)
+        runtime_group_layout.setSpacing(8)
+        runtime_blocks: Dict[str, Dict[str, QLabel]] = {}
+
+        def _add_runtime_block(block_key: str, title: str) -> None:
+            block_box = QGroupBox(title)
+            block_box.setMinimumHeight(150)
+            block_layout = QVBoxLayout(block_box)
+            block_layout.setContentsMargins(8, 8, 8, 8)
+            block_layout.setSpacing(8)
+            status_lbl = QLabel("STALE")
+            status_lbl.setStyleSheet(runtime_status_style("STALE"))
+            summary_lbl = QLabel("sin dato")
+            summary_lbl.setWordWrap(True)
+            summary_lbl.setStyleSheet("color:#475569; font-size:12px;")
+            planned_lbl = QLabel("sin dato")
+            planned_lbl.setWordWrap(True)
+            planned_lbl.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            planned_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            planned_lbl.setMinimumHeight(84)
+            planned_lbl.setStyleSheet(
+                "color:#0f172a;"
+            )
+            runtime_lbl = QLabel("sin dato")
+            runtime_lbl.setWordWrap(True)
+            runtime_lbl.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            runtime_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            runtime_lbl.setMinimumHeight(84)
+            runtime_lbl.setStyleSheet(
+                "color:#0f172a;"
+            )
+
+            meta_row = QHBoxLayout()
+            meta_row.setSpacing(10)
+            meta_row.addWidget(status_lbl, 0, Qt.AlignTop)
+            meta_row.addWidget(summary_lbl, 1)
+            block_layout.addLayout(meta_row)
+
+            columns_grid = QGridLayout()
+            columns_grid.setHorizontalSpacing(12)
+            columns_grid.setVerticalSpacing(0)
+
+            plan_box = QGroupBox("PLANIFICADO / PANEL")
+            plan_box.setMinimumHeight(110)
+            plan_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            plan_box.setStyleSheet(
+                "QGroupBox {"
+                "font-weight:700; color:#0f172a;"
+                "border:1px solid #cbd5e1; border-radius:8px;"
+                "margin-top:10px; padding:10px 8px 8px 8px;"
+                "background:#f8fafc;"
+                "}"
+                "QGroupBox::title {"
+                "subcontrol-origin: margin; left:10px; padding:0 4px;"
+                "}"
+            )
+            plan_layout = QVBoxLayout(plan_box)
+            plan_layout.setContentsMargins(10, 14, 10, 10)
+            plan_layout.setSpacing(4)
+            plan_layout.addWidget(planned_lbl)
+
+            runtime_box = QGroupBox("MEDIDO / RUNTIME")
+            runtime_box.setMinimumHeight(110)
+            runtime_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            runtime_box.setStyleSheet(
+                "QGroupBox {"
+                "font-weight:700; color:#0f172a;"
+                "border:1px solid #cbd5e1; border-radius:8px;"
+                "margin-top:10px; padding:10px 8px 8px 8px;"
+                "background:#ffffff;"
+                "}"
+                "QGroupBox::title {"
+                "subcontrol-origin: margin; left:10px; padding:0 4px;"
+                "}"
+            )
+            runtime_layout = QVBoxLayout(runtime_box)
+            runtime_layout.setContentsMargins(10, 14, 10, 10)
+            runtime_layout.setSpacing(4)
+            runtime_layout.addWidget(runtime_lbl)
+
+            columns_grid.addWidget(plan_box, 0, 0)
+            columns_grid.addWidget(runtime_box, 0, 1)
+            columns_grid.setColumnStretch(0, 1)
+            columns_grid.setColumnStretch(1, 1)
+            block_layout.addLayout(columns_grid)
+
+            runtime_group_layout.addWidget(block_box)
+            runtime_blocks[block_key] = {
+                "status": status_lbl,
+                "summary": summary_lbl,
+                "planned": planned_lbl,
+                "runtime": runtime_lbl,
+            }
+
+        _add_runtime_block("dh_tf", "BLOQUE 1 - DH / TF")
+        _add_runtime_block("joints_control", "BLOQUE 2 - JOINTS / CONTROL")
+        _add_runtime_block("sdf_gazebo", "BLOQUE 3 - SDF / GAZEBO")
         lbl_pipeline_title = QLabel("Pipeline completo")
         lbl_pipeline_title.setStyleSheet("font-weight:700;")
         pipeline_table = QTableWidget(0, 5)
@@ -5126,24 +5302,28 @@ class ControlPanelV2(QMainWindow):
         lbl_history_title.setStyleSheet("font-weight:700;")
         lbl_history_frame_help = QLabel(
             "Tabla STEP: Org=pose al abrir la fase | TCP-TF=TCP real por TF al cerrar | "
-            "Target=destino planificado | Exec=target realmente enviado | "
-            "Obj World=pose objeto en world | D TCP-Obj=dist TCP↔objeto | Razón=motivo del check."
+            "Obj World=pose objeto en world | Target=destino planificado | Exec=target enviado | "
+            "D TCP-Obj / D Target-Obj / Err TCP-Exec en metros | Tipo Target explicita la semantica."
         )
         lbl_history_frame_help.setWordWrap(True)
         lbl_history_frame_help.setStyleSheet("color:#475569; font-size:12px;")
-        # Columnas: Fase | Pinza | Org(3) | TCP TF Live/Cierre(3) | Target(3) | Exec(3) |
-        #           Obj World(3) | D TCP-Obj | Razón | Check  → total 20
-        history_table = QTableWidget(0, 20)
+        # Columnas: Fase | Pinza | Org(3) | TCP-TF(3) | Obj World(3) | Target(3) |
+        #           Exec(3) | D TCP-Obj | D Target-Obj | Err TCP-Exec |
+        #           Tipo Target | Razon | Estado  → total 23.
+        history_table = QTableWidget(0, 23)
         history_table.setHorizontalHeaderLabels([
             "Fase", "Pinza",
             "Xw Org", "Yw Org", "Zw Org",
             "Xw TCP-TF", "Yw TCP-TF", "Zw TCP-TF",
+            "Xw Obj", "Yw Obj", "Zw Obj",
             "Xw Target", "Yw Target", "Zw Target",
             "Xw Exec", "Yw Exec", "Zw Exec",
-            "Xw Obj", "Yw Obj", "Zw Obj",
             "D TCP-Obj",
+            "D Target-Obj",
+            "Err TCP-Exec",
+            "Tipo Target",
             "Razón",
-            "Check",
+            "Estado",
         ])
         history_table.setEditTriggers(QTableWidget.NoEditTriggers)
         history_table.setSelectionMode(QTableWidget.NoSelection)
@@ -5151,9 +5331,9 @@ class ControlPanelV2(QMainWindow):
         history_header = history_table.horizontalHeader()
         if history_header is not None:
             history_header.setSectionResizeMode(0, QHeaderView.Stretch)
-            history_header.setSectionResizeMode(18, QHeaderView.Stretch)
-            for _col in range(1, 20):
-                if _col not in (0, 18):
+            history_header.setSectionResizeMode(21, QHeaderView.Stretch)
+            for _col in range(1, 23):
+                if _col not in (0, 21):
                     history_header.setSectionResizeMode(_col, QHeaderView.ResizeToContents)
         history_table.verticalHeader().setVisible(False)
         btn_cart_debug = QPushButton("Depurador cartesiano")
@@ -5167,19 +5347,10 @@ class ControlPanelV2(QMainWindow):
         chk_cart_debug.toggled.connect(btn_cart_debug.setEnabled)
 
         layout.addWidget(lbl_title)
-        layout.addWidget(lbl_mode)
-        layout.addWidget(lbl_phase)
-        layout.addWidget(lbl_current)
-        layout.addWidget(lbl_next)
-        layout.addWidget(lbl_intent)
-        layout.addWidget(lbl_decision)
-        layout.addWidget(lbl_target)
-        layout.addWidget(lbl_live_operational)
-        layout.addWidget(lbl_live_visual)
-        layout.addWidget(lbl_gripper_expected)
-        layout.addWidget(lbl_gripper_live)
-        layout.addWidget(lbl_object)
-        layout.addWidget(lbl_start_pose)
+        layout.addLayout(info_grid)
+        layout.addWidget(lbl_runtime_title)
+        layout.addWidget(lbl_runtime_help)
+        layout.addWidget(runtime_group)
         layout.addWidget(lbl_pipeline_title)
         layout.addWidget(pipeline_table)
         layout.addWidget(lbl_pipeline_help)
@@ -5210,6 +5381,9 @@ class ControlPanelV2(QMainWindow):
         self._step_live_gripper_label = lbl_gripper_live
         self._step_object_label = lbl_object
         self._step_start_pose_label = lbl_start_pose
+        self._step_runtime_section = runtime_group
+        self._step_runtime_help_label = lbl_runtime_help
+        self._step_runtime_block_labels = runtime_blocks
         self._step_history_frame_help_label = lbl_history_frame_help
         self._step_history_table = history_table
 
@@ -6927,6 +7101,30 @@ class ControlPanelV2(QMainWindow):
         if self._step_window is not None:
             self._step_window.show()
 
+    def _step_runtime_refresh(self) -> None:
+        if not getattr(self, "_step_runtime_block_labels", None):
+            return
+        try:
+            snapshot = build_runtime_audit_snapshot(self)
+        except Exception as exc:
+            self._log_warning(f"[STEP][RUNTIME] {exc}")
+            for labels in self._step_runtime_block_labels.values():
+                labels["status"].setText("STALE")
+                labels["status"].setStyleSheet(runtime_status_style("STALE"))
+                labels["summary"].setText("sin dato")
+                labels["planned"].setText("sin dato")
+                labels["runtime"].setText("sin dato")
+            return
+        for block_key, block in snapshot.blocks.items():
+            labels = self._step_runtime_block_labels.get(block_key)
+            if not labels:
+                continue
+            labels["status"].setText(str(block.status or "STALE"))
+            labels["status"].setStyleSheet(runtime_status_style(block.status))
+            labels["summary"].setText(str(block.summary or "sin dato"))
+            labels["planned"].setText("\n".join(block.planned_lines) or "sin dato")
+            labels["runtime"].setText("\n".join(block.runtime_lines) or "sin dato")
+
     def _step_window_refresh(self) -> None:
         self._ensure_step_window()
         current_flow = self._step_effective_flow()
@@ -7089,16 +7287,22 @@ class ControlPanelV2(QMainWindow):
                 f"Pose inicial del robot al lanzar la secuencia (world): {xyz_txt} | "
                 f"frame: {world_frame} | RPY: {rpy_txt} | botón: {trigger}"
             )
+        self._step_runtime_refresh()
         self._step_refresh_pipeline_table()
         if getattr(self, "_step_history_frame_help_label", None) is not None:
             self._step_history_frame_help_label.setText(
                 f"Tabla STEP (frame operacional: {world_frame} | interno: {operational_frame}@{self._business_base_frame()}). "
-                "Org=pose robot al abrir la fase | TCP-TF=TCP real por TF al cerrar | "
-                "Target=destino planificado | Exec=target realmente enviado | "
-                "Obj World=pose objeto en world | D TCP-Obj=dist TCP↔objeto | Razón=motivo del check | "
-                "Estado=EVENT/RUN/DONE/BLOCK/ABORT."
+                "Org=pose robot al abrir la fase | TCP-TF=TCP real por TF al cerrar | Obj World=pose objeto en world | "
+                "Target/Exec separados | D TCP-Obj / D Target-Obj / Err TCP-Exec en metros | "
+                "Tipo Target=OBJETO_EXACTO / OBJETO_MAS_CLEARANCE / CONTACTO_GRASP / EXEC_REAL / CACHE."
             )
         if self._step_history_table is not None:
+            def _fmt_metric(value) -> str:
+                try:
+                    return f"{float(value):.3f}"
+                except Exception:
+                    return "--"
+
             self._step_history_table.setRowCount(len(self._step_history_rows))
             for row_idx, row_data in enumerate(self._step_history_rows):
                 phase_name = str(row_data.get("phase") or "").strip().upper()
@@ -7121,7 +7325,12 @@ class ControlPanelV2(QMainWindow):
                 exec3 = row_data.get("exec_target_snapshot")
                 # Objeto world y distancia TCP↔objeto al cerrar la fase.
                 obj_world3 = row_data.get("object_world_snapshot")
-                dist_tcp_obj = row_data.get("dist_tcp_obj_snapshot")
+                history_metrics = compute_step_history_metrics(self, row_data)
+                dist_tcp_obj = history_metrics.get("dist_tcp_obj")
+                dist_target_obj = history_metrics.get("dist_target_obj")
+                err_tcp_exec = history_metrics.get("err_tcp_exec")
+                target_kind = str(history_metrics.get("target_kind") or "CACHE")
+                target_note = str(history_metrics.get("target_note") or "")
                 check_reason = row_data.get("check_reason") or ""
                 org3_display = self._step_display_position(org3)
                 cierre3_display = self._step_display_position(cierre3)
@@ -7131,25 +7340,31 @@ class ControlPanelV2(QMainWindow):
                 # pose/info en world frame). No pasar por _step_display_position (base→world)
                 # porque produciría una doble conversión y valores erróneos en la tabla.
                 obj_world3_display = obj_world3
-                dist_txt = f"{dist_tcp_obj:.3f}" if dist_tcp_obj is not None else "--"
                 display_phase = f"{phase_name} - {self._step_phase_intent(self._step_history_flow, phase_name)}"
                 expected_gripper = self._step_phase_gripper_state(self._step_history_flow, phase_name)
                 values = (
                     (display_phase, expected_gripper)
                     + self._step_format_xyz(org3_display)
                     + self._step_format_xyz(cierre3_display)
+                    + self._step_format_xyz(obj_world3_display)
                     + self._step_format_xyz(pos3_display)
                     + self._step_format_xyz(exec3_display)
-                    + self._step_format_xyz(obj_world3_display)
-                    + (dist_txt,)
+                    + (_fmt_metric(dist_tcp_obj),)
+                    + (_fmt_metric(dist_target_obj),)
+                    + (_fmt_metric(err_tcp_exec),)
+                    + (target_kind,)
                     + (check_reason,)
                 )
                 for col_idx, value in enumerate(values):
                     item = QTableWidgetItem(value)
-                    if col_idx not in (0, len(values) - 1):
+                    if col_idx not in (0, 20, len(values) - 1):
                         item.setTextAlignment(Qt.AlignCenter)
+                    if col_idx == 20 and target_note:
+                        item.setToolTip(target_note)
+                    if col_idx == len(values) - 1 and check_reason:
+                        item.setToolTip(str(check_reason))
                     self._step_history_table.setItem(row_idx, col_idx, item)
-                # Check (columna final: índice 19)
+                # Estado (columna final: índice 22)
                 self._step_history_table.setItem(
                     row_idx,
                     len(values),
@@ -7202,16 +7417,78 @@ class ControlPanelV2(QMainWindow):
         if self._step_history_table is not None:
             self._step_window_refresh()
 
+    def _step_selected_object_name(self) -> str:
+        positions = get_object_positions() or {}
+        for candidate in (
+            str(getattr(self, "_selected_object", "") or "").strip(),
+            str(getattr(self, "_selection_last_user_name", "") or "").strip(),
+            str(getattr(self, "_last_grasp_selection_name", "") or "").strip(),
+            PICK_DEMO_OBJECT_NAME,
+        ):
+            if candidate and candidate in positions:
+                return candidate
+        try:
+            for name, state in get_object_states().items():
+                if getattr(state, "logical_state", None) == ObjectLogicalState.SELECTED and name in positions:
+                    return str(name)
+        except Exception:
+            pass
+        if len(positions) == 1:
+            try:
+                return str(next(iter(positions.keys())))
+            except Exception:
+                return ""
+        return ""
+
     def _step_fetch_object_world(self) -> Optional[Tuple[float, float, float]]:
         """Lee la pose del objeto activo en world desde el estado global."""
         try:
             positions = get_object_positions() or {}
-            for _name, _pos in positions.items():
-                if isinstance(_pos, (list, tuple)) and len(_pos) >= 3:
-                    return (float(_pos[0]), float(_pos[1]), float(_pos[2]))
+            selected_name = self._step_selected_object_name()
+            if selected_name:
+                selected_pos = positions.get(selected_name)
+                if isinstance(selected_pos, (list, tuple)) and len(selected_pos) >= 3:
+                    return (
+                        float(selected_pos[0]),
+                        float(selected_pos[1]),
+                        float(selected_pos[2]),
+                    )
+            object_hint = getattr(self, "_step_object_position", None)
+            if isinstance(object_hint, (list, tuple)) and len(object_hint) >= 3:
+                hint_world = self._step_display_position(
+                    (float(object_hint[0]), float(object_hint[1]), float(object_hint[2]))
+                )
+                if hint_world is not None:
+                    return hint_world
+            if len(positions) == 1:
+                only_pos = next(iter(positions.values()))
+                if isinstance(only_pos, (list, tuple)) and len(only_pos) >= 3:
+                    return (float(only_pos[0]), float(only_pos[1]), float(only_pos[2]))
         except Exception:
             pass
         return None
+
+    def _step_update_row_object_metrics(
+        self,
+        row: Dict[str, object],
+        actual_pose: Optional[Tuple[float, float, float]],
+    ) -> None:
+        obj_world = self._step_fetch_object_world()
+        row["object_world_snapshot"] = obj_world
+        if actual_pose is None or obj_world is None:
+            row["dist_tcp_obj_snapshot"] = None
+            return
+        try:
+            obj_base_for_dist = world_to_base(
+                float(obj_world[0]), float(obj_world[1]), float(obj_world[2])
+            )
+            import math as _math
+
+            row["dist_tcp_obj_snapshot"] = _math.sqrt(
+                sum((float(actual_pose[i]) - float(obj_base_for_dist[i])) ** 2 for i in range(3))
+            )
+        except Exception:
+            row["dist_tcp_obj_snapshot"] = None
 
     def _step_record_current_phase_actual(self) -> None:
         if not self._step_history_rows:
@@ -7246,28 +7523,10 @@ class ControlPanelV2(QMainWindow):
             elif reached is False:
                 last_row["row_state"] = "PHASE_BLOCKED"
 
-        # Capturar pose del objeto y distancia TCP↔objeto al cerrar la fase
-        try:
-            obj_world = self._step_fetch_object_world()
-            last_row["object_world_snapshot"] = obj_world
-            if actual_pose is not None and obj_world is not None:
-                import math as _math
-                # actual_pose es base_link; obj_world es world. Convertir obj_world a
-                # base_link para que ambos estén en el mismo frame antes de calcular distancia.
-                try:
-                    obj_base_for_dist = world_to_base(
-                        float(obj_world[0]), float(obj_world[1]), float(obj_world[2])
-                    )
-                    last_row["dist_tcp_obj_snapshot"] = _math.sqrt(
-                        sum((actual_pose[i] - obj_base_for_dist[i]) ** 2 for i in range(3))
-                    )
-                except Exception:
-                    last_row["dist_tcp_obj_snapshot"] = None
-            else:
-                last_row["dist_tcp_obj_snapshot"] = None
-        except Exception:
-            last_row["object_world_snapshot"] = None
-            last_row["dist_tcp_obj_snapshot"] = None
+        # Capturar pose del objeto y distancia TCP↔objeto al cerrar la fase.
+        # Esto debe congelarse incluso cuando la fase se cierra por handoff
+        # implícito hacia la siguiente fila STEP.
+        self._step_update_row_object_metrics(last_row, actual_pose)
 
         # Razón legible del check
         if actual_pose is None:
@@ -7413,6 +7672,7 @@ class ControlPanelV2(QMainWindow):
                     # Solo aplica si la fila anterior NO fue ya rellenada por un evaluador
                     # (e.g. AttachGateEvaluator via _step_update_phase_result).
                     _prev_row["actual"] = _curr_snap
+                    self._step_update_row_object_metrics(_prev_row, _curr_snap)
                     _prev_row["reached"] = self._step_assess_target_reached(
                         _prev_row.get("target"), _curr_snap
                     )
@@ -8307,6 +8567,9 @@ class ControlPanelV2(QMainWindow):
                 return False, reason
         else:
             state_map = {str(c.name): str(c.state) for c in resp.controller}
+        self._controller_state_map = dict(state_map)
+        self._controller_state_source = controller_source
+        self._controller_state_ts = time.time()
         required = ["joint_state_broadcaster", "joint_trajectory_controller"]
         if gripper_controller_defined():
             required.append("gripper_controller")

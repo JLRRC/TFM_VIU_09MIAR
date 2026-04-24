@@ -402,7 +402,6 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     panel._update_panel_flow_state(
         ready_basic=ready_basic,
         camera_ready=camera_ready,
-        test_pending=test_pending,
         pick_enabled=pick_enabled,
         system_error=system_error,
     )

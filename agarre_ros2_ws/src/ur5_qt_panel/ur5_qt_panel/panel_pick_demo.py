@@ -145,6 +145,44 @@ def _direct_runtime_target_tol_m(label: str) -> float:
     )
 
 
+def pick_demo_target_semantics(phase_name: str) -> tuple[str, str]:
+    label_name = str(phase_name or "").strip().upper()
+    if label_name in {
+        "APPROACH_COARSE",
+        "APPROACH_COARSE_REFINE",
+        "APPROACH_COARSE_XY_CORR",
+        "APPROACH_COARSE_Z_CORR",
+    }:
+        return (
+            "OBJETO_MAS_CLEARANCE",
+            "APPROACH_COARSE fija XY sobre el objeto y permite clearance en Z antes del contacto.",
+        )
+    if label_name == "GRASP_DOWN_JOINT" or label_name.startswith("GRASP_DOWN_JOINT_"):
+        return (
+            "CONTACTO_GRASP",
+            "GRASP_DOWN_JOINT baja hacia contacto preservando el XY validado en APPROACH_COARSE.",
+        )
+    if label_name == "GRASP_ALIGN_IK":
+        return (
+            "OBJETO_EXACTO",
+            "GRASP_ALIGN_IK corrige la alineacion fina sobre la referencia de grasp del objeto.",
+        )
+    if label_name in {"PRE_CLOSE", "CLOSE", "ATTACH_GATE"}:
+        return (
+            "EXEC_REAL",
+            "La fase depende de la ejecucion real del cierre y del attach, no de un target geometrico nuevo.",
+        )
+    if label_name in {"HOME_INITIAL", "MESA_READY", "INICIO"}:
+        return (
+            "CACHE",
+            "Fila preparatoria o de control; no representa un target de contacto sobre el objeto.",
+        )
+    return (
+        "CACHE",
+        "Semantica de target no clasificada para esta fase.",
+    )
+
+
 def _is_demo_basket_transport_stage(label: str) -> bool:
     return str(label or "").strip().upper().startswith("CESTA_STAGE_")
 
@@ -258,6 +296,38 @@ def _normalize_joint_goal_near_seed(joint_goal, seed) -> list[float]:
         float(q) + two_pi * round((float(s) - float(q)) / two_pi)
         for q, s in zip(joint_goal_list, seed_list)
     ]
+
+
+def _resolve_joint_goal_normalization_seed(
+    *,
+    label: str,
+    fallback_seed,
+    retry_seed=None,
+) -> list[float]:
+    fallback_seed_list = _coerce_ur5_joint_vector(fallback_seed)
+    retry_seed_list = _coerce_ur5_joint_vector(retry_seed)
+    if _is_demo_basket_transport_stage(label) and retry_seed_list is not None:
+        return retry_seed_list
+    if fallback_seed_list is not None:
+        return fallback_seed_list
+    if retry_seed_list is not None:
+        return retry_seed_list
+    raise ValueError("joint_goal_normalization_seed_unavailable")
+
+
+def _normalize_joint_goal_for_execution(
+    *,
+    label: str,
+    joint_goal,
+    fallback_seed,
+    retry_seed=None,
+) -> list[float]:
+    normalization_seed = _resolve_joint_goal_normalization_seed(
+        label=label,
+        fallback_seed=fallback_seed,
+        retry_seed=retry_seed,
+    )
+    return _normalize_joint_goal_near_seed(joint_goal, normalization_seed)
 
 
 def _build_transport_seed_candidates(
@@ -5478,8 +5548,12 @@ def run_pick_demo(panel) -> None:
                     and _seed_max_dev(solved_q, seed) > _IK_DEV_THRESHOLD
                 )
                 _retry_due_to_accuracy = (not bool(ik_ok)) or pos_err_m > float(effective_ik_err_tol)
+                selected_normalization_seed = _coerce_ur5_joint_vector(seed)
+                selected_normalization_source = "base_seed"
                 if _retry_due_to_branch or _retry_due_to_accuracy:
                     _best_q, _best_err, _best_ok = solved_q, pos_err_m, ik_ok
+                    _best_normalization_seed = selected_normalization_seed
+                    _best_normalization_source = selected_normalization_source
                     _transport_retry_seeds = _build_transport_seed_candidates(
                         base_seed=seed,
                         live_seed=_live_joint_seed_or_none(panel),
@@ -5523,11 +5597,15 @@ def run_pick_demo(panel) -> None:
                         _cand_is_valid = bool(_rok) and _rpos_err <= float(effective_ik_err_tol)
                         if _cand_is_valid and not _best_is_valid:
                             _best_q, _best_err, _best_ok = _rq, _rpos_err, _rok
+                            _best_normalization_seed = [float(value) for value in _rseed]
+                            _best_normalization_source = _retry_source
                             if _seed_max_dev(_best_q, seed) <= _IK_DEV_THRESHOLD:
                                 break  # Good enough — stop retrying
                             continue
                         if _rok and not _cand_is_valid and not _best_is_valid and _rpos_err < _best_err:
                             _best_q, _best_err, _best_ok = _rq, _rpos_err, _rok
+                            _best_normalization_seed = [float(value) for value in _rseed]
+                            _best_normalization_source = _retry_source
                         if _cand_is_valid:
                             # Prefer a solution that is dramatically more accurate
                             # (≥5× better pos_err) over one closer to the home seed.
@@ -5539,9 +5617,13 @@ def run_pick_demo(panel) -> None:
                             _pos_similar = _rpos_err <= _best_err * 2.0
                             if _pos_much_better or (_dev_better and _pos_similar):
                                 _best_q, _best_err, _best_ok = _rq, _rpos_err, _rok
+                                _best_normalization_seed = [float(value) for value in _rseed]
+                                _best_normalization_source = _retry_source
                             if _seed_max_dev(_best_q, seed) <= _IK_DEV_THRESHOLD:
                                 break  # Good enough — stop retrying
                     solved_q, pos_err_m, ik_ok = _best_q, _best_err, _best_ok
+                    selected_normalization_seed = _best_normalization_seed
+                    selected_normalization_source = _best_normalization_source
                 _seed_max_dev_rad = _seed_max_dev(solved_q, seed)
                 _seed_sum_dev_rad = _seed_sum_dev(solved_q, seed)
                 panel._emit_log(
@@ -5692,10 +5774,16 @@ def run_pick_demo(panel) -> None:
                         f"{label.lower()}_ik_failed pos_err_m={pos_err_m:.4f}"
                     )
                 solved_q_list = [float(v) for v in solved_q.tolist()]
-                solved_q_list = _normalize_joint_goal_near_seed(solved_q_list, seed)
+                solved_q_list = _normalize_joint_goal_for_execution(
+                    label=label,
+                    joint_goal=solved_q_list,
+                    fallback_seed=seed,
+                    retry_seed=selected_normalization_seed,
+                )
                 panel._emit_log(
                     "[PICK][DIRECT][JOINT_GOAL] "
                     f"label={label} joints={json.dumps(_json_safe(solved_q_list), ensure_ascii=True)} "
+                    f"normalize_seed_source={selected_normalization_source} "
                     f"timeout_sec={float(timeout_sec):.3f}"
                 )
 

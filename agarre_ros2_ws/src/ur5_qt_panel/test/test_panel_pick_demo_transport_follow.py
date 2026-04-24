@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from ur5_qt_panel import panel_pick_demo as pick_demo
@@ -240,6 +242,36 @@ def test_compute_demo_transport_recovery_stage_targets_skips_short_residuals() -
     )
 
     assert targets == []
+
+
+def test_normalize_joint_goal_for_execution_prefers_retry_seed_for_basket_transport() -> None:
+    joint_goal = [0.10, -1.50, 0.0, -1.60, 0.0, 0.0]
+    fallback_seed = [0.10, -1.50, 0.0, -1.60, 0.0, 0.0]
+    retry_seed = [0.10 + (2.0 * math.pi), -1.50, 0.0, -1.60, 0.0, 0.0]
+
+    normalized = pick_demo._normalize_joint_goal_for_execution(
+        label="CESTA_STAGE_1_RECOVER_1",
+        joint_goal=joint_goal,
+        fallback_seed=fallback_seed,
+        retry_seed=retry_seed,
+    )
+
+    assert normalized[0] == pytest.approx(retry_seed[0])
+
+
+def test_normalize_joint_goal_for_execution_keeps_fallback_seed_for_non_transport() -> None:
+    joint_goal = [0.10, -1.50, 0.0, -1.60, 0.0, 0.0]
+    fallback_seed = [0.10, -1.50, 0.0, -1.60, 0.0, 0.0]
+    retry_seed = [0.10 + (2.0 * math.pi), -1.50, 0.0, -1.60, 0.0, 0.0]
+
+    normalized = pick_demo._normalize_joint_goal_for_execution(
+        label="HOME",
+        joint_goal=joint_goal,
+        fallback_seed=fallback_seed,
+        retry_seed=retry_seed,
+    )
+
+    assert normalized[0] == pytest.approx(fallback_seed[0])
 
 
 def test_compute_demo_transport_micro_recovery_target_steps_along_residual() -> None:
