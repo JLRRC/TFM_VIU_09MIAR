@@ -2291,3 +2291,34 @@ def diagnose_tf_tree(
                 result["error"] = "static tf publish failed"
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Shared log-string formatters (consolidated from pick_demo / pick_object)
+# ---------------------------------------------------------------------------
+
+def fmt_vec3(vec, *, null: str = "(--,--,--)") -> str:
+    """Format a 3-element sequence as (x.3f,y.3f,z.3f)."""
+    if vec is None:
+        return null
+    try:
+        return f"({float(vec[0]):.3f},{float(vec[1]):.3f},{float(vec[2]):.3f})"
+    except Exception:
+        return null
+
+
+def fmt_pose_dict(pose_data, *, null: str = "(--,--,--)") -> str:
+    """Format a pose dict {frame, position} as 'frame=X pos=(x,y,z)'."""
+    if not isinstance(pose_data, dict):
+        return "frame=n/a pos=(--,--,--)"
+    frame = str(pose_data.get("frame", "") or "n/a")
+    pos = pose_data.get("position", None)
+    return f"frame={frame} pos={fmt_vec3(pos, null=null)}"
+
+
+def fmt_age_sec(value) -> str:
+    """Format a numeric value as a seconds string."""
+    try:
+        return f"{float(value):.3f}s"
+    except Exception:
+        return "n/a"

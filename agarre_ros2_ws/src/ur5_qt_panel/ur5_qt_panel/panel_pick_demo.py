@@ -70,6 +70,7 @@ from .panel_objects import (
 from .panel_readiness import tf_ready_status
 from .panel_utils import (
     angle_shortest_diff_rad,
+    fmt_vec3,
     get_pose,
     transform_point_to_frame,
     world_to_base,
@@ -215,13 +216,6 @@ def _pick_demo_tuple3(data):
         )
     except Exception:
         return None
-
-
-def _pick_demo_fmt_vec(vec) -> str:
-    vec3 = _pick_demo_tuple3(vec)
-    if vec3 is None:
-        return "none"
-    return f"({vec3[0]:.3f},{vec3[1]:.3f},{vec3[2]:.3f})"
 
 
 def _pick_demo_fmt_scalar(value, *, digits: int = 3) -> str:
@@ -605,7 +599,7 @@ def _resolve_live_object_world(
 
     trace_fn(
         "[LIVE_OBJ][SOURCE] "
-        f"source=snapshot object={object_name} world={_pick_demo_fmt_vec(snapshot_world)} "
+        f"source=snapshot object={object_name} world={fmt_vec3(snapshot_world)} "
         f"age_sec={_pick_demo_fmt_scalar(snapshot_age_sec)} fresh={str(bool(snapshot_fresh)).lower()} "
         f"max_age_sec={_pick_demo_fmt_scalar(max_snapshot_age_sec)} reason={snapshot_reason}"
     )
@@ -655,7 +649,7 @@ def _resolve_live_object_world(
 
     trace_fn(
         "[LIVE_OBJ][SOURCE] "
-        f"source=stable_cache object={object_name} world={_pick_demo_fmt_vec(stable_world)} "
+        f"source=stable_cache object={object_name} world={fmt_vec3(stable_world)} "
         f"age_sec={_pick_demo_fmt_scalar(stable_age_sec)} fresh={str(bool(stable_fresh)).lower()} "
         f"max_age_sec={_pick_demo_fmt_scalar(max_stable_cache_age_sec)} reason={stable_reason}"
     )
@@ -707,7 +701,7 @@ def _resolve_live_object_world(
                 }
                 trace_fn(
                     "[LIVE_OBJ][FINAL] "
-                    f"object={object_name} source={result['source']} world={_pick_demo_fmt_vec(result['world'])} "
+                    f"object={object_name} source={result['source']} world={fmt_vec3(result['world'])} "
                     f"reason={result['reason']}"
                 )
                 return result
@@ -740,7 +734,7 @@ def _resolve_live_object_world(
         }
         trace_fn(
             "[LIVE_OBJ][FINAL] "
-            f"object={object_name} source={result['source']} world={_pick_demo_fmt_vec(result['world'])} "
+            f"object={object_name} source={result['source']} world={fmt_vec3(result['world'])} "
             f"reason={result['reason']}"
         )
         return result
@@ -763,7 +757,7 @@ def _resolve_live_object_world(
             }
             trace_fn(
                 "[LIVE_OBJ][FINAL] "
-                f"object={object_name} source={result['source']} world={_pick_demo_fmt_vec(result['world'])} "
+                f"object={object_name} source={result['source']} world={fmt_vec3(result['world'])} "
                 f"reason={result['reason']}"
             )
             return result
@@ -865,7 +859,7 @@ def _resolve_live_object_base(
         result["base_reason"] = "tf_transform_ok"
         trace_fn(
             "[LIVE_OBJ][FINAL] "
-            f"object={object_name} base_source={result['base_source']} base={_pick_demo_fmt_vec(base_pos)} "
+            f"object={object_name} base_source={result['base_source']} base={fmt_vec3(base_pos)} "
             f"reason={result['base_reason']}"
         )
         return result
@@ -886,7 +880,7 @@ def _resolve_live_object_base(
         else:
             trace_fn(
                 "[LIVE_OBJ][STATIC_FALLBACK] "
-                f"object={object_name} enabled=true base={_pick_demo_fmt_vec(static_base)}"
+                f"object={object_name} enabled=true base={fmt_vec3(static_base)}"
             )
         result = dict(world_result or {})
         result["base"] = static_base
@@ -898,7 +892,7 @@ def _resolve_live_object_base(
         )
         trace_fn(
             "[LIVE_OBJ][FINAL] "
-            f"object={object_name} base_source={result['base_source']} base={_pick_demo_fmt_vec(static_base)} "
+            f"object={object_name} base_source={result['base_source']} base={fmt_vec3(static_base)} "
             f"reason={result['base_reason']}"
         )
         return result
@@ -959,7 +953,7 @@ def _select_pick_demo_cycle_object_reference(
 
     trace_fn(
         "[PICK][DIRECT][CYCLE_REF][SELECT] tag=[DIRECT][CYCLE_REF][SELECT] "
-        f"phase=BUTTON_PRESS selected_pose_base_link={_pick_demo_fmt_vec(selected_base)} "
+        f"phase=BUTTON_PRESS selected_pose_base_link={fmt_vec3(selected_base)} "
         f"max_promoted_stable_age_sec={_pick_demo_fmt_scalar(max_promoted_stable_age_sec)} "
         f"max_selected_stable_divergence_m={_pick_demo_fmt_scalar(max_selected_stable_divergence_m)} "
         f"require_object_on_table={str(bool(require_object_on_table)).lower()}"
@@ -989,8 +983,8 @@ def _select_pick_demo_cycle_object_reference(
             "[PICK][DIRECT][CYCLE_REF][SELECT] tag=[DIRECT][CYCLE_REF][SELECT] "
             f"phase=BUTTON_PRESS source={selected['source']} promoted_stable=false "
             f"snapshot_age_sec={_pick_demo_fmt_scalar(snapshot_age_sec)} "
-            f"cycle_object_world={_pick_demo_fmt_vec(selected['world'])} "
-            f"cycle_object_base={_pick_demo_fmt_vec(selected['base'])}"
+            f"cycle_object_world={fmt_vec3(selected['world'])} "
+            f"cycle_object_base={fmt_vec3(selected['base'])}"
         )
         return selected
 
@@ -1105,14 +1099,14 @@ def _select_pick_demo_cycle_object_reference(
                 f"max_selected_stable_divergence_m={_pick_demo_fmt_scalar(max_selected_stable_divergence_m)} "
                 f"object_on_table={str(bool(on_table_ok)).lower()} "
                 f"object_logical_state={stable_logical_state} "
-                f"stable_world={_pick_demo_fmt_vec(stable_world)} stable_base={_pick_demo_fmt_vec(stable_base)}"
+                f"stable_world={fmt_vec3(stable_world)} stable_base={fmt_vec3(stable_base)}"
             )
         if snapshot_base is None:
             trace_fn(
                 "[PICK][DIRECT][CYCLE_REF][REJECT] tag=[DIRECT][CYCLE_REF][REJECT] "
                 f"phase=BUTTON_PRESS source=snapshot reject_reason=snapshot_base_unavailable "
                 f"snapshot_source={snapshot_source} snapshot_reason={snapshot_reason} "
-                f"snapshot_world={_pick_demo_fmt_vec(snapshot_world)} snapshot_base={_pick_demo_fmt_vec(snapshot_base)}"
+                f"snapshot_world={fmt_vec3(snapshot_world)} snapshot_base={fmt_vec3(snapshot_base)}"
             )
         return {
             "ok": False,
@@ -1145,8 +1139,8 @@ def _select_pick_demo_cycle_object_reference(
         f"selected_stable_divergence_m={_pick_demo_fmt_scalar(selected_stable_divergence_m)} "
         f"object_on_table={str(bool(on_table_ok)).lower()} "
         f"object_logical_state={stable_logical_state} "
-        f"cycle_object_world={_pick_demo_fmt_vec(selected['world'])} "
-        f"cycle_object_base={_pick_demo_fmt_vec(selected['base'])}"
+        f"cycle_object_world={fmt_vec3(selected['world'])} "
+        f"cycle_object_base={fmt_vec3(selected['base'])}"
     )
     return selected
 
@@ -1284,7 +1278,7 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
                     f"source={confirmation_source} "
                     f"world_obj=({xw:.3f},{yw:.3f},{zw:.3f}) "
                     f"world_basket=({basket_world[0]:.3f},{basket_world[1]:.3f},{basket_world[2]:.3f}) "
-                    f"world_release={_pick_demo_fmt_vec(release_reference_world)} "
+                    f"world_release={fmt_vec3(release_reference_world)} "
                     f"dxy_w={dxy_world:.3f} dz_w={dz_world:.3f} "
                     f"dxy_b={dxy_base:.3f} dz_b={dz_base:.3f} "
                     f"release_dxy_w={release_dxy_world:.3f} release_dxy_b={release_dxy_base:.3f}"
@@ -1296,7 +1290,7 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
                     "[PICK][DEMO][REJECT] basket_confirmation_release_only "
                     f"world_obj=({xw:.3f},{yw:.3f},{zw:.3f}) "
                     f"world_basket=({basket_world[0]:.3f},{basket_world[1]:.3f},{basket_world[2]:.3f}) "
-                    f"world_release={_pick_demo_fmt_vec(release_reference_world)} "
+                    f"world_release={fmt_vec3(release_reference_world)} "
                     f"dxy_w={dxy_world:.3f} dz_w={dz_world:.3f} "
                     f"dxy_b={dxy_base:.3f} dz_b={dz_base:.3f} "
                     f"release_dxy_w={release_dxy_world:.3f} release_dxy_b={release_dxy_base:.3f}"
@@ -1308,7 +1302,7 @@ def _demo_object_in_basket(panel, timeout_sec: float = 4.0) -> bool:
             "[PICK][DEMO][FAIL] basket_confirmation_timeout "
             f"world_obj=({world_obj[0]:.3f},{world_obj[1]:.3f},{world_obj[2]:.3f}) "
             f"world_basket=({basket_world[0]:.3f},{basket_world[1]:.3f},{basket_world[2]:.3f}) "
-            f"world_release={_pick_demo_fmt_vec(release_reference_world)} "
+            f"world_release={fmt_vec3(release_reference_world)} "
             f"dxy_w={last_diag['dxy_world']:.3f} dz_w={last_diag['dz_world']:.3f} "
             f"dxy_b={last_diag['dxy_base']:.3f} dz_b={last_diag['dz_base']:.3f} "
             f"release_dxy_w={last_diag['release_dxy_world']:.3f} "
@@ -1393,9 +1387,9 @@ def _validate_demo_transport_follow(
             log_fn(
                 "[PICK][DIRECT][TRANSPORT] "
                 f"phase={phase} sample "
-                f"obj_world={_pick_demo_fmt_vec(obj_world)} "
-                f"obj_base={_pick_demo_fmt_vec(obj_base)} "
-                f"tcp_base={_pick_demo_fmt_vec(tcp_base)} "
+                f"obj_world={fmt_vec3(obj_world)} "
+                f"obj_base={fmt_vec3(obj_base)} "
+                f"tcp_base={fmt_vec3(tcp_base)} "
                 f"tcp_dist={tcp_dist:.3f} obj_world_z={obj_world_z:.3f} "
                 f"cond_tcp={str(cond_tcp).lower()} cond_z={str(cond_z).lower()}"
             )
@@ -1427,18 +1421,18 @@ def _validate_demo_transport_follow(
         "[PICK][DIRECT][TRANSPORT] "
         f"phase={phase} failed best_tcp_dist={_pick_demo_fmt_scalar(best_tcp_dist)} "
         f"best_obj_world_z={_pick_demo_fmt_scalar(best_obj_world_z)} "
-        f"last_obj_world={_pick_demo_fmt_vec(last_obj_world)} "
-        f"last_obj_base={_pick_demo_fmt_vec(last_obj_base)} "
-        f"last_tcp_base={_pick_demo_fmt_vec(last_tcp_base)} "
+        f"last_obj_world={fmt_vec3(last_obj_world)} "
+        f"last_obj_base={fmt_vec3(last_obj_base)} "
+        f"last_tcp_base={fmt_vec3(last_tcp_base)} "
         f"fail_reasons={','.join(fail_reason_keys)}"
     )
     raise RuntimeError(
         "demo_transport_follow_failed "
         f"phase={phase} best_tcp_dist={_pick_demo_fmt_scalar(best_tcp_dist)} "
         f"best_obj_world_z={_pick_demo_fmt_scalar(best_obj_world_z)} "
-        f"last_obj_world={_pick_demo_fmt_vec(last_obj_world)} "
-        f"last_obj_base={_pick_demo_fmt_vec(last_obj_base)} "
-        f"last_tcp_base={_pick_demo_fmt_vec(last_tcp_base)} "
+        f"last_obj_world={fmt_vec3(last_obj_world)} "
+        f"last_obj_base={fmt_vec3(last_obj_base)} "
+        f"last_tcp_base={fmt_vec3(last_tcp_base)} "
         f"fail_reasons={','.join(fail_reason_keys)}"
     )
 
@@ -1994,7 +1988,7 @@ def run_pick_demo(panel) -> None:
         )
         panel._emit_log(
             "[PICK][DIRECT][ABORT] "
-            f"target={target_object_name} reason=not_on_table pos={_pick_demo_fmt_vec(target_state.position)}"
+            f"target={target_object_name} reason=not_on_table pos={fmt_vec3(target_state.position)}"
         )
         panel._ui_set_status(
             "Directo: el objeto seleccionado no esta sobre la mesa",
@@ -2301,7 +2295,7 @@ def run_pick_demo(panel) -> None:
             )
 
             def _fmt_vec(vec) -> str:
-                return _pick_demo_fmt_vec(vec)
+                return fmt_vec3(vec)
 
             def _fmt_scalar(value, *, digits: int = 3) -> str:
                 return _pick_demo_fmt_scalar(value, digits=digits)

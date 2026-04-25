@@ -55,7 +55,7 @@ from .panel_robot_presets import (
     JOINT_PICK_IMAGE_POSE_RAD,
     _make_pose_data,
 )
-from .panel_utils import get_object_positions, transform_point_to_frame, get_tf_helper, nearest_table_object
+from .panel_utils import get_object_positions, transform_point_to_frame, get_tf_helper, nearest_table_object, fmt_vec3, fmt_pose_dict, fmt_age_sec
 from .panel_objects import (
     ObjectLogicalState,
     ObjectOwner,
@@ -81,27 +81,6 @@ def run_pick_object(panel) -> None:
     def _dbg(msg: str) -> None:
         if panel._debug_logs_enabled:
             panel._emit_log(msg)
-
-    def _fmt_xyz(vec: object) -> str:
-        if not isinstance(vec, (list, tuple)) or len(vec) < 3:
-            return "(--,--,--)"
-        try:
-            return f"({float(vec[0]):.3f},{float(vec[1]):.3f},{float(vec[2]):.3f})"
-        except Exception:
-            return "(--,--,--)"
-
-    def _fmt_pose_dict(pose_data: object) -> str:
-        if not isinstance(pose_data, dict):
-            return "frame=n/a pos=(--,--,--)"
-        frame = str(pose_data.get("frame", "") or "n/a")
-        pos = pose_data.get("position", None)
-        return f"frame={frame} pos={_fmt_xyz(pos)}"
-
-    def _fmt_age_sec(value: object) -> str:
-        try:
-            return f"{float(value):.3f}s"
-        except Exception:
-            return "n/a"
 
     def _moveit2_log(scope: str, msg: str) -> None:
         panel._emit_log(f"[MOVEIT2][{scope}] {msg}")
@@ -787,8 +766,8 @@ def run_pick_object(panel) -> None:
     panel._emit_log(
         "[PICK][MOVEIT][LIVE_OBJECT] "
         f"name={obj_name} source={pose_source} "
-        f"world_frame={world_frame} world_pose={_fmt_xyz((obj_x, obj_y, obj_z))} "
-        f"base_frame={base_frame} base_pose={_fmt_xyz((bx, by, bz))} "
+        f"world_frame={world_frame} world_pose={fmt_vec3((obj_x, obj_y, obj_z))} "
+        f"base_frame={base_frame} base_pose={fmt_vec3((bx, by, bz))} "
         f"selected_ts={selected_ts:.3f} obj_base_stamp_ns={obj_base_stamp_ns}"
     )
     grasp_yaw_deg: Optional[float] = None
@@ -1316,14 +1295,14 @@ def run_pick_object(panel) -> None:
                 "[PICK][MOVEIT][PANEL_TRACE] "
                 f"label={label} "
                 f"selected_object={str(getattr(panel, '_selected_object', '') or 'none')} "
-                f"object_pose_base={_fmt_xyz(current_obj_base)} "
-                f"tcp_panel_fk_base={_fmt_xyz(panel_fk_tcp)} "
-                f"tcp_panel_fk_rpy_deg={_fmt_xyz(panel_fk_rpy)} "
-                f"tcp_live_base={_fmt_xyz(live_tcp)} "
-                f"tcp_live_rpy_deg={_fmt_xyz(live_rpy)} "
-                f"panel_fk_age_sec={_fmt_age_sec(max(0.0, time.monotonic() - float(getattr(panel, '_last_tcp_fk_ts', time.monotonic()) or time.monotonic())))} "
-                f"tcp_live_age_sec={_fmt_age_sec(max(0.0, time.monotonic() - float(getattr(panel, '_last_trace_tcp_ts', time.monotonic()) or time.monotonic())))} "
-                f"object_age_sec={_fmt_age_sec(object_age)}"
+                f"object_pose_base={fmt_vec3(current_obj_base)} "
+                f"tcp_panel_fk_base={fmt_vec3(panel_fk_tcp)} "
+                f"tcp_panel_fk_rpy_deg={fmt_vec3(panel_fk_rpy)} "
+                f"tcp_live_base={fmt_vec3(live_tcp)} "
+                f"tcp_live_rpy_deg={fmt_vec3(live_rpy)} "
+                f"panel_fk_age_sec={fmt_age_sec(max(0.0, time.monotonic() - float(getattr(panel, '_last_tcp_fk_ts', time.monotonic()) or time.monotonic())))} "
+                f"tcp_live_age_sec={fmt_age_sec(max(0.0, time.monotonic() - float(getattr(panel, '_last_trace_tcp_ts', time.monotonic()) or time.monotonic())))} "
+                f"object_age_sec={fmt_age_sec(object_age)}"
             )
             if (
                 isinstance(panel_fk_tcp, (list, tuple))
@@ -3359,26 +3338,26 @@ def run_pick_object(panel) -> None:
                         panel._emit_log(
                             "[PICK][MOVEIT][TCP_BEFORE] "
                             f"label={label} ee_frame={measured_ee_frame} target_frame={frame_id} "
-                            f"tcp_live_base={_fmt_xyz(tcp_before)} "
-                            f"object_live_base={_fmt_xyz(live_base_xyz)} "
-                            f"delta_object_tcp_base={_fmt_xyz((dx_bt, dy_bt, dz_bt)) if tcp_before is not None and live_base_xyz is not None else '(--,--,--)'} "
+                            f"tcp_live_base={fmt_vec3(tcp_before)} "
+                            f"object_live_base={fmt_vec3(live_base_xyz)} "
+                            f"delta_object_tcp_base={fmt_vec3((dx_bt, dy_bt, dz_bt)) if tcp_before is not None and live_base_xyz is not None else '(--,--,--)'} "
                             f"dist_object_tcp_base_m={dist_bt:.3f}" if tcp_before is not None and live_base_xyz is not None else
-                            f"[PICK][MOVEIT][TCP_BEFORE] label={label} ee_frame={measured_ee_frame} target_frame={frame_id} tcp_live_base={_fmt_xyz(tcp_before)} object_live_base={_fmt_xyz(live_base_xyz)} delta_object_tcp_base=(--,--,--) dist_object_tcp_base_m=n/a"
+                            f"[PICK][MOVEIT][TCP_BEFORE] label={label} ee_frame={measured_ee_frame} target_frame={frame_id} tcp_live_base={fmt_vec3(tcp_before)} object_live_base={fmt_vec3(live_base_xyz)} delta_object_tcp_base=(--,--,--) dist_object_tcp_base_m=n/a"
                         )
                         panel._emit_log(
                             "[PICK][MOVEIT][TARGET] "
                             f"label={label} target_source={live_source} "
-                            f"target_original={_fmt_pose_dict(pose_data)} "
-                            f"target_command={_fmt_pose_dict(pose_to_send)} "
-                            f"object_live_world={_fmt_xyz(live_world_xyz)} "
-                            f"object_live_base={_fmt_xyz(live_base_xyz)}"
+                            f"target_original={fmt_pose_dict(pose_data)} "
+                            f"target_command={fmt_pose_dict(pose_to_send)} "
+                            f"object_live_world={fmt_vec3(live_world_xyz)} "
+                            f"object_live_base={fmt_vec3(live_base_xyz)}"
                         )
                         panel._emit_log(
                             "[PICK][MOVEIT][FRAME_AUDIT] "
                             f"label={label} object_world_frame={world_frame} "
                             f"object_base_frame={base_frame} target_frame_original={frame_id} "
                             f"ee_frame={measured_ee_frame} "
-                            f"delta_object_tcp_base={_fmt_xyz((dx_bt, dy_bt, dz_bt)) if tcp_before is not None and live_base_xyz is not None else '(--,--,--)'} "
+                            f"delta_object_tcp_base={fmt_vec3((dx_bt, dy_bt, dz_bt)) if tcp_before is not None and live_base_xyz is not None else '(--,--,--)'} "
                             f"dist_object_tcp_base_m={dist_bt:.3f}" if tcp_before is not None and live_base_xyz is not None else
                             f"[PICK][MOVEIT][FRAME_AUDIT] label={label} object_world_frame={world_frame} object_base_frame={base_frame} target_frame_original={frame_id} ee_frame={measured_ee_frame} delta_object_tcp_base=(--,--,--) dist_object_tcp_base_m=n/a"
                         )
@@ -3401,7 +3380,7 @@ def run_pick_object(panel) -> None:
                             f"label={label} request_id={panel_request_id} request_uuid={panel_request_uuid} "
                             f"phase={label_up} cartesian={str(bool(cartesian_mode)).lower()} "
                             f"timeout_sec={float(timeout_sec):.2f} "
-                            f"command_frame={frame_id} command_pose={_fmt_xyz(position)} "
+                            f"command_frame={frame_id} command_pose={fmt_vec3(position)} "
                             f"tol_m={tol_step:.3f}"
                         )
                         panel._emit_log(
@@ -3586,8 +3565,8 @@ def run_pick_object(panel) -> None:
                     panel._emit_log(
                         "[PICK][MOVEIT][TCP_AFTER] "
                         f"label={label} ee_frame={measured_ee_frame} frame={frame_id} "
-                        f"tcp_live={_fmt_xyz(tcp_after)} target={_fmt_xyz(target_after)} "
-                        f"delta_target_tcp={_fmt_xyz((float(target_after[0]) - float(tcp_after[0]), float(target_after[1]) - float(tcp_after[1]), float(target_after[2]) - float(tcp_after[2]))) if isinstance(target_after, (list, tuple)) and isinstance(tcp_after, (list, tuple)) else '(--,--,--)'} "
+                        f"tcp_live={fmt_vec3(tcp_after)} target={fmt_vec3(target_after)} "
+                        f"delta_target_tcp={fmt_vec3((float(target_after[0]) - float(tcp_after[0]), float(target_after[1]) - float(tcp_after[1]), float(target_after[2]) - float(tcp_after[2]))) if isinstance(target_after, (list, tuple)) and isinstance(tcp_after, (list, tuple)) else '(--,--,--)'} "
                         f"dist_m={dist:.3f} tol_m={tol:.3f}"
                     )
                     dist = float(tf_diag.get("dist", 0.0))
