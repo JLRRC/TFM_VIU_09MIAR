@@ -76,9 +76,9 @@ def build_runtime_audit_snapshot(panel: Any) -> RuntimeAuditSnapshot:
     tf_tcp_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_pinch_center"))
     tool0_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("tool0"))
     rg2_base_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_base_link"))
-    rg2_hand_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_hand"))
-    rg2_left_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_leftfinger"))
-    rg2_right_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_rightfinger"))
+    rg2_hand_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_base_link"))
+    rg2_left_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_finger_link1"))
+    rg2_right_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_finger_link2"))
     base_link_world = _base_pose_to_world(panel, (0.0, 0.0, 0.0))
 
     target_world = _base_pose_to_world(panel, getattr(panel, "_step_phase_position", None))
@@ -234,9 +234,9 @@ def build_runtime_audit_snapshot(panel: Any) -> RuntimeAuditSnapshot:
         f"[GAZEBO] Objeto pose/info: {_fmt_vec(object_gazebo_world)}",
         f"[CHECK] error objeto panel vs Gazebo: {_fmt_delta(object_panel_vs_gazebo)}",
         f"[CHECK] error target vs objeto: {_fmt_delta(target_vs_object)}",
-        f"[SDF/TF] rg2_hand: {_fmt_optional_semantic_frame(rg2_hand_world)}",
-        f"[SDF/TF] rg2_leftfinger: {_fmt_optional_semantic_frame(rg2_left_world)}",
-        f"[SDF/TF] rg2_rightfinger: {_fmt_optional_semantic_frame(rg2_right_world)}",
+        f"[SDF/TF] rg2_base_link: {_fmt_optional_semantic_frame(rg2_hand_world)}",
+        f"[SDF/TF] rg2_finger_link1: {_fmt_optional_semantic_frame(rg2_left_world)}",
+        f"[SDF/TF] rg2_finger_link2: {_fmt_optional_semantic_frame(rg2_right_world)}",
         f"[GAZEBO] pose/info: topic={pose_topic or 'sin dato'} age={_fmt_age(pose_age)} entities={int(pose_entities)} state={pose_info_state}",
     ]
 

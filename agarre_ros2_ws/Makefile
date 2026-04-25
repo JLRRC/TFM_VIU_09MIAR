@@ -8,7 +8,7 @@ VENV ?= /home/laboratorio/TFM/.venv-tfm
 RUFF := $(if $(wildcard $(VENV)/bin/ruff),$(VENV)/bin/ruff,ruff)
 PYTEST := $(if $(wildcard $(VENV)/bin/pytest),$(VENV)/bin/pytest,pytest)
 
-.PHONY: qa lint format-check format test evidence-startup evidence-latest evidence-prune
+.PHONY: qa lint format-check format test evidence-startup evidence-latest evidence-prune limpiar
 
 qa: lint test
 
@@ -39,3 +39,7 @@ evidence-latest:
 evidence-prune:
 	@echo "[MAKE] evidence-prune"
 	@cd "$(ROOT)" && ./scripts/prune_startup_evidence.sh $${KEEP:-10}
+
+limpiar:
+	@echo "[MAKE] limpiar stack"
+	@cd "$(ROOT)" && ./scripts/limpiar_stack.sh

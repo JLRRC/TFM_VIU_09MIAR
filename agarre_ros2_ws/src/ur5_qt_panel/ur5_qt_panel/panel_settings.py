@@ -186,8 +186,8 @@ class PanelSettings:
     debug_poses_period_sec: float = 3.0
     pick_log_min_interval_sec: float = 2.0
     gripper_cmd_topic: str = "/gripper_controller/commands"
-    # Temporalmente restaurado a la escala histórica para validar la apertura completa.
-    gripper_open_rad: float = 1.0
+    # Gripper prismático: apertura máxima 0.0425 m por dedo (límite del joint en URDF/SDF).
+    gripper_open_rad: float = 0.0425
     gripper_closed_rad: float = 0.0
     gripper_joint2_sign: float = 1.0
     panel_managed: bool = False
@@ -364,7 +364,7 @@ class PanelSettings:
             debug_poses_period_sec=_env_float("PANEL_DEBUG_POSES_PERIOD_SEC", 3.0),
             pick_log_min_interval_sec=_env_float("PANEL_PICK_LOG_MIN_INTERVAL_SEC", 2.0),
             gripper_cmd_topic=_env_str("PANEL_GRIPPER_CMD_TOPIC", "/gripper_controller/commands"),
-            gripper_open_rad=_env_float("PANEL_GRIPPER_OPEN_RAD", 1.0),
+            gripper_open_rad=_env_float("PANEL_GRIPPER_OPEN_RAD", 0.0425),
             gripper_closed_rad=_env_float("PANEL_GRIPPER_CLOSED_RAD", 0.0),
             gripper_joint2_sign=_env_float("PANEL_GRIPPER_JOINT2_SIGN", 1.0),
             panel_managed=_env_bool("PANEL_MANAGED", False),
