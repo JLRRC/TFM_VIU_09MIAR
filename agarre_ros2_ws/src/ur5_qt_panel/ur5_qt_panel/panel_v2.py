@@ -9,27 +9,16 @@ Ejecutar con: python -m ur5_qt_panel.panel_v2
 from __future__ import annotations
 
 import os
-import copy
-import csv
-import re
 import math
-import shlex
 import signal
-import shutil
 import subprocess
 import sys
 import threading
 import time
-import traceback
-import json
-import uuid
-import xml.etree.ElementTree as ET
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Set
+from typing import Dict, List, Optional, Tuple
 
 from ur5_tools.gripper_geometry import (
-    contact_z_correction_for_frame,
     tool0_offset_for_frame,
 )
 
@@ -38,31 +27,15 @@ try:
 except Exception:
     psutil = None
 import numpy as np
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot, QObject, QThread
-from PyQt5.QtGui import QColor, QPixmap
+from PyQt5.QtCore import QTimer, pyqtSignal, QThread
 from PyQt5.QtWidgets import (
     QApplication,
-    QAbstractScrollArea,
     QCheckBox,
-    QComboBox,
-    QDialog,
-    QDoubleSpinBox,
-    QFileDialog,
-    QGridLayout,
     QGroupBox,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QPushButton,
-    QScrollArea,
-    QSlider,
-    QSizePolicy,
-    QWidget,
-    QHBoxLayout,
-    QVBoxLayout,
-    QHeaderView,
     QTableWidget,
-    QTableWidgetItem,
 )
 try:
     import yaml  # type: ignore
@@ -70,330 +43,77 @@ except Exception:
     yaml = None
 
 from .panel_config import (
-    BAGS_DIR,
-    BASE_FRAME,
-    BRIDGE_BASE_YAML,
-    DEFAULT_JOINT_MOVE_SEC,
-    DEFAULT_WORLD_CANDIDATES,
     DROP_OBJECTS,
-    DROP_OBJECT_NAMES,
-    EGL_VENDOR,
-    GZ_PARTITION_FILE,
-    GZ_WORLD,
-    JOINT_SLIDER_DEG_MAX,
-    JOINT_SLIDER_DEG_MIN,
-    JOINT_SLIDER_SCALE,
-    LOG_DIR,
-    MODELS_DIR,
-    SCRIPTS_DIR,
-    TABLE_CENTER_X,
-    TABLE_CENTER_Y,
-    TABLE_SIZE_X,
-    TABLE_SIZE_Y,
-    SELECTION_SNAP_DIST,
-    SELECTION_TIMEOUT_SEC,
-    AUTO_START_BRIDGE,
-    AUTO_START_BRIDGE_DELAY_MS,
-    AUTO_START_BRIDGE_MAX_RETRIES,
-    CALIBRATION_CAMERA_TOPIC,
-    UR5_HOME_DEFAULT,
-    UR5_JOINT_NAMES,
-    GRIPPER_JOINT_NAMES,
-    GRIPPER_ATTACH_PREFIX,
-    DROP_ANCHOR_PREFIX,
-    UR5_BASE_X,
-    UR5_BASE_Y,
-    UR5_BASE_Z,
-    UR5_REACH_RADIUS,
-    SAVE_POSE_INFO_POSITIONS,
-    UR5_CONTROLLERS_YAML,
-    UR5_JOINT_LIMITS_YAML,
-    UR5_MODEL_NAME,
-    BASKET_DROP,
     WORLD_FRAME,
-    WORLDS_DIR,
     WS_DIR,
-    ROS_AVAILABLE,
-    NUDGE_DROP_OBJECTS,
-    NUDGE_DROP_DZ,
-    NUDGE_DROP_Z_MIN,
-    OBJECT_SHAPES,
-    TRAJ_ACTION_FALLBACK,
-    TRAJ_ACTION_FALLBACK_DELAY_SEC,
-    TRAJ_ACTION_FALLBACK_EPS_RAD,
-    TRAJ_ACTION_FALLBACK_TIMEOUT_SEC,
-    CONTROLLER_READY_TIMEOUT_SEC,
-    CONTROLLER_READY_CACHE_SEC,
-    MOVEIT_READY_TIMEOUT_SEC,
     GZ_LAUNCH_TIMEOUT_SEC,
-    BRIDGE_LAUNCH_TIMEOUT_SEC,
-    MOVEIT_LAUNCH_TIMEOUT_SEC,
-    MOVEIT_BRIDGE_LAUNCH_TIMEOUT_SEC,
-    CONTROLLER_DROP_GRACE_SEC,
     TRACE_PRINT_PERIOD_SEC,
-    DEBUG_POSES_PERIOD_SEC,
-    PICK_LOG_MIN_INTERVAL_SEC,
-    GRIPPER_CMD_TOPIC,
-    GRIPPER_OPEN_RAD,
-    GRIPPER_CLOSED_RAD,
-    GRIPPER_JOINT2_SIGN,
     PANEL_MANAGED,
     PANEL_MOVEIT_REQUIRED,
-    ALLOW_UNSETTLED_ON_TIMEOUT,
     CAMERA_READY_FRAMES,
     CAMERA_INIT_GRACE_SEC,
     CAMERA_READY_MAX_AGE_SEC,
     CAMERA_REQUIRED,
-    CAMERA_DISPLAY_INTERVAL_MS,
-    CAMERA_FAST_SCALE,
-    CAMERA_PREPROCESS_TFM,
-    STALE_PROCESS_GRACE_SEC,
-    TF_INIT_GRACE_SEC,
-    CONTROLLER_START_GRACE_SEC,
-    POSE_INFO_MAX_AGE_SEC,
-    POSE_INFO_POLL_SEC,
-    POSE_INFO_LOG_PERIOD,
-    POSE_INFO_ALLOW_STALE,
-    POSE_CLI_ENABLED,
     CRITICAL_CLOCK_TIMEOUT_SEC,
-    CRITICAL_POSE_TIMEOUT_SEC,
-    POSE_CLI_MIN_INTERVAL_SEC,
-    OVERLAY_CALIB,
-    OVERLAY_SELECTION,
-    OVERLAY_REACH,
-    OVERLAY_ANTIALIAS,
-    CAMERA_SKIP_TFM_INPUT,
-    CAMERA_UI_SKIP_HIDDEN,
-    CAMERA_INFO_INTERVAL_SEC,
-    CAMERA_TRACK_FPS,
-    STATUS_TOPIC_CACHE_SEC,
     GZ_SERVICE_CHECK_SEC,
     CRITICAL_CLOCK_TIMEOUT_SEC,
-    CRITICAL_POSE_TIMEOUT_SEC,
-    ATTACH_DIST_M,
-    ATTACH_REL_EPS,
-    ATTACH_HAND_MOVE_EPS,
-    ATTACH_WINDOW_SEC,
-    ATTACH_SNAP_EPS,
-    PICK_TF_RETRY_SEC,
-    PICK_TF_TIMEOUT_SEC,
-    FALL_TEST_DELAY_SEC,
-    PICK_DEMO_PRE_GRASP_Z_OFFSET,
-    PICK_DEMO_GRASP_Z_OFFSET,
-    PICK_DEMO_TRANSPORT_Z_OFFSET,
-    PICK_DEMO_DROP_Z_OFFSET,
-    GRIPPER_TCP_Z_OFFSET,
     AUTO_CALIB_FROM_CAMERA,
-    REACH_OVERLAY_Z,
-    REACH_OVERLAY_POINTS,
-    CALIB_GRID_STEP,
-    PICKABLE_PRE_GRASP_Z,
-    PICKABLE_MIN_CLEARANCE,
     DEBUG_LOGS_TO_STDOUT,
-    PANEL_GZ_GUI,
     DEBUG_JOINTS_TO_STDOUT,
     PANEL_JOINT_STATES_TOPIC,
     PANEL_CAMERA_TOPIC,
     USE_SIM_TIME,
-    PANEL_SKIP_CLEANUP,
-    PANEL_KILL_STALE,
     VISION_DIR,
-    VISION_EXP_DIR,
     INFER_CKPT,
-    INFER_ROI_SIZE,
-    INFER_RETRY_ERR_PX,
     PICK_DEMO_SPAWN_POSE,
 )
 from .panel_utils import (
-    angle_shortest_diff_rad,
-    bash_preamble,
-    build_gz_env,
     CmdRunner,
-    GZ_LOG_FILTERS,
     RosWorker,
-    clock_status as graph_clock_status,
-    detect_base_frame,
-    ensure_dir,
-    bulk_update_object_positions,
     get_object_positions,
-    get_object_position,
-    gz_sim_status,
-    base_to_world,
-    world_to_base,
-    load_home_pose,
     load_object_positions,
-    save_object_positions,
-    log_to_file,
-    parse_ros_topics,
-    read_world_name,
-    nearest_table_object,
-    object_out_of_reach,
-    resolve_gz_partition,
-    get_object_pose_gz,
-    rotate_log,
-    run_cmd,
-    set_led,
-    table_xy_to_pixel,
-    table_xy_to_pixel_float,
-    pixel_to_table_xy,
-    _parse_pose_json,
-    transform_point_to_frame,
-    get_pose,
-    discover_base_and_ee_frames,
-    get_tf_helper,
-    _can_transform_between,
-    _preferred_base_frame,
-    _list_tf_topics,
     shutdown_tf_helper,
-    _log_tf_yaml_head_once,
-    world_xyz_to_pixel,
-    world_xyz_to_pixel_float,
-    with_line_buffer,
-    build_log_filter_cmd,
-    yaw_from_quaternion,
-    tf_world_base_valid,
-    resolve_controller_manager,
-    list_controllers_state,
-    base_frame_candidates,
     rclpy,
-    ROBOT_FRAME_KEYWORDS,
-    gripper_controller_defined,
 )
-from .panel_objects import (
-    ObjectLogicalState,
-    ObjectOwner,
-    force_release_all_objects,
-    get_object_state,
-    get_object_states,
-    is_on_table,
-    mark_object_released,
-    recalc_object_states,
-    set_test_read_only,
-    update_object_state,
-)
-from .panel_startup import StartSequence
 from .panel_state import (
-    EXTERNAL_STATE_MAP,
     MoveItState,
     PanelStateEvaluator,
-    PanelStateSnapshot,
     SystemState,
 )
-from .panel_physics import PanelPhysics, OBJECT_SETTLE_TIMEOUT_SEC
-from .panel_shutdown import StopSequence, terminate_process
+from .panel_physics import PanelPhysics
+from .panel_shutdown import terminate_process
 from .panel_tf_monitor import TFMonitor
-from . import panel_launchers
-from . import panel_controllers
-from .panel_ui_state import apply_ui_state
-from .panel_robot_presets import (
-    _make_pose_data,
-    _build_pose_stamped,
-    POSE_HOME_DATA,
-    POSE_TABLE_DATA,
-    POSE_BASKET_DATA,
-    JOINT_TABLE_POSE_RAD,
-    JOINT_BASKET_POSE_RAD,
-    JOINT_HOME_POSE_RAD,
-    JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD,
-    PRE_GRASP_POSE_DATA,
-    GRASP_POSE_DATA,
-    TRANSPORT_POSE_DATA,
-    DROP_POSE_DATA,
-    PICK_DEMO_OBJECT_NAME,
-)
-from .panel_motion_helpers import (
-    build_joint_trajectory,
-    command_gripper, command_gripper_preopen,
-    traj_action_target, resolve_traj_action_name,
-    get_action_client, wait_action_server, format_action_error,
-    joint_motion_since, wait_for_joint_target,
-    wait_for_tcp_base_z, wait_for_tcp_base_target,
-    send_joint_trajectory_action, schedule_traj_action_fallback,
-    clamp_joint_positions, publish_joint_trajectory,
-    log_traj_action_fallback, publish_moveit_pose,
-)
-from .panel_camera_helpers import is_camera_topic
 from .panel_moveit_publishers import init_moveit_publishers
-from .panel_moveit_ready import moveit_topics_ready, moveit_status_ready, moveit_action_ready
-from .panel_moveit_wait import wait_for_moveit_ready
-from .panel_calibration import start_calibration
-from .panel_readiness import (
-    camera_ready_status,
-    pose_info_ready_status,
-    tf_ready_status,
-    tf_not_ready_reason,
-    camera_not_ready_reason,
-    pose_info_not_ready_reason,
-    controllers_not_ready_reason,
-    ros_node_not_ready_reason,
-    controller_manager_not_ready_reason,
-    list_controllers_not_ready_reason,
-    moveit_not_ready_reason,
-    set_moveit_wait_status,
-    moveit_control_status,
-    manual_control_status,
-    pick_ui_status,
-)
 from .panel_tfm import (
-    build_tfm_preprocessed_input,
-    _store_preprocessed_cache,
-    reconcile_inferred_grasp_angle,
-    reconcile_inferred_grasp_center,
-    reconcile_inferred_grasp_size,
-    tfm_infer,
-    tfm_infer_grasp, tfm_canonical_use_pick_object,
-    complete_pending_tfm_infer_request, complete_pending_tfm_execute_request,
-    complete_pending_pick_demo_request, build_tfm_pick_object_override,
-    tfm_canonical_state_reset, tfm_canonical_phase_update, tfm_canonical_finish,
-    restore_infer_selection_snapshot, latest_camera_frame_snapshot,
-    ensure_selected_object_in_store, handle_infer_result,
-    sync_tfm_module_grasp_state, tfm_visualize_grasp, wait_tfm_moveit_result,
-    execute_tfm_world_grasp, on_tfm_grasp_object_clicked, tfm_publish_grasp,
+    tfm_infer_grasp,
+    tfm_canonical_use_pick_object,
+    complete_pending_tfm_infer_request,
+    complete_pending_tfm_execute_request,
+    complete_pending_pick_demo_request,
+    build_tfm_pick_object_override,
+    tfm_canonical_state_reset, tfm_canonical_phase_update,
+    tfm_canonical_finish, restore_infer_selection_snapshot,
+    latest_camera_frame_snapshot, ensure_selected_object_in_store,
+    handle_infer_result, sync_tfm_module_grasp_state, tfm_visualize_grasp,
+    wait_tfm_moveit_result, execute_tfm_world_grasp,
+    on_tfm_grasp_object_clicked, tfm_publish_grasp,
 )
-from .panel_moveit_flow import publish_moveit_pose
-from .panel_ros_publishers import (
-    get_attach_publisher,
-    get_gripper_publisher,
-    get_traj_publisher,
-)
-from .panel_tf_diagnose import run_tf_diagnose
 from .tf_pose_utils import (
     get_transform as tf_get_transform,
-    get_tcp_in_base as tf_get_tcp_in_base,
-    transform_pose as tf_transform_pose,
-    world_pose_to_base as tf_world_pose_to_base,
 )
 from .panel_safety import PanelSafety
 from .panel_state_machine import PanelStateMachine
 from .panel_watchdog import PanelWatchdog
-from . import panel_launch_control
-from .panel_fatal import abort_local_stack
-from .panel_external_state import external_state_active, resolve_external_state, apply_external_system_state
-from .panel_pick_demo import run_pick_demo
-from .panel_runtime_pose_auditor import (
-    build_runtime_audit_snapshot,
-    compute_step_history_metrics,
-    runtime_status_style,
-)
-from .panel_pick_object import run_pick_object
 from .panel_env import (
     collect_env_diagnostics,
     format_env_diagnostics,
     validate_env,
-    effective_mode,
-    get_gz_transport_ip,
 )
 from .logging_utils import _PanelLogger, timestamped_line
-from .panel_camera import CameraController, CameraView
-from .panel_workers import _FnThread
-from .panel_step_ui import build_step_window, build_step_cart_debug_window
+from .panel_camera import CameraController
 from .panel_trace_ui import build_trace_group, build_science_group
-from .panel_main_ui import build_main_ui
 from . import panel_remote_callbacks as _rc
 from . import panel_trace_callbacks as _tc
-from . import panel_step_callbacks as _sc
-from . import panel_gz_objects as _gz
-from . import panel_camera_controllers as _cc
 from . import panel_draw_overlays as _do
 from . import panel_object_mgmt as _om
 from . import panel_calib_selection as _cs
@@ -404,18 +124,9 @@ from . import panel_helpers as _ph
 from . import panel_state_methods as _stm
 from . import panel_motion_control as _mc
 from . import panel_calib_actions as _ca
-from .step_pipeline_helpers import (
-    step_phase_action_text,
-    step_phase_gripper_state,
-    step_phase_intent,
-    step_phase_sequence,
-    step_predict_next_phase,
-    step_present_flow_name,
-)
+from . import panel_shutdown as _sd
 
-from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
-from rclpy.time import Time
 try:
     from tfm_grasping import TFMGraspModule
 except Exception:
@@ -424,9 +135,7 @@ try:
     from rclpy.parameter import Parameter
 except Exception:
     Parameter = None
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from std_srvs.srv import Trigger
-from std_msgs.msg import Float32MultiArray, Float64MultiArray, Empty
+from std_msgs.msg import Float32MultiArray
 try:
     from visualization_msgs.msg import Marker
     from geometry_msgs.msg import Point
@@ -632,9 +341,7 @@ def _load_cornell_metrics(vision_dir: str):
     }, ""
 
 
-from .cameras_tab import ObjectListPanel
-from .calibration_service import CalibrationService, CalibrationMode
-from .ur5_kinematics import fk_ur5, ik_ur5
+from .calibration_service import CalibrationService
 
 
 def _canonical_tool0_to_semantic_frame(
@@ -736,36 +443,9 @@ class ControlPanelV2(QMainWindow):
         """Chequeo periódico: si no llegan imágenes, log throttled y alerta visual."""
         self._camera_ctrl.health_check()
 
-    def get_health_report(self) -> dict:
-        """Emitir un resumen JSON del pipeline: topics, nodos, servicios, world_name, pose_info, TF, cámaras, controllers, MoveIt2, etc."""
-        report = {}
-        # Topics y tipos
-        topics_types = []
-        try:
-            if self._ros_worker_started and self.ros_worker.node_ready():
-                topics_types = self.ros_worker.topic_names_and_types()
-        except Exception as exc:
-            _log_exception("health_report topics/types", exc)
-        report["topics_types"] = topics_types
-        # Nodos y servicios
-        nodes = []
-        services = []
-        actions = []
-        try:
-            if self._ros_worker_started and self.ros_worker.node_ready():
-                nodes = self.ros_worker.list_node_names() if hasattr(self.ros_worker, "list_node_names") else []
-                services = self.ros_worker.list_service_names() if hasattr(self.ros_worker, "list_service_names") else []
-                actions = self.ros_worker.list_action_names() if hasattr(self.ros_worker, "list_action_names") else []
-        except Exception as exc:
-            _log_exception("health_report nodes/services/actions", exc)
-        report["nodes"] = nodes
-        report["services"] = services
-        report["actions"] = actions
-        # world_name detectado y pose_info_topic
-        world_name = self._gz_world_name or self._detect_world_name() or "unknown"
-        pose_info_topic = self._discover_pose_info_topic(world_name)
-        report["world_name_detected"] = world_name
-        return report
+    def get_health_report(self, *args, **kwargs):
+        return _sm.get_health_report(self, *args, **kwargs)
+
 
     def __init__(self):
         super().__init__()
@@ -3131,165 +2811,11 @@ class ControlPanelV2(QMainWindow):
         _tc._copy_trace_text(self)
 
     def closeEvent(self, event):
-        if self._shutdown_complete:
-            event.accept()
-            return
-        self._closing = True
-        self._emit_log("[SHUTDOWN][PANEL] begin")
-        self._set_step_mode("AUTO", emit_log=False)
-        self._emit_log("[SHUTDOWN][PANEL] stop_step_mode ok")
-        self._step_wait_event.set()
-        if self._step_window is not None:
-            self._step_window.close()
-        if self._step_cart_debug_window is not None:
-            self._step_cart_debug_window.close()
-        self._bridge_running = False
-        self._gz_running = False
-        self._log("[SHUTDOWN][PANEL] stop_timers begin")
-        for timer in (
-            self._trace_timer,
-            self._tf_ready_timer,
-            self._pose_debug_timer,
-            self._pose_info_timer,
-            getattr(self, "_camera_health_timer", None),
-            getattr(self, "_drop_hold_timer", None),
-            getattr(self, "_watchdog_timer", None),
-            getattr(self, "objects_timer", None),
-            getattr(self, "joint_timer", None),
-        ):
-            if timer:
-                timer.stop()
-        self._log("[SHUTDOWN][PANEL] stop_timers ok")
-        self._trace_ready = False
-        self._reset_trace_throttle("panel close")
-        self._log("[SHUTDOWN][PANEL] stop_workers begin")
-        self.ros_worker.stop_and_join()
-        self._log("[SHUTDOWN][PANEL] stop_workers ros_worker ok")
-        self._log("[SHUTDOWN][PANEL] stop_workers tf_helper begin")
-        shutdown_tf_helper()
-        self._log("[SHUTDOWN][PANEL] stop_workers tf_helper ok")
-        for thread_name, thread in (("settle_thread", getattr(self, "_settle_thread", None)),):
-            if thread is None:
-                continue
-            try:
-                running = bool(thread.isRunning())
-            except RuntimeError:
-                self._emit_log(
-                    f"[SHUTDOWN][PANEL] thread_join name={thread_name} ok=true timeout=0.0 note=already_deleted"
-                )
-                continue
-            if running:
-                thread.quit()
-                joined = bool(thread.wait(1000))
-                self._emit_log(
-                    f"[SHUTDOWN][PANEL] thread_join name={thread_name} ok={str(joined).lower()} timeout=1.0"
-                )
-        for idx, thread in enumerate(list(getattr(self, "_async_threads", []))):
-            if thread is None:
-                continue
-            try:
-                running = bool(thread.isRunning())
-            except RuntimeError:
-                self._emit_log(
-                    f"[SHUTDOWN][PANEL] thread_join name=async_{idx} ok=true timeout=0.0 note=already_deleted"
-                )
-                continue
-            if running:
-                thread.quit()
-                joined = bool(thread.wait(1000))
-                self._emit_log(
-                    f"[SHUTDOWN][PANEL] thread_join name=async_{idx} ok={str(joined).lower()} timeout=1.0"
-                )
-        self._log("[SHUTDOWN][PANEL] stop_workers ok")
-        self._kill_proc(self.bag_proc, "ros2 bag record")
-        # FASE 8: Stop MoveIt bridge and move_group BEFORE killing the Gazebo
-        # bridge and simulators so in-flight plans drain cleanly.
-        self._log("[TRACE] Shutdown: stopping MoveIt bridge")
-        self._kill_proc(self.moveit_bridge_proc, "ur5_moveit_bridge")
-        self.moveit_bridge_proc = None
-        self._log("[TRACE] Shutdown: stopping move_group")
-        terminate_process(self.moveit_proc, "move_group", log_fn=self._log, timeout_sec=5.0)
-        self.moveit_proc = None
-        self._kill_proc(self.bridge_proc, "parameter_bridge")
-        self._kill_proc(self.gz_pose_proc, "gz_pose_bridge")
-        self._kill_proc(self.release_service_proc, "release_objects_service")
-        self._kill_proc(self.world_tf_proc, "world_tf_publisher")
-        self._kill_proc(self.rsp_proc, "robot_state_publisher")
-        self._kill_proc(self.gz_gui_proc, "gz sim gui")
-        self._kill_proc(self.gz_proc, "gz sim")
-        self.bag_proc = None
-        self.bridge_proc = None
-        self.gz_pose_proc = None
-        self.release_service_proc = None
-        self.world_tf_proc = None
-        self.rsp_proc = None
-        self.gz_gui_proc = None
-        self.gz_proc = None
-        self._force_cleanup_leftovers()
-        if self._moveit_node is not None:
-            try:
-                self._moveit_node.destroy_node()
-            except Exception as exc:
-                _log_exception("destroy moveit node", exc)
-            self._moveit_node = None
-            self._moveit_pose_pub = None
-        try:
-            self._log("[SHUTDOWN][PANEL] ros_shutdown begin")
-            rclpy.try_shutdown()
-            self._log("[SHUTDOWN][PANEL] ros_shutdown ok")
-        except Exception as exc:
-            _log_exception("rclpy.try_shutdown", exc)
-        self._emit_log("[SHUTDOWN][PANEL] qt_close begin")
-        self._emit_log("[SHUTDOWN][PANEL] qt_close ok")
-        self._emit_log("[SHUTDOWN][PANEL] done")
-        self._shutdown_complete = True
-        super().closeEvent(event)
+        _sd.closeEvent(self, event)
 
-    def _force_cleanup_leftovers(self) -> None:
-        """Forzar cierre de procesos residuales del stack."""
-        patterns = (
-            "ros2 bag record",
-            "ros_gz_bridge",
-            "parameter_bridge",
-            "gz sim",
-            "gz-sim",
-            "gzserver",
-            "gzclient",
-            "ign gazebo",
-            "ros2 launch ur5_bringup",
-            "ros2_control_node",
-            "robot_state_publisher",
-            "world_tf_publisher",
-            "release_objects_service",
-            "system_state_manager",
-            "controller_manager",
-            "spawner",
-            "move_group",
-        )
-        for sig in ("-TERM", "-KILL"):
-            for pat in patterns:
-                try:
-                    subprocess.run(["pkill", sig, "-f", pat], check=False)
-                except Exception as exc:
-                    _log_exception(f"pkill {sig} {pat}", exc)
-                    continue
-            time.sleep(0.2)
-        try:
-            res = subprocess.run(
-                [
-                    "pgrep",
-                    "-af",
-                    "ros2 bag record|ros_gz_bridge|parameter_bridge|gz sim|gz-sim|gzserver|gzclient|ign gazebo|ros2 launch ur5_bringup|ros2_control_node|robot_state_publisher|world_tf_publisher|controller_manager|spawner|move_group",
-                ],
-                check=False,
-                text=True,
-                capture_output=True,
-            )
-            if res.stdout:
-                self._emit_log(f"[WARN] Procesos residuales tras cierre:\n{res.stdout.strip()}")
-        except Exception as exc:
-            _log_exception("pgrep residual processes", exc)
 
+    def _force_cleanup_leftovers(self, *args, **kwargs):
+        _gs._force_cleanup_leftovers(self, *args, **kwargs)
 
 def _normalize_joint_name(name) -> str:
     text = str(name).strip()

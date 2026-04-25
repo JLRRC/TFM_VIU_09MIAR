@@ -13,3 +13,13 @@ def timestamped_line(message: str) -> str:
 
     timestamp = datetime.now().isoformat(timespec="seconds")
     return f"[{timestamp}] {message}"
+
+
+class _PanelLogger:
+    """Logger façade so ControlPanelV2 can call get_logger().info(...)."""
+
+    def __init__(self, panel) -> None:
+        self._panel = panel
+
+    def info(self, msg: str) -> None:
+        self._panel._log(msg)
