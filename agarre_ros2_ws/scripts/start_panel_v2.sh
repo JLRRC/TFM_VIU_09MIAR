@@ -223,41 +223,69 @@ fi
 # --- cold boot: limpieza de procesos ---
 if [[ "$PANEL_COLD_BOOT" == "1" ]]; then
   log "cold boot: matando procesos previos..."
-  # Limpieza FastDDS (opcional pero útil)
+
+  # Matar otras instancias de este mismo script (excluir el proceso actual y su padre)
+  pgrep -f "start_panel_v2.sh" 2>/dev/null | grep -v "^$$\$" | xargs -r kill 2>/dev/null || true
+
+  # --- SIGTERM: todos los nodos del stack ur5 ---
+  # Launches (por nombre de paquete Y por ruta directa al fichero)
+  pkill -f "ros2 launch ur5_bringup"    2>/dev/null || true
+  pkill -f "ur5_stack.launch.py"        2>/dev/null || true
+  pkill -f "ur5_moveit_bringup"         2>/dev/null || true
+
+  # Gazebo
+  pkill -f "gz sim"                     2>/dev/null || true
+  pkill -f "gz-sim"                     2>/dev/null || true
+  pkill -f "gzserver"                   2>/dev/null || true
+  pkill -f "gzclient"                   2>/dev/null || true
+  pkill -f "ign gazebo"                 2>/dev/null || true
+
+  # Bridges y publishers
+  pkill -f "ros_gz_bridge"              2>/dev/null || true
+  pkill -f "parameter_bridge"           2>/dev/null || true
+  pkill -f "robot_state_publisher"      2>/dev/null || true
+  pkill -f "world_tf_publisher"         2>/dev/null || true
+  pkill -f "gz_pose_bridge"             2>/dev/null || true
+  pkill -f "gz_ros_control_guard"       2>/dev/null || true
+
+  # ros2_control
+  pkill -f "ros2_control_node"          2>/dev/null || true
+  pkill -f "controller_manager"         2>/dev/null || true
+  pkill -f "controller_bootstrap"       2>/dev/null || true
+  pkill -f "spawner"                    2>/dev/null || true
+
+  # MoveIt
+  pkill -f "move_group"                 2>/dev/null || true
+  pkill -f "ur5_moveit_bridge"          2>/dev/null || true
+  pkill -f "ur5_moveit_py"              2>/dev/null || true
+
+  # Nodos auxiliares del stack
+  pkill -f "planning_scene_sync"        2>/dev/null || true
+  pkill -f "gripper_attach_backend"     2>/dev/null || true
+  pkill -f "release_objects_service"    2>/dev/null || true
+  pkill -f "system_state_manager"       2>/dev/null || true
+
+  # Panel
+  pkill -f "ur5_qt_panel"               2>/dev/null || true
+  pkill -f "panel_v2.py"                2>/dev/null || true
+  pkill -f "ros2 run ur5_qt_panel panel_v2" 2>/dev/null || true
+
+  # Limpieza FastDDS (después de matar para no dejar ficheros huérfanos)
+  sleep 1
   if [[ -d /dev/shm ]]; then
     rm -rf /dev/shm/fastdds* /dev/shm/ros* 2>/dev/null || true
   fi
 
-  # Procesos típicos del stack
-  pkill -f "gz sim"            2>/dev/null || true
-  pkill -f "gzserver"          2>/dev/null || true
-  pkill -f "gzclient"          2>/dev/null || true
-  pkill -f "ign gazebo"        2>/dev/null || true
-  pkill -f "ros_gz_bridge"     2>/dev/null || true
-  pkill -f "parameter_bridge"  2>/dev/null || true
-  pkill -f "robot_state_publisher" 2>/dev/null || true
-  pkill -f "ros2_control_node" 2>/dev/null || true
-  pkill -f "controller_manager" 2>/dev/null || true
-  pkill -f "spawner" 2>/dev/null || true
-  pkill -f "release_objects_service" 2>/dev/null || true
-  pkill -f "system_state_manager" 2>/dev/null || true
-  pkill -f "ros2 launch ur5_bringup" 2>/dev/null || true
-
-  # Paneles previos (ajusta patrones si lo necesitas)
-  pkill -f "ur5_qt_panel"      2>/dev/null || true
-  pkill -f "panel_v2.py"       2>/dev/null || true
-  pkill -f "ros2 run ur5_qt_panel panel_v2" 2>/dev/null || true
-
-  # Eliminar procesos zombis (procesos bash huérfanos pausados)
+  # Eliminar procesos zombis/pausados
   log "limpiando procesos zombis..."
   ps aux | awk '$8 == "Z" {print $2}' | xargs -r kill -9 2>/dev/null || true
   ps aux | awk '$8 == "T" {print $2}' | xargs -r kill -9 2>/dev/null || true
 
   any_running() {
-    pgrep -af "ros2 bag record|ros_gz_bridge|parameter_bridge|gz sim|gz-sim|gzserver|gzclient|ign gazebo|ros2 launch ur5_bringup|ros2_control_node|robot_state_publisher|world_tf_publisher|controller_manager|spawner|move_group|ur5_qt_panel|panel_v2.py" >/dev/null 2>&1
+    pgrep -af "ros2 bag record|ros_gz_bridge|parameter_bridge|gz sim|gz-sim|gzserver|gzclient|ign gazebo|ur5_stack.launch.py|ros2 launch ur5_bringup|ros2_control_node|robot_state_publisher|world_tf_publisher|gz_pose_bridge|controller_manager|controller_bootstrap|spawner|move_group|ur5_moveit_bridge|ur5_moveit_py|planning_scene_sync|gripper_attach_backend|release_objects_service|system_state_manager|ur5_qt_panel|panel_v2.py" >/dev/null 2>&1
   }
 
-  # Verificación: si quedan procesos, intentar cierre forzado.
+  # Verificación: esperar a que mueran con SIGTERM (4 s máx)
   for _ in {1..20}; do
     if any_running; then
       sleep 0.2
@@ -265,28 +293,41 @@ if [[ "$PANEL_COLD_BOOT" == "1" ]]; then
       break
     fi
   done
+
+  # SIGKILL para lo que no haya muerto
   if any_running; then
-    log "cold boot: procesos aún activos, forzando cierre..."
-    pkill -KILL -f "ros2 bag record" >/dev/null 2>&1 || true
-    pkill -KILL -f "ros_gz_bridge" >/dev/null 2>&1 || true
-    pkill -KILL -f "parameter_bridge" >/dev/null 2>&1 || true
-    pkill -KILL -f "gz sim" >/dev/null 2>&1 || true
-    pkill -KILL -f "gz-sim" >/dev/null 2>&1 || true
-    pkill -KILL -f "gzserver" >/dev/null 2>&1 || true
-    pkill -KILL -f "gzclient" >/dev/null 2>&1 || true
-    pkill -KILL -f "ign gazebo" >/dev/null 2>&1 || true
-    pkill -KILL -f "ros2 launch ur5_bringup" >/dev/null 2>&1 || true
-    pkill -KILL -f "ros2_control_node" >/dev/null 2>&1 || true
-    pkill -KILL -f "robot_state_publisher" >/dev/null 2>&1 || true
-    pkill -KILL -f "world_tf_publisher" >/dev/null 2>&1 || true
-    pkill -KILL -f "controller_manager" >/dev/null 2>&1 || true
-    pkill -KILL -f "spawner" >/dev/null 2>&1 || true
-    pkill -KILL -f "move_group" >/dev/null 2>&1 || true
-    pkill -KILL -f "release_objects_service" >/dev/null 2>&1 || true
-    pkill -KILL -f "system_state_manager" >/dev/null 2>&1 || true
-    pkill -KILL -f "ur5_qt_panel" >/dev/null 2>&1 || true
-    pkill -KILL -f "panel_v2.py" >/dev/null 2>&1 || true
+    log "cold boot: procesos aún activos, forzando cierre con SIGKILL..."
+    pkill -KILL -f "ros2 bag record"          >/dev/null 2>&1 || true
+    pkill -KILL -f "ros_gz_bridge"            >/dev/null 2>&1 || true
+    pkill -KILL -f "parameter_bridge"         >/dev/null 2>&1 || true
+    pkill -KILL -f "gz sim"                   >/dev/null 2>&1 || true
+    pkill -KILL -f "gz-sim"                   >/dev/null 2>&1 || true
+    pkill -KILL -f "gzserver"                 >/dev/null 2>&1 || true
+    pkill -KILL -f "gzclient"                 >/dev/null 2>&1 || true
+    pkill -KILL -f "ign gazebo"               >/dev/null 2>&1 || true
+    pkill -KILL -f "ur5_stack.launch.py"      >/dev/null 2>&1 || true
+    pkill -KILL -f "ros2 launch ur5_bringup"  >/dev/null 2>&1 || true
+    pkill -KILL -f "ur5_moveit_bringup"       >/dev/null 2>&1 || true
+    pkill -KILL -f "ros2_control_node"        >/dev/null 2>&1 || true
+    pkill -KILL -f "robot_state_publisher"    >/dev/null 2>&1 || true
+    pkill -KILL -f "world_tf_publisher"       >/dev/null 2>&1 || true
+    pkill -KILL -f "gz_pose_bridge"           >/dev/null 2>&1 || true
+    pkill -KILL -f "gz_ros_control_guard"     >/dev/null 2>&1 || true
+    pkill -KILL -f "controller_manager"       >/dev/null 2>&1 || true
+    pkill -KILL -f "controller_bootstrap"     >/dev/null 2>&1 || true
+    pkill -KILL -f "spawner"                  >/dev/null 2>&1 || true
+    pkill -KILL -f "move_group"               >/dev/null 2>&1 || true
+    pkill -KILL -f "ur5_moveit_bridge"        >/dev/null 2>&1 || true
+    pkill -KILL -f "ur5_moveit_py"            >/dev/null 2>&1 || true
+    pkill -KILL -f "planning_scene_sync"      >/dev/null 2>&1 || true
+    pkill -KILL -f "gripper_attach_backend"   >/dev/null 2>&1 || true
+    pkill -KILL -f "release_objects_service"  >/dev/null 2>&1 || true
+    pkill -KILL -f "system_state_manager"     >/dev/null 2>&1 || true
+    pkill -KILL -f "ur5_qt_panel"             >/dev/null 2>&1 || true
+    pkill -KILL -f "panel_v2.py"              >/dev/null 2>&1 || true
     pkill -KILL -f "ros2 run ur5_qt_panel panel_v2" >/dev/null 2>&1 || true
+    sleep 1
+    rm -rf /dev/shm/fastdds* /dev/shm/ros* 2>/dev/null || true
   fi
 fi
 

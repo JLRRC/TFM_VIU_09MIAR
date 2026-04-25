@@ -34,26 +34,43 @@ fi
 
 # ── 2. Barrido TERM de todos los patrones conocidos ───────────────────────────
 log "barrido TERM..."
+# Launches — por nombre de paquete Y por ruta directa al fichero
 pkill -TERM -f "ros2 launch ur5_bringup"              2>/dev/null || true
+pkill -TERM -f "ur5_stack.launch.py"                  2>/dev/null || true
+pkill -TERM -f "ur5_moveit_bringup"                   2>/dev/null || true
+# Panel
 pkill -TERM -f "ur5_qt_panel.*panel_v2|panel_v2\.py"  2>/dev/null || true
+# MoveIt
 pkill -TERM -f "move_group"                            2>/dev/null || true
 pkill -TERM -f "ur5_moveit_bridge"                     2>/dev/null || true
+pkill -TERM -f "ur5_moveit_py"                         2>/dev/null || true
+pkill -TERM -f "planning_scene_sync"                   2>/dev/null || true
+# ros2_control
 pkill -TERM -f "controller_manager|ros2_control_node"  2>/dev/null || true
 pkill -TERM -f "controller_bootstrap"                  2>/dev/null || true
+pkill -TERM -f "spawner"                               2>/dev/null || true
+# Nodos auxiliares
 pkill -TERM -f "system_state_manager|release_objects_service" 2>/dev/null || true
-pkill -TERM -f "gripper_attach_backend|planning_scene_sync"   2>/dev/null || true
+pkill -TERM -f "gripper_attach_backend"                2>/dev/null || true
+# Bridges y publishers
 pkill -TERM -f "gz_pose_bridge|gz_ros_control_guard|world_tf_publisher" 2>/dev/null || true
 pkill -TERM -f "ros_gz_bridge|parameter_bridge"        2>/dev/null || true
 pkill -TERM -f "robot_state_publisher"                 2>/dev/null || true
+# Gazebo
 pkill -TERM -f "gz sim|gz-sim|gz-sim-server|gz-sim-gui|gzserver|gzclient|ign gazebo" 2>/dev/null || true
+# Misc
 pkill -TERM -f "ros2 bag record"                       2>/dev/null || true
 pkill -TERM -f "Xvfb"                                  2>/dev/null || true
 
 _any_running() {
-  pgrep -af "gz sim|gz-sim|gzserver|gzclient|ign gazebo|ros_gz_bridge|parameter_bridge|\
-ros2 launch ur5_bringup|ros2_control_node|robot_state_publisher|world_tf_publisher|\
-controller_manager|move_group|ur5_moveit_bridge|panel_v2\.py|ur5_qt_panel|\
-system_state_manager|gripper_attach_backend|planning_scene_sync|gz_pose_bridge" \
+  pgrep -af "gz sim|gz-sim|gzserver|gzclient|ign gazebo|\
+ros_gz_bridge|parameter_bridge|robot_state_publisher|world_tf_publisher|\
+gz_pose_bridge|gz_ros_control_guard|\
+ros2 launch ur5_bringup|ur5_stack.launch.py|ur5_moveit_bringup|\
+ros2_control_node|controller_manager|controller_bootstrap|spawner|\
+move_group|ur5_moveit_bridge|ur5_moveit_py|\
+planning_scene_sync|gripper_attach_backend|release_objects_service|system_state_manager|\
+panel_v2\.py|ur5_qt_panel" \
     >/dev/null 2>&1
 }
 
@@ -66,13 +83,18 @@ done
 if _any_running; then
   log "procesos resistentes — barrido KILL..."
   pkill -KILL -f "ros2 launch ur5_bringup"              2>/dev/null || true
+  pkill -KILL -f "ur5_stack.launch.py"                  2>/dev/null || true
+  pkill -KILL -f "ur5_moveit_bringup"                   2>/dev/null || true
   pkill -KILL -f "ur5_qt_panel.*panel_v2|panel_v2\.py"  2>/dev/null || true
   pkill -KILL -f "move_group"                            2>/dev/null || true
   pkill -KILL -f "ur5_moveit_bridge"                     2>/dev/null || true
+  pkill -KILL -f "ur5_moveit_py"                         2>/dev/null || true
+  pkill -KILL -f "planning_scene_sync"                   2>/dev/null || true
   pkill -KILL -f "controller_manager|ros2_control_node"  2>/dev/null || true
   pkill -KILL -f "controller_bootstrap"                  2>/dev/null || true
+  pkill -KILL -f "spawner"                               2>/dev/null || true
   pkill -KILL -f "system_state_manager|release_objects_service" 2>/dev/null || true
-  pkill -KILL -f "gripper_attach_backend|planning_scene_sync"   2>/dev/null || true
+  pkill -KILL -f "gripper_attach_backend"                2>/dev/null || true
   pkill -KILL -f "gz_pose_bridge|gz_ros_control_guard|world_tf_publisher" 2>/dev/null || true
   pkill -KILL -f "ros_gz_bridge|parameter_bridge"        2>/dev/null || true
   pkill -KILL -f "robot_state_publisher"                 2>/dev/null || true
@@ -105,8 +127,14 @@ fi
 # ── 7. Informe final ─────────────────────────────────────────────────────────
 if _any_running; then
   warn "aún quedan procesos del stack:"
-  pgrep -af "gz sim|gz-sim|gzserver|ros_gz_bridge|parameter_bridge|ros2 launch ur5_bringup|\
-ros2_control_node|robot_state_publisher|controller_manager|move_group|panel_v2\.py" 2>/dev/null || true
+  pgrep -af "gz sim|gz-sim|gzserver|gzclient|ign gazebo|\
+ros_gz_bridge|parameter_bridge|robot_state_publisher|world_tf_publisher|\
+gz_pose_bridge|gz_ros_control_guard|\
+ros2 launch ur5_bringup|ur5_stack.launch.py|ur5_moveit_bringup|\
+ros2_control_node|controller_manager|controller_bootstrap|spawner|\
+move_group|ur5_moveit_bridge|ur5_moveit_py|\
+planning_scene_sync|gripper_attach_backend|release_objects_service|system_state_manager|\
+panel_v2\.py|ur5_qt_panel" 2>/dev/null || true
   exit 1
 fi
 
