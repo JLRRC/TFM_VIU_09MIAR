@@ -25,6 +25,17 @@ Parar el stack ROS 2:
 ./agarre_ros2_ws/scripts/stop_panel_v2.sh
 ```
 
+Limpieza forzada del stack cuando hay procesos duplicados, huerfanos o carga anormal de CPU:
+
+```bash
+./limpiar_stack.sh          # interactivo, pide confirmacion
+./limpiar_stack.sh --force  # sin confirmacion
+```
+
+El script mata todos los procesos del workspace (panel, Gazebo, MoveIt, bridges, nodos ROS 2)
+sin tocar terminales, IDE, navegador ni procesos del sistema.
+Imprime un veredicto `LIMPIO` al terminar para confirmar que se puede relanzar el panel.
+
 Relanzar entrenamientos base del capitulo 5:
 
 ```bash

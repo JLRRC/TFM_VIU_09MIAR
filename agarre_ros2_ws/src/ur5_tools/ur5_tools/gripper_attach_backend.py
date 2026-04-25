@@ -839,14 +839,42 @@ class GripperAttachBackend(Node):
             and self._demo_transport_pose_delta(state.last_pose, pose) < self._demo_transport_min_step_m
         ):
             return True
+        _obj_before = state.last_pose
         ok = self._queue_set_pose_with_retry(name, pose)
         if ok:
+            _obj_after = pose
             state.last_pose = pose
             state.last_spawn_ts = now
             if (now - self._last_demo_transport_log_ts) >= 2.0:
+                _tcp_pose = self._lookup_tcp_pose()
+                _tcp_txt = (
+                    f"({_tcp_pose.x:.3f},{_tcp_pose.y:.3f},{_tcp_pose.z:.3f})"
+                    if _tcp_pose is not None else "unavailable"
+                )
+                _before_txt = (
+                    f"({_obj_before.x:.3f},{_obj_before.y:.3f},{_obj_before.z:.3f})"
+                    if _obj_before is not None else "none"
+                )
+                _delta_z_val = (
+                    float(_obj_after.z) - float(_obj_before.z)
+                    if _obj_before is not None else None
+                )
+                _delta_3d_val = (
+                    math.sqrt(
+                        (float(_obj_after.x) - float(_obj_before.x)) ** 2
+                        + (float(_obj_after.y) - float(_obj_before.y)) ** 2
+                        + (float(_obj_after.z) - float(_obj_before.z)) ** 2
+                    )
+                    if _obj_before is not None else None
+                )
+                _dz_txt = f"{_delta_z_val:.3f}" if _delta_z_val is not None else "n/a"
+                _d3_txt = f"{_delta_3d_val:.3f}" if _delta_3d_val is not None else "n/a"
                 self.get_logger().info(
-                    "[ATTACH_BACKEND] demo_transport_set_pose_ok "
-                    f"object={name} pose=({pose.x:.3f},{pose.y:.3f},{pose.z:.3f})"
+                    f"[ATTACH_BACKEND][FOLLOW] object={name} "
+                    f"tcp={_tcp_txt} "
+                    f"obj_before={_before_txt} "
+                    f"obj_after=({_obj_after.x:.3f},{_obj_after.y:.3f},{_obj_after.z:.3f}) "
+                    f"delta_z={_dz_txt} delta_3d={_d3_txt} verdict=ok"
                 )
                 self._last_demo_transport_log_ts = now
         elif (now - self._last_demo_transport_log_ts) >= 0.5:
@@ -2008,12 +2036,19 @@ class GripperAttachBackend(Node):
                 else "follow_tcp"
             )
             _ta_will_pass = _ta_dist <= self._attach_max_dist_m
+            _ta_anchor = (
+                "pick_demo_anchor" if name == "pick_demo" and _ta_route == "demo_transport"
+                else self._tcp_frame
+            )
+            _ta_tcp_age = float(self._pose_age_sec(_ta_tcp))
+            _ta_tf_fresh = bool(-0.5 <= _ta_tcp_age <= self._max_pose_age_sec)
             self.get_logger().info(
-                f"[ATTACH_BACKEND] attach_route_decision object={name} "
-                f"route={_ta_route} "
+                f"[ATTACH_BACKEND][ROUTE] object={name} "
+                f"route={_ta_route} anchor={_ta_anchor} "
                 f"dist={_ta_dist:.4f}m max={self._attach_max_dist_m:.4f}m "
                 f"geometry_ok={str(_ta_will_pass).lower()} "
-                f"tcp_src={self._last_tcp_pose_source} "
+                f"tf_fresh={str(_ta_tf_fresh).lower()} "
+                f"tcp_age={_ta_tcp_age:.3f}s tcp_src={self._last_tcp_pose_source} "
                 f"tcp=({_ta_tcp.x:.3f},{_ta_tcp.y:.3f},{_ta_tcp.z:.3f}) "
                 f"obj=({_ta_obj.x:.3f},{_ta_obj.y:.3f},{_ta_obj.z:.3f})"
             )
@@ -2025,7 +2060,8 @@ class GripperAttachBackend(Node):
                 )
         else:
             self.get_logger().warning(
-                f"[ATTACH_BACKEND] attach_route_decision object={name} "
+                f"[ATTACH_BACKEND][ROUTE] object={name} "
+                f"route=unknown anchor=unknown "
                 f"detail=pose_unavailable "
                 f"obj_available={str(_ta_obj is not None).lower()} "
                 f"tcp_available={str(_ta_tcp is not None).lower()}"

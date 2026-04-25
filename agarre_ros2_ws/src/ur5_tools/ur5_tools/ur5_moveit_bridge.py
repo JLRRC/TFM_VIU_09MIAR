@@ -4177,6 +4177,52 @@ class UR5MoveItBridge(Node):
                         f"pose=({target.pose.position.x:.3f},{target.pose.position.y:.3f},{target.pose.position.z:.3f}) "
                         f"cartesian={str(bool(cartesian)).lower()} ee_frame={self._ee_frame or 'n/a'}"
                     )
+                    self.get_logger().info(
+                        "[MOVEIT][TIP_LINK] "
+                        f"request_id={request_id} "
+                        f"ee_frame={self._ee_frame or 'n/a'} "
+                        f"ik_tip=rg2_tcp "
+                        f"base_frame={self._base_frame or 'n/a'}"
+                    )
+                    try:
+                        _tf_mv = self.tf_buffer.lookup_transform(
+                            "tool0", self._base_frame, Time()
+                        )
+                        _stamp_ns = (
+                            int(_tf_mv.header.stamp.sec) * 1_000_000_000
+                            + int(_tf_mv.header.stamp.nanosec)
+                        )
+                        _now_ns = self.get_clock().now().nanoseconds
+                        _mv_age = (_now_ns - _stamp_ns) / 1e9
+                        _mv_tf_max = float(
+                            os.environ.get("PANEL_PICK_DEMO_TF_MAX_AGE_SEC", "0.5") or 0.5
+                        )
+                        if _mv_age < 0.0:
+                            _mv_verdict = "OK"
+                            _mv_reason = f"clock_backwards_{_mv_age:.3f}s"
+                        elif _mv_age <= _mv_tf_max:
+                            _mv_verdict = "OK"
+                            _mv_reason = f"age_{_mv_age:.3f}s"
+                        else:
+                            _mv_verdict = "STALE"
+                            _mv_reason = f"age_{_mv_age:.3f}s_gt_{_mv_tf_max:.3f}s"
+                        self.get_logger().info(
+                            "[MOVEIT][TF_FRESHNESS] "
+                            f"request_id={request_id} "
+                            f"frame={self._base_frame}->tool0 "
+                            f"age_sec={_mv_age:.3f} "
+                            f"max_age_sec={_mv_tf_max:.3f} "
+                            f"verdict={_mv_verdict} "
+                            f"reason={_mv_reason}"
+                        )
+                    except Exception as _mv_tf_exc:
+                        self.get_logger().info(
+                            "[MOVEIT][TF_FRESHNESS] "
+                            f"request_id={request_id} "
+                            f"frame={self._base_frame}->tool0 "
+                            f"verdict=UNAVAILABLE "
+                            f"reason={_mv_tf_exc!s}"
+                        )
                     success = False
                     plan_ok = False
                     exec_ok = False
@@ -4305,6 +4351,58 @@ class UR5MoveItBridge(Node):
             f"success={str(bool(success)).lower()} plan_ok={str(bool(plan_ok)).lower()} "
             f"exec_ok={str(bool(exec_ok)).lower()} msg={message or 'n/a'}"
         )
+        try:
+            _ga_tgt_x = float(target.pose.position.x)
+            _ga_tgt_y = float(target.pose.position.y)
+            _ga_tgt_z = float(target.pose.position.z)
+            _ga_ee_tf = self.tf_buffer.lookup_transform(
+                self._base_frame, self._ee_frame, Time()
+            )
+            _ga_tr = _ga_ee_tf.transform.translation
+            _ga_ae_x, _ga_ae_y, _ga_ae_z = float(_ga_tr.x), float(_ga_tr.y), float(_ga_tr.z)
+            _ga_dist = math.sqrt(
+                (_ga_ae_x - _ga_tgt_x) ** 2
+                + (_ga_ae_y - _ga_tgt_y) ** 2
+                + (_ga_ae_z - _ga_tgt_z) ** 2
+            )
+            _ga_verdict = "OK" if _ga_dist <= 0.020 else "FAIL"
+            _ga_pc_str = "N/A"
+            _ga_dist_pc_str = "N/A"
+            try:
+                _ga_pc_tf = self.tf_buffer.lookup_transform(
+                    self._base_frame, "rg2_pinch_center", Time()
+                )
+                _ga_pc = _ga_pc_tf.transform.translation
+                _ga_pc_x, _ga_pc_y, _ga_pc_z = float(_ga_pc.x), float(_ga_pc.y), float(_ga_pc.z)
+                _ga_dist_pc = math.sqrt(
+                    (_ga_pc_x - _ga_tgt_x) ** 2
+                    + (_ga_pc_y - _ga_tgt_y) ** 2
+                    + (_ga_pc_z - _ga_tgt_z) ** 2
+                )
+                _ga_pc_str = f"({_ga_pc_x:.4f},{_ga_pc_y:.4f},{_ga_pc_z:.4f})"
+                _ga_dist_pc_str = f"{_ga_dist_pc:.4f}m"
+            except Exception:
+                pass
+            self.get_logger().info(
+                "[MOVEIT][GEOM_AUDIT] "
+                f"request_id={request_id} "
+                f"success={str(bool(success)).lower()} "
+                f"ee_frame={self._ee_frame or 'n/a'} "
+                f"actual_ee_base=({_ga_ae_x:.4f},{_ga_ae_y:.4f},{_ga_ae_z:.4f}) "
+                f"actual_pinch_base={_ga_pc_str} "
+                f"target_base=({_ga_tgt_x:.4f},{_ga_tgt_y:.4f},{_ga_tgt_z:.4f}) "
+                f"target_frame={str(target.header.frame_id or 'n/a')} "
+                f"dist_ee_target={_ga_dist:.4f}m "
+                f"dist_pinch_target={_ga_dist_pc_str} "
+                f"verdict={_ga_verdict}"
+            )
+        except Exception as _ga_exc:
+            self.get_logger().info(
+                "[MOVEIT][GEOM_AUDIT] "
+                f"request_id={request_id} "
+                f"verdict=UNAVAILABLE "
+                f"reason={_ga_exc!s}"
+            )
         self.get_logger().info(
             "[BRIDGE_RESULT] "
             f"request_id={request_id} success={str(bool(success)).lower()} "

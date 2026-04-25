@@ -1,6 +1,10 @@
 BORRAR/
 historico/
 auditoria/
+visual_autopick_ros_ws/
+jlr.txt
+lanzar_visual_autopick.sh
+
 
 # Caches y artefactos locales del workspace
 **/__pycache__/

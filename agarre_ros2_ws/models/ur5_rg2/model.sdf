@@ -404,11 +404,14 @@
         </joint>
         <!-- Arm-Hand Fixed Joint -->
         <joint name="ur5_hand_joint" type="fixed">
-              <!-- Keep the RG2 body close to the wrist flange. The URDF canonical
-                  geometry is flange/tool0 +Z = 0.07 m to rg2_hand and then
-                  +0.105 m to the finger midpoint, for a total tool0->contact
-                  distance of 0.175 m. -->
-              <pose relative_to="wrist_3_link">0 0.07 0 1.570796325 0 1.570796325</pose>
+              <!-- RG2 body at tool0/wrist_3 +Z = 0.07 m, finger midpoint at +Z = 0.175 m.
+                   With corrected end_effector_frame_fixed_joint (rpy=0), tool0 = wrist_3 (R=I),
+                   so rg2_hand must sit at xyz="0 0 0.07" (tool0/wrist_3 +Z direction).
+                   Rotation pitch=-pi/2 maps rg2_hand+X -> wrist_3+Z (approach direction),
+                   rg2_hand+Y -> wrist_3+Y (finger gap axis), rg2_hand+Z -> wrist_3-X (close axis).
+                   Finger pivots at rg2_hand(0.105, ±0.017, 0) -> wrist_3(0, ±0.017, 0.175)
+                   -> midpoint (0,0,0.175) = rg2_pinch_center exactly. -->
+              <pose relative_to="wrist_3_link">0 0 0.07 0 -1.570796325 0</pose>
             <parent>wrist_3_link</parent>
             <child>rg2_hand</child>
         </joint>
@@ -602,9 +605,13 @@
             <pose relative_to="end_effector_frame_fixed_joint">0 0 0 0 0 0</pose>
         </link>
         <joint name="end_effector_frame_fixed_joint" type="fixed">
-            <!-- Match the URDF ur_description chain: wrist_3_link -> flange -> tool0
-                 has zero translation and only orientation changes. -->
-            <pose relative_to="wrist_3_link">0 0 0 -1.570796325 0 0</pose>
+            <!-- URDF chain: wrist_3_link -> flange -> tool0 gives R=Identity (no rotation).
+                 Both wrist_3-flange (rpy="0 -pi/2 -pi/2") and flange-tool0 (rpy="pi/2 0 pi/2")
+                 compose to Identity, so SDF tool0 must be at rpy="0 0 0" relative to wrist_3.
+                 Previous rpy="-pi/2 0 0" made SDF-tool0+Z = wrist_3+Y while URDF-tool0+Z =
+                 wrist_3+Z, causing a 90-degree mismatch between rg2_pinch_center (TF) and the
+                 visual finger midpoint (SDF). -->
+            <pose relative_to="wrist_3_link">0 0 0 0 0 0</pose>
             <parent>wrist_3_link</parent>
             <child>tool0</child>
         </joint>

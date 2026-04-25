@@ -446,21 +446,31 @@ def _evaluate_transport_stage_preexec_model_guard(
 
 def _direct_pregrasp_gate_caps(phase: str | None) -> dict[str, float] | None:
     phase_name = str(phase or "").strip().upper()
-    if phase_name not in {"APPROACH_COARSE", "GRASP_DOWN_JOINT"}:
-        return None
-    # Hard diagnostic caps for the handoff that leads into GRASP_DOWN.
-    # Runtime profiles may relax generic defaults, but this interval must keep
-    # tight source freshness and jump checks or the phase boundary becomes
-    # meaningless.
-    return {
-        "source_tol_m": 0.006,
-        "source_age_tol_sec": 0.400,
-        "source_sync_tol_sec": 0.400,
-        "phase_jump_tol_m": 0.010,
-        "coarse_xy_tol_m": 0.006,
-        "keep_xy_tol_m": 0.005,
-        "object_divergence_tol_m": 0.020,
-    }
+    if phase_name == "APPROACH_COARSE":
+        # APPROACH uses the approach_clearance gate (XY 20mm, Z in range).
+        # coarse_xy_tol_m intentionally omitted so the gate xy_tol is driven
+        # by PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M (default 0.020)
+        # without being capped to the tight GRASP_DOWN handoff value (0.006).
+        return {
+            "source_tol_m": 0.006,
+            "source_age_tol_sec": 0.400,
+            "source_sync_tol_sec": 0.400,
+            "phase_jump_tol_m": 0.010,
+            "keep_xy_tol_m": 0.005,
+            "object_divergence_tol_m": 0.020,
+        }
+    if phase_name == "GRASP_DOWN_JOINT":
+        # Hard diagnostic caps for the handoff that leads into GRASP_DOWN.
+        return {
+            "source_tol_m": 0.006,
+            "source_age_tol_sec": 0.400,
+            "source_sync_tol_sec": 0.400,
+            "phase_jump_tol_m": 0.010,
+            "coarse_xy_tol_m": 0.006,
+            "keep_xy_tol_m": 0.005,
+            "object_divergence_tol_m": 0.020,
+        }
+    return None
 
 
 def _should_transport_prep_failure_jump_to_replan(
@@ -4896,9 +4906,25 @@ def run_pick_demo(panel) -> None:
                         os.environ.get("PANEL_RG2_AUDIT_MAX_VIS_MID_OBJ_M", "0.020") or 0.020
                     )
 
+                    # Detectar frame mismatch: si gz_mid y pinch tienen signo X opuesto,
+                    # las poses de Gazebo de los links del gripper están en el frame local
+                    # del modelo, no en world frame. Es un falso positivo de divergencia.
+                    _gz_frame_mismatch = False
+                    if gz_mid is not None and pinch_w is not None:
+                        _gz_x = float(gz_mid[0])
+                        _pinch_x = float(pinch_w[0])
+                        if abs(_gz_x) > 0.05 and abs(_pinch_x) > 0.05 and (_gz_x * _pinch_x < 0.0):
+                            _gz_frame_mismatch = True
+
                     if gz_left is None or gz_right is None:
                         verdict = "UNKNOWN"
                         reason = "missing_gazebo_finger_pose"
+                    elif _gz_frame_mismatch:
+                        verdict = "FRAME_MISMATCH"
+                        reason = (
+                            f"gz_mid_x={float(gz_mid[0]):.3f}_vs_pinch_x={float(pinch_w[0]):.3f}"
+                            "_gz_finger_poses_in_local_model_frame_not_world"
+                        )
                     elif dist_pinch_gz_mid is None:
                         verdict = "UNKNOWN"
                         reason = "dist_pinch_gz_mid_unavailable"
@@ -4943,6 +4969,8 @@ def run_pick_demo(panel) -> None:
                         f"tf_stamp={_tf_fresh_stamp_str} "
                         f"tf_reason={_tf_fresh_reason} "
                         f"verdict={verdict} "
+                        "control_allowed=false "
+                        "note=diagnostic_only "
                         f"reason={reason}"
                     )
                 except Exception as _audit_exc:
@@ -5014,6 +5042,146 @@ def run_pick_demo(panel) -> None:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 with path.open("w", encoding="utf-8") as fh:
                     json.dump(_json_safe(payload), fh, indent=2, ensure_ascii=False, sort_keys=True)
+
+            def _emit_grasp_orientation_gate(phase: str) -> bool:
+                """Log [PICK][GRASP_ORIENTATION_GATE] and optionally enforce orientation.
+
+                Returns True (allow) unless REQUIRE=1 and mode=enforcing and verdict=NOT_READY.
+                Env vars:
+                  PANEL_PICK_DEMO_REQUIRE_GRASP_ORIENTATION  0|1 (default 0)
+                  PANEL_PICK_DEMO_GRASP_ORIENTATION_MODE      monitor|enforcing (default monitor)
+                  PANEL_PICK_DEMO_EXPECTED_GRASP_REGIME       bottom_up|top_down|any (default bottom_up)
+                  PANEL_PICK_DEMO_TOPDOWN_DOT_MIN             float (default 0.90)
+                  PANEL_PICK_DEMO_BOTTOMUP_DOT_MIN            float (default 0.90)
+                  PANEL_PICK_DEMO_GRASP_HALF_GAP_M            float (default 0.017)
+                  PANEL_PICK_DEMO_GRASP_TCP_OBJ_TOL_M         float (default 0.012)
+                """
+                try:
+                    require = os.environ.get("PANEL_PICK_DEMO_REQUIRE_GRASP_ORIENTATION", "0").strip() == "1"
+                    mode = str(os.environ.get("PANEL_PICK_DEMO_GRASP_ORIENTATION_MODE", "monitor") or "monitor").strip().lower()
+                    _exp_regime_env = str(os.environ.get("PANEL_PICK_DEMO_EXPECTED_GRASP_REGIME", "") or "").strip().lower()
+                    if not _exp_regime_env:
+                        _exp_regime_env = "top_down" if os.environ.get("PANEL_PICK_DEMO_FORCE_TOPDOWN_GRASP", "0").strip() == "1" else "bottom_up"
+                    expected_regime = _exp_regime_env
+                    topdown_dot_min = max(0.0, float(os.environ.get("PANEL_PICK_DEMO_TOPDOWN_DOT_MIN", "0.90") or 0.90))
+                    bottomup_dot_min = max(0.0, float(os.environ.get("PANEL_PICK_DEMO_BOTTOMUP_DOT_MIN", "0.90") or 0.90))
+                    half_gap_m = max(0.001, float(os.environ.get("PANEL_PICK_DEMO_GRASP_HALF_GAP_M", "0.017") or 0.017))
+                    tcp_obj_tol_m = max(0.001, float(os.environ.get("PANEL_PICK_DEMO_GRASP_TCP_OBJ_TOL_M", "0.012") or 0.012))
+
+                    # Get tool0 quaternion via TF (world ← tool0)
+                    qx, qy, qz, qw = 0.0, 0.0, 0.0, 1.0
+                    tf_verdict = "UNAVAILABLE"
+                    tf_age_str = "N/A"
+                    try:
+                        _tfh = get_tf_helper()
+                        if _tfh is not None:
+                            _tf_r, _tf_age, _tf_v, _tf_rsn = _tfh.lookup_transform_fresh(
+                                "world", "tool0", timeout_sec=0.15, max_age_sec=1.0, allow_static=False,
+                            )
+                            if _tf_r is not None:
+                                rot = _tf_r.transform.rotation
+                                qx = float(rot.x)
+                                qy = float(rot.y)
+                                qz = float(rot.z)
+                                qw = float(rot.w)
+                                tf_verdict = str(_tf_v)
+                                tf_age_str = f"{_tf_age:.3f}" if _tf_age >= 0 else "N/A"
+                    except Exception:
+                        pass
+
+                    # Normalise quaternion
+                    _qn = math.sqrt(qx*qx + qy*qy + qz*qz + qw*qw)
+                    if _qn > 1e-9:
+                        qx /= _qn; qy /= _qn; qz /= _qn; qw /= _qn
+
+                    # tool0 axes in world frame (columns of rotation matrix from q)
+                    # R[:,2] = tool0+Z in world
+                    t0z_x = 2.0*(qx*qz + qy*qw)
+                    t0z_y = 2.0*(qy*qz - qx*qw)
+                    t0z_z = 1.0 - 2.0*(qx*qx + qy*qy)
+                    # R[:,1] = tool0+Y in world (finger gap axis = rg2_hand+Y)
+                    t0y_x = 2.0*(qx*qy - qz*qw)
+                    t0y_y = 1.0 - 2.0*(qx*qx + qz*qz)
+                    t0y_z = 2.0*(qy*qz + qx*qw)
+
+                    # rg2_hand+X = tool0+Z (from ur5_hand_joint rpy=(0,-pi/2,0): Ry(-pi/2) col0 = tool0+Z)
+                    hand_x = t0z_x; hand_y = t0z_y; hand_z = t0z_z
+
+                    # TOP_DOWN: tool0+Z ≈ -Zworld  →  dot_topdown ≈ 1
+                    # BOTTOM_UP: tool0+Z ≈ +Zworld  →  dot_bottomup ≈ 1
+                    dot_topdown = -t0z_z
+                    dot_bottomup = t0z_z
+
+                    if dot_topdown >= topdown_dot_min:
+                        regime = "TOP_DOWN"
+                    elif dot_bottomup >= bottomup_dot_min:
+                        regime = "BOTTOM_UP"
+                    else:
+                        regime = "LATERAL"
+
+                    # World frame and pose lookups
+                    wf = str(
+                        getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
+                            WORLD_FRAME or "world"
+                        )
+                    ).strip() or "world"
+                    pinch_w = _pose_position(wf, "rg2_pinch_center", timeout_sec=0.08)
+                    obj_w = _tuple3(_live_object_world())
+
+                    approach_dot_str = "N/A"
+                    tcp_obj_dist_str = "N/A"
+                    tcp_obj_ok = "N/A"
+                    obj_in_gap = "N/A"
+                    approach_vec_str = "N/A"
+
+                    if pinch_w is not None and obj_w is not None:
+                        _dx = float(obj_w[0]) - float(pinch_w[0])
+                        _dy = float(obj_w[1]) - float(pinch_w[1])
+                        _dz = float(obj_w[2]) - float(pinch_w[2])
+                        _dist = math.sqrt(_dx*_dx + _dy*_dy + _dz*_dz)
+                        tcp_obj_dist_str = f"{_dist:.4f}"
+                        tcp_obj_ok = str(_dist <= tcp_obj_tol_m).lower()
+                        approach_vec_str = f"({_dx:.3f},{_dy:.3f},{_dz:.3f})"
+                        if _dist > 1e-6:
+                            _ux, _uy, _uz = _dx/_dist, _dy/_dist, _dz/_dist
+                            approach_dot_str = f"{hand_x*_ux + hand_y*_uy + hand_z*_uz:.3f}"
+                        # Finger gap projection (tool0+Y)
+                        gap_proj = abs(t0y_x*_dx + t0y_y*_dy + t0y_z*_dz)
+                        obj_in_gap = str(gap_proj <= half_gap_m).lower()
+
+                    # Verdict
+                    if expected_regime in {"any", ""}:
+                        verdict = "READY"
+                    elif regime == expected_regime.upper():
+                        verdict = "READY"
+                    else:
+                        verdict = "NOT_READY"
+
+                    panel._emit_log(
+                        f"[PICK][GRASP_ORIENTATION_GATE] phase={phase} "
+                        f"tool0_z_world=({t0z_x:.3f},{t0z_y:.3f},{t0z_z:.3f}) "
+                        f"rg2_hand_approach=({hand_x:.3f},{hand_y:.3f},{hand_z:.3f}) "
+                        f"dot_topdown={dot_topdown:.3f} dot_bottomup={dot_bottomup:.3f} "
+                        f"topdown_dot_min={topdown_dot_min:.2f} bottomup_dot_min={bottomup_dot_min:.2f} "
+                        f"regime={regime} expected_regime={expected_regime} "
+                        f"approach_vec_pinch_to_obj={approach_vec_str} "
+                        f"approach_dot={approach_dot_str} "
+                        f"tcp_obj_dist_m={tcp_obj_dist_str} tcp_obj_tol_m={tcp_obj_tol_m:.3f} "
+                        f"tcp_obj_ok={tcp_obj_ok} "
+                        f"half_gap_m={half_gap_m:.3f} obj_in_gap={obj_in_gap} "
+                        f"tf_verdict={tf_verdict} tf_age_sec={tf_age_str} "
+                        f"require={1 if require else 0} mode={mode} verdict={verdict}"
+                    )
+
+                    if require and mode == "enforcing" and verdict == "NOT_READY":
+                        return False
+                    return True
+                except Exception as _gate_exc:
+                    panel._emit_log(
+                        f"[PICK][GRASP_ORIENTATION_GATE] phase={phase} "
+                        f"verdict=UNKNOWN reason=gate_exception:{_gate_exc!s}"
+                    )
+                    return True
 
             def _phase_target_update(
                 phase: str,
@@ -5723,6 +5891,79 @@ def run_pick_demo(panel) -> None:
                 _seed_pos, target_rot = fk_ur5(seed)
                 execution_rot = target_rot
                 execution_rot_source = f"seed:{seed_source}"
+                # ── TOP-DOWN IK OVERRIDE ──────────────────────────────────────────────
+                # Activated when PANEL_PICK_DEMO_FORCE_TOPDOWN_GRASP=1 for grasp phases.
+                # Replaces the seed-inherited rotation with an explicit top-down target
+                # so the IK solver converges to tool0+Z ≈ -Z_world rather than +Z_world.
+                _TOPDOWN_IK_LABELS = frozenset({"APPROACH_COARSE", "GRASP_DOWN_JOINT", "GRASP_ALIGN_IK", "PRE_CLOSE"})
+                _topdown_active = (
+                    os.environ.get("PANEL_PICK_DEMO_FORCE_TOPDOWN_GRASP", "0").strip() == "1"
+                    and label_name in _TOPDOWN_IK_LABELS
+                )
+                _topdown_rot_weight = float(rot_weight)
+                _topdown_seed_source_used = seed_source
+                if _topdown_active:
+                    import numpy as _np_td
+                    _topdown_rot_weight = max(0.0, float(
+                        os.environ.get("PANEL_PICK_DEMO_TOPDOWN_IK_ROT_WEIGHT", "0.50") or 0.50
+                    ))
+                    # Build top-down seed: prefer env override, else flip wrist_2 from live joints
+                    _td_seed: list | None = None
+                    _td_seed_src = "unknown"
+                    _td_env_str = str(os.environ.get("PANEL_PICK_DEMO_TOPDOWN_SEED_JOINTS", "") or "").strip()
+                    if _td_env_str:
+                        try:
+                            _td_env_vals = [float(v) for v in _td_env_str.split(",")]
+                            if len(_td_env_vals) == 6:
+                                _td_seed = _td_env_vals
+                                _td_seed_src = "env:TOPDOWN_SEED_JOINTS"
+                        except Exception:
+                            pass
+                    if _td_seed is None:
+                        _td_live = _live_joint_seed_or_none(panel)
+                        if _td_live is not None and len(_td_live) >= 6:
+                            _td_seed = list(_td_live)
+                            _td_seed[4] = -_td_seed[4]  # flip wrist_2: -π/2 → +π/2
+                            _td_seed_src = "live_flip_wrist2"
+                        else:
+                            _td_seed = list(seed)
+                            _td_seed[4] = math.pi / 2.0
+                            _td_seed_src = "base_seed_w2_pos90"
+                    # Derive target rotation from top-down seed FK
+                    # R[:,2] in DH model frame must have R[2,2] ≈ -1 (tool0+Z ≈ -Z_world)
+                    try:
+                        _, _td_rot_from_fk = fk_ur5(_td_seed)
+                        if float(_td_rot_from_fk[2, 2]) < -0.70:
+                            _td_rot_matrix = _td_rot_from_fk
+                            _td_rot_source_tag = f"fk:{_td_seed_src}"
+                        else:
+                            # Fallback explicit top-down matrix in DH model frame:
+                            # tool0+Z_model=(0,0,-1), tool0+X_model=(-1,0,0), tool0+Y_model=(0,1,0)
+                            _td_rot_matrix = _np_td.array(
+                                [[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0]], dtype=float
+                            )
+                            _td_rot_source_tag = "hardcoded_topdown"
+                    except Exception as _td_exc:
+                        _td_rot_matrix = _np_td.array(
+                            [[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, -1.0]], dtype=float
+                        )
+                        _td_rot_source_tag = f"hardcoded_topdown_exc:{_td_exc!s}"
+                    # Override seed and rotation for this IK call
+                    seed = _td_seed
+                    seed_source = _td_seed_src
+                    execution_rot = _td_rot_matrix
+                    execution_rot_source = f"topdown:{_td_rot_source_tag}"
+                    rot_weight = _topdown_rot_weight
+                    _topdown_seed_source_used = _td_seed_src
+                    panel._emit_log(
+                        f"[PICK][TOPDOWN_IK_OVERRIDE] phase={label} "
+                        f"seed_source={_td_seed_src} "
+                        f"seed_joints={json.dumps([round(v, 4) for v in _td_seed], ensure_ascii=True)} "
+                        f"rot_source={_td_rot_source_tag} "
+                        f"rot_weight={_topdown_rot_weight:.3f} "
+                        f"rot_col2=({float(_td_rot_matrix[0,2]):.3f},{float(_td_rot_matrix[1,2]):.3f},{float(_td_rot_matrix[2,2]):.3f})"
+                    )
+                # ─────────────────────────────────────────────────────────────────────
                 live_execution_seed = _live_joint_seed_or_none(panel)
                 if label == "APPROACH_COARSE_REFINE" and live_execution_seed is not None:
                     try:
@@ -5737,8 +5978,9 @@ def run_pick_demo(panel) -> None:
                     f"joints={json.dumps(_json_safe(seed), ensure_ascii=True)}"
                 )
                 try:
-                    _fa_tcp_tf = _pose_position(base_frame, DIRECT_SOURCE_FRAME, timeout_sec=0.10)
-                    _fa_tool0_tf = _pose_position(base_frame, DIRECT_EXECUTION_FRAME, timeout_sec=0.10)
+                    _fa_base_frame = str(panel._business_base_frame() or BASE_FRAME or "base_link")
+                    _fa_tcp_tf = _pose_position(_fa_base_frame, DIRECT_SOURCE_FRAME, timeout_sec=0.10)
+                    _fa_tool0_tf = _pose_position(_fa_base_frame, DIRECT_EXECUTION_FRAME, timeout_sec=0.10)
                     _fa_obj = _live_object_base()
                     _fa_target = _tuple3(target_tcp_runtime_3) if target_tcp_runtime_3 is not None else None
                     _fa_xy = (
@@ -5874,6 +6116,18 @@ def run_pick_demo(panel) -> None:
                         ),
                     )
                 )
+                if _topdown_active:
+                    panel._emit_log(
+                        f"[PICK][TOPDOWN_IK_TARGET] phase={label} "
+                        f"target_tcp_world={_fmt_vec(target_tcp_world_3)} "
+                        f"target_tcp_base={_fmt_vec(target_tcp_runtime_3)} "
+                        f"target_tool0_world={_fmt_vec(target_ik_world)} "
+                        f"target_tool0_base={_fmt_vec(target_ik_base)} "
+                        "desired_tool0_z_world=(0.000,0.000,-1.000) "
+                        f"rot_weight={rot_weight:.3f} "
+                        f"seed_source={_topdown_seed_source_used} "
+                        f"seed_joints={json.dumps([round(float(v), 4) for v in seed], ensure_ascii=True)}"
+                    )
                 solved_q, err_norm, ik_ok = ik_ur5(
                     target_ik,
                     ik_target_rot,
@@ -5997,6 +6251,62 @@ def run_pick_demo(panel) -> None:
                     selected_normalization_source = _best_normalization_source
                 _seed_max_dev_rad = _seed_max_dev(solved_q, seed)
                 _seed_sum_dev_rad = _seed_sum_dev(solved_q, seed)
+                # ── TOP-DOWN IK RESULT: orientation check + blocking ─────────────────
+                if _topdown_active:
+                    import numpy as _np_td_r
+                    _td_fk_pos, _td_fk_rot = fk_ur5(list(solved_q))
+                    # DH model frame col2 z-component: R_model[2,2]
+                    # Since base_link_inertia = Rz(π)*base_link, Z-axis component is unchanged.
+                    # dot(tool0+Z, -Z_world) = -R_model[2,2]
+                    _td_r22 = float(_td_fk_rot[2, 2])
+                    _td_dot_topdown = -_td_r22
+                    _td_dot_min_req = max(0.0, float(
+                        os.environ.get("PANEL_PICK_DEMO_TOPDOWN_DOT_MIN", "0.90") or 0.90
+                    ))
+                    _td_max_pos_err = max(0.001, float(
+                        os.environ.get("PANEL_PICK_DEMO_TOPDOWN_MAX_POS_ERR_M", "0.015") or 0.015
+                    ))
+                    if _td_dot_topdown >= _td_dot_min_req:
+                        _td_regime_r = "TOP_DOWN"
+                    elif -_td_dot_topdown >= _td_dot_min_req:
+                        _td_regime_r = "BOTTOM_UP"
+                    else:
+                        _td_regime_r = "LATERAL"
+                    _td_ik_pos_ok = pos_err_m <= _td_max_pos_err
+                    _td_verdict = "READY" if (_td_regime_r == "TOP_DOWN" and _td_ik_pos_ok) else "NOT_READY"
+                    _td_reason = (
+                        "topdown_achieved" if _td_verdict == "READY"
+                        else (f"pos_err_m={pos_err_m:.4f}>{_td_max_pos_err:.3f}" if not _td_ik_pos_ok
+                              else f"regime={_td_regime_r} dot={_td_dot_topdown:.3f}<{_td_dot_min_req:.2f}")
+                    )
+                    # tool0+Z in world for log: col2 of R_model rotated by Rz(-π) → (-R[0,2], -R[1,2], R[2,2])
+                    _td_t0z_world = (
+                        -float(_td_fk_rot[0, 2]),
+                        -float(_td_fk_rot[1, 2]),
+                        float(_td_fk_rot[2, 2]),
+                    )
+                    panel._emit_log(
+                        f"[PICK][TOPDOWN_IK_RESULT] phase={label} "
+                        f"ik_success={str(bool(ik_ok) and _td_ik_pos_ok).lower()} "
+                        f"pos_err_m={pos_err_m:.4f} pos_err_tol={_td_max_pos_err:.3f} "
+                        f"dot_tool0_z_minus_world_z={_td_dot_topdown:.3f} "
+                        f"dot_min={_td_dot_min_req:.2f} "
+                        f"tool0_z_world=({_td_t0z_world[0]:.3f},{_td_t0z_world[1]:.3f},{_td_t0z_world[2]:.3f}) "
+                        f"rg2_hand_x_world=({_td_t0z_world[0]:.3f},{_td_t0z_world[1]:.3f},{_td_t0z_world[2]:.3f}) "
+                        f"orientation_regime={_td_regime_r} "
+                        f"joint_goal={json.dumps([round(float(v), 4) for v in solved_q], ensure_ascii=True)} "
+                        f"verdict={_td_verdict} reason={_td_reason}"
+                    )
+                    _td_require_block = (
+                        os.environ.get("PANEL_PICK_DEMO_REQUIRE_TOPDOWN_ORIENTATION", "0").strip() == "1"
+                    )
+                    if _td_require_block and _td_verdict == "NOT_READY":
+                        raise RuntimeError(
+                            f"topdown_ik_not_ready phase={label} "
+                            f"regime={_td_regime_r} dot={_td_dot_topdown:.3f}<{_td_dot_min_req:.2f} "
+                            f"pos_err_m={pos_err_m:.4f}"
+                        )
+                # ─────────────────────────────────────────────────────────────────────
                 panel._emit_log(
                     "[PICK][DIRECT][IK] "
                     f"label={label} "
@@ -9527,6 +9837,27 @@ def run_pick_demo(panel) -> None:
                             "world_to_base_path": str(_direct_debug_state.get("world_to_base_path") or "unset"),
                         },
                     )
+                panel._emit_log(
+                    "[PICK][APPROACH_OBJECT_SOURCE] "
+                    f"source={approach_object_source} "
+                    f"panel_obj_world={_fmt_vec(obj_world_before_coarse)} "
+                    f"panel_obj_base={_fmt_vec(obj_base_before_coarse)} "
+                    f"cycle_source={_pick_demo_cycle_object_source} "
+                    f"tcp_before_world={_fmt_vec(tcp_world_before_coarse)} "
+                    f"verdict={'ok' if obj_world_before_coarse is not None else 'unavailable'}"
+                )
+                if target_world_coarse is not None:
+                    panel._emit_log(
+                        "[PICK][APPROACH_VISUAL_TARGET] "
+                        f"object_world={_fmt_vec(obj_world_before_coarse)} "
+                        f"object_base={_fmt_vec(obj_base_before_coarse)} "
+                        f"target_world={_fmt_vec(target_world_coarse)} "
+                        f"target_base={_fmt_vec(target_base_coarse)} "
+                        f"tcp_frame=rg2_pinch_center "
+                        f"clearance_z_m={coarse_extra_z_m:.3f} "
+                        f"mode={coarse_target_mode} "
+                        "verdict=ok"
+                    )
                 if target_world_coarse is not None or target_base_coarse is not None:
                     panel._emit_log(
                         "[PICK][DIRECT][APPROACH_PLAN] "
@@ -9784,6 +10115,33 @@ def run_pick_demo(panel) -> None:
 
                 _check_pick_tf_freshness("APPROACH_COARSE")
                 _emit_rg2_visual_audit("APPROACH_COARSE")
+                _approach_exec_tcp_after = _live_tcp_base()
+                _approach_exec_tcp_world_after = _live_tcp_world()
+                _approach_exec_obj_after = _live_object_base()
+                _approach_exec_dist_target = (
+                    _dist(_approach_exec_tcp_after, target_base_coarse)
+                    if _approach_exec_tcp_after is not None and target_base_coarse is not None
+                    else None
+                )
+                _approach_exec_dist_obj = (
+                    _dist(_approach_exec_tcp_after, _approach_exec_obj_after)
+                    if _approach_exec_tcp_after is not None and _approach_exec_obj_after is not None
+                    else None
+                )
+                panel._emit_log(
+                    "[PICK][APPROACH_EXEC_AUDIT] "
+                    f"phase=APPROACH_COARSE "
+                    f"approach_decision={approach_decision} "
+                    f"target_world={_fmt_vec(target_world_coarse)} "
+                    f"target_base={_fmt_vec(target_base_coarse)} "
+                    f"pinch_tf_world={_fmt_vec(tcp_world_before_coarse)} "
+                    f"pinch_tf_world_after={_fmt_vec(_approach_exec_tcp_world_after)} "
+                    f"tcp_after_base={_fmt_vec(_approach_exec_tcp_after)} "
+                    f"dist_target_tcp={_fmt_scalar(_approach_exec_dist_target)} "
+                    f"dist_tcp_obj={_fmt_scalar(_approach_exec_dist_obj)} "
+                    f"clearance_z_m={coarse_extra_z_m:.3f} "
+                    f"verdict={'ok' if approach_decision not in ('abort_direct_ik_failed', '') else 'failed'}"
+                )
                 _phase_end(
                     "APPROACH_COARSE",
                     result="ok",
@@ -9902,9 +10260,8 @@ def run_pick_demo(panel) -> None:
                 if _coarse_check_tcp is not None and _coarse_check_obj is not None and target_base_coarse is not None:
                     _cg_xy_tol = _pick_demo_env_float(
                         "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M",
-                        0.012,
-                        minimum=0.006,
-                        maximum=_coarse_caps.get("coarse_xy_tol_m"),
+                        0.020,
+                        minimum=0.005,
                     )
                     _cg_z_tol = max(
                         0.006,
@@ -10110,6 +10467,45 @@ def run_pick_demo(panel) -> None:
                             or 2
                         ),
                     )
+                    # Define ALL gate vars BEFORE the CONFIG log references them
+                    _ac_gate_z_min_m = float(
+                        os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_MIN_M", "0.000") or 0.000
+                    )
+                    _ac_gate_z_max_m = float(
+                        os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_MAX_M", "0.060") or 0.060
+                    )
+                    _ac_gate_target_tol_m = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_APPROACH_COARSE_TARGET_TOL_M",
+                        0.020,
+                        minimum=0.005,
+                    )
+                    _coarse_handoff_dist_tol = 0.015
+                    _coarse_handoff_dz_tol = 0.015
+                    _coarse_relaxed_handoff_dist_tol = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_DIST_TOL_M",
+                            0.033,
+                        minimum=_coarse_handoff_dist_tol,
+                        maximum=0.050,
+                    )
+                    _coarse_relaxed_handoff_dz_tol = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_DZ_TOL_M",
+                            0.033,
+                        minimum=_coarse_handoff_dz_tol,
+                        maximum=0.050,
+                    )
+                    panel._emit_log(
+                        "[PICK][APPROACH_GATE][CONFIG] "
+                        "phase=APPROACH_COARSE "
+                        f"gate_xy_tol={_cg_xy_tol:.3f} "
+                        f"gate_z_tol={_cg_z_tol:.3f} "
+                        f"gate_z_min={_ac_gate_z_min_m:.3f} "
+                        f"gate_z_max={_ac_gate_z_max_m:.3f} "
+                        f"gate_target_tol={_ac_gate_target_tol_m:.3f} "
+                        f"clearance_extra_z={coarse_extra_z_m:.3f} "
+                        f"handoff_dist_tol_strict={_coarse_handoff_dist_tol:.3f} "
+                        f"handoff_dz_tol_strict={_coarse_handoff_dz_tol:.3f} "
+                        f"relaxed_dist_tol={_coarse_relaxed_handoff_dist_tol:.3f}"
+                    )
                     _coarse_gate = _wait_phase_gate_ready(
                         phase="APPROACH_COARSE",
                         target_base=target_base_coarse,
@@ -10139,20 +10535,6 @@ def run_pick_demo(panel) -> None:
                     coarse_gate_z_ok = bool(_coarse_gate.get("z_ok"))
                     coarse_gate_pose_ok = bool(_coarse_gate.get("pose_ok"))
                     coarse_pose_metrics = _coarse_gate.get("pose_consistency") or {}
-                    _coarse_handoff_dist_tol = 0.015
-                    _coarse_handoff_dz_tol = 0.015
-                    _coarse_relaxed_handoff_dist_tol = _pick_demo_env_float(
-                        "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_DIST_TOL_M",
-                            0.033,
-                        minimum=_coarse_handoff_dist_tol,
-                        maximum=0.050,
-                    )
-                    _coarse_relaxed_handoff_dz_tol = _pick_demo_env_float(
-                        "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_DZ_TOL_M",
-                            0.033,
-                        minimum=_coarse_handoff_dz_tol,
-                        maximum=0.050,
-                    )
                     _phase_check_target_base = _tuple3(target_base_coarse)
 
                     def _build_approach_coarse_phase_check(target_base_for_check, gate_metrics_for_check):
@@ -10208,14 +10590,40 @@ def run_pick_demo(panel) -> None:
                         strict_handoff_ok_local = bool(
                             gate_ok_local and handoff_dist_ok_local and handoff_dz_ok_local
                         )
-                        result_local = "OK" if bool(strict_handoff_ok_local or relaxed_handoff_ok_local) else "NO"
+                        # APPROACH_CLEARANCE: arm is over the object with Z in clearance
+                        # range. Does NOT use tcp_obj_dist — that is a contact check
+                        # appropriate for PRE_CLOSE, not for the coarse approach.
+                        # All thresholds driven by env vars; target_live_delta_m is
+                        # an optional freshness hint (None = pass).
+                        _pose_cons_local = gate_metrics_for_check.get("pose_consistency") or {}
+                        _target_live_delta_m_raw = _pose_cons_local.get("target_live_delta_m")
+                        _ac_target_ok = bool(
+                            _target_live_delta_m_raw is None
+                            or float(_target_live_delta_m_raw) <= _ac_gate_target_tol_m
+                        )
+                        approach_clearance_ok_local = bool(
+                            float(coarse_gate_xy_err) <= float(_cg_xy_tol)
+                            and dz_obj_local is not None
+                            and float(dz_obj_local) >= _ac_gate_z_min_m
+                            and float(dz_obj_local) <= _ac_gate_z_max_m
+                            and _ac_target_ok
+                        )
+                        _ac_clearance_xy_tol = float(_cg_xy_tol)
+                        _ac_clearance_dz_max = _ac_gate_z_max_m
+                        result_local = "OK" if bool(
+                            strict_handoff_ok_local
+                            or relaxed_handoff_ok_local
+                            or approach_clearance_ok_local
+                        ) else "NO"
                         block_reasons_local = []
-                        if not gate_ok_local and not relaxed_handoff_ok_local:
+                        if not gate_ok_local and not relaxed_handoff_ok_local and not approach_clearance_ok_local:
                             block_reasons_local.append("phase_gate_not_ready")
-                        if not handoff_dist_ok_local and not relaxed_handoff_ok_local:
+                        if not handoff_dist_ok_local and not relaxed_handoff_ok_local and not approach_clearance_ok_local:
                             block_reasons_local.append("tcp_obj_dist_exceeded")
-                        if not handoff_dz_ok_local and not relaxed_handoff_ok_local:
+                        if not handoff_dz_ok_local and not relaxed_handoff_ok_local and not approach_clearance_ok_local:
                             block_reasons_local.append("dz_obj_exceeded")
+                        if result_local == "NO" and not approach_clearance_ok_local:
+                            block_reasons_local.append("approach_clearance_not_met")
                         return {
                             "gate_ok": gate_ok_local,
                             "tcp_base": tcp_base_local,
@@ -10229,12 +10637,21 @@ def run_pick_demo(panel) -> None:
                             "handoff_dist_ok": handoff_dist_ok_local,
                             "handoff_dz_ok": handoff_dz_ok_local,
                             "relaxed_handoff_ok": relaxed_handoff_ok_local,
+                            "approach_clearance_ok": approach_clearance_ok_local,
+                            "approach_clearance_dz_max": _ac_clearance_dz_max,
+                            "approach_clearance_dz_min": _ac_gate_z_min_m,
+                            "approach_clearance_xy_tol": _ac_clearance_xy_tol,
+                            "approach_target_tol": _ac_gate_target_tol_m,
+                            "target_live_delta_m": _target_live_delta_m_raw,
+                            "ac_target_ok": _ac_target_ok,
                             "result": result_local,
                             "gate_decision": (
                                 "handoff_ready"
                                 if strict_handoff_ok_local
                                 else "handoff_ready_relaxed_corridor"
                                 if relaxed_handoff_ok_local
+                                else "approach_clearance_ok"
+                                if approach_clearance_ok_local
                                 else "not_ready"
                             ),
                             "block_reasons": block_reasons_local,
@@ -10260,6 +10677,9 @@ def run_pick_demo(panel) -> None:
                             f"xy_ok={str(coarse_gate_xy_ok).lower()} z_ok={str(coarse_gate_z_ok).lower()} "
                             f"decision={approach_decision} gate_decision={check_info.get('gate_decision')} "
                             f"relaxed_handoff_ok={str(bool(check_info.get('relaxed_handoff_ok'))).lower()} "
+                            f"approach_clearance_ok={str(bool(check_info.get('approach_clearance_ok'))).lower()} "
+                            f"clearance_dz_max={_fmt_scalar(check_info.get('approach_clearance_dz_max'))} "
+                            f"clearance_xy_tol={_fmt_scalar(check_info.get('approach_clearance_xy_tol'))} "
                             f"block_reasons={','.join(check_info.get('block_reasons') or []) or 'none'} "
                             f"coarse_refine_attempted={str(refine_attempted).lower()} "
                             f"result={check_info.get('result')}"
@@ -10484,6 +10904,27 @@ def run_pick_demo(panel) -> None:
                             _emit_approach_coarse_phase_check(_coarse_phase_check, refine_attempted=True)
 
                     _cg_result_ok = bool(str(_coarse_phase_check.get("result") or "NO").upper() == "OK")
+                    _ag_tcp = _tuple3(_coarse_phase_check.get("tcp_base"))
+                    _ag_obj = _tuple3(_coarse_phase_check.get("object_base"))
+                    _ag_target_delta = _coarse_phase_check.get("target_live_delta_m")
+                    _ag_dz = _coarse_phase_check.get("dz_obj")
+                    panel._emit_log(
+                        "[PICK][APPROACH_GATE] "
+                        "phase=APPROACH_COARSE "
+                        "gate_profile=approach_clearance "
+                        f"target_base_coarse={_fmt_vec(_phase_check_target_base)} "
+                        f"tcp_base={_fmt_vec(_ag_tcp)} "
+                        f"object_base={_fmt_vec(_ag_obj)} "
+                        f"target_live_delta_m={_fmt_scalar(_ag_target_delta)} "
+                        f"xy_err={coarse_gate_xy_err:.4f} "
+                        f"z_clearance_actual={_fmt_scalar(_ag_dz)} "
+                        f"z_clearance_min={_ac_gate_z_min_m:.3f} "
+                        f"z_clearance_max={_ac_gate_z_max_m:.3f} "
+                        f"old_tcp_obj_dist={_fmt_scalar(_coarse_phase_check.get('tcp_obj_dist'))} "
+                        f"approach_clearance_ok={str(bool(_coarse_phase_check.get('approach_clearance_ok'))).lower()} "
+                        f"verdict={'READY' if _cg_result_ok else 'NOT_READY'} "
+                        f"reason={_coarse_phase_check.get('gate_decision') or 'unknown'}"
+                    )
                     if not _cg_result_ok:
                         _abort_grasp(
                             code="APPROACH_COARSE_NOT_READY",
@@ -10869,12 +11310,24 @@ def run_pick_demo(panel) -> None:
                     _frozen_object_world = _tuple3(_pick_demo_cycle_object_world)
                     _fresh_object_world = _tuple3(obj_world_before_grasp_down)
                     _frozen_fresh_object_m = _dist(_frozen_object_world, _fresh_object_world)
+                    # Dynamic handoff tolerance: max of env var and APPROACH_COARSE gate XY tol
+                    _gd_handoff_tol_env = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_GRASP_DOWN_HANDOFF_TARGET_TOL_M",
+                        0.020,
+                        minimum=0.005,
+                    )
+                    _gd_approach_xy_tol_env = _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M",
+                        0.020,
+                        minimum=0.005,
+                    )
+                    _gd_handoff_target_tol_m = max(_gd_handoff_tol_env, _gd_approach_xy_tol_env)
                     _handoff_compare_msg = (
                         "[PICK][DIRECT][HANDOFF_COMPARE] "
                         "from=APPROACH_COARSE to=GRASP_DOWN_JOINT "
                         f"approach_target={_fmt_vec(_approach_grasp_down_world)} "
                         f"grasp_down_target={_fmt_vec(target_world_grasp_down)} "
-                        f"dist(APPROACH_target,GRASP_DOWN_target)={_fmt_scalar(_handoff_target_jump_m)}/0.005 "
+                        f"dist(APPROACH_target,GRASP_DOWN_target)={_fmt_scalar(_handoff_target_jump_m)}/{_gd_handoff_target_tol_m:.3f} "
                         f"approach_end_tcp={_fmt_vec(tcp_before_grasp_down)} "
                         f"grasp_down_entry_tcp={_fmt_vec(tcp_live_before_grasp_down)} "
                         f"dist(APPROACH_end_tcp,GRASP_DOWN_entry_tcp)={_fmt_scalar(_handoff_jump_m)} "
@@ -10894,14 +11347,67 @@ def run_pick_demo(panel) -> None:
                         target_semantic_world=_tuple3(target_world_grasp_down),
                         target_exec_tool0_world=_tuple3(_direct_debug_state.get("target_exec_tool0_world")),
                     )
-                    if (
-                        _handoff_target_jump_m is not None
-                        and float(_handoff_target_jump_m) > 0.005
+                    # GRASP_DOWN_HANDOFF_GATE: classify target jump as READY / WARN / BLOCK
+                    _gd_inherit_xy = bool(_direct_debug_state.get("inherit_xy"))
+                    _gd_entry_jump_ok = bool(
+                        _handoff_jump_m is None or float(_handoff_jump_m) <= 0.010
+                    )
+                    _gd_object_stable = bool(
+                        _frozen_fresh_object_m is None or float(_frozen_fresh_object_m) <= 0.005
+                    )
+                    _gd_approach_gate_ready = bool(coarse_gate_xy_ok and coarse_gate_pose_ok)
+                    _gd_target_jump_ok = bool(
+                        _handoff_target_jump_m is None
+                        or float(_handoff_target_jump_m) <= _gd_handoff_target_tol_m
+                    )
+                    if _gd_target_jump_ok:
+                        _gd_verdict = "READY"
+                        _gd_reason = "target_jump_within_tol"
+                    elif (
+                        _gd_inherit_xy
+                        and _gd_entry_jump_ok
+                        and _gd_object_stable
+                        and _gd_approach_gate_ready
                     ):
+                        _gd_verdict = "WARN"
+                        _gd_reason = "target_jump_exceeds_tol_but_inherit_xy_stable"
+                    else:
+                        _gd_verdict = "BLOCK"
+                        _gd_reason = (
+                            f"target_jump_m={_fmt_scalar(_handoff_target_jump_m)}"
+                            f"_exceeds_tol={_gd_handoff_target_tol_m:.3f}"
+                            f"_inherit_xy={str(_gd_inherit_xy).lower()}"
+                            f"_entry_jump_ok={str(_gd_entry_jump_ok).lower()}"
+                            f"_object_stable={str(_gd_object_stable).lower()}"
+                            f"_approach_gate_ready={str(_gd_approach_gate_ready).lower()}"
+                        )
+                    _gd_gate_msg = (
+                        "[PICK][GRASP_DOWN_HANDOFF_GATE] "
+                        "from=APPROACH_COARSE to=GRASP_DOWN_JOINT "
+                        f"approach_target={_fmt_vec(_approach_grasp_down_world)} "
+                        f"grasp_down_target={_fmt_vec(target_world_grasp_down)} "
+                        f"target_jump_m={_fmt_scalar(_handoff_target_jump_m)} "
+                        f"target_jump_tol_m={_gd_handoff_target_tol_m:.3f} "
+                        f"approach_end_tcp={_fmt_vec(tcp_before_grasp_down)} "
+                        f"grasp_down_entry_tcp={_fmt_vec(tcp_live_before_grasp_down)} "
+                        f"entry_jump_m={_fmt_scalar(_handoff_jump_m)} "
+                        f"object_jump_m={_fmt_scalar(_frozen_fresh_object_m)} "
+                        f"inherit_xy={str(_gd_inherit_xy).lower()} "
+                        f"approach_gate_ready={str(_gd_approach_gate_ready).lower()} "
+                        f"verdict={_gd_verdict} "
+                        f"reason={_gd_reason}"
+                    )
+                    panel._emit_log(_gd_gate_msg)
+                    _append_trace(_gd_gate_msg)
+                    if _gd_verdict == "BLOCK":
                         _abort_grasp(
                             code="GRASP_DOWN_HANDOFF_TARGET_JUMP",
                             phase="GRASP_DOWN_JOINT",
-                            note="reconstructed GRASP_DOWN target diverged from the APPROACH_COARSE target by more than 5 mm",
+                            note=(
+                                f"reconstructed GRASP_DOWN target diverged from APPROACH_COARSE target "
+                                f"by {_fmt_scalar(_handoff_target_jump_m)} m "
+                                f"(tol={_gd_handoff_target_tol_m:.3f} m); verdict={_gd_verdict}"
+                            ),
                             metrics={
                                 "approach_target_world": _tuple3(_approach_grasp_down_world),
                                 "approach_target_base": _tuple3(_approach_grasp_down_base),
@@ -10918,6 +11424,7 @@ def run_pick_demo(panel) -> None:
                                 ),
                                 "inherit_xy": _direct_debug_state.get("inherit_xy"),
                                 "world_to_base_path": str(_direct_debug_state.get("world_to_base_path") or "unset"),
+                                "handoff_target_tol_m": float(_gd_handoff_target_tol_m),
                             },
                         )
                     panel._emit_log(
@@ -11495,6 +12002,40 @@ def run_pick_demo(panel) -> None:
                     f"expected_z_gap={(_DIRECTO_GRASP_Z + grasp_contact_z_offset_m):.4f} "
                     f"align_ok={str(bool(align_metrics.get('ok'))).lower()}"
                 )
+                # [PICK][LOCAL_ALIGN_FIX] — diagnóstico del objeto en el frame local del TCP
+                # Calcula el desplazamiento objeto-TCP en base_link para estimar si el objeto
+                # está dentro del volumen físico de cierre. No aplica corrección cinemática;
+                # es diagnóstico puro para auditabilidad del agarre.
+                _laf_tcp = _tuple3(_live_tcp_base())
+                _laf_obj = _tuple3(_live_object_base())
+                if _laf_tcp is not None and _laf_obj is not None:
+                    _laf_lat_tol = float(os.environ.get("PANEL_PICK_DEMO_GRASP_VOLUME_LATERAL_TOL_M", "0.015") or 0.015)
+                    _laf_vert_tol = float(os.environ.get("PANEL_PICK_DEMO_GRASP_VOLUME_VERTICAL_TOL_M", "0.015") or 0.015)
+                    _laf_dep_tol = float(os.environ.get("PANEL_PICK_DEMO_GRASP_VOLUME_DEPTH_TOL_M", "0.025") or 0.025)
+                    _laf_dx = float(_laf_obj[0]) - float(_laf_tcp[0])
+                    _laf_dy = float(_laf_obj[1]) - float(_laf_tcp[1])
+                    _laf_dz = float(_laf_obj[2]) - float(_laf_tcp[2])
+                    _laf_lat = math.hypot(_laf_dx, _laf_dy)
+                    _laf_dep = abs(_laf_dz)
+                    _laf_vol_ok = bool(_laf_lat <= _laf_lat_tol and _laf_dep <= _laf_dep_tol)
+                    _laf_verdict = "IN_VOLUME" if _laf_vol_ok else (
+                        "LATERAL_ERR" if _laf_lat > _laf_lat_tol else "DEPTH_ERR"
+                    )
+                    panel._emit_log(
+                        "[PICK][LOCAL_ALIGN_FIX] phase=GRASP_ALIGN_IK "
+                        f"tcp_base={_fmt_vec(_laf_tcp)} obj_base={_fmt_vec(_laf_obj)} "
+                        f"obj_dx={_laf_dx:.3f} obj_dy={_laf_dy:.3f} obj_dz={_laf_dz:.3f} "
+                        f"lateral_err_m={_laf_lat:.3f} depth_err_m={_laf_dep:.3f} "
+                        f"lat_tol={_laf_lat_tol:.3f} dep_tol={_laf_dep_tol:.3f} "
+                        f"in_grasp_volume={str(_laf_vol_ok).lower()} "
+                        f"correction_applied=none verdict={_laf_verdict}"
+                    )
+                else:
+                    panel._emit_log(
+                        "[PICK][LOCAL_ALIGN_FIX] phase=GRASP_ALIGN_IK "
+                        "status=unavailable reason=pose_missing correction_applied=none verdict=UNKNOWN"
+                    )
+                _emit_grasp_orientation_gate("GRASP_ALIGN_IK")
                 _trace_phase_pose(
                     phase="GRASP_ALIGN_IK",
                     event="phase_end",
@@ -11513,6 +12054,289 @@ def run_pick_demo(panel) -> None:
             if _align_seed_injected:
                 os.environ.pop("PANEL_PICK_DEMO_IK_SEED_JOINTS", None)
                 _align_seed_injected = False
+            # ── [PICK][VISUAL_ALIGN_FIX] ──────────────────────────────────────────────
+            # Disabled by default (PANEL_PICK_DEMO_ENABLE_VISUAL_ALIGN_FIX=0).
+            # gz_visual_mid arrives in local model frame (FRAME_MISMATCH) — when
+            # dist_visual_mid_obj > 0.20m corrections are invalid and worsen TCP position.
+            _vaf_tol_m = float(os.environ.get("PANEL_PICK_DEMO_VISUAL_GRASP_TOL_M", "0.020") or 0.020)
+            _vaf_max_step_m = float(os.environ.get("PANEL_PICK_DEMO_VISUAL_ALIGN_MAX_STEP_M", "0.015") or 0.015)
+            _vaf_max_att = max(1, int(float(os.environ.get("PANEL_PICK_DEMO_VISUAL_ALIGN_MAX_ATTEMPTS", "3") or 3)))
+            _vaf_require = os.environ.get("PANEL_PICK_DEMO_REQUIRE_VISUAL_GRASP", "0").strip() == "1"
+            _vaf_enabled = os.environ.get("PANEL_PICK_DEMO_ENABLE_VISUAL_ALIGN_FIX", "0").strip() == "1"
+            _vaf_final_dist: float | None = None
+            _vaf_final_verdict = "UNKNOWN"
+            _vaf_visual_reference_valid = False
+            _vaf_wf_local = str(
+                getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
+                    WORLD_FRAME or "world"
+                )
+            ).strip() or "world"
+            # Pre-loop snapshot for GRASP_ALIGN_FINAL_GATE and per-attempt worsening detection
+            _vaf_pre_align_snap = _pre_close_alignment_metrics()
+            _vaf_tcp_before_fix = _tuple3(_vaf_pre_align_snap.get("tcp_base")) or _tuple3(_live_tcp_base())
+            _vaf_obj_b = _tuple3(_vaf_pre_align_snap.get("object_base"))
+            _vaf_pre_xy_err = float(_vaf_pre_align_snap.get("xy_dist") or 999.0)
+
+            def _vaf_tcp_obj_dist_base(tcp_override=None) -> "float | None":
+                t = _tuple3(tcp_override or _live_tcp_base())
+                o = _vaf_obj_b
+                if t is None or o is None:
+                    return None
+                return math.sqrt(sum((float(t[i]) - float(o[i])) ** 2 for i in range(3)))
+
+            _vaf_pre_dist_tcp_obj = _vaf_tcp_obj_dist_base(_vaf_tcp_before_fix)
+
+            def _vaf_dist3(a, b) -> "float | None":
+                av = _tuple3(a)
+                bv = _tuple3(b)
+                if av is None or bv is None:
+                    return None
+                return math.sqrt(sum((float(av[i]) - float(bv[i])) ** 2 for i in range(3)))
+
+            def _vaf_reference_snapshot() -> dict:
+                _vaf_snap: dict = {}
+                if getattr(panel, "_ros_worker_started", False) and getattr(panel, "ros_worker", None):
+                    try:
+                        _vaf_snap, _ = panel.ros_worker.pose_snapshot()
+                    except Exception:
+                        _vaf_snap = {}
+                _vaf_left = _tuple3(_vaf_snap.get("rg2_leftfinger"))
+                _vaf_right = _tuple3(_vaf_snap.get("rg2_rightfinger"))
+                _vaf_object = _tuple3(_vaf_snap.get(target_object_name)) or _tuple3(_live_object_world())
+                _vaf_pinch = _tuple3(_pose_position(_vaf_wf_local, DIRECT_SOURCE_FRAME, timeout_sec=0.10))
+                _vaf_mid = None
+                if _vaf_left is not None and _vaf_right is not None:
+                    _vaf_mid = (
+                        (float(_vaf_left[0]) + float(_vaf_right[0])) / 2.0,
+                        (float(_vaf_left[1]) + float(_vaf_right[1])) / 2.0,
+                        (float(_vaf_left[2]) + float(_vaf_right[2])) / 2.0,
+                    )
+                _vaf_dist_mid_obj = _vaf_dist3(_vaf_mid, _vaf_object)
+                _vaf_dist_pinch_mid = _vaf_dist3(_vaf_pinch, _vaf_mid)
+                _vaf_frame_mismatch = False
+                if _vaf_mid is not None and _vaf_pinch is not None:
+                    _vaf_mid_x = float(_vaf_mid[0])
+                    _vaf_pinch_x = float(_vaf_pinch[0])
+                    if (
+                        abs(_vaf_mid_x) > 0.05
+                        and abs(_vaf_pinch_x) > 0.05
+                        and (_vaf_mid_x * _vaf_pinch_x < 0.0)
+                    ):
+                        _vaf_frame_mismatch = True
+                _vaf_valid = bool(
+                    _vaf_mid is not None
+                    and _vaf_object is not None
+                    and _vaf_pinch is not None
+                    and not _vaf_frame_mismatch
+                    and _vaf_dist_mid_obj is not None
+                    and _vaf_dist_mid_obj <= 0.20
+                    and _vaf_dist_pinch_mid is not None
+                    and _vaf_dist_pinch_mid <= 0.20
+                )
+                if _vaf_valid:
+                    _vaf_reference_verdict = "OK"
+                    _vaf_reference_reason = "visual_reference_valid"
+                elif _vaf_frame_mismatch:
+                    _vaf_reference_verdict = "FRAME_MISMATCH"
+                    _vaf_reference_reason = "local_model_frame_not_world"
+                elif _vaf_mid is None:
+                    _vaf_reference_verdict = "UNKNOWN"
+                    _vaf_reference_reason = "visual_mid_unavailable"
+                elif _vaf_object is None:
+                    _vaf_reference_verdict = "UNKNOWN"
+                    _vaf_reference_reason = "object_world_unavailable"
+                elif _vaf_pinch is None:
+                    _vaf_reference_verdict = "UNKNOWN"
+                    _vaf_reference_reason = "tcp_pose_unavailable"
+                elif _vaf_dist_mid_obj is None or _vaf_dist_pinch_mid is None:
+                    _vaf_reference_verdict = "UNKNOWN"
+                    _vaf_reference_reason = "distance_unavailable"
+                else:
+                    _vaf_reference_verdict = "INVALID"
+                    _vaf_reference_reason = "visual_mid_out_of_safe_bounds"
+                return {
+                    "valid": _vaf_valid,
+                    "visual_mid": _vaf_mid,
+                    "object_world": _vaf_object,
+                    "pinch_world": _vaf_pinch,
+                    "dist_visual_mid_obj": _vaf_dist_mid_obj,
+                    "dist_pinch_gz_mid": _vaf_dist_pinch_mid,
+                    "reference_verdict": _vaf_reference_verdict,
+                    "reference_reason": _vaf_reference_reason,
+                }
+
+            _vaf_run_loop = True
+            if not _vaf_enabled:
+                panel._emit_log(
+                    "[PICK][VISUAL_ALIGN_FIX] phase=GRASP_ALIGN_IK enabled=false verdict=SKIPPED reason=disabled"
+                )
+                _vaf_final_verdict = "SKIPPED"
+                _vaf_run_loop = False
+            elif (
+                _vaf_pre_xy_err <= 0.008
+                and _vaf_pre_dist_tcp_obj is not None
+                and _vaf_pre_dist_tcp_obj <= 0.012
+            ):
+                panel._emit_log(
+                    "[PICK][VISUAL_ALIGN_FIX] "
+                    f"xy_err={_vaf_pre_xy_err:.4f} dist_tcp_obj={_vaf_pre_dist_tcp_obj:.4f} "
+                    "verdict=SKIPPED reason=already_aligned_tcp_good"
+                )
+                _vaf_final_verdict = "SKIPPED"
+                _vaf_run_loop = False
+            if _vaf_run_loop:
+                try:
+                    _vaf_init_ref = _vaf_reference_snapshot()
+                    if not bool(_vaf_init_ref.get("valid")):
+                        panel._emit_log(
+                            "[PICK][VISUAL_ALIGN_FIX] phase=GRASP_ALIGN_IK "
+                            f"enabled={str(_vaf_enabled).lower()} "
+                            f"visual_mid={_fmt_vec(_vaf_init_ref.get('visual_mid'))} "
+                            f"object_world={_fmt_vec(_vaf_init_ref.get('object_world'))} "
+                            f"pinch_world={_fmt_vec(_vaf_init_ref.get('pinch_world'))} "
+                            f"dist_visual_mid_obj={_fmt_scalar(_vaf_init_ref.get('dist_visual_mid_obj'))} "
+                            f"dist_pinch_gz_mid={_fmt_scalar(_vaf_init_ref.get('dist_pinch_gz_mid'))} "
+                            f"reference_verdict={str(_vaf_init_ref.get('reference_verdict') or 'UNKNOWN')} "
+                            f"reference_reason={str(_vaf_init_ref.get('reference_reason') or 'unknown')} "
+                            "verdict=SKIPPED reason=frame_mismatch_or_invalid_visual_mid"
+                        )
+                        _vaf_final_verdict = "SKIPPED"
+                    else:
+                        _vaf_visual_reference_valid = True
+                        for _vaf_att in range(1, _vaf_max_att + 1):
+                            try:
+                                _vaf_att_dist_before = _vaf_tcp_obj_dist_base()
+                                _vaf_ref = _vaf_reference_snapshot()
+                                if not bool(_vaf_ref.get("valid")):
+                                    _vaf_visual_reference_valid = False
+                                    panel._emit_log(
+                                        f"[PICK][VISUAL_ALIGN_FIX] phase=GRASP_ALIGN_IK attempt={_vaf_att}/{_vaf_max_att} "
+                                        f"reference_verdict={str(_vaf_ref.get('reference_verdict') or 'UNKNOWN')} "
+                                        f"reference_reason={str(_vaf_ref.get('reference_reason') or 'unknown')} "
+                                        f"dist_visual_mid_obj={_fmt_scalar(_vaf_ref.get('dist_visual_mid_obj'))} "
+                                        f"dist_pinch_gz_mid={_fmt_scalar(_vaf_ref.get('dist_pinch_gz_mid'))} "
+                                        "verdict=SKIPPED reason=frame_mismatch_or_invalid_visual_mid"
+                                    )
+                                    _vaf_final_verdict = "SKIPPED"
+                                    break
+                                _vaf_visual_reference_valid = True
+                                _vaf_mid = _vaf_ref.get("visual_mid")
+                                _vaf_go = _vaf_ref.get("object_world")
+                                _vaf_pinch_w = _vaf_ref.get("pinch_world")
+                                _vaf_dist = float(_vaf_ref.get("dist_visual_mid_obj") or 0.0)
+                                _vaf_final_dist = _vaf_dist
+                                if _vaf_dist <= _vaf_tol_m:
+                                    panel._emit_log(
+                                        f"[PICK][VISUAL_ALIGN_FIX] phase=GRASP_ALIGN_IK attempt={_vaf_att}/{_vaf_max_att} "
+                                        f"visual_mid={_fmt_vec(_vaf_mid)} object_world={_fmt_vec(_vaf_go)} "
+                                        f"dist_visual_mid_obj={_vaf_dist:.4f} tol_m={_vaf_tol_m:.4f} "
+                                        "correction=(0,0,0) verdict=OK reason=within_tolerance"
+                                    )
+                                    _vaf_final_verdict = "OK"
+                                    break
+                                _vaf_err = (
+                                    float(_vaf_go[0]) - _vaf_mid[0],
+                                    float(_vaf_go[1]) - _vaf_mid[1],
+                                    float(_vaf_go[2]) - _vaf_mid[2],
+                                )
+                                _vaf_norm = math.sqrt(sum(v ** 2 for v in _vaf_err))
+                                _vaf_scale = min(1.0, _vaf_max_step_m / _vaf_norm) if _vaf_norm > 1e-9 else 0.0
+                                _vaf_corr = tuple(v * _vaf_scale for v in _vaf_err)
+                                _vaf_tcp_b = _live_tcp_base()
+                                if _vaf_pinch_w is None or _vaf_tcp_b is None:
+                                    panel._emit_log(
+                                        f"[PICK][VISUAL_ALIGN_FIX] phase=GRASP_ALIGN_IK attempt={_vaf_att}/{_vaf_max_att} "
+                                        f"dist_visual_mid_obj={_vaf_dist:.4f} verdict=FAILED reason=tcp_pose_unavailable"
+                                    )
+                                    _vaf_final_verdict = "FAILED"
+                                    break
+                                _vaf_tgt_w = (
+                                    float(_vaf_pinch_w[0]) + _vaf_corr[0],
+                                    float(_vaf_pinch_w[1]) + _vaf_corr[1],
+                                    float(_vaf_pinch_w[2]) + _vaf_corr[2],
+                                )
+                                _vaf_tgt_b = _target_base_from_world(_vaf_tgt_w)
+                                if _vaf_tgt_b is None:
+                                    panel._emit_log(
+                                        f"[PICK][VISUAL_ALIGN_FIX] phase=GRASP_ALIGN_IK attempt={_vaf_att}/{_vaf_max_att} "
+                                        f"dist_visual_mid_obj={_vaf_dist:.4f} verdict=FAILED reason=world_to_base_failed"
+                                    )
+                                    _vaf_final_verdict = "FAILED"
+                                    break
+                                panel._emit_log(
+                                    f"[PICK][VISUAL_ALIGN_FIX] phase=GRASP_ALIGN_IK attempt={_vaf_att}/{_vaf_max_att} "
+                                    f"visual_mid={_fmt_vec(_vaf_mid)} object_world={_fmt_vec(_vaf_go)} "
+                                    f"pinch_world={_fmt_vec(_vaf_pinch_w)} "
+                                    f"err_world={_fmt_vec(_vaf_err)} err_norm={_vaf_norm:.4f} "
+                                    f"corr_world={_fmt_vec(_vaf_corr)} capped={str(_vaf_norm > _vaf_max_step_m).lower()} "
+                                    f"target_before={_fmt_vec(_vaf_tcp_b)} target_after={_fmt_vec(_vaf_tgt_b)} "
+                                    f"dist_visual_mid_obj={_vaf_dist:.4f} tol_m={_vaf_tol_m:.4f} verdict=APPLIED"
+                                )
+                                try:
+                                    _move_tcp_direct(
+                                        label="VISUAL_ALIGN_FIX",
+                                        target_tcp_runtime=_vaf_tgt_b,
+                                        timeout_sec=move_sec + 4.0,
+                                        audit_target_source="visual_finger_midpoint_correction",
+                                        target_pose_original=_vaf_tgt_b,
+                                        target_frame_original="base_link",
+                                        rot_weight=0.10,
+                                        ik_err_tol=0.08,
+                                        force_send=True,
+                                    )
+                                except Exception as _vaf_move_exc:
+                                    panel._emit_log(
+                                        f"[PICK][VISUAL_ALIGN_FIX] phase=GRASP_ALIGN_IK attempt={_vaf_att}/{_vaf_max_att} "
+                                        f"verdict=FAILED reason=move_failed:{_vaf_move_exc}"
+                                    )
+                                    _vaf_final_verdict = "FAILED"
+                                    break
+                                time.sleep(0.20)
+                                # Abort remaining attempts if correction moved TCP away from object
+                                _vaf_att_dist_after = _vaf_tcp_obj_dist_base()
+                                if (
+                                    _vaf_att_dist_before is not None
+                                    and _vaf_att_dist_after is not None
+                                    and _vaf_att_dist_after > _vaf_att_dist_before + 0.003
+                                ):
+                                    panel._emit_log(
+                                        f"[PICK][VISUAL_ALIGN_FIX] phase=GRASP_ALIGN_IK attempt={_vaf_att}/{_vaf_max_att} "
+                                        f"dist_tcp_obj_before={_vaf_att_dist_before:.4f} "
+                                        f"dist_tcp_obj_after={_vaf_att_dist_after:.4f} "
+                                        "verdict=ABORTED reason=worsened_tcp_obj_dist"
+                                    )
+                                    _vaf_final_verdict = "ABORTED"
+                                    break
+                                _vaf_final_verdict = "APPLIED"
+                            except Exception as _vaf_exc:
+                                panel._emit_log(
+                                    f"[PICK][VISUAL_ALIGN_FIX] phase=GRASP_ALIGN_IK attempt={_vaf_att}/{_vaf_max_att} "
+                                    f"verdict=UNKNOWN reason=exception:{_vaf_exc}"
+                                )
+                                _vaf_final_verdict = "UNKNOWN"
+                                break
+                        if _vaf_final_verdict == "APPLIED":
+                            try:
+                                _vaf_ref_f = _vaf_reference_snapshot()
+                                _vaf_visual_reference_valid = bool(_vaf_ref_f.get("valid"))
+                                if _vaf_visual_reference_valid:
+                                    _vaf_mid_f = _vaf_ref_f.get("visual_mid")
+                                    _vaf_go_f = _vaf_ref_f.get("object_world")
+                                    _vaf_final_dist = _vaf_ref_f.get("dist_visual_mid_obj")
+                                    _vaf_final_verdict = "OK" if _vaf_final_dist is not None and _vaf_final_dist <= _vaf_tol_m else "APPLIED_NOT_CONVERGED"
+                                    panel._emit_log(
+                                        "[PICK][VISUAL_ALIGN_FIX] phase=GRASP_ALIGN_IK_final "
+                                        f"visual_mid_final={_fmt_vec(_vaf_mid_f)} object_final={_fmt_vec(_vaf_go_f)} "
+                                        f"dist_visual_mid_obj_final={_fmt_scalar(_vaf_final_dist)} tol_m={_vaf_tol_m:.4f} "
+                                        f"verdict={_vaf_final_verdict}"
+                                    )
+                            except Exception:
+                                pass
+                except Exception as _vaf_outer_exc:
+                    panel._emit_log(
+                        f"[PICK][VISUAL_ALIGN_FIX] verdict=UNKNOWN reason=outer_exception:{_vaf_outer_exc}"
+                    )
+                    _vaf_final_verdict = "UNKNOWN"
             post_align_metrics = _pre_close_alignment_metrics()
             _pa_check_result = "OK" if bool(post_align_metrics.get("ok")) else "NO"
             _pa_check_tcp = post_align_metrics.get("tcp_base")
@@ -11530,6 +12354,33 @@ def run_pick_demo(panel) -> None:
             )
             panel._emit_log(_pa_check_msg)
             _append_trace(_pa_check_msg)
+            # ── [PICK][GRASP_ALIGN_FINAL_GATE] ───────────────────────────────────────
+            try:
+                _gafg_tcp_after = _tuple3(_pa_check_tcp)
+                _gafg_obj = _tuple3(_pa_check_obj)
+                _gafg_dist_after: "float | None" = None
+                if _gafg_tcp_after is not None and _gafg_obj is not None:
+                    _gafg_dist_after = math.sqrt(
+                        sum((float(_gafg_tcp_after[i]) - float(_gafg_obj[i])) ** 2 for i in range(3))
+                    )
+                _gafg_final_verdict = "READY" if _pa_check_result == "OK" else "NOT_READY"
+                panel._emit_log(
+                    "[PICK][GRASP_ALIGN_FINAL_GATE] "
+                    f"visual_fix_enabled={str(_vaf_enabled).lower()} "
+                    f"visual_fix_verdict={_vaf_final_verdict} "
+                    f"visual_reference_valid={str(_vaf_visual_reference_valid).lower()} "
+                    f"final_verdict={_gafg_final_verdict} "
+                    f"tcp_before_visual_fix={_fmt_vec(_vaf_tcp_before_fix)} "
+                    f"tcp_after_visual_fix={_fmt_vec(_gafg_tcp_after)} "
+                    f"object_base={_fmt_vec(_gafg_obj)} "
+                    f"dist_before={_fmt_scalar(_vaf_pre_dist_tcp_obj)} "
+                    f"dist_after={_fmt_scalar(_gafg_dist_after)} "
+                    f"pre_close_geom_ok={str(bool(post_align_metrics.get('ok'))).lower()}"
+                )
+            except Exception as _gafg_exc:
+                panel._emit_log(
+                    f"[PICK][GRASP_ALIGN_FINAL_GATE] verdict=UNKNOWN reason=exception:{_gafg_exc}"
+                )
             _emit_transition_decision(
                 from_phase="GRASP_ALIGN_IK",
                 to_phase="PRE_CLOSE",
@@ -11823,6 +12674,42 @@ def run_pick_demo(panel) -> None:
             )
             _check_pick_tf_freshness("PRE_CLOSE")
             _emit_rg2_visual_audit("PRE_CLOSE")
+            _emit_grasp_orientation_gate("PRE_CLOSE")
+            _vaf_pre_close_visual_gate_active = bool(
+                _vaf_require
+                and _vaf_visual_reference_valid
+                and _vaf_final_verdict == "OK"
+                and _vaf_final_dist is not None
+            )
+            if not _vaf_pre_close_visual_gate_active:
+                panel._emit_log(
+                    "[PICK][PRE_CLOSE_VISUAL_GATE] "
+                    "verdict=SKIPPED reason=invalid_or_disabled_visual_reference "
+                    f"require_visual_grasp={1 if _vaf_require else 0}"
+                )
+            elif _vaf_final_dist > _vaf_tol_m:
+                panel._emit_log(
+                    "[PICK][PRE_CLOSE_VISUAL_GATE] "
+                    f"verdict=BLOCKED reason=visual_not_converged require_visual_grasp={1 if _vaf_require else 0} "
+                    f"dist_visual_mid_obj={_vaf_final_dist:.4f} tol_m={_vaf_tol_m:.4f} "
+                    f"visual_fix_verdict={_vaf_final_verdict}"
+                )
+                _abort_grasp(
+                    code="VISUAL_GRASP_NOT_ACHIEVED",
+                    phase="PRE_CLOSE",
+                    note=(
+                        f"visual_finger_midpoint_far_from_object "
+                        f"dist={_vaf_final_dist:.4f}m>tol={_vaf_tol_m:.4f}m "
+                        f"verdict={_vaf_final_verdict}"
+                    ),
+                    metrics={"vaf_dist": _vaf_final_dist, "vaf_verdict": _vaf_final_verdict},
+                )
+            else:
+                panel._emit_log(
+                    "[PICK][PRE_CLOSE_VISUAL_GATE] "
+                    f"verdict=PASSED require_visual_grasp={1 if _vaf_require else 0} "
+                    f"dist_visual_mid_obj={_vaf_final_dist:.4f} tol_m={_vaf_tol_m:.4f}"
+                )
             _phase_end(
                 "PRE_CLOSE",
                 note=json.dumps(_json_safe(pre_close_metrics), ensure_ascii=False, sort_keys=True),
@@ -11889,6 +12776,7 @@ def run_pick_demo(panel) -> None:
                 f"age={_fmt_scalar(close_state_pre_cmd.get('joint_state_age_sec'))} "
                 f"closed_flag={bool(close_state_pre_cmd.get('closed_flag'))}"
             )
+            _emit_grasp_orientation_gate("CLOSE")
             panel.signal_run_ui.emit(_close_only)
             time.sleep(0.3)
             close_confirm_timeout_sec = max(
@@ -11977,6 +12865,31 @@ def run_pick_demo(panel) -> None:
             )
             panel._emit_log(_cl_check_msg)
             _append_trace(_cl_check_msg)
+            # [PICK][GRIPPER_CLOSE_AUDIT] — resumen estructurado del resultado de CLOSE
+            _gca_pre_sum = _fmt_scalar(close_state_pre_cmd.get("opening_sum"))
+            _gca_post_sum = _fmt_scalar((close_wait_state or {}).get("opening_sum"))
+            _gca_pre_raw = close_state_pre_cmd.get("opening_sum")
+            _gca_post_raw = (close_wait_state or {}).get("opening_sum")
+            _gca_delta = (
+                f"{float(_gca_pre_raw) - float(_gca_post_raw):.4f}"
+                if _gca_pre_raw is not None and _gca_post_raw is not None
+                else "n/a"
+            )
+            _gca_mode = str((close_wait_state or {}).get("confirm_mode") or "none")
+            _gca_verdict = "CLOSED" if bool(close_confirmed) else "NOT_CLOSED"
+            panel._emit_log(
+                "[PICK][GRIPPER_CLOSE_AUDIT] "
+                f"pre_opening_sum={_gca_pre_sum} "
+                f"post_opening_sum={_gca_post_sum} "
+                f"delta_sum={_gca_delta} "
+                f"confirm_mode={_gca_mode} "
+                f"measured_ok={str(bool((close_wait_state or {}).get('measured_target_ok'))).lower()} "
+                f"closed_flag={str(bool((close_wait_state or {}).get('closed_flag'))).lower()} "
+                f"geometry_ok={str(bool(close_metrics.get('ok'))).lower()} "
+                f"xy_dist_m={_fmt_scalar(close_metrics.get('xy_dist'))} "
+                f"z_err_m={_fmt_scalar(close_metrics.get('z_error'))} "
+                f"verdict={_gca_verdict}"
+            )
             if not bool(close_confirmed):
                 _emit_transition_decision(
                     from_phase="CLOSE",
@@ -12131,6 +13044,7 @@ def run_pick_demo(panel) -> None:
                 f"obj=({obj_base_grasp[0]:.3f},{obj_base_grasp[1]:.3f},{obj_base_grasp[2]:.3f}) "
                 f"tcp_obj_dist={_dist(tcp_base_grasp, obj_base_grasp):.3f}"
             )
+            _emit_grasp_orientation_gate("ATTACH_GATE")
             # Log ATTACH_GATE geometry gate antes de intentar el attach
             _ag_geom_result = "OK" if attach_geometry_ok else "NO"
             _ag_geom_reason = (
@@ -12150,6 +13064,46 @@ def run_pick_demo(panel) -> None:
             )
             panel._emit_log(_ag_pre_msg)
             _append_trace(_ag_pre_msg)
+            # [PICK][ATTACH_PHYSICAL_GATE] — comprobación física previa al attach
+            # Consolida: volumen PRE_CLOSE, TF fresco, visual_mid_obj, TCP-obj, gripper cerrado.
+            _apg_preclose_vol = _pre_close_volume_check()
+            _apg_vol_ok = bool(_apg_preclose_vol.get("ok"))
+            _apg_tf_fresh = None
+            try:
+                _apg_tf_check = _check_pick_tf_freshness("ATTACH_GATE_PRE")
+                _apg_tf_fresh = True
+            except Exception:
+                _apg_tf_fresh = False
+            _apg_gs = _read_gripper_state(expected_closed=True)
+            _apg_gripper_closed = bool(_apg_gs.get("measured_target_ok"))
+            _apg_opening_sum = _apg_gs.get("opening_sum")
+            _apg_gz_obj = _tuple3(_strict_fresh_gazebo_object_world())
+            _apg_tcp_world = _tuple3(_live_tcp_world())
+            _apg_vis_dist = None
+            if _apg_gz_obj is not None and _apg_tcp_world is not None:
+                _apg_vis_dist = _dist(_apg_gz_obj, _apg_tcp_world)
+            _apg_verdict = (
+                "PASS" if (
+                    _apg_vol_ok
+                    and _apg_gripper_closed
+                    and attach_geometry_ok
+                ) else "WARN"
+            )
+            panel._emit_log(
+                "[PICK][ATTACH_PHYSICAL_GATE] "
+                f"preclose_volume={str(_apg_vol_ok).lower()} "
+                f"lateral_err_mm={_apg_preclose_vol.get('xy_dist_m', 0.0) * 1000:.1f} "
+                f"depth_err_mm={_apg_preclose_vol.get('z_dist_m', 0.0) * 1000:.1f} "
+                f"tf_fresh={str(_apg_tf_fresh).lower()} "
+                f"visual_mid_obj={_fmt_vec(_apg_gz_obj)} "
+                f"tcp_obj_dist_m={_fmt_scalar(_apg_vis_dist)} "
+                f"tcp_obj_base_dist_m={_fmt_scalar(attach_tcp_obj_dist)} "
+                f"gripper_closed={str(_apg_gripper_closed).lower()} "
+                f"opening_sum={_fmt_scalar(_apg_opening_sum)} "
+                f"geometry_ok={str(attach_geometry_ok).lower()} "
+                f"backend=pending "
+                f"verdict={_apg_verdict}"
+            )
             attach_ok = panel._attempt_attach(
                 "demo_grasp_physical",
                 selected_name=PICK_DEMO_OBJECT_NAME,
