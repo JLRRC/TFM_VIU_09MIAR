@@ -1,0 +1,1 @@
+/home/laboratorio/TFM/visual_autopick_ros_ws/build/ur5_moveit_config/ament_cmake_environment_hooks/local_setup.zsh

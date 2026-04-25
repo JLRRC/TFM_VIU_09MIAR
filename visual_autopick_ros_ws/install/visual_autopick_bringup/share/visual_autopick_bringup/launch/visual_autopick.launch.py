@@ -1,0 +1,1 @@
+/home/laboratorio/TFM/visual_autopick_ros_ws/src/visual_autopick_bringup/launch/visual_autopick.launch.py

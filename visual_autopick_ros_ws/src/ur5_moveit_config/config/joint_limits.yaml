@@ -1,0 +1,64 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_moveit_config/config/joint_limits.yaml
+# Contenido: Configuracion MoveIt del UR5 para planificacion y ejecucion.
+# Uso breve: MoveIt y ros2 launch lo usan durante el bringup del robot.
+joint_limits:
+  shoulder_pan_joint:
+    has_acceleration_limits: true
+    has_effort_limits: true
+    has_position_limits: true
+    has_velocity_limits: true
+    max_acceleration: 1.2
+    max_effort: 150.0
+    max_position: 6.283185307179586
+    max_velocity: 1.2
+    min_position: -6.283185307179586
+  shoulder_lift_joint:
+    has_acceleration_limits: true
+    has_effort_limits: true
+    has_position_limits: true
+    has_velocity_limits: true
+    max_acceleration: 1.2
+    max_effort: 150.0
+    max_position: 6.283185307179586
+    max_velocity: 1.2
+    min_position: -6.283185307179586
+  elbow_joint:
+    has_acceleration_limits: true
+    has_effort_limits: true
+    has_position_limits: true
+    has_velocity_limits: true
+    max_acceleration: 1.2
+    max_effort: 150.0
+    max_position: 3.141592653589793
+    max_velocity: 1.2
+    min_position: -3.141592653589793
+  wrist_1_joint:
+    has_acceleration_limits: true
+    has_effort_limits: true
+    has_position_limits: true
+    has_velocity_limits: true
+    max_acceleration: 1.2
+    max_effort: 28.0
+    max_position: 6.283185307179586
+    max_velocity: 1.6
+    min_position: -6.283185307179586
+  wrist_2_joint:
+    has_acceleration_limits: true
+    has_effort_limits: true
+    has_position_limits: true
+    has_velocity_limits: true
+    max_acceleration: 1.2
+    max_effort: 28.0
+    max_position: 6.283185307179586
+    max_velocity: 1.6
+    min_position: -6.283185307179586
+  wrist_3_joint:
+    has_acceleration_limits: true
+    has_effort_limits: true
+    has_position_limits: true
+    has_velocity_limits: true
+    max_acceleration: 1.2
+    max_effort: 28.0
+    max_position: 6.283185307179586
+    max_velocity: 1.6
+    min_position: -6.283185307179586

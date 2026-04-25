@@ -1,0 +1,7 @@
+[console_scripts]
+object_pose_provider = visual_autopick_tools.object_pose_provider:main
+simple_direct_pick = visual_autopick_tools.simple_direct_pick:main
+simple_moveit_pick = visual_autopick_tools.simple_moveit_pick:main
+step_pick_server = visual_autopick_tools.step_pick_server:main
+tf_diagnostics = visual_autopick_tools.tf_diagnostics:main
+world_tf_publisher = visual_autopick_tools.world_tf_publisher:main

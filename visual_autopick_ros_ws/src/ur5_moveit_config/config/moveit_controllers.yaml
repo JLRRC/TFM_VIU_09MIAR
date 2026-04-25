@@ -1,0 +1,18 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_moveit_config/config/moveit_controllers.yaml
+# Contenido: Configuracion MoveIt del UR5 para planificacion y ejecucion.
+# Uso breve: MoveIt y ros2 launch lo usan durante el bringup del robot.
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+moveit_simple_controller_manager:
+  controller_names:
+    - joint_trajectory_controller
+  joint_trajectory_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint

@@ -1,0 +1,17 @@
+# kinematics.yaml
+# ================
+# El solver KDL resuelve IK para la cadena base_link → rg2_pinch_center.
+# Los joints fijos (rg2_mount_joint, rg2_pinch_center_joint) se incluyen
+# automáticamente como offset constante al tip. No añadir offset manual.
+
+ur5_arm:
+  kinematics_solver: kdl_kinematics_plugin/KDLKinematicsPlugin
+  kinematics_solver_search_resolution: 0.005
+  kinematics_solver_timeout: 0.005
+  kinematics_solver_attempts: 3
+
+rg2_gripper:
+  kinematics_solver: kdl_kinematics_plugin/KDLKinematicsPlugin
+  kinematics_solver_search_resolution: 0.005
+  kinematics_solver_timeout: 0.005
+  kinematics_solver_attempts: 3

@@ -1,0 +1,268 @@
+<?xml version="1.0"?>
+<!--
+  ur5_rg2.urdf.xacro
+  ===================
+  Fuente canónica de TODA la geometría y offsets del sistema UR5+RG2.
+  NO duplicar ningún offset en SDF, launch files ni código Python.
+
+  Supuesto de offset TCP:
+    rg2_pinch_center = tool0 + [0, 0, 0.175]
+    Origen: OnRobot RG2 datasheet (~174 mm). Redondeado a 175 mm.
+    Descomposición: cuerpo gripper 120 mm + dedo 55 mm = 175 mm.
+    Si el valor físico real difiere, modificar SOLO este archivo.
+
+  Árbol TF relevante:
+    world → base_link → ... → tool0 → rg2_base_link → rg2_pinch_center
+                                                      → rg2_finger_link1
+                                                      → rg2_finger_link2
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="ur5_rg2">
+
+  <!-- ── Parámetros ────────────────────────────────────────────────────── -->
+  <xacro:property name="ur_type"              value="ur5"/>
+  <xacro:property name="safety_limits"        value="false"/>
+  <xacro:property name="safety_pos_margin"    value="0.15"/>
+  <xacro:property name="safety_k_position"    value="20"/>
+  <xacro:property name="force_abs_paths"      value="false"/>
+  <xacro:property name="robot_name"           value="ur5_rg2"/>
+  <xacro:property name="tf_prefix_value"      value=""/>
+
+  <!-- Paquete ur_description oficial del sistema -->
+  <xacro:property name="ur_pkg_share" value="$(optenv UR_DESCRIPTION_SHARE /opt/ros/jazzy/share/ur_description)"/>
+
+  <!-- ── OFFSET CANÓNICO DEL TCP ───────────────────────────────────────── -->
+  <!-- Distancia tool0 → rg2_pinch_center a lo largo del eje Z de tool0.   -->
+  <!-- Fuente única. No se usa en ningún otro archivo.                      -->
+  <xacro:property name="TCP_Z_OFFSET" value="0.175"/>
+
+  <!-- Parámetros cinemáticos UR (del sistema) -->
+  <xacro:property name="joint_limits_file"  value="${ur_pkg_share}/config/${ur_type}/joint_limits.yaml"/>
+  <xacro:property name="kinematics_file"    value="${ur_pkg_share}/config/${ur_type}/default_kinematics.yaml"/>
+  <xacro:property name="physical_file"      value="${ur_pkg_share}/config/${ur_type}/physical_parameters.yaml"/>
+  <xacro:property name="visual_file"        value="${ur_pkg_share}/config/${ur_type}/visual_parameters.yaml"/>
+
+  <xacro:include filename="${ur_pkg_share}/urdf/ur_macro.xacro"/>
+
+  <!-- ── Link world (Gazebo world frame) ───────────────────────────────── -->
+  <!-- Nota: RSP publica world→base_link estáticamente desde este joint.   -->
+  <!-- world_tf_publisher lo sobreescribe dinámicamente desde Gazebo.      -->
+  <link name="world"/>
+
+  <!-- ── Brazo UR5 (desde ur_description oficial) ──────────────────────── -->
+  <xacro:ur_robot
+    name="${robot_name}"
+    tf_prefix="${tf_prefix_value}"
+    parent="world"
+    joint_limits_parameters_file="${joint_limits_file}"
+    kinematics_parameters_file="${kinematics_file}"
+    physical_parameters_file="${physical_file}"
+    visual_parameters_file="${visual_file}"
+    safety_limits="${safety_limits}"
+    safety_pos_margin="${safety_pos_margin}"
+    safety_k_position="${safety_k_position}"
+    force_abs_paths="${force_abs_paths}">
+    <!-- Pose del robot en el mundo. Coincide con la pose reportada por    -->
+    <!-- Gazebo para el modelo ur5_rg2 cuando se spawna en (0,0,0).        -->
+    <origin xyz="-0.85 0 0.850" rpy="0 0 0"/>
+  </xacro:ur_robot>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!--  GRIPPER OnRobot RG2                                               -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+  <!-- ── rg2_base_link: punto de montaje del gripper en la brida ──────── -->
+  <!-- Coincide con tool0. Sin offset: el gripper se monta directo.        -->
+  <link name="rg2_base_link">
+    <inertial>
+      <mass value="0.490"/>  <!-- masa RG2: 490 g según datasheet -->
+      <origin xyz="0 0 0.060" rpy="0 0 0"/>
+      <inertia ixx="0.0004" ixy="0.0" ixz="0.0"
+               iyy="0.0004" iyz="0.0" izz="0.0003"/>
+    </inertial>
+    <!-- Cuerpo principal del gripper: 60×80×120 mm -->
+    <visual>
+      <origin xyz="0 0 0.060" rpy="0 0 0"/>
+      <geometry><box size="0.060 0.080 0.120"/></geometry>
+      <material name="rg2_dark_gray">
+        <color rgba="0.18 0.18 0.18 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.060" rpy="0 0 0"/>
+      <geometry><box size="0.060 0.080 0.120"/></geometry>
+    </collision>
+  </link>
+
+  <joint name="rg2_mount_joint" type="fixed">
+    <parent link="tool0"/>
+    <child  link="rg2_base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <!-- OFFSET: 0 — el gripper se monta sin offset en la brida UR5 -->
+  </joint>
+
+  <!-- ── rg2_finger_link1: dedo izquierdo (+Y) ─────────────────────────── -->
+  <link name="rg2_finger_link1">
+    <inertial>
+      <mass value="0.040"/>
+      <origin xyz="0 0 0.0275" rpy="0 0 0"/>
+      <inertia ixx="2e-5" ixy="0.0" ixz="0.0"
+               iyy="2e-5" iyz="0.0" izz="4e-6"/>
+    </inertial>
+    <!-- Dedo: 12×10×55 mm -->
+    <visual>
+      <origin xyz="0 0 0.0275" rpy="0 0 0"/>
+      <geometry><box size="0.012 0.010 0.055"/></geometry>
+      <material name="rg2_finger_gray">
+        <color rgba="0.35 0.35 0.35 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0275" rpy="0 0 0"/>
+      <geometry><box size="0.012 0.010 0.055"/></geometry>
+    </collision>
+  </link>
+
+  <!--
+    Joint origen en (0, 0, 0.120) desde rg2_base_link = inicio de dedos.
+    Eje +Y → abre hacia la izquierda.
+    Rango 0 → 0.0425 m (42.5 mm por dedo = 85 mm apertura total).
+    Cerrado (joint=0): punta del dedo en z=0.175 desde tool0 → coincide con rg2_pinch_center.
+  -->
+  <joint name="rg2_finger_joint1" type="prismatic">
+    <parent link="rg2_base_link"/>
+    <child  link="rg2_finger_link1"/>
+    <origin xyz="0 0 0.120" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0.0" upper="0.0425" effort="25" velocity="0.1"/>
+    <dynamics damping="0.5" friction="0.1"/>
+  </joint>
+
+  <!-- ── rg2_finger_link2: dedo derecho (-Y) ──────────────────────────── -->
+  <link name="rg2_finger_link2">
+    <inertial>
+      <mass value="0.040"/>
+      <origin xyz="0 0 0.0275" rpy="0 0 0"/>
+      <inertia ixx="2e-5" ixy="0.0" ixz="0.0"
+               iyy="2e-5" iyz="0.0" izz="4e-6"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.0275" rpy="0 0 0"/>
+      <geometry><box size="0.012 0.010 0.055"/></geometry>
+      <material name="rg2_finger_gray"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0275" rpy="0 0 0"/>
+      <geometry><box size="0.012 0.010 0.055"/></geometry>
+    </collision>
+  </link>
+
+  <!-- Eje -Y → abre hacia la derecha (simétrico con joint1) -->
+  <joint name="rg2_finger_joint2" type="prismatic">
+    <parent link="rg2_base_link"/>
+    <child  link="rg2_finger_link2"/>
+    <origin xyz="0 0 0.120" rpy="0 0 0"/>
+    <axis xyz="0 -1 0"/>
+    <limit lower="0.0" upper="0.0425" effort="25" velocity="0.1"/>
+    <dynamics damping="0.5" friction="0.1"/>
+  </joint>
+
+  <!-- ── rg2_pinch_center: TCP OPERATIVO del gripper ───────────────────── -->
+  <!--
+    ESTE es el frame que deben usar:
+      - El pick server para calcular targets de agarre
+      - MoveIt como tip_link del grupo ur5_arm
+      - La validación de distancia TCP-objeto
+      - El attach lógico (si se usa)
+
+    Posición: tool0 + [0, 0, TCP_Z_OFFSET]
+    = exactamente entre las puntas de los dedos cuando joint1=joint2=0
+    = punto funcional de agarre del RG2
+
+    NO sumar ningún offset adicional fuera de este archivo.
+  -->
+  <link name="rg2_pinch_center">
+    <inertial>
+      <mass value="0.001"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-6" ixy="0.0" ixz="0.0"
+               iyy="1e-6" iyz="0.0" izz="1e-6"/>
+    </inertial>
+  </link>
+
+  <joint name="rg2_pinch_center_joint" type="fixed">
+    <parent link="rg2_base_link"/>
+    <child  link="rg2_pinch_center"/>
+    <!-- OFFSET CANÓNICO: ver propiedad TCP_Z_OFFSET al inicio del archivo -->
+    <origin xyz="0 0 ${TCP_Z_OFFSET}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!--  ros2_control — gz_ros2_control/GazeboSimSystem                   -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <ros2_control name="${robot_name}" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+
+    <!-- Joints del brazo UR5 -->
+    <joint name="shoulder_pan_joint">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="shoulder_lift_joint">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">-1.5707963267948966</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="elbow_joint">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="wrist_1_joint">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">-1.5707963267948966</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="wrist_2_joint">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="wrist_3_joint">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+
+    <!-- Joints del gripper RG2 (controlados por separado) -->
+    <joint name="rg2_finger_joint1">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="rg2_finger_joint2">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+</robot>

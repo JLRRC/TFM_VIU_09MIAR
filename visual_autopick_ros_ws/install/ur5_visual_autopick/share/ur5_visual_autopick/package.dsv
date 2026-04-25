@@ -1,0 +1,15 @@
+source;share/ur5_visual_autopick/hook/path.ps1
+source;share/ur5_visual_autopick/hook/path.dsv
+source;share/ur5_visual_autopick/hook/path.sh
+source;share/ur5_visual_autopick/hook/pythonpath.ps1
+source;share/ur5_visual_autopick/hook/pythonpath.dsv
+source;share/ur5_visual_autopick/hook/pythonpath.sh
+source;share/ur5_visual_autopick/hook/pythonscriptspath.ps1
+source;share/ur5_visual_autopick/hook/pythonscriptspath.dsv
+source;share/ur5_visual_autopick/hook/pythonscriptspath.sh
+source;share/ur5_visual_autopick/hook/ament_prefix_path.ps1
+source;share/ur5_visual_autopick/hook/ament_prefix_path.dsv
+source;share/ur5_visual_autopick/hook/ament_prefix_path.sh
+source;../../build/ur5_visual_autopick/share/ur5_visual_autopick/hook/pythonpath_develop.ps1
+source;../../build/ur5_visual_autopick/share/ur5_visual_autopick/hook/pythonpath_develop.dsv
+source;../../build/ur5_visual_autopick/share/ur5_visual_autopick/hook/pythonpath_develop.sh

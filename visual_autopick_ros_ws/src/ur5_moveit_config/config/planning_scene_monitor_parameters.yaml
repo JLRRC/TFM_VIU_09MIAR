@@ -1,0 +1,8 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_moveit_config/config/planning_scene_monitor_parameters.yaml
+# Contenido: Configuracion MoveIt del UR5 para planificacion y ejecucion.
+# Uso breve: MoveIt y ros2 launch lo usan durante el bringup del robot.
+planning_scene_monitor:
+  publish_planning_scene: true
+  publish_geometry_updates: true
+  publish_state_updates: true
+  publish_transforms_updates: true
