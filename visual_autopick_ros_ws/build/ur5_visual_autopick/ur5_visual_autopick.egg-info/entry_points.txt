@@ -1,3 +1,0 @@
-[console_scripts]
-ros_trace_logger = ur5_visual_autopick.ros_trace_logger:main
-visual_autopick_node = ur5_visual_autopick.visual_autopick_node:main

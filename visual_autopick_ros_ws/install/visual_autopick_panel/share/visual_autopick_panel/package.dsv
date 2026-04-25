@@ -1,6 +1,0 @@
-source;share/visual_autopick_panel/hook/pythonpath.ps1
-source;share/visual_autopick_panel/hook/pythonpath.dsv
-source;share/visual_autopick_panel/hook/pythonpath.sh
-source;share/visual_autopick_panel/hook/ament_prefix_path.ps1
-source;share/visual_autopick_panel/hook/ament_prefix_path.dsv
-source;share/visual_autopick_panel/hook/ament_prefix_path.sh

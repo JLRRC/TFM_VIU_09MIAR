@@ -1,9 +1,0 @@
-/home/laboratorio/TFM/visual_autopick_ros_ws/build/ur5_description/CMakeFiles/uninstall.dir
-/home/laboratorio/TFM/visual_autopick_ros_ws/build/ur5_description/CMakeFiles/ur5_description_uninstall.dir
-/home/laboratorio/TFM/visual_autopick_ros_ws/build/ur5_description/CMakeFiles/test.dir
-/home/laboratorio/TFM/visual_autopick_ros_ws/build/ur5_description/CMakeFiles/edit_cache.dir
-/home/laboratorio/TFM/visual_autopick_ros_ws/build/ur5_description/CMakeFiles/rebuild_cache.dir
-/home/laboratorio/TFM/visual_autopick_ros_ws/build/ur5_description/CMakeFiles/list_install_components.dir
-/home/laboratorio/TFM/visual_autopick_ros_ws/build/ur5_description/CMakeFiles/install.dir
-/home/laboratorio/TFM/visual_autopick_ros_ws/build/ur5_description/CMakeFiles/install/local.dir
-/home/laboratorio/TFM/visual_autopick_ros_ws/build/ur5_description/CMakeFiles/install/strip.dir

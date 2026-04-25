@@ -1,5 +1,0 @@
-[console_scripts]
-autopick_panel = visual_autopick_panel.autopick_panel:main
-simple_panel = visual_autopick_panel.simple_panel:main
-step_by_step_panel = visual_autopick_panel.step_by_step_panel:main
-step_panel = visual_autopick_panel.step_panel:main
