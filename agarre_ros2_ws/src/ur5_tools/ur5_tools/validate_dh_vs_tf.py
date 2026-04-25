@@ -12,7 +12,7 @@ the discrepancy.  Exit code 0 = all errors under threshold; 1 = divergence.
 
 Checked transforms:
   base_link -> tool0             (DH gives base_link_inertia, flipped XY for base_link)
-  base_link -> rg2_pinch_center  (DH + URDF offset 0.175 in tool0-local Z)
+  base_link -> rg2_pinch_center  (DH + URDF canonical offset rg2_contact_tcp_xyz in tool0-local Z)
 """
 
 from __future__ import annotations
@@ -42,8 +42,9 @@ _A = [0.0, -0.425, -0.39225, 0.0, 0.0, 0.0]
 _D = [0.089159, 0.0, 0.0, 0.10915, 0.09465, 0.0823]
 _ALPHA = [math.pi / 2.0, 0.0, 0.0, math.pi / 2.0, -math.pi / 2.0, 0.0]
 
-# URDF canonical offset tool0 → rg2_pinch_center in tool0-local frame
-_PINCH_OFFSET_TOOL0_LOCAL = (0.0, 0.0, 0.175)
+# URDF canonical offset tool0 → rg2_pinch_center: read from gripper_geometry at import time.
+from ur5_tools.gripper_geometry import load_gripper_geometry as _load_geom, RG2_PINCH_CENTER_FRAME as _PC_FRAME
+_PINCH_OFFSET_TOOL0_LOCAL = _load_geom().xyz_for_frame(_PC_FRAME)
 
 FAIL_THRESHOLD_DEFAULT_M = 0.005
 
@@ -82,7 +83,7 @@ def _fk_base_link(q: list[float]) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _pinch_center_from_tool0(pos_tool0: np.ndarray, rot_tool0: np.ndarray) -> np.ndarray:
-    """Apply URDF offset (0,0,0.175) in tool0-local frame to get rg2_pinch_center."""
+    """Apply URDF canonical offset (rg2_contact_tcp_xyz) in tool0-local frame to get rg2_pinch_center."""
     offset_local = np.array(_PINCH_OFFSET_TOOL0_LOCAL, dtype=float)
     return pos_tool0 + rot_tool0 @ offset_local
 

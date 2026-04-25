@@ -43,8 +43,9 @@ _LOG = "[TOPDOWN_SEARCH]"
 _ROBOT_BASE_WORLD_X = -0.85
 _ROBOT_BASE_WORLD_Z = 0.850
 
-# rg2_pinch_center offset from tool0 in tool0-local Z (from URDF rg2_contact_tcp_xyz)
-_PINCH_OFFSET_Z = 0.175
+# rg2_pinch_center offset from tool0 in tool0-local Z: loaded from URDF canonical geometry.
+from ur5_tools.gripper_geometry import load_gripper_geometry as _load_geom_topdown, RG2_PINCH_CENTER_FRAME as _PC_TOPDOWN
+_PINCH_OFFSET_Z = _load_geom_topdown().z_for_frame(_PC_TOPDOWN)
 
 # DH parameters (UR5 CB3, same as ur5_kinematics.py)
 _A = [0.0, -0.425, -0.39225, 0.0, 0.0, 0.0]
@@ -289,9 +290,9 @@ class FindTopdownPoseNode(Node):
         ])
 
         # For top-down grasp, rg2_pinch_center is at obj_base.
-        # rg2_pinch_center = tool0_pos + R_tool0 * (0,0,0.175)
-        # With R_TOPDOWN: R * (0,0,0.175) = (0,0,-0.175) [tool0+Z = -Zworld]
-        # So: tool0_target = obj_base - (0,0,-0.175) = obj_base + (0,0,0.175)
+        # rg2_pinch_center = tool0_pos + R_tool0 * (0,0,_PINCH_OFFSET_Z)
+        # With R_TOPDOWN: R * (0,0,_PINCH_OFFSET_Z) = (0,0,-_PINCH_OFFSET_Z) [tool0+Z = -Zworld]
+        # So: tool0_target = obj_base - (0,0,-_PINCH_OFFSET_Z) = obj_base + (0,0,_PINCH_OFFSET_Z)
         tool0_target = obj_base.copy()
         tool0_target[2] += _PINCH_OFFSET_Z
 

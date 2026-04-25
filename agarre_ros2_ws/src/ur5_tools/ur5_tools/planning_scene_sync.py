@@ -40,6 +40,7 @@ DEFAULT_OBJECTS = [
 ]
 
 DEFAULT_TOUCH_LINKS = [
+    "rg2_pinch_center",
     "rg2_tcp",
     "tool0",
     "flange",
@@ -175,7 +176,7 @@ class PlanningSceneSync(Node):
         self.declare_parameter("world_file", "")
         self.declare_parameter("world_frame", "world")
         self.declare_parameter("base_frame", "base_link")
-        self.declare_parameter("ee_frame", "rg2_tcp")
+        self.declare_parameter("ee_frame", "rg2_pinch_center")
         self.declare_parameter("pose_topic", "")
         self.declare_parameter("apply_service", "/apply_planning_scene")
         self.declare_parameter("table_model_name", "mesa_pro")
@@ -189,7 +190,7 @@ class PlanningSceneSync(Node):
         self._world_name = str(self.get_parameter("world_name").value or "ur5_mesa_objetos").strip()
         self._world_frame = str(self.get_parameter("world_frame").value or "world").strip() or "world"
         self._base_frame = str(self.get_parameter("base_frame").value or "base_link").strip() or "base_link"
-        self._ee_frame = str(self.get_parameter("ee_frame").value or "rg2_tcp").strip() or "rg2_tcp"
+        self._ee_frame = str(self.get_parameter("ee_frame").value or "rg2_pinch_center").strip() or "rg2_pinch_center"
         self._pose_topic = str(self.get_parameter("pose_topic").value or "").strip()
         if not self._pose_topic:
             self._pose_topic = f"/world/{self._world_name}/pose/info"

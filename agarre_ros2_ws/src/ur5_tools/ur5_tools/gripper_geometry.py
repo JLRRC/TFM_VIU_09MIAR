@@ -193,7 +193,17 @@ def load_gripper_geometry(ws_dir: Optional[str] = None) -> GripperGeometry:
             source_path=source_path,
             properties=properties,
         )
-        return GripperGeometry(tcp=tcp, pinch_center=pinch_center)
+        geom = GripperGeometry(tcp=tcp, pinch_center=pinch_center)
+        _z = geom.tcp.xyz[2]
+        _HIST_Z = 0.175
+        _HIST_TOL = 0.010
+        if abs(_z - _HIST_Z) < _HIST_TOL:
+            raise ValueError(
+                f"[GRIPPER_GEOMETRY][GUARDRAIL] rg2_tcp Z={_z:.7f} está cerca del valor "
+                f"histórico 0.175 m — se ha reintroducido geometría TCP semántica obsoleta "
+                f"en {tcp.source_path}. El valor canónico debe ser ~0.0050885."
+            )
+        return geom
     raise FileNotFoundError(
         "unable to locate ur5.urdf.xacro for canonical RG2 geometry resolution"
     )
@@ -466,7 +476,7 @@ def patch_runtime_model_sdf(
                 body = body + f"\n            <parameters>{controllers_yaml}</parameters>\n"
             text = text[: match.start()] + header + body + footer + text[match.end() :]
 
-    anchor_xyz = geometry.xyz_for_frame(RG2_TCP_FRAME)
+    anchor_xyz = geometry.xyz_for_frame(RG2_PINCH_CENTER_FRAME)
     joint_re = re.compile(
         r'(<joint name="pick_demo_anchor_joint" type="fixed">)(.*?)(</joint>)',
         re.DOTALL,
@@ -514,10 +524,10 @@ def validate_pick_demo_anchor(
     geometry: Optional[GripperGeometry] = None,
     tolerance_m: float = 1e-6,
 ) -> Tuple[bool, str]:
-    """Comprueba que el anclaje desmontable de Gazebo coincide con el TCP canonico."""
+    """Comprueba que el anclaje desmontable de Gazebo coincide con rg2_pinch_center."""
 
     geometry = geometry or load_gripper_geometry()
-    expected_xyz = geometry.xyz_for_frame(RG2_TCP_FRAME)
+    expected_xyz = geometry.xyz_for_frame(RG2_PINCH_CENTER_FRAME)
     anchor_xyz = read_pick_demo_anchor_xyz(model_sdf_path)
     error_m = vector_distance(anchor_xyz, expected_xyz)
     if error_m > float(tolerance_m):

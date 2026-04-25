@@ -74,6 +74,9 @@ arm_position_controller:
       - wrist_3_joint
     interface_name: position
 
+# RG2: joints prismáticos en METROS (no radianes).
+# open  = [0.055, 0.055] m  (110 mm apertura total)
+# close = [0.0,   0.0  ] m  (dedos centrados)
 gripper_controller:
   ros__parameters:
     joints:

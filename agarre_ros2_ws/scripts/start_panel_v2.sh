@@ -120,7 +120,7 @@ export WS_DIR
 : "${PANEL_STRICT_RUNTIME_SANITY:=1}" # 1 = bloquea arranque si detecta otro stack ROS activo
 : "${PANEL_MOVEIT_MODE:=auto}"        # auto|move_group|bridge
 : "${PANEL_ROS_EXECUTOR_THREADS:=3}"  # executor del RosWorker para no bloquear /clock durante servicios largos
-: "${PANEL_GRIPPER_OPEN_RAD:=0.5}"    # Apertura histórica del panel para validar si recupera la apertura completa
+: "${PANEL_GRIPPER_OPEN_RAD:=0.055}"   # RG2 prismático: apertura completa = 0.055 m (era 0.5 rad legacy revoluto)
 : "${PANEL_GRIPPER_CLOSED_RAD:=0.0}"  # RG2 prismático: cierre completo en 0.0 m
 : "${RMW_IMPLEMENTATION:=rmw_fastrtps_cpp}"
 if [[ "${PANEL_FORCE_OFFSCREEN:-0}" != "1" ]] && ! display_is_usable; then

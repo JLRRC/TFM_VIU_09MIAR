@@ -862,7 +862,9 @@ def generate_launch_description():
                 "pairs": [
                     "world,base_link",
                     "base_link,tool0",
+                    "base_link,rg2_tcp",
                     "base_link,rg2_pinch_center",
+                    "tool0,rg2_tcp",
                     "tool0,rg2_pinch_center",
                 ]
             },
@@ -888,7 +890,7 @@ def generate_launch_description():
             {"model_name": "ur5_rg2"},
             {"base_frame": "base_link"},
             {"world_frame": "world"},
-            {"ee_frame": "rg2_tcp"},
+            {"ee_frame": "rg2_pinch_center"},
             {"camera_topic": "/camera_overhead/image"},
             {"camera_required": ParameterValue(camera_required, value_type=bool)},
             {"controller_manager": LaunchConfiguration("controller_manager")},
@@ -1007,7 +1009,7 @@ def generate_launch_description():
             {"world_file": LaunchConfiguration("world_file")},
             {"world_frame": "world"},
             {"base_frame": "base_link"},
-            {"ee_frame": "rg2_tcp"},
+            {"ee_frame": "rg2_pinch_center"},
         ],
         condition=IfCondition(launch_scene_sync),
     )
@@ -1072,7 +1074,7 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
             {"backend": "auto"},
             {"base_frame": "base_link"},
-            {"ee_frame": "rg2_tcp"},
+            {"ee_frame": "rg2_pinch_center"},
             {"result_topic": "/desired_grasp/result"},
             {"controller_manager": LaunchConfiguration("controller_manager")},
             {"execute_timeout_sec": bridge_exec_timeout},

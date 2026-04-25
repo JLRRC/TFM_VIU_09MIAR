@@ -9,8 +9,8 @@ position of RG2 links obtained from Gazebo /world/pose/info and from
 robot_state_publisher (URDF links). Prints a structured diagnostic table.
 
 Sources:
-  TF  → tool0, rg2_pinch_center, rg2_tcp, rg2_base_link,
-         rg2_finger_link1, rg2_finger_link2  (via robot_state_publisher)
+  TF  → tool0, rg2_pinch_center, rg2_tcp, rg2_hand,
+         rg2_leftfinger, rg2_rightfinger  (via robot_state_publisher)
   Gz  → rg2_hand, rg2_leftfinger, rg2_rightfinger, pick_demo
          (via gz_pose_bridge → /world/<world>/pose/info as TFMessage)
   JS  → rg2_finger_joint1, rg2_finger_joint2  (via /joint_states)
@@ -314,9 +314,9 @@ class Rg2VisualPoseInspector(Node):
         tool0_pos, tool0_q = self._tf_lookup("tool0")
         pinch_pos, pinch_q = self._tf_lookup("rg2_pinch_center")
         rg2_tcp_pos, rg2_tcp_q = self._tf_lookup("rg2_tcp")
-        rg2_base_pos, _ = self._tf_lookup("rg2_base_link")
-        finger1_pos, _ = self._tf_lookup("rg2_finger_link1")
-        finger2_pos, _ = self._tf_lookup("rg2_finger_link2")
+        rg2_base_pos, _ = self._tf_lookup("rg2_hand")
+        finger1_pos, _ = self._tf_lookup("rg2_leftfinger")
+        finger2_pos, _ = self._tf_lookup("rg2_rightfinger")
 
         # ── Gazebo entity poses (SDF / gz_pose_bridge) ────────────────────
         rg2_hand_gz_pos, rg2_hand_gz_q = self._gz_lookup("rg2_hand")
@@ -463,9 +463,9 @@ class Rg2VisualPoseInspector(Node):
             f"q={_fmt_quat(kw['pinch_q'])}"
         )
         log.info(f"{tag} rg2_tcp_tf_world={_fmt_vec(kw['rg2_tcp_pos'])}")
-        log.info(f"{tag} rg2_base_link_tf_world={_fmt_vec(kw['rg2_base_pos'])}")
-        log.info(f"{tag} rg2_finger_link1_tf_world={_fmt_vec(kw['finger1_pos'])}")
-        log.info(f"{tag} rg2_finger_link2_tf_world={_fmt_vec(kw['finger2_pos'])}")
+        log.info(f"{tag} rg2_hand_tf_world={_fmt_vec(kw['rg2_base_pos'])}")
+        log.info(f"{tag} rg2_leftfinger_tf_world={_fmt_vec(kw['finger1_pos'])}")
+        log.info(f"{tag} rg2_rightfinger_tf_world={_fmt_vec(kw['finger2_pos'])}")
         log.info(f"{tag} urdf_finger_midpoint_world={_fmt_vec(kw['urdf_finger_mid'])}")
 
         log.info(f"{tag} ── GAZEBO VISUAL (SDF / gz_pose_bridge) ─────────────────")

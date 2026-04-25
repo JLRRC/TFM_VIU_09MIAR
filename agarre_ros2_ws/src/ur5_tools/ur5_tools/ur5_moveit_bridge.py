@@ -94,7 +94,7 @@ class UR5MoveItBridge(Node):
         self.declare_parameter("backend", "auto")
         self.declare_parameter("move_group", "manipulator")
         self.declare_parameter("base_frame", "base_link")
-        self.declare_parameter("ee_frame", "rg2_tcp")
+        self.declare_parameter("ee_frame", "rg2_pinch_center")
         self.declare_parameter("result_topic", "/desired_grasp/result")
         self.declare_parameter("heartbeat_topic", "/ur5_moveit_bridge/heartbeat")
         self.declare_parameter("heartbeat_rate_hz", 2.0)
@@ -139,7 +139,7 @@ class UR5MoveItBridge(Node):
         self._backend_pref = read_str_param(self, "backend", "auto").strip().lower()
         self._group_name = read_str_param(self, "move_group", "manipulator")
         self._base_frame = read_str_param(self, "base_frame", "base_link")
-        self._ee_frame = read_str_param(self, "ee_frame", "rg2_tcp")
+        self._ee_frame = read_str_param(self, "ee_frame", "rg2_pinch_center")
         self._result_topic = read_str_param(
             self, "result_topic", "/desired_grasp/result"
         )
@@ -4181,7 +4181,7 @@ class UR5MoveItBridge(Node):
                         "[MOVEIT][TIP_LINK] "
                         f"request_id={request_id} "
                         f"ee_frame={self._ee_frame or 'n/a'} "
-                        f"ik_tip=rg2_tcp "
+                        f"ik_tip={self._ee_frame or 'rg2_pinch_center'} "
                         f"base_frame={self._base_frame or 'n/a'}"
                     )
                     try:
@@ -4510,11 +4510,11 @@ class UR5MoveItBridge(Node):
         Compute IK for APPROACH using seeds prioritized by the live arm state.
 
         Strategy:
-        - The SRDF kinematic chain tip is 'rg2_tcp', not 'rg2_pinch_center'.
+        - The SRDF kinematic chain tip is 'rg2_pinch_center' (= ee_frame).
         - set_from_ik only works with the registered chain tip.
-        - We compute the rg2_tcp pose that places rg2_pinch_center at the target,
-          using the fixed T_tcp→pinch offset obtained from FK.
-        - Then solve IK with tip='rg2_tcp' using the live arm state first and
+        - We compute the rg2_pinch_center pose that places ee_frame at the target,
+          using the fixed T_tcp→ee offset obtained from FK (zero since both frames coincide).
+        - Then solve IK with tip=ee_frame using the live arm state first and
           HOME as fallback, selecting the valid solution closest to the current
           joints so execution stays on the visually consistent branch.
         """
@@ -4601,11 +4601,11 @@ class UR5MoveItBridge(Node):
                     "disabling home-seeded explicit APPROACH fallback to keep the live branch"
                 )
 
-            # Find the IK chain tip registered in the SRDF/kinematics (rg2_tcp).
+            # IK chain tip = SRDF chain tip = ee_frame = rg2_pinch_center.
             # get_frame_transform() is expressed in the robot-model root frame
             # (world in this workspace because of the SRDF virtual joint).
             # Convert targets/poses explicitly instead of assuming base_link.
-            ik_tip = "rg2_tcp"
+            ik_tip = self._ee_frame  # rg2_pinch_center: matches SRDF tip_link
             T_model_base, base_detail = self._robot_state_frame_transform_matrix(
                 ref_state,
                 self._base_frame,

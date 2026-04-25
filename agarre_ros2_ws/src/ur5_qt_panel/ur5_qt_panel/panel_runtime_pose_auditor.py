@@ -75,7 +75,7 @@ def build_runtime_audit_snapshot(panel: Any) -> RuntimeAuditSnapshot:
     panel_tcp_world = _base_pose_to_world(panel, panel._step_fetch_live_pose(op_frame))
     tf_tcp_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_pinch_center"))
     tool0_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("tool0"))
-    rg2_base_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_base_link"))
+    rg2_base_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_hand"))
     rg2_hand_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_hand"))
     rg2_left_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_leftfinger"))
     rg2_right_world = _base_pose_to_world(panel, panel._step_fetch_live_pose("rg2_rightfinger"))
@@ -200,7 +200,7 @@ def build_runtime_audit_snapshot(panel: Any) -> RuntimeAuditSnapshot:
     dh_tf_runtime = [
         f"[TF] TCP world -> rg2_pinch_center: {_fmt_vec(tf_tcp_world)}",
         f"[TF] tool0 world: {_fmt_vec(tool0_world)}",
-        f"[TF] rg2_base_link world: {_fmt_vec(rg2_base_world)}",
+        f"[TF] rg2_hand world: {_fmt_vec(rg2_base_world)}",
         f"[TF] base_link world: {_fmt_vec(base_link_world)}",
         f"[CHECK] error TCP panel vs TF: {_fmt_delta(tcp_panel_vs_tf)}",
         f"[CHECK] error TCP vs target: {_fmt_delta(tcp_vs_target)}{_pregrasp_note(current_phase, tcp_vs_target)}",

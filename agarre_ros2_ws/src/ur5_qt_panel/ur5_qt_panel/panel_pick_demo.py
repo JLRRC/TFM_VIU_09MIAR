@@ -3800,7 +3800,7 @@ def run_pick_demo(panel) -> None:
                 finger_opening_rad = float(gripper.get("opening_sum") or 0.0)
                 finger_opening_mm = finger_opening_rad * 1000.0
 
-                # Límites conservadores del volumen de agarre (estimaciones RG2 a 0.175 m de tool0):
+                # Límites conservadores del volumen de agarre (rg2_pinch_center = TCP semántico operacional):
                 #   - Separación mínima entre dedos en cierre: ~0 mm
                 #   - Separación máxima: ~110 mm
                 #   - Radio lateral del volumen: ~55 mm en apertura máxima → escala con apertura
@@ -4836,8 +4836,8 @@ def run_pick_demo(panel) -> None:
                     # ── TF: URDF semantic frames ──────────────────────────────
                     pinch_w = _pose_position(wf, "rg2_pinch_center", timeout_sec=0.08)
                     tool0_w = _pose_position(wf, "tool0", timeout_sec=0.08)
-                    fl1_w = _pose_position(wf, "rg2_finger_link1", timeout_sec=0.05)
-                    fl2_w = _pose_position(wf, "rg2_finger_link2", timeout_sec=0.05)
+                    fl1_w = _pose_position(wf, "rg2_leftfinger", timeout_sec=0.05)
+                    fl2_w = _pose_position(wf, "rg2_rightfinger", timeout_sec=0.05)
 
                     # URDF finger midpoint (prismatic joints)
                     urdf_mid = None

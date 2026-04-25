@@ -402,82 +402,76 @@
                 </dynamics>
             </axis>
         </joint>
-        <!-- Arm-Hand Fixed Joint -->
+        <!-- Arm-Hand Fixed Joint: rg2_hand is a direct child of tool0 at zero offset.
+             No pitch rotation: rg2_hand frame = tool0 frame (+Z = approach direction,
+             +Y = finger gap axis). This eliminates the old pitch=-pi/2 mismatch. -->
         <joint name="ur5_hand_joint" type="fixed">
-              <!-- RG2 body at tool0/wrist_3 +Z = 0.07 m, finger midpoint at +Z = 0.175 m.
-                   With corrected end_effector_frame_fixed_joint (rpy=0), tool0 = wrist_3 (R=I),
-                   so rg2_hand must sit at xyz="0 0 0.07" (tool0/wrist_3 +Z direction).
-                   Rotation pitch=-pi/2 maps rg2_hand+X -> wrist_3+Z (approach direction),
-                   rg2_hand+Y -> wrist_3+Y (finger gap axis), rg2_hand+Z -> wrist_3-X (close axis).
-                   Finger pivots at rg2_hand(0.105, ±0.017, 0) -> wrist_3(0, ±0.017, 0.175)
-                   -> midpoint (0,0,0.175) = rg2_pinch_center exactly. -->
-              <pose relative_to="wrist_3_link">0 0 0.07 0 -1.570796325 0</pose>
-            <parent>wrist_3_link</parent>
+            <pose relative_to="tool0">0 0 0 0 0 0</pose>
+            <parent>tool0</parent>
             <child>rg2_hand</child>
         </joint>
         <!-- Hand Links -->
+        <!-- rg2_hand: schematic gripper body as a box (replaces CAD mesh).
+             Box 60×80×120 mm, centre at Z=60 mm in rg2_hand/tool0 frame → covers Z [0, 0.12 m]. -->
         <link name="rg2_hand">
             <gravity>false</gravity>
             <pose relative_to="ur5_hand_joint">0 0 0 0 0 0</pose>
             <visual name="rg2_hand_visual">
-                <pose>0 0 0 0 0 0</pose>
+                <pose>0 0 0.060 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/visual/rg2/hand.dae</uri>
-                    </mesh>
+                    <box><size>0.06 0.08 0.12</size></box>
                 </geometry>
+                <material>
+                    <ambient>0.25 0.25 0.25 1</ambient>
+                    <diffuse>0.25 0.25 0.25 1</diffuse>
+                </material>
             </visual>
             <collision name="rg2_hand_collision">
-                <pose>0 0 0 0 0 0</pose>
+                <pose>0 0 0.060 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/collision/rg2/hand.stl</uri>
-                    </mesh>
+                    <box><size>0.06 0.08 0.12</size></box>
                 </geometry>
                 <surface>
                     <friction>
-                        <ode>
-                            <mu>1.2</mu>
-                            <mu2>1.2</mu2>
-                        </ode>
+                        <ode><mu>1.2</mu><mu2>1.2</mu2></ode>
                     </friction>
                 </surface>
             </collision>
             <inertial>
-                <pose>0.057581 -0.000169308 -3.3334e-05 0 0 0</pose>
-                <mass>0.29881464108881906</mass>
+                <pose>0 0 0.060 0 0 0</pose>
+                <mass>0.3</mass>
                 <inertia>
-                    <ixx>0.00010934311942148434</ixx>
-                    <iyy>0.0003327568173229071</iyy>
-                    <izz>0.00037338963627732164</izz>
-                    <ixy>2.4297126288189813e-07</ixy>
-                    <ixz>5.3958894994201004e-08</ixz>
-                    <iyz>2.4899876853227836e-07</iyz>
+                    <ixx>0.001</ixx><iyy>0.001</iyy><izz>0.001</izz>
+                    <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
                 </inertia>
             </inertial>
         </link>
+        <!-- Left finger: box 12×10×55 mm.  Box centre at (0, 0, +27.5 mm) in finger frame.
+             Pivot at Z=0.120 from rg2_hand; visual tip at 0.120+0.055 = 0.175 m from tool0
+             (geometría visual únicamente; TCP semántico rg2_pinch_center = 0.0050885 m).
+             joint=0     → cerrada  (dedos centrados)
+             joint=0.055 → abierta  (cada dedo 55 mm del centro, 110 mm total) -->
         <link name="rg2_leftfinger">
             <gravity>false</gravity>
             <pose relative_to="rg2_finger_joint1">0 0 0 0 0 0</pose>
             <visual name="rg2_leftfinger_visual">
+                <pose>0 0 0.0275 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/visual/rg2/finger.dae</uri>
-                    </mesh>
+                    <box><size>0.012 0.010 0.055</size></box>
                 </geometry>
+                <material>
+                    <ambient>0.7 0.7 0.7 1</ambient>
+                    <diffuse>0.7 0.7 0.7 1</diffuse>
+                </material>
             </visual>
             <collision name="rg2_leftfinger_collision">
+                <pose>0 0 0.0275 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/collision/rg2/finger.stl</uri>
-                    </mesh>
+                    <box><size>0.012 0.010 0.055</size></box>
                 </geometry>
                 <surface>
                     <friction>
-                        <ode>
-                            <mu>2.15</mu>
-                            <mu2>2.15</mu2>
-                        </ode>
+                        <ode><mu>2.15</mu><mu2>2.15</mu2></ode>
                     </friction>
                     <bounce>
                         <restitution_coefficient>0.0</restitution_coefficient>
@@ -485,51 +479,43 @@
                     </bounce>
                     <contact>
                         <ode>
-                            <kp>200000</kp>
-                            <kd>30.0</kd>
-                            <max_vel>0.1</max_vel>
-                            <min_depth>0.001</min_depth>
+                            <kp>200000</kp><kd>30.0</kd>
+                            <max_vel>0.1</max_vel><min_depth>0.001</min_depth>
                         </ode>
                     </contact>
                 </surface>
             </collision>
             <inertial>
-                <pose>-0.0176873 -0.00819142 -4.15573e-05 0 0 0</pose>
-                <mass>0.24059267945559043</mass>
+                <pose>0 0 0.0275 0 0 0</pose>
+                <mass>0.05</mass>
                 <inertia>
-                    <ixx>3.3970932890017096e-05</ixx>
-                    <iyy>0.00029230476124314346</iyy>
-                    <izz>0.00030917405435097734</izz>
-                    <ixy>-4.8854610840491595e-05</ixy>
-                    <ixz>-1.1765879805737544e-08</ixz>
-                    <iyz>1.6350676533062336e-08</iyz>
+                    <ixx>1e-4</ixx><iyy>1e-4</iyy><izz>1e-4</izz>
+                    <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
                 </inertia>
             </inertial>
         </link>
+        <!-- Right finger: symmetric to left finger, moves along -Y. -->
         <link name="rg2_rightfinger">
             <gravity>false</gravity>
             <pose relative_to="rg2_finger_joint2">0 0 0 0 0 0</pose>
             <visual name="rg2_rightfinger_visual">
-                <pose>0 0 0 3.141592653589793 0 0</pose>
+                <pose>0 0 0.0275 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/visual/rg2/finger.dae</uri>
-                    </mesh>
+                    <box><size>0.012 0.010 0.055</size></box>
                 </geometry>
+                <material>
+                    <ambient>0.7 0.7 0.7 1</ambient>
+                    <diffuse>0.7 0.7 0.7 1</diffuse>
+                </material>
             </visual>
             <collision name="rg2_rightfinger_collision">
-                <pose>0 0 0 3.141592653589793 0 0</pose>
+                <pose>0 0 0.0275 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/collision/rg2/finger.stl</uri>
-                    </mesh>
+                    <box><size>0.012 0.010 0.055</size></box>
                 </geometry>
                 <surface>
                     <friction>
-                        <ode>
-                            <mu>2.15</mu>
-                            <mu2>2.15</mu2>
-                        </ode>
+                        <ode><mu>2.15</mu><mu2>2.15</mu2></ode>
                     </friction>
                     <bounce>
                         <restitution_coefficient>0.0</restitution_coefficient>
@@ -537,65 +523,59 @@
                     </bounce>
                     <contact>
                         <ode>
-                            <kp>200000</kp>
-                            <kd>30.0</kd>
-                            <max_vel>0.1</max_vel>
-                            <min_depth>0.001</min_depth>
+                            <kp>200000</kp><kd>30.0</kd>
+                            <max_vel>0.1</max_vel><min_depth>0.001</min_depth>
                         </ode>
                     </contact>
                 </surface>
             </collision>
             <inertial>
-                <pose>-0.0176873 -0.00819142 -4.15573e-05 3.141592653589793 0 0</pose>
-                <mass>0.24059267945559043</mass>
+                <pose>0 0 0.0275 0 0 0</pose>
+                <mass>0.05</mass>
                 <inertia>
-                    <ixx>3.3970932890017096e-05</ixx>
-                    <iyy>0.00029230476124314346</iyy>
-                    <izz>0.00030917405435097734</izz>
-                    <ixy>-4.8854610840491595e-05</ixy>
-                    <ixz>-1.1765879805737544e-08</ixz>
-                    <iyz>1.6350676533062336e-08</iyz>
+                    <ixx>1e-4</ixx><iyy>1e-4</iyy><izz>1e-4</izz>
+                    <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
                 </inertia>
             </inertial>
         </link>
-        <!-- Finger Joints -->
-        <joint name="rg2_finger_joint1" type="revolute">
-            <pose relative_to="rg2_hand">0.105 0.017 0 0 0 0</pose>
+        <!-- Finger Joints — PRISMATIC (metres).
+             Pivot at Z=0.120 m from rg2_hand base (= base of finger area).
+             left:  axis +Y → positive cmd opens left finger rightward.
+             right: axis −Y → positive cmd opens right finger leftward.
+             Limits: [0.000, 0.055] m.  Commands: open=[0.055, 0.055], close=[0.0, 0.0]. -->
+        <joint name="rg2_finger_joint1" type="prismatic">
+            <pose relative_to="rg2_hand">0 0 0.120 0 0 0</pose>
             <parent>rg2_hand</parent>
             <child>rg2_leftfinger</child>
             <axis>
-                <xyz>0 0 1</xyz>
+                <xyz>0 1 0</xyz>
                 <limit>
-                    <effort>10.6</effort>
+                    <effort>20</effort>
                     <lower>0.0</lower>
-                    <upper>1.18</upper>
-                    <velocity>1.57</velocity>
+                    <upper>0.055</upper>
+                    <velocity>0.2</velocity>
                 </limit>
                 <dynamics>
-                    <spring_reference>0</spring_reference>
-                    <spring_stiffness>0</spring_stiffness>
-                    <damping>1</damping>
-                    <friction>0.005</friction>
+                    <damping>5.0</damping>
+                    <friction>0.1</friction>
                 </dynamics>
             </axis>
         </joint>
-        <joint name="rg2_finger_joint2" type="revolute">
-            <pose relative_to="rg2_hand">0.105 -0.017 0 0 0 0</pose>
+        <joint name="rg2_finger_joint2" type="prismatic">
+            <pose relative_to="rg2_hand">0 0 0.120 0 0 0</pose>
             <parent>rg2_hand</parent>
             <child>rg2_rightfinger</child>
             <axis>
-                <xyz>0 0 -1</xyz>
+                <xyz>0 -1 0</xyz>
                 <limit>
-                    <effort>10.6</effort>
+                    <effort>20</effort>
                     <lower>0.0</lower>
-                    <upper>1.18</upper>
-                    <velocity>1.57</velocity>
+                    <upper>0.055</upper>
+                    <velocity>0.2</velocity>
                 </limit>
                 <dynamics>
-                    <spring_reference>0</spring_reference>
-                    <spring_stiffness>0</spring_stiffness>
-                    <damping>1</damping>
-                    <friction>0.005</friction>
+                    <damping>5.0</damping>
+                    <friction>0.1</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -620,18 +600,19 @@
             <pose relative_to="pick_demo_anchor_joint">0 0 0 0 0 0</pose>
         </link>
         <joint name="pick_demo_anchor_joint" type="fixed">
-            <!-- Align the detachable-joint origin with the demo grasp center.
-                 tool0 -> rg2_pinch_center is +0.175 m (URDF rg2_pinch_center_joint).
-                 The tcp_z_offset=0.05 m was removed in commit 9b58910 (_DIRECTO_GRASP_Z=0.0),
-                 so the anchor must be at +0.175 m to match rg2_pinch_center exactly. -->
-            <pose relative_to="tool0">0 0 0.175 0 0 0</pose>
+            <!-- Align the detachable-joint origin with rg2_pinch_center.
+                 tool0 -> rg2_pinch_center = 0.0050885 m (URDF rg2_contact_tcp_xyz).
+                 patch_runtime_model_sdf() en gripper_geometry.py reescribe este valor
+                 desde el URDF canónico en cada arranque del stack. -->
+            <pose relative_to="tool0">0 0 0.0050885 0 0 0</pose>
             <parent>tool0</parent>
             <child>pick_demo_anchor</child>
         </joint>
 
-        <!-- Wrist camera: mounted on rg2_hand looking toward the fingertips (+X of rg2_hand
-             = approach direction). Position (0, 0, 0.05): 5 cm in the Z direction of rg2_hand
-             (lateral face of the gripper body). Clip near=0.04 m to cut out the gripper mesh. -->
+        <!-- Wrist camera: mounted on rg2_hand 5 cm along the approach direction (+Z in the
+             new rg2_hand/tool0 frame). This places the camera at Z=0.05 m from tool0,
+             between the flange and the finger area, looking toward the workspace.
+             Clip near=0.04 m to cut out the gripper body box mesh. -->
         <link name="camera_wrist_link">
             <gravity>false</gravity>
             <pose relative_to="camera_wrist_joint">0 0 0 0 0 0</pose>
@@ -652,10 +633,12 @@
             <child>camera_wrist_link</child>
         </joint>
 
-        <!-- Tool-side detachable joints for physically carrying grasped objects. -->
+        <!-- Tool-side detachable joints for physically carrying grasped objects.
+             All objects attach at pick_demo_anchor (tool0 + Z=0.0050885 m = rg2_pinch_center).
+             pick_demo_anchor_joint es parchado en runtime por patch_runtime_model_sdf(). -->
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>rg2_hand</parent_link>
+            <parent_link>pick_demo_anchor</parent_link>
             <child_model>box_red</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/box_red/attach</attach_topic>
@@ -664,7 +647,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>rg2_hand</parent_link>
+            <parent_link>pick_demo_anchor</parent_link>
             <child_model>box_blue</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/box_blue/attach</attach_topic>
@@ -673,7 +656,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>rg2_hand</parent_link>
+            <parent_link>pick_demo_anchor</parent_link>
             <child_model>box_green</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/box_green/attach</attach_topic>
@@ -682,7 +665,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>rg2_hand</parent_link>
+            <parent_link>pick_demo_anchor</parent_link>
             <child_model>box_lightblue</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/box_lightblue/attach</attach_topic>
@@ -691,7 +674,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>rg2_hand</parent_link>
+            <parent_link>pick_demo_anchor</parent_link>
             <child_model>box_yellow</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/box_yellow/attach</attach_topic>
@@ -700,7 +683,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>rg2_hand</parent_link>
+            <parent_link>pick_demo_anchor</parent_link>
             <child_model>cross_cyan</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/cross_cyan/attach</attach_topic>
@@ -709,7 +692,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>rg2_hand</parent_link>
+            <parent_link>pick_demo_anchor</parent_link>
             <child_model>cyl_gray</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/cyl_gray/attach</attach_topic>
@@ -718,7 +701,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>rg2_hand</parent_link>
+            <parent_link>pick_demo_anchor</parent_link>
             <child_model>cyl_green</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/cyl_green/attach</attach_topic>
@@ -727,7 +710,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>rg2_hand</parent_link>
+            <parent_link>pick_demo_anchor</parent_link>
             <child_model>cyl_orange</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/cyl_orange/attach</attach_topic>
@@ -736,7 +719,7 @@
         </plugin>
         <plugin filename="gz-sim-detachable-joint-system"
                 name="gz::sim::systems::DetachableJoint">
-            <parent_link>rg2_hand</parent_link>
+            <parent_link>pick_demo_anchor</parent_link>
             <child_model>cyl_purple</child_model>
             <child_link>link</child_link>
             <attach_topic>/gripper_anchor/cyl_purple/attach</attach_topic>
@@ -841,13 +824,6 @@
                 <param name="hold_joints">false</param>
             </ros>
             <parameters>models/ur5_rg2/ur5_controllers.yaml</parameters>
-        </plugin>
-        <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
-            <publish_pose>true</publish_pose>
-            <publish_link_pose>true</publish_link_pose>
-            <publish_visual_pose>false</publish_visual_pose>
-            <publish_collision_pose>false</publish_collision_pose>
-            <static_publisher>false</static_publisher>
         </plugin>
     </model>
 </sdf>

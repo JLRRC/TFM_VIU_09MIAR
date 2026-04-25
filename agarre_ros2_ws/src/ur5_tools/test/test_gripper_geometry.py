@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import textwrap
+
+import pytest
 
 from ur5_tools.gripper_geometry import (
     TOOL0_FRAME,
@@ -27,7 +30,7 @@ def test_load_gripper_geometry_matches_validated_tcp_fix() -> None:
     tcp_xyz = geometry.xyz_for_frame(RG2_TCP_FRAME)
     pinch_xyz = geometry.xyz_for_frame(RG2_PINCH_CENTER_FRAME)
     assert tcp_xyz[2] == pinch_xyz[2]
-    assert tcp_xyz[2] == 0.175
+    assert abs(tcp_xyz[2] - 0.0050885) < 1e-9, f"expected 0.0050885, got {tcp_xyz[2]}"
     assert vector_distance(tcp_xyz, pinch_xyz) == 0.0
 
 
@@ -44,21 +47,19 @@ def test_contact_z_correction_is_urdf_driven() -> None:
     geometry = load_gripper_geometry(str(ROOT))
     assert contact_z_correction_for_frame(RG2_PINCH_CENTER_FRAME, geometry=geometry) == 0.0
     assert contact_z_correction_for_frame(RG2_TCP_FRAME, geometry=geometry) == 0.0
-    assert contact_z_correction_for_frame(TOOL0_FRAME, geometry=geometry) == 0.175
+    expected_z = geometry.z_for_frame(RG2_PINCH_CENTER_FRAME)
+    assert abs(contact_z_correction_for_frame(TOOL0_FRAME, geometry=geometry) - expected_z) < 1e-9
 
 
 def test_tool0_offset_for_contact_frames_is_urdf_driven() -> None:
     geometry = load_gripper_geometry(str(ROOT))
-    assert tool0_offset_for_frame(RG2_PINCH_CENTER_FRAME, geometry=geometry) == (
-        0.0,
-        0.0,
-        0.175,
-    )
-    assert tool0_offset_for_frame(RG2_TCP_FRAME, geometry=geometry) == (
-        0.0,
-        0.0,
-        0.175,
-    )
+    canonical_z = geometry.z_for_frame(RG2_PINCH_CENTER_FRAME)
+    pinch_offset = tool0_offset_for_frame(RG2_PINCH_CENTER_FRAME, geometry=geometry)
+    tcp_offset = tool0_offset_for_frame(RG2_TCP_FRAME, geometry=geometry)
+    assert pinch_offset[0] == 0.0 and pinch_offset[1] == 0.0
+    assert abs(pinch_offset[2] - canonical_z) < 1e-9
+    assert tcp_offset[0] == 0.0 and tcp_offset[1] == 0.0
+    assert abs(tcp_offset[2] - canonical_z) < 1e-9
 
 
 def test_evaluate_geometry_snapshot_accepts_matching_runtime_capture() -> None:
@@ -80,7 +81,7 @@ def test_evaluate_geometry_snapshot_rejects_runtime_mismatch() -> None:
     geometry = load_gripper_geometry(str(ROOT))
     ok, reason, snapshot = evaluate_geometry_snapshot(
         {
-            RG2_TCP_FRAME: (0.0, 0.0, 0.070),
+            RG2_TCP_FRAME: (0.0, 0.0, 0.150),
             RG2_PINCH_CENTER_FRAME: geometry.xyz_for_frame(RG2_PINCH_CENTER_FRAME),
         },
         geometry=geometry,
@@ -109,6 +110,32 @@ def test_evaluate_runtime_geometry_uses_single_runtime_lookup_callback() -> None
     assert snapshot["ok"] is True
     assert snapshot["reason"] == "ok"
     assert snapshot["urdf_source"] == geometry.tcp.source_path
+
+
+def test_guardrail_fires_on_historical_z(tmp_path: Path) -> None:
+    urdf_dir = tmp_path / "src" / "ur5_description" / "urdf"
+    urdf_dir.mkdir(parents=True)
+    (urdf_dir / "ur5.urdf.xacro").write_text(
+        textwrap.dedent("""\
+            <?xml version="1.0"?>
+            <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="ur5_rg2">
+              <xacro:property name="rg2_contact_tcp_xyz" value="0 0 0.175"/>
+              <joint name="rg2_tcp_joint" type="fixed">
+                <parent link="tool0"/>
+                <child link="rg2_tcp"/>
+                <origin xyz="${rg2_contact_tcp_xyz}" rpy="0 0 0"/>
+              </joint>
+              <joint name="rg2_pinch_center_joint" type="fixed">
+                <parent link="tool0"/>
+                <child link="rg2_pinch_center"/>
+                <origin xyz="${rg2_contact_tcp_xyz}" rpy="0 0 0"/>
+              </joint>
+            </robot>
+        """),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"\[GRIPPER_GEOMETRY\]\[GUARDRAIL\]"):
+        load_gripper_geometry(str(tmp_path))
 
 
 def test_evaluate_runtime_geometry_returns_partial_snapshot_on_lookup_failure() -> None:
