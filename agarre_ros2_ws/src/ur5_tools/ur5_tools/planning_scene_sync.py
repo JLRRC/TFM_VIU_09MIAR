@@ -401,7 +401,7 @@ class PlanningSceneSync(Node):
         alt = name.lstrip("/")
         if alt in self._pose_cache:
             return self._pose_cache[alt]
-        scoped = f"ur5_rg2::{alt}"
+        scoped = f"ur5_tcp_clean::{alt}"
         if scoped in self._pose_cache:
             return self._pose_cache[scoped]
         suffix = f"::{alt}"

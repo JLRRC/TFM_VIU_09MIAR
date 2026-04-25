@@ -151,7 +151,7 @@ def start_attach_backend(panel, world_name: str) -> None:
             "ros2 run ur5_tools gripper_attach_backend "
             "--ros-args "
             "-p use_sim_time:=true "
-            "-p tcp_frame:=rg2_pinch_center "
+            "-p tcp_frame:=tcp_tip "
             f"-p attach_max_dist_m:={max_dist} "
             f"-p demo_transport_objects:=[{demo_transport}] "
             f"-p world_name:={shlex.quote(world_name)}"
@@ -241,7 +241,7 @@ def start_gazebo(panel):
         rotate_log(gz_log)
         rotate_log(gz_gui_log)
         runtime_models_root = os.path.join(LOG_DIR, "gz_models")
-        runtime_ur5_model = os.path.join(runtime_models_root, "ur5_rg2")
+        runtime_ur5_model = os.path.join(runtime_models_root, "ur5_tcp_clean")
         controllers_yaml = UR5_CONTROLLERS_YAML
         if not os.path.isfile(controllers_yaml):
             panel._ui_set_status("No se encontró ur5_controllers.yaml", error=True)
@@ -252,7 +252,7 @@ def start_gazebo(panel):
             return
         try:
             ensure_dir(runtime_ur5_model)
-            shutil.copytree(os.path.join(MODELS_DIR, "ur5_rg2"), runtime_ur5_model, dirs_exist_ok=True)
+            shutil.copytree(os.path.join(MODELS_DIR, "ur5_tcp_clean"), runtime_ur5_model, dirs_exist_ok=True)
             model_sdf = os.path.join(runtime_ur5_model, "model.sdf")
             if os.path.isfile(model_sdf):
                 with open(model_sdf, "r", encoding="utf-8") as f:
@@ -301,6 +301,9 @@ def start_gazebo(panel):
                         world_text = re.sub(pattern, "", world_text, flags=re.DOTALL)
                 world_text = world_text.replace(
                     "<uri>model://ur5_rg2</uri>",
+                    f"<uri>file://{runtime_ur5_model}</uri>",
+                ).replace(
+                    "<uri>model://ur5_tcp_clean</uri>",
                     f"<uri>file://{runtime_ur5_model}</uri>",
                 )
                 runtime_world = os.path.join(LOG_DIR, "world_runtime.sdf")
@@ -793,7 +796,7 @@ def start_moveit_bridge(panel):
             "-p",
             "base_frame:=base_link",
             "-p",
-            "ee_frame:=rg2_tcp",
+            "ee_frame:=tcp_tip",
             "-p",
             "result_topic:=/desired_grasp/result",
         ]
@@ -953,7 +956,7 @@ def start_moveit_bridge(panel):
             f"controller_manager={cm_path} "
             f"use_sim_time={'true' if use_sim_time else 'false'} "
             "base_frame=base_link "
-            "ee_frame=rg2_tcp "
+            "ee_frame=tcp_tip "
             f"moveit_py_use_sim_time={'true' if bridge_moveit_py_sim_time else 'false'} "
             f"execute_timeout_sec={exec_timeout if exec_timeout is not None else 'default'} "
             f"request_timeout_sec={req_timeout if req_timeout is not None else 'default'} "

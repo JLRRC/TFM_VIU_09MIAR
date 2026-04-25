@@ -559,10 +559,10 @@ fi
 
 # Preparar modelo runtime con params reales para gz_ros2_control (panel lanza gz sim directamente).
 runtime_models_root="$WS_DIR/log/gz_models"
-runtime_ur5_model="$runtime_models_root/ur5_tcp_clean"
+runtime_ur5_model="$runtime_models_root/ur5_rg2"
 rm -rf "$runtime_ur5_model" 2>/dev/null || true
 mkdir -p "$runtime_ur5_model"
-cp -a "$WS_DIR/models/ur5_tcp_clean/." "$runtime_ur5_model/" 2>/dev/null || true
+cp -a "$WS_DIR/models/ur5_rg2/." "$runtime_ur5_model/" 2>/dev/null || true
 controllers_yaml="$(python3 - <<'PY'
 from ament_index_python.packages import get_package_share_directory
 import os

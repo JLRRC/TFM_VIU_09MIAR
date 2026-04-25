@@ -101,7 +101,7 @@ class UR5MoveItBridge(Node):
         # Contract: topics may come from any frame; bridge normalizes into base_frame.
         self.declare_parameter("pose_topics", ["/desired_grasp", "/grasp_pose"])
         self.declare_parameter("cartesian_pose_topics", ["/desired_grasp_cartesian"])
-        self.declare_parameter("robot_name", "ur5_rg2")
+        self.declare_parameter("robot_name", "ur5_tcp_clean")
         self.declare_parameter("ur_type", "ur5")
         self.declare_parameter("moveit_config_pkg", "ur5_moveit_config")
         self.declare_parameter("description_pkg", "ur5_description")
@@ -139,7 +139,7 @@ class UR5MoveItBridge(Node):
         self._backend_pref = read_str_param(self, "backend", "auto").strip().lower()
         self._group_name = read_str_param(self, "move_group", "manipulator")
         self._base_frame = read_str_param(self, "base_frame", "base_link")
-        self._ee_frame = read_str_param(self, "ee_frame", "rg2_pinch_center")
+        self._ee_frame = read_str_param(self, "ee_frame", "tcp_tip")
         self._result_topic = read_str_param(
             self, "result_topic", "/desired_grasp/result"
         )
@@ -159,7 +159,7 @@ class UR5MoveItBridge(Node):
             "cartesian_pose_topics",
             default=["/desired_grasp_cartesian"],
         )
-        self._robot_name = read_str_param(self, "robot_name", "ur5_rg2")
+        self._robot_name = read_str_param(self, "robot_name", "ur5_tcp_clean")
         self._ur_type = read_str_param(self, "ur_type", "ur5")
         self._moveit_config_pkg = read_str_param(
             self,

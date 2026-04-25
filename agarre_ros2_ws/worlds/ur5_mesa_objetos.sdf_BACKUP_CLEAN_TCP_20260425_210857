@@ -411,16 +411,16 @@
     
 
     <include>
-      <uri>model://ur5_tcp_clean</uri>
-      <name>ur5_tcp_clean</name>
+      <uri>model://ur5_rg2</uri>
+      <name>ur5_rg2</name>
 
       <pose>-0.85 0.00 0.850 0 0 0</pose>
 
     </include>
-    <joint name="ur5_tcp_clean_fixed_to_world" type="fixed">
+    <joint name="ur5_rg2_fixed_to_world" type="fixed">
       <parent>world</parent>
       <pose>-0.85 0.00 0.850 0 0 0</pose>
-      <child>ur5_tcp_clean::base_link</child>
+      <child>ur5_rg2::base_link</child>
     </joint>
 
     

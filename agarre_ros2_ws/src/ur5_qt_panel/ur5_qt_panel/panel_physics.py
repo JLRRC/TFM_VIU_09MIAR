@@ -41,7 +41,7 @@ from .panel_utils import (
 if TYPE_CHECKING:
     from .panel_v2 import ControlPanelV2
 
-HAND_LINK_CANDIDATES = ("rg2_hand", "gripper", "tool0", "ee_link")
+HAND_LINK_CANDIDATES = ("tcp_clean_link", "tcp_tip", "tool0", "ee_link")
 OBJECT_SETTLE_Z_EPS = 0.002
 OBJECT_FALL_Z_EPS = 0.01
 OBJECT_SETTLE_WINDOW_SEC = 1.0

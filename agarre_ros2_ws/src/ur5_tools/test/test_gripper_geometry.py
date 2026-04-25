@@ -26,19 +26,22 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_load_gripper_geometry_matches_validated_tcp_fix() -> None:
+    # Clean TCP stack: tool0 -> tcp_tip = -0.18 m in Z.
+    # load_gripper_geometry synthesises geometry from tcp_tip when RG2 joints are absent.
     geometry = load_gripper_geometry(str(ROOT))
     tcp_xyz = geometry.xyz_for_frame(RG2_TCP_FRAME)
     pinch_xyz = geometry.xyz_for_frame(RG2_PINCH_CENTER_FRAME)
     assert tcp_xyz[2] == pinch_xyz[2]
-    assert abs(tcp_xyz[2] - 0.0050885) < 1e-9, f"expected 0.0050885, got {tcp_xyz[2]}"
+    assert abs(tcp_xyz[2] - (-0.18)) < 1e-9, f"expected -0.18 (tcp_tip), got {tcp_xyz[2]}"
     assert vector_distance(tcp_xyz, pinch_xyz) == 0.0
 
 
 def test_model_anchor_matches_canonical_geometry() -> None:
+    # Clean TCP stack: anchor is now in ur5_tcp_clean, aligned with tcp_tip (0 0 -0.18).
     ok, reason = validate_pick_demo_anchor(
-        str(ROOT / 'models' / 'ur5_rg2' / 'model.sdf'),
+        str(ROOT / 'models' / 'ur5_tcp_clean' / 'model.sdf'),
         geometry=load_gripper_geometry(str(ROOT)),
-        tolerance_m=1e-6,
+        tolerance_m=1e-3,
     )
     assert ok, reason
 

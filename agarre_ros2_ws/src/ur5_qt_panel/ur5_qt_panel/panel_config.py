@@ -7,7 +7,7 @@ import os
 import sys
 from typing import Dict, List, Optional, Tuple, Set
 
-from ur5_tools.gripper_geometry import RG2_PINCH_CENTER_FRAME, contact_z_correction_for_frame
+from ur5_tools.gripper_geometry import TCP_TIP_FRAME, contact_z_correction_for_frame
 
 from .panel_settings import PanelSettings
 
@@ -291,7 +291,7 @@ PICK_DEMO_DROP_Z_OFFSET = SETTINGS.pick_demo_drop_z_offset
 # Constante legacy de compatibilidad: el agarre operativo deriva ahora la geometría
 # de contacto desde el URDF canónico y `rg2_pinch_center`, así que este valor debe
 # permanecer inerte.
-GRIPPER_TCP_Z_OFFSET = contact_z_correction_for_frame(RG2_PINCH_CENTER_FRAME)
+GRIPPER_TCP_Z_OFFSET = contact_z_correction_for_frame(TCP_TIP_FRAME)
 AUTO_CALIB_FROM_CAMERA = SETTINGS.auto_calib_from_camera
 REACH_OVERLAY_Z = SETTINGS.reach_overlay_z
 REACH_OVERLAY_POINTS = SETTINGS.reach_overlay_points

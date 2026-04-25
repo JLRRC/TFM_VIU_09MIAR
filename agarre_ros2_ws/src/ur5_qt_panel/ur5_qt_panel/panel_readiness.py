@@ -127,8 +127,8 @@ def tf_ready_status(panel) -> Tuple[bool, str]:
     base_frame = effective_base_frame(panel)
     if helper:
         ee_frame = (
-            str(getattr(panel, "_required_ee_frame", "") or "rg2_pinch_center").strip()
-            or "rg2_pinch_center"
+            str(getattr(panel, "_required_ee_frame", "") or "tcp_tip").strip()
+            or "tcp_tip"
         )
         if _can_transform_between(helper, base_frame, ee_frame, timeout_sec=0.3):
             panel._tf_ready_state = True

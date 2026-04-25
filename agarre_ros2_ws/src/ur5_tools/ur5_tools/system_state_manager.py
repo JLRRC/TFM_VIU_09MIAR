@@ -181,10 +181,10 @@ class SystemStateManager(Node):
     def __init__(self) -> None:
         super().__init__("system_state_manager")
         self.declare_parameter("world_name", "ur5_mesa_objetos")
-        self.declare_parameter("model_name", "ur5_rg2")
+        self.declare_parameter("model_name", "ur5_tcp_clean")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("world_frame", "world")
-        self.declare_parameter("ee_frame", "rg2_pinch_center")
+        self.declare_parameter("ee_frame", "tcp_tip")
         self.declare_parameter("pose_topic", "")
         self.declare_parameter("camera_topic", "/camera_overhead/image")
         self.declare_parameter("camera_required", True)
@@ -194,7 +194,6 @@ class SystemStateManager(Node):
             [
                 "joint_state_broadcaster",
                 "joint_trajectory_controller",
-                "gripper_controller",
             ],
         )
         self.declare_parameter("moveit_required", False)
@@ -222,10 +221,10 @@ class SystemStateManager(Node):
         self.declare_parameter("startup_timeout_sec", 0.0)
 
         self._world_name = read_str_param(self, "world_name", "ur5_mesa_objetos")
-        self._model_name = read_str_param(self, "model_name", "ur5_rg2")
+        self._model_name = read_str_param(self, "model_name", "ur5_tcp_clean")
         self._base_frame = read_str_param(self, "base_frame", "base_link")
         self._world_frame = read_str_param(self, "world_frame", "world")
-        self._ee_frame = read_str_param(self, "ee_frame", "rg2_pinch_center")
+        self._ee_frame = read_str_param(self, "ee_frame", "tcp_tip")
         pose_topic = read_str_param(self, "pose_topic", "")
         self._pose_topic = pose_topic or f"/world/{self._world_name}/pose/info"
         self._camera_topic = read_str_param(

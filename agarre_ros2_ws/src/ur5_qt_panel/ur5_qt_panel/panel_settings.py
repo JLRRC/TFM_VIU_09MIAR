@@ -153,7 +153,7 @@ class PanelSettings:
     gripper_joint_names: List[str] = field(default_factory=list)
     ur5_home_env: str = ""
     ur5_home_default: List[float] = field(default_factory=list)
-    ur5_model_name: str = "ur5_rg2"
+    ur5_model_name: str = "ur5_tcp_clean"
     joint_slider_deg_min: float = -180.0
     joint_slider_deg_max: float = 180.0
     joint_slider_scale: float = 10.0
@@ -329,13 +329,10 @@ class PanelSettings:
                 "wrist_2_joint",
                 "wrist_3_joint",
             ],
-            gripper_joint_names=[
-                "rg2_finger_joint1",
-                "rg2_finger_joint2",
-            ],
+            gripper_joint_names=[],
             ur5_home_env=os.path.join(scripts_dir, "ur5_home_pose.env"),
             ur5_home_default=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            ur5_model_name=os.environ.get("UR5_MODEL_NAME", "ur5_rg2"),
+            ur5_model_name=os.environ.get("UR5_MODEL_NAME", "ur5_tcp_clean"),
             depth_pctl_refresh_frames=max(1, _env_int("PANEL_DEPTH_PCTL_REFRESH_FRAMES", 15)),
             depth_pctl_stride=max(1, _env_int("PANEL_DEPTH_PCTL_STRIDE", 4)),
             depth_fast=_env_bool("PANEL_DEPTH_FAST", False),

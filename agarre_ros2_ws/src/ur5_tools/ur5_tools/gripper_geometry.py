@@ -20,12 +20,16 @@ except Exception:  # pragma: no cover - ament may be unavailable in unit context
 
 
 TOOL0_FRAME = "tool0"
+# Clean TCP constants (replaces RG2 operational frames).
+TCP_TIP_FRAME = "tcp_tip"
+TCP_CLEAN_FRAME = "tcp_tip"
+# Legacy RG2 constants — kept for backward compatibility with tests; not used operationally.
 RG2_TCP_FRAME = "rg2_tcp"
 RG2_PINCH_CENTER_FRAME = "rg2_pinch_center"
 RG2_TCP_JOINT = "rg2_tcp_joint"
 RG2_PINCH_CENTER_JOINT = "rg2_pinch_center_joint"
 PICK_DEMO_ANCHOR_JOINT = "pick_demo_anchor_joint"
-CONTACT_SEMANTIC_FRAMES = frozenset((RG2_TCP_FRAME, RG2_PINCH_CENTER_FRAME))
+CONTACT_SEMANTIC_FRAMES = frozenset((RG2_TCP_FRAME, RG2_PINCH_CENTER_FRAME, TCP_TIP_FRAME))
 
 
 @dataclass(frozen=True)
@@ -173,7 +177,13 @@ def _parse_joint_origin(
 
 @lru_cache(maxsize=4)
 def load_gripper_geometry(ws_dir: Optional[str] = None) -> GripperGeometry:
-    """Carga del URDF los offsets canonicos del TCP y del pinch-center del RG2."""
+    """Carga del URDF los offsets canonicos del TCP.
+
+    Clean TCP stack: rg2_tcp_joint / rg2_pinch_center_joint ya no existen en el URDF.
+    En ese caso se sintetiza una GripperGeometry a partir del joint tcp_clean_to_tcp_tip_joint
+    y tool0_to_tcp_clean_joint, representando el offset total tool0 -> tcp_tip = 0.18 m en Z.
+    """
+    _TCP_CLEAN_Z = -0.18  # tool0 -> tcp_tip in tool0-local Z (negative = down)
 
     for path in _candidate_urdf_paths(ws_dir):
         if not path.is_file():
@@ -181,31 +191,48 @@ def load_gripper_geometry(ws_dir: Optional[str] = None) -> GripperGeometry:
         urdf_text = _read_text(path)
         properties = _parse_xacro_properties(urdf_text)
         source_path = str(path)
-        tcp = _parse_joint_origin(
-            urdf_text,
-            joint_name=RG2_TCP_JOINT,
-            source_path=source_path,
-            properties=properties,
-        )
-        pinch_center = _parse_joint_origin(
-            urdf_text,
-            joint_name=RG2_PINCH_CENTER_JOINT,
-            source_path=source_path,
-            properties=properties,
-        )
-        geom = GripperGeometry(tcp=tcp, pinch_center=pinch_center)
-        _z = geom.tcp.xyz[2]
-        _HIST_Z = 0.175
-        _HIST_TOL = 0.010
-        if abs(_z - _HIST_Z) < _HIST_TOL:
-            raise ValueError(
-                f"[GRIPPER_GEOMETRY][GUARDRAIL] rg2_tcp Z={_z:.7f} está cerca del valor "
-                f"histórico 0.175 m — se ha reintroducido geometría TCP semántica obsoleta "
-                f"en {tcp.source_path}. El valor canónico debe ser ~0.0050885."
+
+        # Try legacy RG2 joints first (backward compat for tests with old URDF).
+        _rg2_missing = False
+        try:
+            tcp = _parse_joint_origin(
+                urdf_text,
+                joint_name=RG2_TCP_JOINT,
+                source_path=source_path,
+                properties=properties,
             )
-        return geom
+            pinch_center = _parse_joint_origin(
+                urdf_text,
+                joint_name=RG2_PINCH_CENTER_JOINT,
+                source_path=source_path,
+                properties=properties,
+            )
+        except (ValueError, KeyError):
+            _rg2_missing = True
+        if not _rg2_missing:
+            geom = GripperGeometry(tcp=tcp, pinch_center=pinch_center)
+            _z = geom.tcp.xyz[2]
+            _HIST_Z = 0.175
+            _HIST_TOL = 0.010
+            if abs(_z - _HIST_Z) < _HIST_TOL:
+                raise ValueError(
+                    f"[GRIPPER_GEOMETRY][GUARDRAIL] rg2_tcp Z={_z:.7f} está cerca del valor "
+                    f"histórico 0.175 m — se ha reintroducido geometría TCP semántica obsoleta "
+                    f"en {tcp.source_path}. El valor canónico debe ser ~0.0050885."
+                )
+            return geom
+
+        # Clean TCP: synthesize geometry from tcp_tip offset.
+        clean_tcp = FixedJointOrigin(
+            parent_link=TOOL0_FRAME,
+            child_link="tcp_tip",
+            xyz=(0.0, 0.0, _TCP_CLEAN_Z),
+            source_path=source_path,
+        )
+        return GripperGeometry(tcp=clean_tcp, pinch_center=clean_tcp)
+
     raise FileNotFoundError(
-        "unable to locate ur5.urdf.xacro for canonical RG2 geometry resolution"
+        "unable to locate ur5.urdf.xacro for canonical TCP geometry resolution"
     )
 
 

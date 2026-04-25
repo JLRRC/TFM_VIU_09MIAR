@@ -4,16 +4,17 @@
 system_state_manager:
   ros__parameters:
     world_name: ur5_mesa_objetos
-    model_name: ur5_tcp_clean
+    model_name: ur5_rg2
     base_frame: base_link
     world_frame: world
-    ee_frame: tcp_tip
+    ee_frame: rg2_pinch_center
     pose_topic: ""
     camera_topic: /camera_overhead/image
     controller_manager: /controller_manager
     required_controllers:
       - joint_state_broadcaster
       - joint_trajectory_controller
+      - gripper_controller
     moveit_required: false
     moveit_service_names:
       - /get_planning_scene

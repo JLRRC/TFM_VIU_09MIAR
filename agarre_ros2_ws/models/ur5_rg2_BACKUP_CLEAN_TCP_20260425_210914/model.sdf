@@ -402,12 +402,14 @@
                 </dynamics>
             </axis>
         </joint>
-        <!-- Arm-Hand Fixed Joint: rg2_hand is a direct child of tool0 at zero offset.
-             No pitch rotation: rg2_hand frame = tool0 frame (+Z = approach direction,
-             +Y = finger gap axis). This eliminates the old pitch=-pi/2 mismatch. -->
+        <!-- Arm-Hand Fixed Joint -->
         <joint name="ur5_hand_joint" type="fixed">
-            <pose relative_to="tool0">0 0 0 0 0 0</pose>
-            <parent>tool0</parent>
+              <!-- Keep the RG2 body close to the wrist flange. The URDF canonical
+                   geometry is flange/tool0 +Z = 0.07 m to rg2_hand and then
+                   +0.105 m to the finger midpoint, for a total tool0->contact
+                   distance of 0.175 m. -->
+              <pose relative_to="wrist_3_link">0 0.07 0 1.570796325 0 1.570796325</pose>
+            <parent>wrist_3_link</parent>
             <child>rg2_hand</child>
         </joint>
         <!-- Hand Links -->
@@ -585,13 +587,9 @@
             <pose relative_to="end_effector_frame_fixed_joint">0 0 0 0 0 0</pose>
         </link>
         <joint name="end_effector_frame_fixed_joint" type="fixed">
-            <!-- URDF chain: wrist_3_link -> flange -> tool0 gives R=Identity (no rotation).
-                 Both wrist_3-flange (rpy="0 -pi/2 -pi/2") and flange-tool0 (rpy="pi/2 0 pi/2")
-                 compose to Identity, so SDF tool0 must be at rpy="0 0 0" relative to wrist_3.
-                 Previous rpy="-pi/2 0 0" made SDF-tool0+Z = wrist_3+Y while URDF-tool0+Z =
-                 wrist_3+Z, causing a 90-degree mismatch between rg2_pinch_center (TF) and the
-                 visual finger midpoint (SDF). -->
-            <pose relative_to="wrist_3_link">0 0 0 0 0 0</pose>
+            <!-- Match the URDF ur_description chain: wrist_3_link -> flange -> tool0
+                 has zero translation and only orientation changes. -->
+            <pose relative_to="wrist_3_link">0 0 0 -1.570796325 0 0</pose>
             <parent>wrist_3_link</parent>
             <child>tool0</child>
         </joint>

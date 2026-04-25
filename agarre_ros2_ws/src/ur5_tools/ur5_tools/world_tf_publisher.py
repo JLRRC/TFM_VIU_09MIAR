@@ -30,7 +30,7 @@ class WorldTfPublisher(Node):
     def __init__(self) -> None:
         super().__init__("world_tf_publisher")
         self.declare_parameter("world_name", "ur5_mesa_objetos")
-        self.declare_parameter("model_name", "ur5_rg2")
+        self.declare_parameter("model_name", "ur5_tcp_clean")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("world_frame", "world")
         self.declare_parameter("world_file", "")

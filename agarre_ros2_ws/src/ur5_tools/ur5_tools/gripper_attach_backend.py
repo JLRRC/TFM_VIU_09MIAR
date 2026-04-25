@@ -284,7 +284,7 @@ class GripperAttachBackend(Node):
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("pose_topic", "")
         self.declare_parameter("joint_states_topic", "/joint_states")
-        self.declare_parameter("tcp_frame", "rg2_pinch_center")
+        self.declare_parameter("tcp_frame", "tcp_tip")
         self.declare_parameter("set_pose_service", "")
         self.declare_parameter("follow_rate_hz", 20.0)
         self.declare_parameter("max_pose_age_sec", 1.5)
@@ -345,7 +345,7 @@ class GripperAttachBackend(Node):
         self._base_frame = str(
             self.get_parameter("base_frame").value or "base_link"
         ).strip() or "base_link"
-        self._tcp_frame = str(self.get_parameter("tcp_frame").value or "rg2_pinch_center").strip()
+        self._tcp_frame = str(self.get_parameter("tcp_frame").value or "tcp_tip").strip()
         self._pose_topic = str(self.get_parameter("pose_topic").value or "").strip()
         self._joint_states_topic = str(
             self.get_parameter("joint_states_topic").value or "/joint_states"
@@ -1146,7 +1146,7 @@ class GripperAttachBackend(Node):
         alt = key.lstrip("/")
         if alt in self._pose_cache:
             return self._pose_cache[alt]
-        scoped = f"ur5_rg2::{alt}"
+        scoped = f"ur5_tcp_clean::{alt}"
         if scoped in self._pose_cache:
             return self._pose_cache[scoped]
         suffix = f"::{alt}"

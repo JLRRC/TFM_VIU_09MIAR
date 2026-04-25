@@ -58,10 +58,10 @@ def generate_launch_description():
     )
 
     moveit_config = (
-        MoveItConfigsBuilder("ur5_tcp_clean", package_name="ur5_moveit_config")
+        MoveItConfigsBuilder("ur5_rg2", package_name="ur5_moveit_config")
         .robot_description(
             file_path=str(Path(ur5_description_share) / "urdf" / "ur5.urdf.xacro"),
-            mappings={"ur_type": "ur5", "name": "ur5_tcp_clean"},
+            mappings={"ur_type": "ur5", "name": "ur5_rg2"},
         )
         .robot_description_semantic(file_path=str(srdf_path))
         .robot_description_kinematics(

@@ -36,7 +36,12 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
-# RG2 geometry helpers removed — clean TCP stack does not need gripper geometry sync.
+from ur5_tools.gripper_geometry import (
+    RG2_TCP_FRAME,
+    load_gripper_geometry,
+    patch_runtime_model_sdf,
+    validate_pick_demo_anchor,
+)
 
 
 def _env_flag(name: str, default: bool) -> bool:
@@ -105,13 +110,13 @@ def _prepare_runtime(context, *_args) -> List[object]:
         runtime_yaml = base_yaml
 
     runtime_models_root = os.path.join(log_dir, "gz_models")
-    runtime_ur5_model = os.path.join(runtime_models_root, "ur5_tcp_clean")
-    src_ur5_model = os.path.join(ws_dir, "models", "ur5_tcp_clean")
+    runtime_ur5_model = os.path.join(runtime_models_root, "ur5_rg2")
+    src_ur5_model = os.path.join(ws_dir, "models", "ur5_rg2")
     try:
         if os.path.isdir(src_ur5_model):
             shutil.copytree(src_ur5_model, runtime_ur5_model, dirs_exist_ok=True)
     except Exception as exc:
-        logger.warning("No se pudo copiar modelo ur5_tcp_clean a runtime: %s", exc)
+        logger.warning("No se pudo copiar modelo ur5_rg2 a runtime: %s", exc)
 
     resource_path = (
         f"{runtime_models_root}:{ws_dir}/models:{ws_dir}/worlds:{ws_dir}/install"
@@ -221,11 +226,32 @@ def _prepare_runtime(context, *_args) -> List[object]:
         "config",
         "ur5_controllers.yaml",
     )
-    model_sdf = os.path.join(runtime_ur5_model, "model.sdf")
-    if not os.path.isfile(model_sdf):
-        logger.error("Runtime model.sdf no encontrado: %s", model_sdf)
-        raise RuntimeError(f"Runtime model.sdf no encontrado: {model_sdf}")
-    logger.info("Runtime model ur5_tcp_clean OK: %s", model_sdf)
+    try:
+        model_sdf = os.path.join(runtime_ur5_model, "model.sdf")
+        if not os.path.isfile(model_sdf):
+            raise RuntimeError(f"Runtime model.sdf no encontrado: {model_sdf}")
+        geometry = load_gripper_geometry(ws_dir=ws_dir)
+        patch_runtime_model_sdf(
+            model_sdf,
+            controllers_yaml=controllers_yaml,
+            geometry=geometry,
+        )
+        anchor_ok, anchor_reason = validate_pick_demo_anchor(
+            model_sdf,
+            geometry=geometry,
+            tolerance_m=1e-6,
+        )
+        if not anchor_ok:
+            raise RuntimeError(anchor_reason)
+        logger.info(
+            "runtime model geometry synced "
+            f"source={geometry.tcp.source_path} "
+            f"tcp_z={geometry.z_for_frame(RG2_TCP_FRAME):.7f} "
+            f"{anchor_reason}"
+        )
+    except Exception as exc:
+        logger.error("Runtime geometry sync failed: %s", exc)
+        raise RuntimeError(f"Runtime geometry sync failed: {exc}") from exc
 
     runtime_world = world_file
     try:
@@ -256,9 +282,6 @@ def _prepare_runtime(context, *_args) -> List[object]:
                     world_text = re.sub(pattern, "", world_text, flags=re.DOTALL)
             world_text = world_text.replace(
                 "<uri>model://ur5_rg2</uri>",
-                f"<uri>file://{runtime_ur5_model}</uri>",
-            ).replace(
-                "<uri>model://ur5_tcp_clean</uri>",
                 f"<uri>file://{runtime_ur5_model}</uri>",
             )
             runtime_world = os.path.join(log_dir, "world_runtime.sdf")
@@ -812,7 +835,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"world_name": LaunchConfiguration("world_name")},
-            {"model_name": "ur5_tcp_clean"},
+            {"model_name": "ur5_rg2"},
             {"base_frame": "base_link"},
             {"world_frame": "world"},
             {"clock_timeout_sec": 20.0},
@@ -839,10 +862,10 @@ def generate_launch_description():
                 "pairs": [
                     "world,base_link",
                     "base_link,tool0",
-                    "base_link,tool0",
-                    "base_link,tcp_tip",
-                    "tool0,tcp_clean_link",
-                    "tool0,tcp_tip",
+                    "base_link,rg2_tcp",
+                    "base_link,rg2_pinch_center",
+                    "tool0,rg2_tcp",
+                    "tool0,rg2_pinch_center",
                 ]
             },
             {"max_age_sec": 0.5},
@@ -864,10 +887,10 @@ def generate_launch_description():
             ),
             {"use_sim_time": use_sim_time},
             {"world_name": LaunchConfiguration("world_name")},
-            {"model_name": "ur5_tcp_clean"},
+            {"model_name": "ur5_rg2"},
             {"base_frame": "base_link"},
             {"world_frame": "world"},
-            {"ee_frame": "tcp_tip"},
+            {"ee_frame": "rg2_pinch_center"},
             {"camera_topic": "/camera_overhead/image"},
             {"camera_required": ParameterValue(camera_required, value_type=bool)},
             {"controller_manager": LaunchConfiguration("controller_manager")},
@@ -928,7 +951,7 @@ def generate_launch_description():
     gripper_attach_backend_params = [
         {"use_sim_time": use_sim_time},
         {"attach_mode": LaunchConfiguration("attach_backend_mode")},
-        {"tcp_frame": "tcp_tip"},
+        {"tcp_frame": "rg2_pinch_center"},
         {"tool_anchor_prefix": "/gripper_anchor"},
         {
             "max_pose_age_sec": LaunchConfiguration(
@@ -986,7 +1009,7 @@ def generate_launch_description():
             {"world_file": LaunchConfiguration("world_file")},
             {"world_frame": "world"},
             {"base_frame": "base_link"},
-            {"ee_frame": "tcp_tip"},
+            {"ee_frame": "rg2_pinch_center"},
         ],
         condition=IfCondition(launch_scene_sync),
     )
@@ -1051,7 +1074,7 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
             {"backend": "auto"},
             {"base_frame": "base_link"},
-            {"ee_frame": "tcp_tip"},
+            {"ee_frame": "rg2_pinch_center"},
             {"result_topic": "/desired_grasp/result"},
             {"controller_manager": LaunchConfiguration("controller_manager")},
             {"execute_timeout_sec": bridge_exec_timeout},
@@ -1100,7 +1123,7 @@ def generate_launch_description():
             DeclareLaunchArgument("control_backend", default_value="gz_ros2_control"),
             DeclareLaunchArgument("launch_world_tf", default_value="true"),
             DeclareLaunchArgument("launch_release_service", default_value="true"),
-            DeclareLaunchArgument("launch_attach_backend", default_value="false"),  # disabled: clean TCP stack
+            DeclareLaunchArgument("launch_attach_backend", default_value="true"),
             DeclareLaunchArgument(
                 "attach_backend_mode",
                 default_value=os.environ.get("ATTACH_BACKEND_MODE", "follow_tcp"),

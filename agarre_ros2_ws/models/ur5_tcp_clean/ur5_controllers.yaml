@@ -1,4 +1,4 @@
-# Ruta/archivo: agarre_ros2_ws/src/ur5_description/config/ur5_controllers.yaml
+# Ruta/archivo: agarre_ros2_ws/models/ur5_tcp_clean/ur5_controllers.yaml
 # Summary: Controller configuration for UR5 with clean TCP (no gripper controller).
 controller_manager:
   ros__parameters:
@@ -9,6 +9,9 @@ controller_manager:
 
     joint_trajectory_controller:
       type: joint_trajectory_controller/JointTrajectoryController
+
+    arm_position_controller:
+      type: forward_command_controller/ForwardCommandController
 
 joint_trajectory_controller:
   ros__parameters:
@@ -28,24 +31,39 @@ joint_trajectory_controller:
     allow_partial_joints_goal: false
     interpolate_from_desired_state: false
     set_last_command_interface_value_as_state_on_activation: true
+    speed_scaling:
+      initial_scaling_factor: 1.0
+      state_interface: ""
+      command_interface: ""
     constraints:
       stopped_velocity_tolerance: 0.01
       goal_time: 0.0
       shoulder_pan_joint:
         trajectory: 3.4
-        goal: 0.08
+        goal: 0.1
       shoulder_lift_joint:
         trajectory: 3.4
-        goal: 0.08
+        goal: 0.1
       elbow_joint:
         trajectory: 3.4
-        goal: 0.08
+        goal: 0.1
       wrist_1_joint:
         trajectory: 3.4
-        goal: 0.08
+        goal: 0.1
       wrist_2_joint:
         trajectory: 3.4
-        goal: 0.08
+        goal: 0.1
       wrist_3_joint:
         trajectory: 3.4
-        goal: 0.08
+        goal: 0.1
+
+arm_position_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    interface_name: position
