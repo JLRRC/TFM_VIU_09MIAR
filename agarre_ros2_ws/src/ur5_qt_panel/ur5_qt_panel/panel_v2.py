@@ -563,7 +563,6 @@ class ControlPanelV2(QMainWindow):
         self._controller_spawn_last_start = 0.0
         self._robot_test_done = True
         self._robot_test_disabled = True
-        self._robot_test_active = False
         self._robot_test_substate = "IDLE"
         self._robot_test_last_failure = ""
         # FASE 3: Mutex para evitar goals MoveIt concurrentes.

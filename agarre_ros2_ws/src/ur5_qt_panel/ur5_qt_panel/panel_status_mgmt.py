@@ -884,10 +884,10 @@ def _maybe_auto_run_pick_demo(panel) -> None:
     now = time.time()
     if (now - panel._auto_pick_demo_last_try_ts) < 4.0:
         return
-    if panel._manual_inflight or panel._script_motion_active or panel._robot_test_active:
+    if panel._manual_inflight or panel._script_motion_active:
         panel._emit_log(
             f"[AUTO_PICK_DEMO] bloqueado: manual_inflight={panel._manual_inflight} "
-            f"script_active={panel._script_motion_active} test_active={panel._robot_test_active}"
+            f"script_active={panel._script_motion_active}"
         )
         panel._auto_pick_demo_last_try_ts = now
         return
@@ -942,21 +942,12 @@ def _schedule_controller_check(panel) -> None:
         grace_base = panel._controller_spawn_last_start or panel._bridge_start_ts or 0.0
         in_grace = grace_base and (now - grace_base) < CONTROLLER_START_GRACE_SEC
         gazebo_not_ready = str(reason).startswith("gazebo_not_ready")
-        # FASE 2: No degradar controllers_ok durante TEST para evitar reset a BOOT.
-        test_running = getattr(panel, "_robot_test_active", False)
         if ok:
             if panel._controllers_state != "READY":
                 panel._emit_log("[CTRL] state=READY")
                 panel._controllers_state = "READY"
             panel._controllers_ok = True
             panel._controllers_reason = reason
-        elif test_running and panel._controllers_ok:
-            # FASE 2: Durante TEST, mantener controllers_ok=True ante drop transitorio.
-            panel._emit_log_throttled(
-                "ctrl_gate_test_hold",
-                f"[CTRL_GATE] controllers transient fail during TEST; holding ok ({reason})",
-                min_interval=2.0,
-            )
         else:
             if in_grace or gazebo_not_ready:
                 if panel._controllers_state != "STARTING":

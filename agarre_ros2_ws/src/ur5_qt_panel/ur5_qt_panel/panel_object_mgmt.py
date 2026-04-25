@@ -550,8 +550,7 @@ def _refresh_objects_from_gz(panel):
     if not gz_sim_status()[0]:
         return
     panel._ensure_pose_subscription()
-    # TEST ROBOT is read-only for objects: skip pose sync to prevent ghost moves.
-    objects_read_only = bool(panel._robot_test_active)
+    objects_read_only = False
 
     world_path = panel.world_combo.currentText().strip()
     sdf_path = ""

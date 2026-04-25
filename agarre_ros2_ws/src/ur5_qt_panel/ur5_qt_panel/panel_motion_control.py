@@ -392,7 +392,6 @@ def _set_robot_test_done(panel, done: bool) -> None:
     panel._robot_test_done = done
     if done:
         panel._robot_test_disabled = True
-        panel._robot_test_active = False
         # FASE 5: Log claro del cambio de estado TEST -> PICK.
         panel._emit_log("[STATE] TEST_PASSED enabling PICK disabling TEST")
         # FASE 5: Habilitar PICK buttons explícitamente.
