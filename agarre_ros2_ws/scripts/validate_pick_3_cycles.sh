@@ -34,8 +34,10 @@ run_cycle() {
     sleep 1
   done
 
-  for _ in $(seq 1 40); do
-    if tail -n "+${start_line}" "$log_file" | grep -q 'STATE READY (Sistema listo)'; then
+  # [PICK][MOVEIT][INIT] is emitted by the panel when MoveIt is ready (prefix passes _should_emit_log).
+  # [STATE] READY_MOVEIT is filtered out of the launch log, so we use the MOVEIT_INIT line instead.
+  for _ in $(seq 1 120); do
+    if tail -n "+${start_line}" "$log_file" | grep -q '\[PICK\]\[MOVEIT\]\[INIT\].*moveit_state=READY'; then
       if ! tail -n "+${start_line}" "$log_file" | grep -q 'ERROR_FATAL'; then
         sleep 3
         break

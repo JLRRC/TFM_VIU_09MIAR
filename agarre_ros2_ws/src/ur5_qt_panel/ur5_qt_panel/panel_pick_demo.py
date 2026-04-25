@@ -3794,11 +3794,11 @@ def run_pick_demo(panel) -> None:
                 z_dist = abs(float(tcp_base[2]) - float(obj_base[2]))
                 dist_3d = math.sqrt(xy_dist ** 2 + z_dist ** 2)
 
-                # Apertura de dedos: URDF usa posición prismática [0, 0.04] m.
-                # 0.0 = cerrada, 0.04 = apertura máxima (~110 mm RG2).
-                # Convertimos a apertura estimada entre puntas (× factor empírico).
-                finger_opening_rad = float(gripper.get("opening_sum") or 0.0)
-                finger_opening_mm = finger_opening_rad * 1000.0
+                # Apertura de dedos: URDF usa posición prismática [0, 0.055] m por dedo.
+                # 0.0 = cerrada, 0.055 = apertura máxima (~110 mm RG2 en total).
+                # opening_sum = suma de ambos dedos (max 0.110 m); convertir a mm para display.
+                finger_opening_m = float(gripper.get("opening_sum") or 0.0)
+                finger_opening_mm = finger_opening_m * 1000.0
 
                 # Límites conservadores del volumen de agarre (rg2_pinch_center = TCP semántico operacional):
                 #   - Separación mínima entre dedos en cierre: ~0 mm

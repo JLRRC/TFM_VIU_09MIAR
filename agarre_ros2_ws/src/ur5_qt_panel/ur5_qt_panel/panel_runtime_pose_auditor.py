@@ -211,11 +211,11 @@ def build_runtime_audit_snapshot(panel: Any) -> RuntimeAuditSnapshot:
     joints_planned = [
         f"[PHASE] Pinza esperada por fase: {panel._step_phase_gripper_state(panel._step_effective_flow(), current_phase)}",
         f"[PANEL] Pinza live panel: {panel._step_live_gripper_state()}",
-        f"[CFG] Umbrales cfg: open={float(GRIPPER_OPEN_RAD):.3f} rad | closed={float(GRIPPER_CLOSED_RAD):.3f} rad",
+        f"[CFG] Umbrales cfg: open={float(GRIPPER_OPEN_RAD):.4f} m | closed={float(GRIPPER_CLOSED_RAD):.4f} m",
     ]
     joints_runtime = [
-        f"[JOINTS] rg2_finger_joint1: {_fmt_scalar(joint_positions.get('rg2_finger_joint1'), unit=' rad')}",
-        f"[JOINTS] rg2_finger_joint2: {_fmt_scalar(joint_positions.get('rg2_finger_joint2'), unit=' rad')}",
+        f"[JOINTS] rg2_finger_joint1: {_fmt_scalar(joint_positions.get('rg2_finger_joint1'), unit=' m')}",
+        f"[JOINTS] rg2_finger_joint2: {_fmt_scalar(joint_positions.get('rg2_finger_joint2'), unit=' m')}",
         f"[JOINTS] Apertura interpretada: {inferred_state}",
         f"[JOINTS] Edad joint_states: {_fmt_age(joint_age)}",
         f"[CTRL] joint_state_broadcaster: {controller_states['joint_state_broadcaster'] or 'sin dato'}",
@@ -452,10 +452,14 @@ def _interpret_gripper_state(positions: Dict[str, float], inferred_state: object
         return "SIN_DATO"
     mags = [abs(float(value)) for value in positions.values()]
     avg = sum(mags) / max(1, len(mags))
-    midpoint = (abs(float(GRIPPER_OPEN_RAD)) + abs(float(GRIPPER_CLOSED_RAD))) / 2.0
-    if avg > midpoint + 0.05:
+    _open_m = abs(float(GRIPPER_OPEN_RAD))
+    _closed_m = abs(float(GRIPPER_CLOSED_RAD))
+    midpoint = (_open_m + _closed_m) / 2.0
+    # Hysteresis proportional to range so prismatic [0,0.055] and revolute work correctly.
+    _hyst = max(0.005, 0.15 * abs(_open_m - _closed_m))
+    if avg > midpoint + _hyst:
         return "ABIERTA"
-    if avg < midpoint - 0.05:
+    if avg < midpoint - _hyst:
         return "CERRADA"
     return "INTERMEDIA"
 

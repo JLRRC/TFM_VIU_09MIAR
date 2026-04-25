@@ -237,6 +237,7 @@ TRACE_PRINT_PERIOD_SEC = SETTINGS.trace_print_period_sec
 DEBUG_POSES_PERIOD_SEC = SETTINGS.debug_poses_period_sec
 PICK_LOG_MIN_INTERVAL_SEC = SETTINGS.pick_log_min_interval_sec
 GRIPPER_CMD_TOPIC = SETTINGS.gripper_cmd_topic
+# Legacy variable names kept for compatibility. Values are metres because RG2 joints are prismatic.
 GRIPPER_OPEN_RAD = SETTINGS.gripper_open_rad
 GRIPPER_CLOSED_RAD = SETTINGS.gripper_closed_rad
 GRIPPER_JOINT2_SIGN = SETTINGS.gripper_joint2_sign

@@ -186,7 +186,8 @@ class PanelSettings:
     debug_poses_period_sec: float = 3.0
     pick_log_min_interval_sec: float = 2.0
     gripper_cmd_topic: str = "/gripper_controller/commands"
-    # Prismatic joints in metres: 0.055 m per finger = 110 mm total opening.
+    # Legacy variable name kept for compatibility. Value is metres because RG2 joints are prismatic.
+    # open=0.055 m per finger (110 mm total), closed=0.0 m.
     gripper_open_rad: float = 0.055
     gripper_closed_rad: float = 0.0
     gripper_joint2_sign: float = 1.0
@@ -364,6 +365,7 @@ class PanelSettings:
             debug_poses_period_sec=_env_float("PANEL_DEBUG_POSES_PERIOD_SEC", 3.0),
             pick_log_min_interval_sec=_env_float("PANEL_PICK_LOG_MIN_INTERVAL_SEC", 2.0),
             gripper_cmd_topic=_env_str("PANEL_GRIPPER_CMD_TOPIC", "/gripper_controller/commands"),
+            # Legacy variable name kept for compatibility. Value is metres because RG2 joints are prismatic.
             gripper_open_rad=_env_float("PANEL_GRIPPER_OPEN_RAD", 0.055),
             gripper_closed_rad=_env_float("PANEL_GRIPPER_CLOSED_RAD", 0.0),
             gripper_joint2_sign=_env_float("PANEL_GRIPPER_JOINT2_SIGN", 1.0),
