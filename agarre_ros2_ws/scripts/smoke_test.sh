@@ -97,6 +97,7 @@ if python3 -m pytest \
      src/ur5_tools/test/test_cycle_logger.py \
      src/ur5_tools/test/test_gripper_geometry.py \
      src/ur5_tools/test/test_system_state_machine.py \
+     src/ur5_tools/test/test_param_utils.py \
      src/ur5_bringup/test/test_launch_helpers.py \
      -q --tb=short 2>&1; then
   ut2_ok=1
