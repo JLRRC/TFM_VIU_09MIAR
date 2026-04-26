@@ -29,6 +29,7 @@ from .panel_external_state import (
     apply_external_system_state,
 )
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
+from .logging_utils import timestamped_line
 
 
 def _log_exception(context: str, exc: Exception) -> None:
