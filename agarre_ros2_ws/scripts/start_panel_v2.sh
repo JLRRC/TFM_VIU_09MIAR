@@ -723,6 +723,13 @@ elif [[ "$MOVEIT_MODE" == "bridge" ]]; then
   LAUNCH_MOVEIT="false"
 fi
 export PANEL_MOVEIT_MODE="$MOVEIT_MODE"
+# FIX-DUAL-BRIDGE: con MOVEIT_MODE=move_group y stack externo (PANEL_START_STACK=0),
+# el stack externo ya gestiona el backend MoveIt. Lanzar ur5_moveit_bridge adicional
+# crea un segundo contexto MoveItPy que causa TF jump-back-in-time y compite por FJT.
+LAUNCH_MOVEIT_BRIDGE="true"
+if [[ "$MOVEIT_MODE" == "move_group" && "${PANEL_START_STACK}" != "1" ]]; then
+  LAUNCH_MOVEIT_BRIDGE="false"
+fi
 
 runtime_sanity_check
 
@@ -757,6 +764,7 @@ if [[ "${DEBUG_LOGS_TO_STDOUT}" == "1" ]]; then
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
+    launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
@@ -803,6 +811,7 @@ if [[ "${PANEL_WRITE_PID}" == "1" ]]; then
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
+    launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
@@ -833,6 +842,7 @@ if [[ "${PANEL_AUTO_EXIT_ON_PANEL}" == "1" ]]; then
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
+    launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
@@ -875,6 +885,7 @@ if [[ "$PANEL_LOG_FILTER" == "1" ]]; then
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
+    launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
@@ -899,6 +910,7 @@ else
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
+    launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \

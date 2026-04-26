@@ -113,6 +113,8 @@ pkill -f "robot_state_publisher" 2>/dev/null || true
 pkill -f "gripper_attach_backend" 2>/dev/null || true
 pkill -f "move_group"          2>/dev/null || true
 pkill -f "world_tf_publisher"  2>/dev/null || true
+pkill -f "system_state_manager" 2>/dev/null || true
+pkill -f "ur5_moveit_bridge"   2>/dev/null || true
 pkill -f "start_panel_v2"      2>/dev/null || true
 pkill -f "pick_demo_panel"     2>/dev/null || true
 pkill -f "ur5_stack"           2>/dev/null || true
@@ -125,6 +127,8 @@ pkill -9 -f "gz_server"        2>/dev/null || true
 pkill -9 -f "move_group"       2>/dev/null || true
 pkill -9 -f "gripper_attach_backend" 2>/dev/null || true
 pkill -9 -f "world_tf_publisher" 2>/dev/null || true
+pkill -9 -f "system_state_manager" 2>/dev/null || true
+pkill -9 -f "ur5_moveit_bridge" 2>/dev/null || true
 pkill -9 -f "ros_gz_bridge"    2>/dev/null || true
 sleep 2
 rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
