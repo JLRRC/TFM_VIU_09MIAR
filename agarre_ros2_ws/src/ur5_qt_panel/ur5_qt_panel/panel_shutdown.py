@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from .logging_utils import timestamped_line
+from .panel_tf import shutdown_tf_helper
+from .panel_config import rclpy
 
 _DEBUG_EXCEPTIONS = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
 

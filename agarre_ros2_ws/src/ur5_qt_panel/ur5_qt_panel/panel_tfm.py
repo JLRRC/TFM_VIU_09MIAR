@@ -5,8 +5,10 @@
 """TFM inference helpers for the panel."""
 from __future__ import annotations
 
+import datetime
 import json
 import os
+import re
 import shlex
 import time
 from pathlib import Path
@@ -14,6 +16,9 @@ from typing import Optional
 
 from .panel_config import INFER_CKPT, INFER_ROI_SIZE, INFER_SCRIPT, LOG_DIR, VISION_DIR
 from .panel_utils import ensure_dir, run_cmd
+from .panel_objects import get_object_position, get_object_state, get_object_states, is_on_table, update_object_state
+from .panel_pick_object import run_pick_object
+from .panel_utils import pixel_to_table_xy
 
 
 def _clip_roi(frame_w: int, frame_h: int, roi: tuple[int, int, int]) -> Optional[tuple[int, int, int, int]]:
@@ -505,6 +510,9 @@ from .panel_config import (
 )
 from .panel_objects import ObjectLogicalState
 from .panel_robot_presets import JOINT_TABLE_POSE_RAD
+from .panel_camera import _runtime_time
+from .panel_robot_presets import _make_pose_data
+from .panel_objects import ObjectLogicalState
 
 MOVEIT_POSE_TOPIC = "/desired_grasp"
 MOVEIT_CARTESIAN_POSE_TOPIC = "/desired_grasp_cartesian"
@@ -2020,3 +2028,37 @@ def tfm_publish_grasp(panel):
         return True, "ejecucion iniciada"
     return False, "agarre no iniciado"
 
+# ── Grasp geometry helpers (originally in panel_v2.py) ────────────────────
+def _tfm_clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def _tfm_normalize_angle(angle: float) -> float:
+    import math as _math
+    while angle > _math.pi:
+        angle -= 2.0 * _math.pi
+    while angle < -_math.pi:
+        angle += 2.0 * _math.pi
+    return angle
+
+
+def _compute_minor_axis_from_grasp_rect(w_px: float, h_px: float, theta_img: float):
+    if w_px <= h_px:
+        minor_px = w_px
+        opening_axis_theta_img = _tfm_normalize_angle(theta_img + 3.14159265358979 / 2.0)
+    else:
+        minor_px = h_px
+        opening_axis_theta_img = _tfm_normalize_angle(theta_img)
+    return minor_px, opening_axis_theta_img
+
+
+def _compute_rg2_preopen_from_minor_width(
+    minor_width_m: float,
+    safety_margin_m: float = 0.015,
+    min_open_m: float = 0.015,
+    max_open_m: float = 0.110,
+    max_finger_rad: float = 1.18,
+):
+    pre_open_width_m = _tfm_clamp(minor_width_m + safety_margin_m, min_open_m, max_open_m)
+    finger_cmd_rad = _tfm_clamp((pre_open_width_m / max_open_m) * max_finger_rad, 0.0, max_finger_rad)
+    return pre_open_width_m, finger_cmd_rad

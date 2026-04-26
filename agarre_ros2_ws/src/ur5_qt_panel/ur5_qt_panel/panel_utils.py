@@ -2322,3 +2322,7 @@ def fmt_age_sec(value) -> str:
         return f"{float(value):.3f}s"
     except Exception:
         return "n/a"
+
+def _runtime_time() -> float:
+    """Steady local timestamp for runtime freshness and watchdog logic."""
+    return time.monotonic()

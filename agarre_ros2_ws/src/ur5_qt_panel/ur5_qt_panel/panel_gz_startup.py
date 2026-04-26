@@ -5,10 +5,22 @@
 """Gazebo startup, world/bridge control, and ROS2 control callbacks."""
 from __future__ import annotations
 
-import os
 import json
+import os
+import shutil
+import subprocess
 import time
 from typing import Dict, Optional, Tuple
+from .panel_readiness import camera_ready_status
+from .panel_shutdown import StopSequence
+from .panel_startup import StartSequence
+from .panel_tf import get_tf_helper
+from .panel_utils import resolve_controller_manager
+
+try:
+    import psutil
+except ImportError:
+    psutil = None  # type: ignore
 
 from PyQt5.QtWidgets import QFileDialog
 
@@ -31,6 +43,12 @@ from .panel_config import (
     WORLDS_DIR,
 )
 from .panel_utils import read_world_name
+from . import panel_camera_controllers as _cc
+from typing import Set
+from PyQt5.QtCore import QTimer
+from .panel_state import MoveItState, SystemState
+from .panel_camera import _runtime_time
+from . import panel_launch_control
 
 
 def _log_exception(context: str, exc: Exception) -> None:

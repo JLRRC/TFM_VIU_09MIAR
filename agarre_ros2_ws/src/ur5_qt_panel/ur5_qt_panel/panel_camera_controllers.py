@@ -5,6 +5,8 @@
 """Camera, controller, and joint state callbacks for ControlPanelV2."""
 from __future__ import annotations
 
+import datetime
+import math
 import os
 import time
 from typing import Dict, List, Optional, Tuple
@@ -22,6 +24,31 @@ from .panel_utils import (
     list_controllers_state,
     rclpy,
 )
+from .panel_utils import base_to_world, gripper_controller_defined
+from .ur5_kinematics import fk_ur5
+from PyQt5.QtCore import QTimer
+from .panel_config import (
+    CAMERA_TOPIC_PREFIX,
+    CONTROLLER_CHECK_INTERVAL_SEC,
+    CONTROLLER_LAST_OK_GRACE_SEC,
+    CONTROLLER_LIST_RETRY_STEP_SEC,
+    CONTROLLER_LIST_RETRY_WINDOW_SEC,
+    FAR_FRONT_CAMERA_TOPIC_CANDIDATES,
+    TOP_CAMERA_TOPIC_CANDIDATES,
+    WRIST_CAMERA_TOPIC_CANDIDATES,
+)
+from .panel_camera import _runtime_time
+from .tf_pose_utils import get_transform as tf_get_transform
+
+try:
+    from controller_manager_msgs.srv import ListControllers
+except Exception:
+    ListControllers = None  # type: ignore
+
+try:
+    import numpy as _np_cc
+except ImportError:
+    _np_cc = None  # type: ignore
 
 
 def _log_exception(context: str, exc: Exception) -> None:
@@ -798,3 +825,69 @@ def _on_joint_state(panel, payload: Dict[str, object]):
             )
         msg = "[DEBUG] JOINTS " + " ".join(joint_parts) + f" | {pose_txt}"
         panel._emit_log(msg)
+
+# ── FK helpers (moved from panel_v2.py) ───────────────────────────────────
+def _normalize_joint_name(name) -> str:
+    text = str(name).strip()
+    if "::" in text:
+        text = text.split("::")[-1]
+    if "/" in text:
+        text = text.split("/")[-1]
+    return text.strip()
+
+
+def _rot_to_rpy(rot):
+    import math as _math
+    sy = _math.sqrt((rot[0, 0] * rot[0, 0]) + (rot[1, 0] * rot[1, 0]))
+    singular = sy < 1e-6
+    if not singular:
+        roll = _math.atan2(rot[2, 1], rot[2, 2])
+        pitch = _math.atan2(-rot[2, 0], sy)
+        yaw = _math.atan2(rot[1, 0], rot[0, 0])
+    else:
+        roll = _math.atan2(-rot[1, 2], rot[1, 1])
+        pitch = _math.atan2(-rot[2, 0], sy)
+        yaw = 0.0
+    return roll, pitch, yaw
+
+
+def _fk_model_to_base_link(pos_model, rot_model):
+    import numpy as np
+    rz_pi = np.array([[-1., 0., 0.], [0., -1., 0.], [0., 0., 1.]], dtype=float)
+    base_pos = (-float(pos_model[0]), -float(pos_model[1]), float(pos_model[2]))
+    base_rot = rz_pi @ np.asarray(rot_model, dtype=float)
+    return base_pos, base_rot
+
+
+def _fk_tool0_to_ee_base_link(pos_model, rot_model, ee_frame: str):
+    base_pos, base_rot = _fk_model_to_base_link(pos_model, rot_model)
+    frame_name = str(ee_frame or "").strip()
+    if not frame_name or frame_name == "tool0":
+        return base_pos, base_rot
+    local_offset = None
+    try:
+        tf_tool0_ee, _ = tf_get_transform("tool0", frame_name, timeout=0.05, logger=None)
+        if tf_tool0_ee is not None:
+            tr = tf_tool0_ee.transform.translation
+            local_offset = (float(tr.x), float(tr.y), float(tr.z))
+    except Exception:
+        pass
+    if local_offset is None:
+        try:
+            from ur5_tools.gripper_geometry import tool0_offset_for_frame
+            local_offset = tool0_offset_for_frame(frame_name)
+        except Exception:
+            local_offset = None
+    if local_offset is None:
+        return base_pos, base_rot
+    import numpy as np
+    dx, dy, dz = local_offset
+    ee_local = np.array([dx, dy, dz], dtype=float)
+    ee_world = base_rot @ ee_local
+    ee_pos = (base_pos[0] + ee_world[0], base_pos[1] + ee_world[1], base_pos[2] + ee_world[2])
+    return ee_pos, base_rot
+
+
+def graph_clock_status():
+    """Stub — graph-based clock fallback not yet implemented."""
+    return (False, "graph_clock_not_implemented")

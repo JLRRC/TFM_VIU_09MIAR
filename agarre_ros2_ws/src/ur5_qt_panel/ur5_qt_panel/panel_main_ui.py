@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import math
+import threading
 import time
+from typing import Dict, Optional
 
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import (
@@ -34,7 +36,9 @@ from .panel_config import (
     JOINT_SLIDER_SCALE,
     UR5_JOINT_NAMES,
 )
-from .panel_utils import load_home_pose
+from .panel_utils import load_home_pose, set_led
+from .panel_camera import CameraView
+from .cameras_tab import ObjectListPanel
 
 def build_main_ui(panel) -> None:
     root = QWidget()
@@ -157,7 +161,7 @@ def build_main_ui(panel) -> None:
     for lbl in (panel.sys_cpu_lbl, panel.sys_ram_lbl, panel.sys_load_lbl, panel.sys_health_lbl):
         lbl.setTextInteractionFlags(Qt.NoTextInteraction)
 
-    panel.status_timer = QTimer(self)
+    panel.status_timer = QTimer(panel)
     panel.status_timer.timeout.connect(panel._refresh_status_async)
     panel.status_updated.connect(panel._apply_status)
 
@@ -346,11 +350,11 @@ def build_main_ui(panel) -> None:
     panel._camera_pending_frame = None
     panel._camera_initializing = False
     panel._camera_init_start = 0.0
-    panel._camera_display_timer = QTimer(self)
+    panel._camera_display_timer = QTimer(panel)
     panel._camera_display_timer.setInterval(int(CAMERA_DISPLAY_INTERVAL_MS))
     panel._camera_display_timer.timeout.connect(panel._camera_ctrl.refresh_display)
     panel._camera_display_timer.start()
-    panel._camera_health_timer = QTimer(self)
+    panel._camera_health_timer = QTimer(panel)
     panel._camera_health_timer.setInterval(1200)
     panel._camera_health_timer.timeout.connect(panel._camera_ctrl.health_check)
     panel._camera_msg_type = "image"

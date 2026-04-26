@@ -5,10 +5,19 @@
 """TFM checkpoint discovery, experiment loading, and science UI callbacks."""
 from __future__ import annotations
 
+import csv
+import datetime
 import math
 import os
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from .panel_objects import get_object_position
+from .panel_utils import base_to_world, pixel_to_table_xy, table_xy_to_pixel, table_xy_to_pixel_float
+try:
+    import yaml
+except ImportError:
+    yaml = None  # type: ignore
 
 from .panel_config import (
     INFER_CKPT,
@@ -18,6 +27,7 @@ from .panel_utils import (
     world_xyz_to_pixel,
     world_xyz_to_pixel_float,
 )
+from .panel_camera import _runtime_time
 
 
 def _log_exception(context: str, exc: Exception) -> None:
@@ -1013,3 +1023,8 @@ def _tfm_select_seed_from_summary(panel, exp_name: str, summary_path: Path) -> T
     best_iou = chosen["val_iou"] if math.isfinite(chosen["val_iou"]) else None
     best_loss = chosen["val_loss"] if math.isfinite(chosen["val_loss"]) else None
     return best_seed, best_success, best_iou, best_loss, selection_basis
+
+
+def _save_episode(panel) -> None:
+    pass  # placeholder — episode saving not yet implemented
+

@@ -5,7 +5,13 @@
 """Remote service/topic request callbacks for ControlPanelV2."""
 from __future__ import annotations
 
+import os
 import time
+from .panel_objects import bulk_update_object_positions, get_object_position, get_object_positions, get_object_state, is_on_table, recalc_object_states, update_object_state
+from .panel_pick_demo import run_pick_demo
+from .panel_utils import table_xy_to_pixel, world_xyz_to_pixel
+from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
+from .panel_objects import ObjectLogicalState, ObjectOwner
 
 
 def _on_remote_camera_connect_request(panel, source: str) -> None:

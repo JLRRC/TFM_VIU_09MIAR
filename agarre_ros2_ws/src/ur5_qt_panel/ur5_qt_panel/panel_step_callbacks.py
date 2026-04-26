@@ -5,6 +5,7 @@
 """Step pipeline callbacks for ControlPanelV2."""
 from __future__ import annotations
 
+import json
 import math
 import time
 from typing import Dict, List, Optional, Tuple
@@ -39,6 +40,13 @@ from .tf_pose_utils import (
     get_transform as tf_get_transform,
     get_tcp_in_base as tf_get_tcp_in_base,
 )
+from .panel_objects import get_object_states
+from .panel_step_ui import build_step_cart_debug_window
+from .panel_utils import base_to_world
+from .step_pipeline_helpers import step_present_flow_name
+from .ur5_kinematics import fk_ur5, ik_ur5
+from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
+from .panel_objects import ObjectLogicalState
 
 
 def _normalize_joint_name(name) -> str:
@@ -348,9 +356,10 @@ def _step_cart_debug_run_validation_xyz(panel) -> None:
             panel.signal_run_ui.emit(_ui_ok)
         except Exception as exc:
             panel._step_cart_debug_log_event("validation_xyz_error", error=str(exc))
+            _exc_msg = str(exc)
 
             def _ui_fail() -> None:
-                panel._step_cart_debug_set_status(f"Error validación: {exc}", error=True)
+                panel._step_cart_debug_set_status(f"Error validación: {_exc_msg}", error=True)
                 panel._step_cart_debug_refresh()
 
             panel.signal_run_ui.emit(_ui_fail)
@@ -2205,3 +2214,14 @@ def _step_wait_for_phase(panel, phase: str, *, flow: str = "", position=None, de
     panel._emit_log(f"[STEP] release flow={flow_name} phase={phase_name} reason={reason}")
     if reason == "button":
         panel._emit_log(f"[STEP][PHASE_START] phase={display_phase} flow={flow_name}")
+
+def _canonical_tool0_to_semantic_frame(frame_name: str):
+    """Return (dx, dy, dz) offset from tool0 to the named semantic frame, or None."""
+    try:
+        from ur5_tools.gripper_geometry import tool0_offset_for_frame
+        frame = str(frame_name or "").strip()
+        if frame not in {"rg2_pinch_center", "rg2_tcp"}:
+            return None
+        return tool0_offset_for_frame(frame)
+    except Exception:
+        return None

@@ -5,11 +5,19 @@
 """Helper method callbacks (readiness, logging, UI controls, step mode) for ControlPanelV2."""
 from __future__ import annotations
 
+import datetime
+import json
 import math
 import os
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from .panel_objects import bulk_update_object_positions, get_object_positions, is_on_table, recalc_object_states
+from .panel_process import ensure_dir
+from .panel_readiness import camera_not_ready_reason, controller_manager_not_ready_reason, controllers_not_ready_reason, list_controllers_not_ready_reason, manual_control_status, moveit_control_status, moveit_not_ready_reason, pick_ui_status, pose_info_not_ready_reason, ros_node_not_ready_reason, set_moveit_wait_status, tf_not_ready_reason
+from .panel_step_ui import build_step_window
+from .panel_tf import get_tf_helper
+from .panel_utils import gz_sim_status
 
 try:
     import psutil
@@ -36,6 +44,13 @@ from .panel_external_state import (
 )
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
 from .logging_utils import timestamped_line
+from . import panel_step_callbacks as _sc
+from PyQt5.QtCore import QTimer, QThread
+from PyQt5.QtWidgets import QPushButton
+from .panel_workers import _FnThread
+from .panel_camera import _runtime_time
+from .panel_config import CAMERA_TOPIC_PREFIX
+from .panel_utils import _can_transform_between
 
 
 def _log_exception(context: str, exc: Exception) -> None:
@@ -1419,3 +1434,11 @@ def _gazebo_process_signal(panel) -> Tuple[bool, str]:
     if proc_ok:
         return True, f"fallback_{proc_reason}"
     return False, proc_reason
+
+def _normalize_joint_name(name) -> str:
+    text = str(name).strip()
+    if "::" in text:
+        text = text.split("::")[-1]
+    if "/" in text:
+        text = text.split("/")[-1]
+    return text.strip()

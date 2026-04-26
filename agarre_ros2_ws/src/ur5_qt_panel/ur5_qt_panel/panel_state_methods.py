@@ -25,6 +25,38 @@ from .panel_state import (
 )
 from .panel_fatal import abort_local_stack
 from .tf_pose_utils import get_tcp_in_base as tf_get_tcp_in_base
+from . import panel_gz_objects as _gz
+from .panel_main_ui import build_main_ui
+from .panel_motion_helpers import (
+    clamp_joint_positions,
+    command_gripper,
+    command_gripper_preopen,
+    format_action_error,
+    get_action_client,
+    joint_motion_since,
+    log_traj_action_fallback,
+    publish_joint_trajectory,
+    resolve_traj_action_name,
+    schedule_traj_action_fallback,
+    send_joint_trajectory_action,
+    wait_action_server,
+    wait_for_joint_target,
+    wait_for_tcp_base_target,
+    wait_for_tcp_base_z,
+)
+from .panel_ros_publishers import get_attach_publisher, get_gripper_publisher, get_traj_publisher
+from .panel_objects import get_object_positions, recalc_object_states
+from .panel_tf import get_tf_helper
+from .panel_moveit_flow import publish_moveit_pose
+from .panel_utils import set_led, transform_point_to_frame
+from .panel_motion_helpers import traj_action_target
+from PyQt5.QtCore import QTimer
+from .panel_robot_presets import _build_pose_stamped
+
+try:
+    from geometry_msgs.msg import PoseStamped
+except Exception:
+    PoseStamped = None  # type: ignore
 
 MOVEIT_POSE_TOPIC = "/desired_grasp"
 MOVEIT_CARTESIAN_POSE_TOPIC = "/desired_grasp_cartesian"
@@ -425,7 +457,8 @@ def _debounced_btn_action(panel, btn, action, delay_ms=1200):
         QTimer.singleShot(delay_ms, lambda: btn.setEnabled(True))
 
 def showEvent(panel, event):
-    super().showEvent(event)
+    from PyQt5.QtWidgets import QMainWindow
+    QMainWindow.showEvent(panel, event)
     if not panel._timers_started:
         panel.status_timer.start(2500)
         QTimer.singleShot(1200, panel._run_startup_tf_sanity_check_once)

@@ -308,3 +308,32 @@ except Exception as exc:  # pragma: no cover
     rclpy = None  # type: ignore
     qos_profile_sensor_data = None  # type: ignore
     print(f"[WARN] ROS 2 / OpenCV no disponible en el panel: {exc}", file=sys.stderr)
+
+# ── Topic / overlay constants (originally in panel_v2.py) ──────────────────
+CAMERA_TOPIC_PREFIX = "/camera"
+MOVEIT_POSE_TOPIC = "/desired_grasp"
+MOVEIT_CARTESIAN_POSE_TOPIC = "/desired_grasp_cartesian"
+GLOBAL_FRAME_EFFECTIVE = "base_link"
+GRASP_RECT_TOPIC = os.environ.get("PANEL_GRASP_RECT_TOPIC", "/grasp_rect").strip() or "/grasp_rect"
+TEST_CORNER_OVERLAY = os.environ.get("PANEL_TEST_CORNER_OVERLAY", "0").strip().lower() not in ("0", "false", "off", "no")
+TCP_POSE_OVERLAY = os.environ.get("PANEL_TCP_POSE_OVERLAY", "1").strip().lower() not in ("0", "false", "off", "no")
+TCP_POSE_TEXT_OVERLAY = os.environ.get("PANEL_TCP_POSE_TEXT_OVERLAY", "0").strip().lower() not in ("0", "false", "off", "no")
+FAR_FRONT_CAMERA_TOPIC_CANDIDATES = (
+    "/camera_west/image",
+    "/camera_south/image",
+    "/camera_north/image",
+    "/camera_east/image",
+)
+TOP_CAMERA_TOPIC_CANDIDATES = ("/camera_debug_top/image",)
+WRIST_CAMERA_TOPIC_CANDIDATES = ("/camera_wrist/image",)
+
+# ── Controller polling constants ────────────────────────────────────────────
+SETTLE_MANUAL: Set[str] = {"pick_demo"}
+CONTROLLER_CHECK_INTERVAL_SEC = 3.0
+CONTROLLER_LIST_RETRY_WINDOW_SEC = max(
+    0.0, float(os.environ.get("PANEL_CTRL_LIST_RETRY_WINDOW_SEC", "5.0"))
+)
+CONTROLLER_LAST_OK_GRACE_SEC = max(
+    0.0, float(os.environ.get("PANEL_CTRL_LAST_OK_GRACE_SEC", "5.0"))
+)
+CONTROLLER_LIST_RETRY_STEP_SEC = 0.25

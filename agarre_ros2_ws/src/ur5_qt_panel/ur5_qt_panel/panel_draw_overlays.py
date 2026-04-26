@@ -7,7 +7,16 @@ from __future__ import annotations
 
 import math
 import os
+import time
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from .panel_process import ensure_dir
+from .panel_utils import base_to_world, table_xy_to_pixel, table_xy_to_pixel_float, transform_point_to_frame, world_to_base
+
+try:
+    import numpy as np
+except ImportError:
+    np = None  # type: ignore
 
 from PyQt5.QtGui import QImage
 
@@ -25,6 +34,9 @@ from .panel_utils import (
     world_xyz_to_pixel,
     world_xyz_to_pixel_float,
 )
+from .panel_config import TEST_CORNER_OVERLAY, TCP_POSE_TEXT_OVERLAY
+from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
+from .tf_pose_utils import get_tcp_in_base as tf_get_tcp_in_base
 
 
 def _log_exception(context: str, exc: Exception) -> None:
@@ -753,5 +765,4 @@ def _draw_reach_overlay(panel, qimg: QImage, w: int, h: int) -> QImage:
         painter.drawPoint(QPointF(px, py))
     painter.end()
     return img_copy
-
 

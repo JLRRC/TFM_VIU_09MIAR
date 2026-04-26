@@ -9,7 +9,6 @@ import time
 from typing import Optional
 
 from .panel_utils import effective_base_frame
-
 class PanelWatchdog:
     """Evaluate critical dependency timeouts and report fatal reasons."""
 

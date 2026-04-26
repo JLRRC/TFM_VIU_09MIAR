@@ -5,7 +5,11 @@
 """Gazebo object management callbacks for ControlPanelV2."""
 from __future__ import annotations
 
+import copy
+import math
 import os
+import shlex
+import shutil
 import subprocess
 import time
 from typing import Optional, Tuple
@@ -36,6 +40,27 @@ from .panel_objects import (
     mark_object_released,
     recalc_object_states,
 )
+from .panel_process import build_gz_env, resolve_gz_partition
+from .panel_utils import read_world_name, world_to_base
+import xml.etree.ElementTree as ET
+from PyQt5.QtCore import QTimer
+from .panel_config import (
+    DROP_OBJECT_NAMES,
+    contact_z_correction_for_frame,
+    rclpy,
+)
+
+try:
+    from std_srvs.srv import Empty
+except Exception:
+    Empty = None  # type: ignore
+
+try:
+    from ros_gz_interfaces.srv import SetEntityPose
+    from ros_gz_interfaces.msg import Entity as GzEntity
+except Exception:
+    SetEntityPose = None  # type: ignore
+    GzEntity = None  # type: ignore
 
 
 def _log_exception(context: str, exc: Exception) -> None:

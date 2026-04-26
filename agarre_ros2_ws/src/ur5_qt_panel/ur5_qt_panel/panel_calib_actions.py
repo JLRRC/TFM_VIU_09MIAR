@@ -7,6 +7,7 @@ import math
 import os
 import time
 from typing import List, Optional
+from .panel_utils import world_xyz_to_pixel
 
 try:
     from visualization_msgs.msg import Marker

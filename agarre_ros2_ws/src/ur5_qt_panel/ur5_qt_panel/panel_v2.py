@@ -2704,6 +2704,8 @@ class ControlPanelV2(QMainWindow):
     def _refresh_cornell_metrics(self, *args, **kwargs):
         _ts._refresh_cornell_metrics(self, *args, **kwargs)
 
+    def _save_episode(self, *args, **kwargs):
+        _ts._save_episode(self, *args, **kwargs)
 
     def _build_science_group(self) -> QGroupBox:
         return build_science_group(self)

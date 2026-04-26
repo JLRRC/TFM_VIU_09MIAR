@@ -5,6 +5,7 @@
 """Motion helper utilities for the UR5 panel."""
 from __future__ import annotations
 
+import warnings
 from typing import Iterable
 
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
@@ -86,6 +87,7 @@ from .panel_config import (
 from .panel_state import MoveItState, SystemState
 from .panel_utils import angle_shortest_diff_rad, get_pose, world_to_base
 from .logging_utils import timestamped_line
+from .panel_robot_presets import _build_pose_stamped
 
 
 def _log_exception(context: str, exc: Exception) -> None:
@@ -725,3 +727,13 @@ def publish_moveit_pose(panel,
         **context,
     )
     return bool(_published)
+
+
+def _normalize_joint_name(name) -> str:
+    text = str(name).strip()
+    if "::" in text:
+        text = text.split("::")[-1]
+    if "/" in text:
+        text = text.split("/")[-1]
+    return text.strip()
+
