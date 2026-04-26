@@ -6,14 +6,12 @@
 from __future__ import annotations
 
 import math
-import os
 
 import pytest
 
 from ur5_qt_panel.directo_geometry import (
     _compute_demo_basket_targets,
     _compute_demo_joint_prep_waypoint,
-    _compute_demo_joint_prep_waypoints,
     _compute_demo_linear_stage_targets,
     _compute_demo_stage_count_for_distance,
     _compute_demo_transport_prep_joint_tol,

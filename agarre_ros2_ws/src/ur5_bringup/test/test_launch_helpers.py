@@ -3,10 +3,7 @@
 # Contenido: Unit tests for launch_helpers.py — pure Python, no ROS needed.
 """Tests for ur5_bringup launch helpers — run without colcon or ROS."""
 
-import os
 import time
-
-import pytest
 
 from launch_helpers import (
     PANEL_ENV_DEFAULTS,

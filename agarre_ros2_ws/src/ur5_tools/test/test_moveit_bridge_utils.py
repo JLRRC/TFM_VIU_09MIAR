@@ -4,7 +4,6 @@
 """Unit tests for ur5_tools.moveit_bridge_utils — all run without rclpy."""
 
 import math
-import os
 
 import pytest
 

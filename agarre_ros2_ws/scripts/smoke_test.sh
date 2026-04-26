@@ -52,8 +52,11 @@ _sep "F401 unused imports"
 if command -v python3 -m flake8 >/dev/null 2>&1 || python3 -c "import flake8" 2>/dev/null; then
   f401_out=$(python3 -m flake8 \
     src/ur5_qt_panel/ur5_qt_panel \
+    src/ur5_qt_panel/test \
     src/ur5_tools/ur5_tools \
+    src/ur5_tools/test \
     src/ur5_bringup/launch \
+    src/ur5_bringup/test \
     --select=F401 2>&1 || true)
   if [[ -n "$f401_out" ]]; then
     _fail "F401 violations:\n$f401_out"
