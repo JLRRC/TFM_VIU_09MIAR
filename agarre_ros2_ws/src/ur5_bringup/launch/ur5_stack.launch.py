@@ -9,10 +9,18 @@
 from __future__ import annotations
 
 import os
-import re
-import time
-import shutil
 from typing import List
+
+from .launch_helpers import (
+    PANEL_ENV_DEFAULTS,
+    build_gz_plugin_path,
+    build_gz_resource_path,
+    copy_runtime_model,
+    patch_bridge_yaml,
+    prepare_runtime_world_sdf,
+    resolve_gz_partition,
+    resolve_world_name,
+)
 
 from launch import LaunchDescription
 from launch.actions import (
@@ -69,65 +77,26 @@ def _prepare_runtime(context, *_args) -> List[object]:
     log_dir = os.path.join(ws_dir, "log")
     os.makedirs(log_dir, exist_ok=True)
 
-    world_name = "ur5_mesa_objetos"
-    try:
-        with open(world_file, "r", encoding="utf-8") as f:
-            data = f.read()
-        match = re.search(r"<world name=\"([^\"]+)\">", data)
-        if match:
-            world_name = match.group(1)
-    except Exception as exc:
-        logger.warning("No se pudo leer world_name desde %s: %s", world_file, exc)
+    world_name = resolve_world_name(world_file)
+    if world_name == "ur5_mesa_objetos" and world_file:
+        logger.debug("Using default world_name (could not read from %s)", world_file)
 
-    gz_partition = os.environ.get("GZ_PARTITION", "")
-    if not gz_partition:
-        gz_partition = f"ur5pro_{int(time.time())}"
-    try:
-        with open(
-            os.path.join(log_dir, "gz_partition.txt"), "w", encoding="utf-8"
-        ) as f:
-            f.write(gz_partition)
-    except Exception:
-        pass
+    gz_partition = resolve_gz_partition(log_dir)
 
     base_yaml = os.path.join(ws_dir, "scripts", "bridge_cameras.yaml")
     panel_settings_yaml = os.path.join(
         ws_dir, "src", "ur5_qt_panel", "config", "panel_settings.yaml"
     )
-    runtime_yaml = os.path.join(log_dir, "bridge_runtime.yaml")
-    try:
-        with open(base_yaml, "r", encoding="utf-8") as f:
-            yaml_text = f.read()
-        if world_name:
-            yaml_text = yaml_text.replace(
-                "/world/ur5_mesa_objetos/",
-                f"/world/{world_name}/",
-            )
-        with open(runtime_yaml, "w", encoding="utf-8") as f:
-            f.write(yaml_text)
-    except Exception as exc:
-        logger.warning("No se pudo preparar bridge_runtime.yaml: %s", exc)
-        runtime_yaml = base_yaml
+    runtime_yaml = patch_bridge_yaml(
+        base_yaml, os.path.join(log_dir, "bridge_runtime.yaml"), world_name
+    )
 
     runtime_models_root = os.path.join(log_dir, "gz_models")
     runtime_ur5_model = os.path.join(runtime_models_root, "ur5_rg2")
-    src_ur5_model = os.path.join(ws_dir, "models", "ur5_rg2")
-    try:
-        if os.path.isdir(src_ur5_model):
-            shutil.copytree(src_ur5_model, runtime_ur5_model, dirs_exist_ok=True)
-    except Exception as exc:
-        logger.warning("No se pudo copiar modelo ur5_rg2 a runtime: %s", exc)
+    copy_runtime_model(os.path.join(ws_dir, "models", "ur5_rg2"), runtime_ur5_model)
 
-    resource_path = (
-        f"{runtime_models_root}:{ws_dir}/models:{ws_dir}/worlds:{ws_dir}/install"
-    )
-    existing_resource = os.environ.get("GZ_SIM_RESOURCE_PATH", "")
-    if existing_resource:
-        resource_path = f"{resource_path}:{existing_resource}"
-    plugin_path = "/opt/ros/jazzy/lib"
-    existing_plugin = os.environ.get("GZ_SIM_SYSTEM_PLUGIN_PATH", "")
-    if existing_plugin:
-        plugin_path = f"{plugin_path}:{existing_plugin}"
+    resource_path = build_gz_resource_path(runtime_models_root, ws_dir)
+    plugin_path = build_gz_plugin_path()
     render_engine = os.environ.get("GZ_RENDER_ENGINE", "").strip() or "ogre2"
     fastdds_profile = os.path.join(ws_dir, "scripts", "fastdds_no_shm.xml")
     # Prefer the explicit launch argument (camera_required:="0/1") over the env var,
@@ -253,43 +222,19 @@ def _prepare_runtime(context, *_args) -> List[object]:
         logger.error("Runtime geometry sync failed: %s", exc)
         raise RuntimeError(f"Runtime geometry sync failed: {exc}") from exc
 
-    runtime_world = world_file
-    try:
-        if os.path.isfile(world_file):
-            with open(world_file, "r", encoding="utf-8") as f:
-                world_text = f.read()
-            headless_mode = LaunchConfiguration("headless").perform(context)
-            keep_cameras = os.environ.get("PANEL_KEEP_CAMERAS", "").strip() in (
-                "1",
-                "true",
-                "True",
-            )
-            if not keep_cameras:
-                keep_cameras = camera_required
-            if str(headless_mode).lower() in ("1", "true", "yes") and not keep_cameras:
-                logger.warning(
-                    "Headless sin cámaras: el sistema fallará por requisito crítico de visión."
-                )
-                for cam_name in (
-                    "camera_overhead",
-                    "camera_debug_top",
-                    "camera_north",
-                    "camera_south",
-                    "camera_east",
-                    "camera_west",
-                ):
-                    pattern = rf"<model\s+name=\"{cam_name}\">.*?</model>"
-                    world_text = re.sub(pattern, "", world_text, flags=re.DOTALL)
-            world_text = world_text.replace(
-                "<uri>model://ur5_rg2</uri>",
-                f"<uri>file://{runtime_ur5_model}</uri>",
-            )
-            runtime_world = os.path.join(log_dir, "world_runtime.sdf")
-            with open(runtime_world, "w", encoding="utf-8") as f:
-                f.write(world_text)
-    except Exception as exc:
-        logger.warning("No se pudo preparar world_runtime.sdf: %s", exc)
-        runtime_world = world_file
+    headless_mode = LaunchConfiguration("headless").perform(context)
+    keep_cameras = os.environ.get("PANEL_KEEP_CAMERAS", "").strip() in ("1", "true", "True")
+    if not keep_cameras:
+        keep_cameras = camera_required
+    if str(headless_mode).lower() in ("1", "true", "yes") and not keep_cameras:
+        logger.warning(
+            "Headless sin cámaras: el sistema fallará por requisito crítico de visión."
+        )
+    runtime_world = prepare_runtime_world_sdf(
+        world_file, log_dir, runtime_ur5_model,
+        headless=str(headless_mode).lower() in ("1", "true", "yes"),
+        keep_cameras=keep_cameras,
+    )
     return [
         SetEnvironmentVariable("WS_DIR", ws_dir),
         SetEnvironmentVariable("GZ_PARTITION", gz_partition),
@@ -314,271 +259,13 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetEnvironmentVariable("PANEL_MANAGED", managed_str),
         SetEnvironmentVariable("PANEL_CAMERA_REQUIRED", camera_required_env),
-        SetEnvironmentVariable(
-            "PANEL_DIRECT_DEBUG_ROOT",
-            os.environ.get("PANEL_DIRECT_DEBUG_ROOT", "/home/laboratorio/TFM/historico"),
-        ),
-        SetEnvironmentVariable(
-            # Default Z step is 0.025m → 2 segments over 35mm descent.
-            # With 17mm jumps the IK can switch solution branch → 48mm Y deviation.
-            # 5mm steps → 7 segments; each IK seeds from the previous (close) joints
-            # and stays on the same branch throughout the descent.
-            "PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M", "0.005"),
-        ),
-        SetEnvironmentVariable(
-            # Use MoveIt computeCartesianPath for GRASP_DOWN instead of the
-            # segmented IK loop. MoveIt generates a dense joint trajectory that
-            # produces a straight Cartesian line in the arm model, avoiding the
-            # j2 arc that the independent-IK path introduces. Falls back to the
-            # conservative IK segmented approach if MoveIt is unavailable or the
-            # planning fails. Set to "0" to disable and use the IK path.
-            "PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN", "1"),
-        ),
-        SetEnvironmentVariable(
-            # IK seed weight during GRASP_DOWN descent. 0.035 matches
-            # run_directo_validation.sh: IK finds near-identity joint changes so the
-            # robot barely moves during GRASP_DOWN; GRASP_ALIGN_IK does the actual
-            # 130mm descent. Higher values (0.65) cause the segmented IK to drift
-            # the arm to a wrong position during the 7-segment descent.
-            "PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT", "0.035"),
-        ),
-        SetEnvironmentVariable(
-            # IK positional error tolerance for GRASP_DOWN fallback IK. The numeric
-            # solver returns pos_err≈0.15m when the model-frame vs base_link sign
-            # convention causes an apparent offset; the robot still converges to
-            # near-approach Z because GRASP_ALIGN_IK does the final 130mm descent.
-            # 0.200 matches run_directo_validation.sh so GRASP_DOWN passes and
-            # GRASP_ALIGN_IK executes the contact-z correction.
-            "PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL", "0.200"),
-        ),
-        SetEnvironmentVariable(
-            # threshold for inherit_xy: if approach TCP-to-object XY < this, GRASP_DOWN
-            # inherits the validated APPROACH_COARSE XY instead of reanchoring to the
-            # object center. 3 mm was too tight for the observed coarse residuals and
-            # was flipping GRASP_DOWN into unnecessary XY reanchors right on the
-            # boundary, even after a successful APPROACH_COARSE gate.
-            "PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M", "0.005"),
-        ),
-        SetEnvironmentVariable(
-            # Second-step runtime guard: when APPROACH_COARSE already validated the XY,
-            # keep that XY in GRASP_DOWN even if a later live TCP sample momentarily
-            # drifts outside KEEP_XY_TOL_M.
-            "PANEL_PICK_DEMO_GRASP_DOWN_FORCE_INHERIT_XY",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_FORCE_INHERIT_XY", "1"),
-        ),
-        SetEnvironmentVariable(
-            # Disable the permissive local GRASP_DOWN fallback that can reintroduce a
-            # wrong IK branch mid-descent. The waypoint/joint-preset path remains.
-            "PANEL_PICK_DEMO_GRASP_DOWN_DISABLE_PERMISSIVE_FALLBACK",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_DISABLE_PERMISSIVE_FALLBACK", "1"),
-        ),
-        # Keep the direct pick gates aligned with the tighter panel defaults so
-        # CLOSE/ATTACH only succeed when the object is really centered in the gripper.
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_ATTACH_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.020"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_ATTACH_Z_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.010"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M", "0.040"),
-        ),
-        # AttachGateEvaluator: ventana temporal de estabilidad objeto-TCP
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M", "0.012"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC", "0.35"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES", "5"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M",
-            os.environ.get("PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M", "0.020"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M",
-            os.environ.get("PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M", "0.020"),
-        ),
-        # CLOSE: tolerancias y reintento de confirmación de pinza
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC",
-            os.environ.get("PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC", "3.0"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM",
-            os.environ.get("PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM", "0.01"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M", "0.12"),
-        ),
-        # GRASP_DOWN: confirmación de estabilidad TF post-movimiento
-        SetEnvironmentVariable(
-            "PANEL_PICK_OBJECT_GRASP_TF_STABLE_TOL_M",
-            os.environ.get("PANEL_PICK_OBJECT_GRASP_TF_STABLE_TOL_M", "0.045"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_OBJECT_GRASP_TF_STABLE_SAMPLES",
-            os.environ.get("PANEL_PICK_OBJECT_GRASP_TF_STABLE_SAMPLES", "5"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK",
-            os.environ.get("PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK", "4"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M",
-            os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.035"),
-        ),
-        SetEnvironmentVariable(
-            # PRE_CLOSE xy tolerance. TCP arrives ~16-19mm from object after
-            # GRASP_ALIGN_IK due to DH/SDF divergence (~13mm known offset).
-            # 20mm accommodates this without compromising grasp reliability
-            # (RG2 finger span is ~80mm so 20mm centering error is acceptable).
-            "PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "0.020"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M", "0.010"),
-        ),
-        SetEnvironmentVariable(
-            # FK/trace freshness tolerance for POSE_CONSISTENCY gate.
-            # Default 0.200s fails at PRE_CLOSE when panel_fk is ~220ms old
-            # (normal after a slow settle). 0.400s covers this without accepting
-            # truly stale data.
-            "PANEL_PICK_DEMO_POSE_SOURCE_AGE_TOL_SEC",
-            os.environ.get("PANEL_PICK_DEMO_POSE_SOURCE_AGE_TOL_SEC", "0.400"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_CLOSE_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_CLOSE_XY_TOL_M", "0.008"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.008"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL",
-            os.environ.get("PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL", "0.200"),
-        ),
-        SetEnvironmentVariable(
-            # Higher seed bias keeps the retry loop in the current arm
-            # configuration during the GRASP_ALIGN_IK descent. With 0.50
-            # (previous default) all retry candidates had similar pos_err
-            # (~0.15m model artifact) so the tie-breaker could pick a
-            # different elbow branch undetected (no branch guard on ALIGN).
-            "PANEL_PICK_DEMO_ALIGN_IK_SEED_WEIGHT",
-            os.environ.get("PANEL_PICK_DEMO_ALIGN_IK_SEED_WEIGHT", "0.80"),
-        ),
-        SetEnvironmentVariable(
-            # Tighter branch guard for GRASP_DOWN: near-identity joint changes
-            # expected (seed_weight=0.035), so >16° from live joints signals
-            # a wrong-branch IK solution.
-            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_MAX_DEV_RAD",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_MAX_DEV_RAD", "0.28"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_SUM_DEV_RAD",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_SUM_DEV_RAD", "0.60"),
-        ),
-        SetEnvironmentVariable(
-            # Exit XY tolerance for GRASP_ALIGN_IK convergence check.
-            # TCP arrives at xy≈0.006m; the strict 0.006 fails in floating point
-            # (real value 0.00635). 10mm clears the boundary and aligns with
-            # the z-exit tolerance and PRE_CLOSE tolerances.
-            "PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M", "0.020"),
-        ),
-        SetEnvironmentVariable(
-            # Exit z-tolerance for GRASP_ALIGN_IK. The DH/SDF divergence at
-            # grasp height leaves a ~6-7mm systematic residual after the bias
-            # loop converges; 10mm accepts this without impacting grasp quality
-            # (cylinder h=50mm, gripper contacts upper half at z≈0.031).
-            "PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M", "0.010"),
-        ),
-        SetEnvironmentVariable(
-            # z-bias correction activates when residual > this threshold.
-            # Default in panel_pick_demo.py is 0.015, but the DH/SDF divergence
-            # at grasp height is ~13mm — below 15mm, so bias never fired.
-            # Lowering to 0.008 lets the bias kick in at attempt 2 and converge
-            # in ≤3 attempts (bias overshoots to z≈0.032, attempt 4 exits OK
-            # once exit_z_tol=0.010 accepts z_error≈0.007).
-            "PANEL_PICK_DEMO_ALIGN_Z_RESIDUAL_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_ALIGN_Z_RESIDUAL_TOL_M", "0.008"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES",
-            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES", "2"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M", "0.015"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M", "0.008"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M", "0.012"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS", "4"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M", "0.015"),
-        ),
+        *[
+            SetEnvironmentVariable(name, os.environ.get(name, default))
+            for name, default in PANEL_ENV_DEFAULTS
+        ],
         SetEnvironmentVariable(
             "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M",
             "0.025",  # hard-coded: shell env can override to stale 0.008
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M", "0.012"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M", "0.012"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_POSE_SOURCE_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_POSE_SOURCE_TOL_M", "0.006"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_PHASE_JUMP_TOL_M",
-            os.environ.get("PANEL_PICK_DEMO_PHASE_JUMP_TOL_M", "0.010"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SEC",
-            os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SEC", "2.5"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_DELTA_M",
-            os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_DELTA_M", "0.003"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SAMPLES",
-            os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SAMPLES", "3"),
-        ),
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_POLL_SEC",
-            os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_POLL_SEC", "0.10"),
         ),
         # NOTA (2026-04-16): La negación de X e Y en la ruta DIRECT IK es CORRECTA y
         # permanente. El solver DH usa base_link_inertia como raíz cinemática, que tiene
