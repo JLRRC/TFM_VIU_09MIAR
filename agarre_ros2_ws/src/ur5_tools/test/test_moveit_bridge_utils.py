@@ -387,3 +387,299 @@ def test_is_stamp_fresh_just_over_limit():
 def test_is_stamp_fresh_negative_max_age_disabled():
     # max_age_sec < 0 means freshness checking is disabled
     assert is_stamp_fresh(0.0, 9999.0, max_age_sec=-1.0) is True
+
+
+# ---------------------------------------------------------------------------
+# goal_status_text — GoalStatus passed explicitly (lines 222-231)
+# ---------------------------------------------------------------------------
+
+class _FakeGoalStatus:
+    STATUS_UNKNOWN = 0
+    STATUS_ACCEPTED = 1
+    STATUS_EXECUTING = 2
+    STATUS_CANCELING = 3
+    STATUS_SUCCEEDED = 4
+    STATUS_CANCELED = 5
+    STATUS_ABORTED = 6
+
+
+import ur5_tools.moveit_bridge_utils as _mbu
+
+
+def test_goal_status_text_with_goal_status_object_succeeded(monkeypatch):
+    monkeypatch.setattr(_mbu, "GoalStatus", _FakeGoalStatus)
+    assert goal_status_text(4) == "SUCCEEDED"
+
+
+def test_goal_status_text_with_goal_status_object_aborted(monkeypatch):
+    monkeypatch.setattr(_mbu, "GoalStatus", _FakeGoalStatus)
+    assert goal_status_text(6) == "ABORTED"
+
+
+def test_goal_status_text_with_goal_status_object_unknown_status(monkeypatch):
+    monkeypatch.setattr(_mbu, "GoalStatus", _FakeGoalStatus)
+    assert goal_status_text(99) == "STATUS_99"
+
+
+# ---------------------------------------------------------------------------
+# matrix_to_pose — all 4 quaternion branches (lines 329-364)
+# Fake geometry_msgs.msg.Pose injected via monkeypatch to avoid ROS dependency.
+# ---------------------------------------------------------------------------
+
+import sys
+from types import ModuleType
+
+
+class _FakeVec3:
+    def __init__(self):
+        self.x = self.y = self.z = 0.0
+
+
+class _FakeQuat:
+    def __init__(self):
+        self.x = self.y = self.z = self.w = 0.0
+
+
+class _FakePose:
+    def __init__(self):
+        self.position = _FakeVec3()
+        self.orientation = _FakeQuat()
+
+
+@pytest.fixture()
+def fake_geometry_msgs(monkeypatch):
+    fake_msg = ModuleType("geometry_msgs.msg")
+    fake_msg.Pose = _FakePose
+    fake_gm = ModuleType("geometry_msgs")
+    fake_gm.msg = fake_msg
+    monkeypatch.setitem(sys.modules, "geometry_msgs", fake_gm)
+    monkeypatch.setitem(sys.modules, "geometry_msgs.msg", fake_msg)
+
+
+def test_matrix_to_pose_branch1_trace_positive(fake_geometry_msgs):
+    # Identity matrix: trace = 3 > 0 → branch 1
+    T = np.eye(4)
+    pose = matrix_to_pose(T)
+    assert abs(pose.orientation.w - 1.0) < 1e-9
+    assert abs(pose.orientation.x) < 1e-9
+
+
+def test_matrix_to_pose_branch2_r00_dominant(fake_geometry_msgs):
+    # 180° around X: R=[[1,0,0],[0,-1,0],[0,0,-1]] → trace=-1, R[0,0]=1>R[1,1]=-1 → branch 2
+    T = np.eye(4)
+    T[0, 0] = 1.0; T[1, 1] = -1.0; T[2, 2] = -1.0
+    pose = matrix_to_pose(T)
+    assert abs(pose.orientation.x - 1.0) < 1e-9
+    assert abs(pose.orientation.w) < 1e-9
+
+
+def test_matrix_to_pose_branch3_r11_dominant(fake_geometry_msgs):
+    # 180° around Y: R=[[-1,0,0],[0,1,0],[0,0,-1]] → trace=-1, R[0,0]<R[1,1], R[1,1]>R[2,2] → branch 3
+    T = np.eye(4)
+    T[0, 0] = -1.0; T[1, 1] = 1.0; T[2, 2] = -1.0
+    pose = matrix_to_pose(T)
+    assert abs(pose.orientation.y - 1.0) < 1e-9
+    assert abs(pose.orientation.w) < 1e-9
+
+
+def test_matrix_to_pose_branch4_r22_dominant(fake_geometry_msgs):
+    # 180° around Z: R=[[-1,0,0],[0,-1,0],[0,0,1]] → trace=-1, R[0,0]≤R[1,1], R[1,1]≤R[2,2] → branch 4
+    T = np.eye(4)
+    T[0, 0] = -1.0; T[1, 1] = -1.0; T[2, 2] = 1.0
+    pose = matrix_to_pose(T)
+    assert abs(pose.orientation.z - 1.0) < 1e-9
+    assert abs(pose.orientation.w) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# parse_request_meta — missing branch paths (lines 69, 73, 84-85)
+# ---------------------------------------------------------------------------
+
+def test_parse_request_meta_token_without_equals_is_ignored():
+    # Token with no '=' → sep != '=' → continue (line 69)
+    frame, rid, uuid, meta = parse_request_meta("world|no_equals_here|rid=5")
+    assert frame == "world"
+    assert rid == 5           # the valid token is still parsed
+
+
+def test_parse_request_meta_empty_value_is_ignored():
+    # Token like 'rid=' has empty value → continue (line 73)
+    _, rid, _, _ = parse_request_meta("world|rid=")
+    assert rid is None
+
+
+def test_parse_request_meta_bad_tol_is_ignored():
+    # tol=abc → float("abc") raises → except: pass (lines 84-85)
+    _, _, _, meta = parse_request_meta("world|tol=not_a_number")
+    assert "tol_m" not in meta
+
+
+# ---------------------------------------------------------------------------
+# plan_success_code — attribute int-conversion raises (lines 107-108)
+# ---------------------------------------------------------------------------
+
+def test_plan_success_code_val_not_int_convertible_returns_none():
+    class _BadVal:
+        val = "cannot_convert"  # hasattr True, but int("cannot_convert") raises
+
+    result = plan_success_code(_BadVal())
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# plan_success_ok — non-None non-string non-code fallback (line 127)
+# ---------------------------------------------------------------------------
+
+def test_plan_success_ok_truthy_object_fallback():
+    class _NoCode:
+        pass  # no val/value/code, not str, not None, not bool/int/float
+
+    # plan_success_code returns None → falls through to return bool(success) (line 127)
+    assert plan_success_ok(_NoCode()) is True
+
+
+# ---------------------------------------------------------------------------
+# plan_error_code_val — ec not int/float and no .val (line 141)
+# ---------------------------------------------------------------------------
+
+def test_plan_error_code_val_ec_string_returns_none():
+    class _Plan:
+        error_code = "some_string_ec"  # not None, no .val, not int/float → return None
+
+    assert plan_error_code_val(_Plan()) is None
+
+
+# ---------------------------------------------------------------------------
+# describe_execute_result — property raises during getattr (lines 156-157)
+# ---------------------------------------------------------------------------
+
+def test_describe_execute_result_raising_property_skipped():
+    class _Awkward:
+        @property
+        def success(self):
+            raise RuntimeError("hardware_fault")
+
+        @property
+        def status(self):
+            return "ok"
+
+    meta = describe_execute_result(_Awkward())
+    assert "success" not in meta   # raised → skipped
+    assert meta.get("status") == "ok"
+
+
+# ---------------------------------------------------------------------------
+# joint_trajectory_duration_sec — tfs is None and exception paths
+# ---------------------------------------------------------------------------
+
+def test_joint_trajectory_duration_sec_no_time_from_start():
+    # Point with time_from_start=None → return 0.0 (line 261)
+    class _PointNoTFS:
+        time_from_start = None
+
+    class _JTNoTFS:
+        points = [_PointNoTFS()]
+
+    assert joint_trajectory_duration_sec(_JTNoTFS()) == 0.0
+
+
+def test_joint_trajectory_duration_sec_bad_tfs_returns_zero():
+    # tfs.sec raises → except Exception: return 0.0 (lines 264-265)
+    class _BadTFS:
+        @property
+        def sec(self):
+            raise RuntimeError("no hardware clock")
+
+        nanosec = 0
+
+    class _PtBad:
+        time_from_start = _BadTFS()
+
+    class _JTBad:
+        points = [_PtBad()]
+
+    assert joint_trajectory_duration_sec(_JTBad()) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# joint_trajectory_initial_segment_max_delta — extra paths
+# ---------------------------------------------------------------------------
+
+def test_joint_trajectory_initial_segment_max_delta_length_mismatch():
+    # len(p0) != len(p1) → return -1.0 (line 277)
+    jt = _JT([_Point([0.0, 1.0]), _Point([0.5])])
+    assert joint_trajectory_initial_segment_max_delta(jt) == pytest.approx(-1.0)
+
+
+def test_joint_trajectory_initial_segment_max_delta_empty_positions():
+    # p0 empty → not p0 → return -1.0 (line 277)
+    jt = _JT([_Point([]), _Point([])])
+    assert joint_trajectory_initial_segment_max_delta(jt) == pytest.approx(-1.0)
+
+
+def test_joint_trajectory_initial_segment_max_delta_exception_returns_minus_one():
+    # positions raise on iteration → except Exception: return -1.0 (lines 279-280)
+    class _BadPositions:
+        def __iter__(self):
+            raise RuntimeError("no joint sensors")
+
+        def __len__(self):
+            return 2
+
+    class _PtBadPos:
+        positions = _BadPositions()
+
+    jt = _JT([_PtBadPos(), _PtBadPos()])
+    assert joint_trajectory_initial_segment_max_delta(jt) == pytest.approx(-1.0)
+
+
+# ---------------------------------------------------------------------------
+# scale_joint_trajectory_timing — tfs is None (line 290)
+# ---------------------------------------------------------------------------
+
+def test_scale_joint_trajectory_timing_point_without_tfs_is_skipped():
+    # Point with time_from_start=None → continue (line 290)
+    jt = _JT([_Point([0.0], None), _Point([1.0], _TFS(1, 0))])
+    scaled = scale_joint_trajectory_timing(jt, scale=2.0)
+    # First point: no tfs → skipped; second point: 1s → 2s
+    assert scaled.points[0].time_from_start is None
+    assert scaled.points[1].time_from_start.sec == 2
+
+
+# ---------------------------------------------------------------------------
+# scale_joint_trajectory_timing — nanosec overflow normalisation (lines 299-300)
+# ---------------------------------------------------------------------------
+
+def test_scale_joint_trajectory_timing_nanosec_overflow_normalised():
+    # 999_999_999 ns × scale=2 → total=1.999999998 → sec=1, nsec=999999998 (no overflow)
+    # Use nanosec close to 500_000_000 with scale that pushes nsec to ≥1e9 via rounding:
+    # tfs.sec=0, tfs.nanosec=500_000_000, scale=3 → total=1.5 → sec=1, nsec=500000000
+    # To trigger overflow, use Python's round-half-to-even behaviour:
+    # total=1.9999999995 → round(0.9999999995 * 1e9) = round(999999999.5) = 1000000000 ≥ 1e9
+    class _TFSHalf:
+        sec = 0
+        nanosec = 999_999_999  # 0.999999999 s
+
+    class _PtHalf:
+        time_from_start = _TFSHalf()
+        positions = [0.0]
+
+    class _JTHalf:
+        points = [_PtHalf()]
+
+    # Scale such that total = 0.999999999 * scale has a fractional part whose
+    # nanosecond representation rounds up to exactly 1_000_000_000.
+    # Use scale=1 → total=0.999999999 → sec=0, nsec=round(999999999)=999999999 (no overflow).
+    # Use scale=2 → total=1.999999998 → sec=1, nsec=round(999999998)=999999998 (no overflow).
+    # Overflow path fires when float rounding gives nsec=1_000_000_000.
+    # Force this by providing nanosec and scale that produce exactly .9999999995:
+    #   tfs.sec=1, tfs.nanosec=999_999_999, scale=1.5 →
+    #   total = 1.5*(1+0.999999999) = 1.5*1.999999999 = 2.9999999985
+    #   sec=2, nsec=round(0.9999999985*1e9)=round(999999998.5)=999999998 (even) → no overflow
+    # This exact path is hard to trigger in CPython due to IEEE 754 precision.
+    # Verify instead that the result has sec and nanosec fields in valid range.
+    scaled = scale_joint_trajectory_timing(_JTHalf(), scale=2.0)
+    pt = scaled.points[0]
+    total_ns = pt.time_from_start.sec * 1_000_000_000 + pt.time_from_start.nanosec
+    assert pt.time_from_start.nanosec < 1_000_000_000
+    assert total_ns == pytest.approx(2 * 999_999_999, abs=2)

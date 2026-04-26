@@ -154,3 +154,12 @@ def test_ik_ur5_err_norm_is_non_negative():
     pos, rot = fk_ur5(q_ref)
     _, err, _ = ik_ur5(pos, rot, q_ref, max_iter=100)
     assert err >= 0.0
+
+
+def test_ik_ur5_joint_weight_activates_wrap_to_pi_branch():
+    # joint_weight > 0.0 activates the _wrap_to_pi path (lines 70, 78-79)
+    q_ref = [0.0, -1.0, 0.8, -0.5, 0.3, 0.0]
+    pos, rot = fk_ur5(q_ref)
+    q_sol, err, _ = ik_ur5(pos, rot, q_ref, max_iter=200, joint_weight=0.1)
+    assert err >= 0.0
+    assert len(q_sol) == 6

@@ -45,3 +45,7 @@ reports/repro_startup/
 src/tfm_grasping/models/*.pth
 src/tfm_grasping/models/*.pt
 src/tfm_grasping/models/*.ckpt
+
+# --- Coverage ---
+.coverage
+htmlcov/

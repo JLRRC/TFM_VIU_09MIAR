@@ -165,3 +165,18 @@ def test_ur5_reach_radius_positive():
 def test_boolean_flag_type(attr):
     val = getattr(cfg, attr)
     assert isinstance(val, (bool, int)), f"{attr} should be bool-like, got {type(val)}"
+
+
+# ---------------------------------------------------------------------------
+# refresh_object_groups — unknown object branch (lines 117-121)
+# ---------------------------------------------------------------------------
+
+def test_refresh_object_groups_unknown_object_added_to_unknown_sets(monkeypatch):
+    unknown_name = "__test_unknown_sentinel_xz9q__"
+    monkeypatch.setitem(cfg.OBJECT_POSITIONS, unknown_name, (0.1, 0.2, 0.85))
+    cfg._UNKNOWN_WARNED.discard(unknown_name)
+    cfg.refresh_object_groups()
+    assert unknown_name in cfg.UNKNOWN_OBJECTS
+    assert unknown_name in cfg.UNKNOWN_NAME_SET
+    assert unknown_name in cfg.UNKNOWN_OBJECT_NAMES
+    cfg._UNKNOWN_WARNED.discard(unknown_name)

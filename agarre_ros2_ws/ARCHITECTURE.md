@@ -265,6 +265,21 @@ bash scripts/smoke_test.sh --fast   # ~6 s, 444 tests
 
 **Totales de la rama ENTREGA.V3 vs. main:**
 - Ficheros nuevos: 11 módulos + 6 ficheros de test + 2 scripts bash
-- Tests: 444 tests sin ROS en <6 s
+- Tests: 593 tests sin ROS en <6 s
 - Imports F401: 0 violaciones
 - `panel_v2.py`: 18 600 → 2 859 líneas (−85%) en commits previos a esta rama
+- `directo_geometry.py`: 65% → 100% cobertura
+- `attach_gate_evaluator.py`: 90% → 100% cobertura
+- `moveit_bridge_utils.py`: 75% → 99% cobertura
+- `directo_gate_evaluator.py`: 98% → 100% cobertura
+- `ur5_kinematics.py`: 95% → 100% cobertura
+- `cycle_logger.py`: 97% → 100% cobertura
+- `param_utils.py`: 90% → 100% cobertura
+- `panel_state.py`: 0% → 100% cobertura
+- `panel_state_machine.py`: 90% → 100% cobertura
+- `panel_external_state.py`: 69% → 100% cobertura
+- `logging_utils.py`: 64% → 100% cobertura
+- `step_pipeline_helpers.py`: 98% → 100% cobertura
+- `panel_config.py`: 97% → 100% cobertura
+- `gripper_geometry.py`: 74% → 100% cobertura
+- `launch_helpers.py`: 93% → 100% cobertura

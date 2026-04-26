@@ -243,3 +243,25 @@ def test_creates_log_root_if_missing(tmp_path):
     assert path is not None
     import os
     assert os.path.isdir(root)
+
+
+# ---------------------------------------------------------------------------
+# Edge paths: flush with no phase, write failure
+# ---------------------------------------------------------------------------
+
+def test_end_phase_without_begin_phase_is_noop(tmp_path):
+    # _flush_current_phase when _current_phase is None → early return (line 180)
+    logger = CycleLogger(log_root=str(tmp_path))
+    cid = logger.begin_cycle()
+    logger.end_phase(ok=True)  # no begin_phase → flush is a no-op
+    path = logger.end_cycle(outcome="SUCCESS")
+    doc = json.loads((tmp_path / f"{cid}.json").read_text())
+    assert doc["phases"] == []  # nothing was recorded
+
+
+def test_write_failure_returns_none(tmp_path):
+    # _write raises → except Exception: return None (lines 200-201)
+    logger = CycleLogger(log_root="/proc/no_such_dir_ever/cannot_write")
+    logger.begin_cycle()
+    path = logger.end_cycle(outcome="SUCCESS")
+    assert path is None

@@ -260,3 +260,160 @@ def test_attach_gate_result_default_not_ok():
     assert r.ok is False
     assert r.reason == "not_evaluated"
     assert r.warnings == []
+
+
+# ---------------------------------------------------------------------------
+# Gripper opening function raises → exception swallowed (lines 194-195)
+# ---------------------------------------------------------------------------
+
+def test_evaluator_gripper_fn_exception_swallowed_still_passes():
+    def _bad_gripper():
+        raise RuntimeError("gripper_hw_fault")
+
+    cfg = _fast_cfg(timeout_sec=1.0, min_stable_samples=2)
+    ev = AttachGateEvaluator(
+        config=cfg,
+        emit_log=_nolog,
+        tcp_tf_world_fn=lambda: (0.0, 0.0, 0.5),
+        tcp_tf_base_fn=lambda: (0.0, 0.0, 0.5),
+        object_world_fn=lambda: (0.0, 0.0, 0.5),
+        object_base_fn=lambda: (0.0, 0.0, 0.5),
+        gripper_opening_fn=_bad_gripper,
+        attach_backend_ok=True,
+    )
+    result = ev.evaluate()
+    # exception is swallowed; gripper_opening_m is None so no blocking
+    assert result.ok is True
+    assert result.gripper_opening_m is None
+
+
+# ---------------------------------------------------------------------------
+# Window pruning fires (line 208) with very short stable_window_sec
+# ---------------------------------------------------------------------------
+
+def test_evaluator_window_prunes_old_samples():
+    # With stable_window_sec extremely small, old samples are pruned each iteration.
+    # The evaluator still passes because we only need min_stable_samples=1 (immediate).
+    cfg = _fast_cfg(
+        timeout_sec=1.0,
+        min_stable_samples=1,
+        stable_window_sec=0.0001,
+        sample_interval_sec=0.0,
+    )
+    ev = _make_ev(cfg=cfg)
+    result = ev.evaluate()
+    # stable_window_sec is so small that window gets pruned each loop,
+    # but min_stable_samples=1 still allows pass once 1 sample accumulates
+    assert result.ok is True
+
+
+# ---------------------------------------------------------------------------
+# strict_pose_source — degraded source (lines 278-285 + line 418)
+# ---------------------------------------------------------------------------
+
+def test_evaluator_strict_pose_source_degraded_times_out():
+    # object_pose_source="strict_fresh_gazebo" + both object poses None → samples rejected
+    cfg = _fast_cfg(timeout_sec=0.05, sample_interval_sec=0.0)
+    ev = AttachGateEvaluator(
+        config=cfg,
+        emit_log=_nolog,
+        tcp_tf_world_fn=lambda: (0.0, 0.0, 0.5),
+        tcp_tf_base_fn=lambda: (0.0, 0.0, 0.5),
+        object_world_fn=lambda: None,
+        object_base_fn=lambda: None,
+        attach_backend_ok=True,
+        object_pose_source="strict_fresh_gazebo",
+    )
+    result = ev.evaluate()
+    assert result.ok is False
+    assert result.reason == "degraded_pose_source"
+
+
+# ---------------------------------------------------------------------------
+# tf_visual_mismatch blocks approval (lines 308-317)
+# ---------------------------------------------------------------------------
+
+def test_evaluator_tf_visual_mismatch_added_to_warnings():
+    # tcp_visual_world far from live tcp_tf_world → tf_visual_gap > threshold → warning
+    logs: list[str] = []
+    cfg = _fast_cfg(
+        timeout_sec=0.05,
+        min_stable_samples=2,
+        max_tf_visual_gap_m=0.001,  # very strict: any real gap blocks
+        sample_interval_sec=0.0,
+    )
+    ev = AttachGateEvaluator(
+        config=cfg,
+        emit_log=lambda m: logs.append(m),
+        tcp_tf_world_fn=lambda: (1.0, 0.0, 0.5),   # live TCP world
+        tcp_tf_base_fn=lambda: (0.0, 0.0, 0.5),
+        object_world_fn=lambda: (0.0, 0.0, 0.5),
+        object_base_fn=lambda: (0.0, 0.0, 0.5),
+        attach_backend_ok=True,
+        tcp_visual_world=(0.0, 0.0, 0.5),           # reference: 1 m away → gap = 1 m
+    )
+    result = ev.evaluate()
+    assert result.ok is False
+    assert any("tf_visual_mismatch" in w for w in result.warnings)
+    assert any("tf_visual_mismatch" in m for m in logs)
+
+
+# ---------------------------------------------------------------------------
+# drift too high in loop (lines 348-354) → timeout_rel_drift_too_high (line 424)
+# ---------------------------------------------------------------------------
+
+def test_evaluator_timeout_rel_drift_too_high():
+    counter = [0]
+
+    def _jitter_obj():
+        counter[0] += 1
+        # Alternates between two positions 0.05 m apart → drift = 0.05 >> max_rel_drift_m
+        return (0.05 * (counter[0] % 2), 0.0, 0.5)
+
+    cfg = _fast_cfg(
+        timeout_sec=0.05,
+        min_stable_samples=2,
+        max_rel_drift_m=0.005,    # strict: 5 mm
+        max_tcp_obj_dist_m=0.10,  # permissive: 10 cm
+        stable_window_sec=5.0,    # keep all samples in window
+        sample_interval_sec=0.0,
+    )
+    ev = AttachGateEvaluator(
+        config=cfg,
+        emit_log=_nolog,
+        tcp_tf_world_fn=lambda: (0.0, 0.0, 0.5),
+        tcp_tf_base_fn=lambda: (0.0, 0.0, 0.5),
+        object_world_fn=lambda: (0.0, 0.0, 0.5),
+        object_base_fn=_jitter_obj,
+        attach_backend_ok=True,
+    )
+    result = ev.evaluate()
+    assert result.ok is False
+    assert result.reason == "timeout_rel_drift_too_high"
+
+
+# ---------------------------------------------------------------------------
+# timeout_insufficient_samples (line 422)
+# ---------------------------------------------------------------------------
+
+def test_evaluator_timeout_insufficient_samples():
+    # object_base=None → rel_vec_base=None → drift always None → loop continues
+    # stable_window_sec tiny → window always pruned → len(window) stays low
+    cfg = _fast_cfg(
+        timeout_sec=0.05,
+        min_stable_samples=50,    # very high: impossible to accumulate
+        stable_window_sec=0.000001,  # 1 µs: prunes almost all previous samples
+        sample_interval_sec=0.0,
+    )
+    ev = AttachGateEvaluator(
+        config=cfg,
+        emit_log=_nolog,
+        tcp_tf_world_fn=lambda: (0.0, 0.0, 0.5),
+        tcp_tf_base_fn=lambda: (0.0, 0.0, 0.5),
+        object_world_fn=lambda: (0.0, 0.0, 0.5),
+        object_base_fn=lambda: None,   # rel_vec_base=None → drift not computable
+        attach_backend_ok=True,
+    )
+    result = ev.evaluate()
+    assert result.ok is False
+    assert result.reason == "timeout_insufficient_samples"

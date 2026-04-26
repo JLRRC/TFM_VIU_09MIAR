@@ -12,9 +12,12 @@ import pytest
 from ur5_qt_panel.directo_geometry import (
     _compute_demo_basket_targets,
     _compute_demo_joint_prep_waypoint,
+    _compute_demo_joint_prep_waypoints,
     _compute_demo_linear_stage_targets,
     _compute_demo_stage_count_for_distance,
+    _compute_demo_transport_micro_recovery_target,
     _compute_demo_transport_prep_joint_tol,
+    _compute_demo_transport_recovery_stage_targets,
     _direct_runtime_target_tol_m,
     _effective_direct_grasp_z,
     _is_demo_basket_transport_motion,
@@ -489,3 +492,273 @@ class TestJointStepWaitTimeout:
             step_timeout_extra_sec=0.0,
         )
         assert result > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Additional error-path and branch coverage
+# ---------------------------------------------------------------------------
+
+class TestPickDemoEnvIntInvalidFallback:
+    def test_invalid_string_falls_back_to_default(self, monkeypatch):
+        monkeypatch.setenv("TEST_ENVINT_BAD", "not_an_int_at_all")
+        assert _pick_demo_env_int("TEST_ENVINT_BAD", 42) == 42
+
+
+class TestDirectRuntimeTargetTolMExtraPaths:
+    def test_approach_coarse_refine_default(self, monkeypatch):
+        monkeypatch.delenv("PANEL_PICK_DEMO_APPROACH_COARSE_REFINE_TCP_TOL_M", raising=False)
+        result = _direct_runtime_target_tol_m("APPROACH_COARSE_REFINE")
+        assert result == pytest.approx(0.006)
+
+    def test_grasp_align_ik_default(self, monkeypatch):
+        monkeypatch.delenv("PANEL_PICK_DEMO_GRASP_ALIGN_TCP_TOL_M", raising=False)
+        result = _direct_runtime_target_tol_m("GRASP_ALIGN_IK")
+        assert result == pytest.approx(0.015)
+
+
+class TestComputeDemoBasketTargetsError:
+    def test_none_base_raises_value_error(self):
+        with pytest.raises(ValueError, match="basket_base_unavailable"):
+            _compute_demo_basket_targets(None, transport_z_offset=0.1, release_z_offset=0.05)
+
+
+class TestComputeDemoLinearStageTargetsError:
+    def test_none_start_raises_value_error(self):
+        with pytest.raises(ValueError, match="stage_target_unavailable"):
+            _compute_demo_linear_stage_targets(None, (1.0, 0.0, 0.0), stages=2)
+
+    def test_none_end_raises_value_error(self):
+        with pytest.raises(ValueError, match="stage_target_unavailable"):
+            _compute_demo_linear_stage_targets((0.0, 0.0, 0.0), None, stages=2)
+
+
+class TestComputeDemoStageCountForDistanceError:
+    def test_none_start_raises_value_error(self):
+        with pytest.raises(ValueError, match="stage_count_target_unavailable"):
+            _compute_demo_stage_count_for_distance(
+                None, (1.0, 0.0, 0.0),
+                min_stages=1, max_stage_dist_m=0.1, max_stages=5,
+            )
+
+
+class TestComputeDemoJointPrepWaypointError:
+    def test_length_mismatch_raises(self):
+        with pytest.raises(ValueError, match="joint_prep_length_mismatch"):
+            _compute_demo_joint_prep_waypoint([0.0] * 6, [0.0] * 5, blend=0.5)
+
+
+# ---------------------------------------------------------------------------
+# _compute_demo_transport_recovery_stage_targets
+# ---------------------------------------------------------------------------
+
+class TestComputeDemoTransportRecoveryStageTargets:
+    def test_none_current_raises_value_error(self):
+        with pytest.raises(ValueError, match="transport_recovery_target_unavailable"):
+            _compute_demo_transport_recovery_stage_targets(
+                None, (1.0, 0.0, 0.5),
+                min_remaining_dist_m=0.01, min_stages=2,
+                max_stage_dist_m=0.10, max_stages=8,
+            )
+
+    def test_within_min_remaining_returns_empty(self):
+        result = _compute_demo_transport_recovery_stage_targets(
+            (0.5, 0.0, 0.5), (0.501, 0.0, 0.5),
+            min_remaining_dist_m=0.05,
+            min_stages=2,
+            max_stage_dist_m=0.10,
+            max_stages=8,
+        )
+        assert result == []
+
+    def test_short_distance_single_stage_returns_empty(self):
+        # distance 0.02 m with max_stage_dist_m=0.10 → adaptive_count=1 → stage_count≤1 → []
+        result = _compute_demo_transport_recovery_stage_targets(
+            (0.0, 0.0, 0.0), (0.02, 0.0, 0.0),
+            min_remaining_dist_m=0.0,
+            min_stages=1,
+            max_stage_dist_m=0.10,
+            max_stages=1,
+        )
+        assert result == []
+
+    def test_far_target_returns_multiple_waypoints(self):
+        result = _compute_demo_transport_recovery_stage_targets(
+            (0.0, 0.0, 0.5), (0.80, 0.0, 0.5),
+            min_remaining_dist_m=0.01,
+            min_stages=2,
+            max_stage_dist_m=0.10,
+            max_stages=10,
+        )
+        assert len(result) >= 2
+        # Last waypoint should be the target
+        assert result[-1][0] == pytest.approx(0.80)
+
+    def test_waypoints_are_tuples_of_three_floats(self):
+        result = _compute_demo_transport_recovery_stage_targets(
+            (0.0, 0.0, 0.5), (0.50, 0.0, 0.5),
+            min_remaining_dist_m=0.001,
+            min_stages=2,
+            max_stage_dist_m=0.10,
+            max_stages=8,
+        )
+        assert len(result) > 0
+        for pt in result:
+            assert len(pt) == 3
+            assert all(isinstance(v, float) for v in pt)
+
+
+# ---------------------------------------------------------------------------
+# _compute_demo_transport_micro_recovery_target
+# ---------------------------------------------------------------------------
+
+class TestComputeDemoTransportMicroRecoveryTarget:
+    def test_none_current_raises_value_error(self):
+        with pytest.raises(ValueError, match="transport_micro_recovery_target_unavailable"):
+            _compute_demo_transport_micro_recovery_target(
+                None, (0.5, 0.0, 0.5),
+                step_m=0.05, minimum_remaining_dist_m=0.01,
+            )
+
+    def test_within_step_plus_min_returns_none(self):
+        # remaining = 0.02 m, step=0.05, min_remaining=0.01 → 0.02 ≤ 0.06 → None
+        result = _compute_demo_transport_micro_recovery_target(
+            (0.0, 0.0, 0.5), (0.02, 0.0, 0.5),
+            step_m=0.05, minimum_remaining_dist_m=0.01,
+        )
+        assert result is None
+
+    def test_far_target_returns_step_sized_advance(self):
+        result = _compute_demo_transport_micro_recovery_target(
+            (0.0, 0.0, 0.5), (1.0, 0.0, 0.5),
+            step_m=0.05, minimum_remaining_dist_m=0.01,
+        )
+        assert result is not None
+        dist = math.sqrt(sum((r - s) ** 2 for r, s in zip(result, (0.0, 0.0, 0.5))))
+        assert dist == pytest.approx(0.05, abs=1e-6)
+
+    def test_returns_tuple_of_three(self):
+        result = _compute_demo_transport_micro_recovery_target(
+            (0.0, 0.0, 0.0), (0.5, 0.0, 0.0),
+            step_m=0.05, minimum_remaining_dist_m=0.001,
+        )
+        assert result is not None
+        assert len(result) == 3
+
+
+# ---------------------------------------------------------------------------
+# _compute_demo_joint_prep_waypoints (plural)
+# ---------------------------------------------------------------------------
+
+class TestComputeDemoJointPrepWaypoints:
+    def test_length_mismatch_raises(self):
+        with pytest.raises(ValueError, match="joint_prep_length_mismatch"):
+            _compute_demo_joint_prep_waypoints(
+                [0.0] * 6, [0.0] * 5,
+                blend=0.5, max_joint_delta_rad=0.3,
+                max_sum_delta_rad=1.0, max_steps=10,
+            )
+
+    def test_empty_joints_returns_empty(self):
+        result = _compute_demo_joint_prep_waypoints(
+            [], [],
+            blend=0.5, max_joint_delta_rad=0.3,
+            max_sum_delta_rad=1.0, max_steps=10,
+        )
+        assert result == []
+
+    def test_max_steps_one_returns_empty(self):
+        # segment_count capped to max_steps=1 → return []
+        seed = [0.0] * 6
+        target = [1.0] * 6
+        result = _compute_demo_joint_prep_waypoints(
+            seed, target,
+            blend=0.5, max_joint_delta_rad=0.3,
+            max_sum_delta_rad=1.0, max_steps=1,
+        )
+        assert result == []
+
+    def test_large_delta_produces_multiple_waypoints(self):
+        seed = [0.0] * 6
+        target = [2.0] * 6  # 2 rad per joint, 12 rad total
+        result = _compute_demo_joint_prep_waypoints(
+            seed, target,
+            blend=0.5, max_joint_delta_rad=0.5,
+            max_sum_delta_rad=2.0, max_steps=20,
+        )
+        assert len(result) >= 2
+        # Each waypoint has 6 joints
+        for wp in result:
+            assert len(wp) == 6
+
+    def test_max_steps_limits_waypoints(self):
+        seed = [0.0] * 6
+        target = [3.0] * 6
+        result = _compute_demo_joint_prep_waypoints(
+            seed, target,
+            blend=0.5, max_joint_delta_rad=0.1,
+            max_sum_delta_rad=0.5, max_steps=3,
+        )
+        # segment_count ≤ max_steps=3 → at most 2 intermediate waypoints (range(1, 3))
+        assert len(result) <= 2
+
+    def test_max_shoulder_delta_rad_increases_segments(self):
+        # With a tight shoulder limit, more segments should be produced
+        seed = [0.0] * 6
+        target = [1.0] * 6
+        result_no_shoulder = _compute_demo_joint_prep_waypoints(
+            seed, target,
+            blend=0.5, max_joint_delta_rad=2.0,
+            max_sum_delta_rad=10.0, max_steps=20,
+        )
+        result_with_shoulder = _compute_demo_joint_prep_waypoints(
+            seed, target,
+            blend=0.5, max_joint_delta_rad=2.0,
+            max_sum_delta_rad=10.0, max_steps=20,
+            max_shoulder_delta_rad=0.1,
+        )
+        assert len(result_with_shoulder) >= len(result_no_shoulder)
+
+    def test_seed_equals_target_returns_empty(self):
+        # All deltas zero → _segment_count_for_limit(0.0, ...) = 1 → []
+        same = [0.5] * 6
+        result = _compute_demo_joint_prep_waypoints(
+            same, same,
+            blend=0.5, max_joint_delta_rad=0.3,
+            max_sum_delta_rad=1.0, max_steps=1,
+        )
+        assert result == []
+
+    def test_waypoints_monotonically_approach_target(self):
+        seed = [0.0] * 6
+        target = [1.0] * 6
+        result = _compute_demo_joint_prep_waypoints(
+            seed, target,
+            blend=0.5, max_joint_delta_rad=0.4,
+            max_sum_delta_rad=1.5, max_steps=10,
+        )
+        if len(result) >= 2:
+            # First waypoint should be closer to seed than last
+            dist_first = sum(abs(v) for v in result[0])
+            dist_last = sum(abs(v) for v in result[-1])
+            assert dist_last >= dist_first
+
+
+# ---------------------------------------------------------------------------
+# _compute_demo_transport_prep_joint_tol — extra paths
+# ---------------------------------------------------------------------------
+
+class TestComputeDemoTransportPrepJointTolExtraPaths:
+    def test_length_mismatch_raises(self):
+        with pytest.raises(ValueError, match="joint_prep_tol_length_mismatch"):
+            _compute_demo_transport_prep_joint_tol(
+                [0.0] * 6, [0.0] * 5,
+                configured_tol_rad=0.1,
+            )
+
+    def test_empty_lists_returns_configured_or_minimum(self):
+        result = _compute_demo_transport_prep_joint_tol(
+            [], [],
+            configured_tol_rad=0.15,
+            minimum_tol_rad=0.02,
+        )
+        assert result >= 0.02

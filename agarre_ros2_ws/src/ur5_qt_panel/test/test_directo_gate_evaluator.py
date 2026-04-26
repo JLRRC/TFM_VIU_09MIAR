@@ -426,3 +426,40 @@ class TestTransportPrepFailurePolicy:
 
     def test_non_strict_returns_continue(self):
         assert _transport_prep_failure_policy(strict_mode=False) == "continue_final_stage"
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage: uncovered branches
+# ---------------------------------------------------------------------------
+
+class TestResolveJointGoalNormalizationSeedFallback:
+    def test_retry_used_when_fallback_none_and_non_transport(self):
+        # fallback=None, retry=valid, non-transport label → retry_seed_list returned (line 68)
+        retry = [0.5] * 6
+        result = _resolve_joint_goal_normalization_seed(
+            label="GRASP_DOWN_JOINT",
+            fallback_seed=None,
+            retry_seed=retry,
+        )
+        assert result == pytest.approx(retry)
+
+
+class TestBuildTransportSeedCandidatesAllNone:
+    def test_all_none_seeds_returns_early_with_empty_list(self):
+        # All coerce() calls return None → corridor_seed is None → return candidates (line 119)
+        result = _build_transport_seed_candidates(base_seed=None)
+        assert result == []
+
+
+class TestEvaluateTransportStagePreexecModelGuardFkInvalid:
+    def test_fk_returns_none_target_is_fk_invalid(self):
+        # fk_fn returns (None, None) → _pick_demo_tuple3(None) = None → fk_invalid (line 176)
+        result = _evaluate_transport_stage_preexec_model_guard(
+            label="CESTA_STAGE_1",
+            target_ik=[0.0, 0.0, 0.0],
+            joint_goal=_SIX_ZEROS,
+            tol_m=0.010,
+            fk_fn=lambda joints: (None, None),
+        )
+        assert result["ok"] is False
+        assert result["reason"] == "fk_invalid"

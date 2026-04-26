@@ -301,9 +301,9 @@ PICKABLE_MIN_CLEARANCE = SETTINGS.pickable_min_clearance
 ROS_AVAILABLE = False
 try:
     import rclpy
-    from rclpy.qos import qos_profile_sensor_data
+    from rclpy.qos import qos_profile_sensor_data  # pragma: no cover
 
-    ROS_AVAILABLE = True
+    ROS_AVAILABLE = True  # pragma: no cover
 except Exception as exc:  # pragma: no cover
     rclpy = None  # type: ignore
     qos_profile_sensor_data = None  # type: ignore

@@ -200,3 +200,53 @@ def test_read_int_param_missing_returns_default():
 
 def test_read_int_param_broken_node_returns_default():
     assert read_int_param(_BrokenNode(), "x", default=7) == 7
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage: uncovered error paths
+# ---------------------------------------------------------------------------
+
+class _NodeWithBrokenLogger:
+    """Node that returns a non-list/tuple/str value AND has a logger that raises."""
+    def get_parameter(self, name):
+        return _Param(42)  # int → not list/tuple/str → triggers _warn_invalid
+
+    def get_logger(self):
+        raise RuntimeError("logger_hardware_fault")
+
+
+class _NodeWithBadStrValue:
+    """Node whose parameter value has a __str__ that raises."""
+    class _BadValue:
+        def __str__(self):
+            raise RuntimeError("no_str_conversion")
+
+    class _Logger:
+        def warn(self, msg): pass
+
+    def get_parameter(self, name):
+        return _Param(_NodeWithBadStrValue._BadValue())
+
+    def get_logger(self):
+        return _NodeWithBadStrValue._Logger()
+
+
+def test_warn_invalid_logger_raises_is_swallowed():
+    # _warn_invalid called; node.get_logger() raises → except: pass (lines 16-17)
+    # Triggered via read_str_list_param with int value + broken logger
+    result = read_str_list_param(_NodeWithBrokenLogger(), "x", default=["safe"])
+    assert result == ["safe"]
+
+
+def test_read_str_param_str_conversion_raises_returns_default():
+    # str(value) raises → except Exception: _warn_invalid, return default (lines 29-31)
+    result = read_str_param(_NodeWithBadStrValue(), "x", default="fallback")
+    assert result == "fallback"
+
+
+def test_read_str_list_param_non_list_tuple_str_warns_and_returns_default():
+    # value is int → not list/tuple/str → _warn_invalid + return list(default) (lines 50-51)
+    node = _FakeNode({"n": 42})
+    result = read_str_list_param(node, "n", default=["d"])
+    assert result == ["d"]
+    assert any("42" in w for w in node.warnings)

@@ -10,6 +10,7 @@ from launch_helpers import (
     build_gz_plugin_path,
     build_gz_resource_path,
     copy_runtime_model,
+    env_passthrough_actions,
     patch_bridge_yaml,
     prepare_runtime_world_sdf,
     resolve_gz_partition,
@@ -117,6 +118,15 @@ def test_copy_runtime_model_copies(tmp_path):
 
 def test_copy_runtime_model_silently_ignores_missing(tmp_path):
     copy_runtime_model("/nonexistent/model", str(tmp_path / "dst"))
+
+
+def test_copy_runtime_model_exception_is_swallowed(tmp_path):
+    # src is a dir (isdir=True) but dst is an existing file → copytree raises → lines 68-69
+    src = tmp_path / "src_dir"
+    src.mkdir()
+    dst_file = tmp_path / "dst_file"
+    dst_file.write_text("file, not dir")
+    copy_runtime_model(str(src), str(dst_file))  # must not raise
 
 
 def test_copy_runtime_model_uses_dirs_exist_ok(tmp_path):
@@ -231,6 +241,17 @@ def test_prepare_runtime_world_sdf_fallback_on_missing(tmp_path):
     assert result == "/nonexistent.sdf"
 
 
+def test_prepare_runtime_world_sdf_fallback_on_write_error(tmp_path):
+    # world_file exists (isfile=True) but log_dir is unwritable → write fails → lines 120-121
+    world = tmp_path / "world.sdf"
+    world.write_text('<world name="test"><model/></world>', encoding="utf-8")
+    result = prepare_runtime_world_sdf(
+        str(world), "/proc/no_such_subdir_ever", "/rt",
+        headless=False, keep_cameras=False,
+    )
+    assert result == str(world)  # fallback to original
+
+
 # ---------------------------------------------------------------------------
 # PANEL_ENV_DEFAULTS
 # ---------------------------------------------------------------------------
@@ -259,3 +280,26 @@ def test_panel_env_defaults_known_keys_present():
         "PANEL_DIRECT_DEBUG_ROOT",
     }
     assert required <= names
+
+
+# ---------------------------------------------------------------------------
+# env_passthrough_actions — line 204
+# ---------------------------------------------------------------------------
+
+def test_env_passthrough_actions_returns_list_of_dicts():
+    result = env_passthrough_actions(PANEL_ENV_DEFAULTS)
+    assert len(result) == len(PANEL_ENV_DEFAULTS)
+    for entry in result:
+        assert "name" in entry and "value" in entry
+
+
+def test_env_passthrough_actions_uses_env_override(monkeypatch):
+    monkeypatch.setenv("PANEL_DIRECT_DEBUG_ROOT", "/custom/log")
+    result = env_passthrough_actions([("PANEL_DIRECT_DEBUG_ROOT", "/default")])
+    assert result[0]["value"] == "/custom/log"
+
+
+def test_env_passthrough_actions_uses_default_when_unset(monkeypatch):
+    monkeypatch.delenv("PANEL_DIRECT_DEBUG_ROOT", raising=False)
+    result = env_passthrough_actions([("PANEL_DIRECT_DEBUG_ROOT", "/default")])
+    assert result[0]["value"] == "/default"
