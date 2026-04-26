@@ -76,10 +76,11 @@ if python3 -m pytest \
   ut1_ok=1
 fi
 
-_sep "Unit tests (moveit bridge utils + launch helpers)"
+_sep "Unit tests (moveit bridge utils + launch helpers + cycle logger)"
 ut2_ok=0
 if python3 -m pytest \
      src/ur5_tools/test/test_moveit_bridge_utils.py \
+     src/ur5_tools/test/test_cycle_logger.py \
      src/ur5_bringup/test/test_launch_helpers.py \
      -q --tb=short 2>&1; then
   ut2_ok=1
