@@ -34,8 +34,8 @@ run_cycle() {
     sleep 1
   done
 
-  for _ in $(seq 1 40); do
-    if tail -n "+${start_line}" "$log_file" | grep -q 'STATE READY (Sistema listo)'; then
+  for _ in $(seq 1 120); do
+    if tail -n "+${start_line}" "$log_file" | grep -qE '\[PICK\]\[MOVEIT\]\[INIT\].*moveit_state=READY'; then
       if ! tail -n "+${start_line}" "$log_file" | grep -q 'ERROR_FATAL'; then
         sleep 3
         break

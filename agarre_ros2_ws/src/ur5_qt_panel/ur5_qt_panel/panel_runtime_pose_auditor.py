@@ -453,9 +453,10 @@ def _interpret_gripper_state(positions: Dict[str, float], inferred_state: object
     mags = [abs(float(value)) for value in positions.values()]
     avg = sum(mags) / max(1, len(mags))
     midpoint = (abs(float(GRIPPER_OPEN_RAD)) + abs(float(GRIPPER_CLOSED_RAD))) / 2.0
-    if avg > midpoint + 0.05:
+    _hyst = max(0.005, 0.15 * abs(float(GRIPPER_OPEN_RAD) - float(GRIPPER_CLOSED_RAD)))
+    if avg > midpoint + _hyst:
         return "ABIERTA"
-    if avg < midpoint - 0.05:
+    if avg < midpoint - _hyst:
         return "CERRADA"
     return "INTERMEDIA"
 
