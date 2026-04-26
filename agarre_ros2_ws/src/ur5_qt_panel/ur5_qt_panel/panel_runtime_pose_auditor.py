@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from .panel_config import GRIPPER_CLOSED_RAD, GRIPPER_OPEN_RAD, POSE_INFO_MAX_AGE_SEC
-from .panel_pick_demo import pick_demo_target_semantics
+from .directo_geometry import pick_demo_target_semantics
 from .panel_utils import get_tf_helper, world_to_base
 
 Vec3 = Tuple[float, float, float]
