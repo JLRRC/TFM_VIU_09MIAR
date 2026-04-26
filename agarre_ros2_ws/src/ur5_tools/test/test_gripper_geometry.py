@@ -5,8 +5,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from ur5_tools.gripper_geometry import (
     TOOL0_FRAME,
+    format_xyz,
     load_gripper_geometry,
     RG2_PINCH_CENTER_FRAME,
     RG2_TCP_FRAME,
@@ -130,3 +133,28 @@ def test_evaluate_runtime_geometry_returns_partial_snapshot_on_lookup_failure() 
     assert snapshot["ok"] is False
     assert snapshot["reason"] == "tool0->rg2_pinch_center missing"
     assert snapshot["actual_xyz"][RG2_TCP_FRAME] == list(geometry.xyz_for_frame(RG2_TCP_FRAME))
+
+
+def test_format_xyz_default_digits() -> None:
+    s = format_xyz((0.1, -0.2, 0.0050885))
+    parts = s.split()
+    assert len(parts) == 3
+    assert parts[0] == "0.1000000"
+    assert parts[1] == "-0.2000000"
+    assert parts[2] == "0.0050885"
+
+
+def test_format_xyz_custom_digits() -> None:
+    s = format_xyz((1.0, 2.0, 3.0), digits=3)
+    assert s == "1.000 2.000 3.000"
+
+
+def test_vector_distance_zero() -> None:
+    assert vector_distance((1.0, 2.0, 3.0), (1.0, 2.0, 3.0)) == 0.0
+
+
+def test_vector_distance_unit() -> None:
+    import math
+    assert vector_distance((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)) == pytest.approx(1.0)
+    assert vector_distance((0.0, 0.0, 0.0), (0.0, 0.0, 1.0)) == pytest.approx(1.0)
+    assert vector_distance((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)) == pytest.approx(math.sqrt(3.0))

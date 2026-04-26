@@ -4,6 +4,8 @@
 # Uso breve: Se usa en build con colcon y en ejecucion mediante el entry point panel_v2.
 """Unit tests for panel_utils helpers (no ROS required)."""
 
+import pytest
+
 from ur5_qt_panel.panel_config import UR5_BASE_X, UR5_BASE_Y, UR5_BASE_Z
 from ur5_qt_panel.panel_utils import (
     _apply_homography,
@@ -11,6 +13,9 @@ from ur5_qt_panel.panel_utils import (
     _solve_linear_system,
     base_frame_candidates,
     compute_homography,
+    kb_to_gb,
+    norm_to_pixel,
+    pixel_to_norm,
     world_to_base,
 )
 
@@ -89,3 +94,32 @@ def test_solve_linear_system_basic():
     x, y = sol
     assert abs((2.0 * x + 1.0 * y) - 5.0) < 1e-6
     assert abs((1.0 * x + 3.0 * y) - 6.0) < 1e-6
+
+
+def test_kb_to_gb_one_gb():
+    assert kb_to_gb(1024 * 1024) == pytest.approx(1.0)
+
+
+def test_kb_to_gb_zero():
+    assert kb_to_gb(0) == pytest.approx(0.0)
+
+
+def test_pixel_to_norm_center_is_zero():
+    nx, ny = pixel_to_norm(50.0, 50.0, 100, 100)
+    assert nx == pytest.approx(0.0, abs=1e-9)
+    assert ny == pytest.approx(0.0, abs=1e-9)
+
+
+def test_norm_to_pixel_zero_is_center():
+    px, py = norm_to_pixel(0.0, 0.0, 100, 100)
+    assert px == 50
+    assert py == 50
+
+
+def test_pixel_norm_roundtrip():
+    w, h = 640, 480
+    for px_in, py_in in [(0, 0), (320, 240), (639, 479), (100, 200)]:
+        nx, ny = pixel_to_norm(float(px_in), float(py_in), w, h)
+        px_out, py_out = norm_to_pixel(nx, ny, w, h)
+        assert abs(px_out - px_in) <= 1, f"x roundtrip off at ({px_in},{py_in})"
+        assert abs(py_out - py_in) <= 1, f"y roundtrip off at ({px_in},{py_in})"
