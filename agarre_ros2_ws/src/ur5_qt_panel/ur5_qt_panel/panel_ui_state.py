@@ -227,56 +227,31 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     if external_block and not moveit_only:
         block_tip = f"Bloqueado: {external_tip}"
         _set_test_robot_btn_state(False, test_locked_tip if test_locked else block_tip)
-        panel._set_btn_state(panel.btn_home, False, block_tip)
-        panel._set_btn_state(panel.btn_table, False, block_tip)
-        panel._set_btn_state(panel.btn_basket, False, block_tip)
         panel._set_btn_state(panel.btn_gripper, False, block_tip)
     elif moveit_only:
         panel._set_robot_test_blocked(None)
         moveit_tip = "MoveIt bridge activo; se pausará antes de AUTO TUNE"
         _set_test_robot_btn_state(False if test_locked else motion_enabled, test_locked_tip if test_locked else moveit_tip)
-        # HOME/MESA/CESTA habilitados si test ya completado
-        if panel._robot_test_done:
-            panel._set_btn_state(panel.btn_home, motion_enabled, motion_tip)
-            panel._set_btn_state(panel.btn_table, motion_enabled, motion_tip)
-            panel._set_btn_state(panel.btn_basket, motion_enabled, motion_tip)
-        else:
-            block_tip = "Bloqueado: MoveIt bridge activo"
-            panel._set_btn_state(panel.btn_home, False, block_tip)
-            panel._set_btn_state(panel.btn_table, False, block_tip)
-            panel._set_btn_state(panel.btn_basket, False, block_tip)
         panel._set_btn_state(panel.btn_gripper, gripper_motion_enabled, gripper_motion_tip)
     elif not camera_gate_ok:
         block_tip = "Cámara no lista"
-        # Deshabilitar si ya se ejecutó
         if test_locked:
             _set_test_robot_btn_state(False, test_locked_tip)
         else:
             _set_test_robot_btn_state(False, block_tip)
-        panel._set_btn_state(panel.btn_home, False, block_tip)
-        panel._set_btn_state(panel.btn_table, False, block_tip)
-        panel._set_btn_state(panel.btn_basket, False, block_tip)
         panel._set_btn_state(panel.btn_gripper, gripper_motion_enabled, gripper_motion_tip)
     elif test_pending:
         block_tip = "Ejecuta AUTO TUNE para habilitar"
-        # Deshabilitar si ya se ejecutó
         if test_locked:
             _set_test_robot_btn_state(False, test_locked_tip)
         else:
             _set_test_robot_btn_state(motion_enabled, motion_tip)
-        panel._set_btn_state(panel.btn_home, False, block_tip)
-        panel._set_btn_state(panel.btn_table, False, block_tip)
-        panel._set_btn_state(panel.btn_basket, False, block_tip)
         panel._set_btn_state(panel.btn_gripper, gripper_motion_enabled, gripper_motion_tip)
     else:
-        # Deshabilitar si ya se ejecutó
         if test_locked:
             _set_test_robot_btn_state(False, test_locked_tip)
         else:
             _set_test_robot_btn_state(motion_enabled, motion_tip)
-        panel._set_btn_state(panel.btn_home, motion_enabled, motion_tip)
-        panel._set_btn_state(panel.btn_table, motion_enabled, motion_tip)
-        panel._set_btn_state(panel.btn_basket, motion_enabled, motion_tip)
         panel._set_btn_state(panel.btn_gripper, gripper_motion_enabled, gripper_motion_tip)
     panel._schedule_controller_check()
     pick_ok, pick_reason = panel._moveit_control_status()
@@ -362,12 +337,14 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
         "" if tfm_action_ready else tfm_controls_tip,
     )
     _set_optional_btn_state(btn_tfm_reset, tfm_action_ready, tfm_controls_tip)
+    nav_enabled = not panel._script_motion_active
+    nav_tip = "Robot en movimiento" if panel._script_motion_active else ""
+    panel._set_btn_state(panel.btn_home, nav_enabled, nav_tip)
+    panel._set_btn_state(panel.btn_table, nav_enabled, nav_tip)
+    panel._set_btn_state(panel.btn_basket, nav_enabled, nav_tip)
     if panel._script_motion_active:
         busy_tip = "Robot en movimiento"
         _set_test_robot_btn_state(False, busy_tip)
-        panel._set_btn_state(panel.btn_home, False, busy_tip)
-        panel._set_btn_state(panel.btn_table, False, busy_tip)
-        panel._set_btn_state(panel.btn_basket, False, busy_tip)
         if not bool(getattr(panel, "_allow_gripper_while_script_motion", False)):
             panel._set_btn_state(panel.btn_gripper, False, busy_tip)
         panel._set_btn_state(panel.btn_pick_demo, False, busy_tip)

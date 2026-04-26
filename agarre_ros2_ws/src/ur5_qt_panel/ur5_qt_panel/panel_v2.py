@@ -1793,7 +1793,7 @@ class ControlPanelV2(QMainWindow):
         _ph._step_window_set_waiting(self, *args, **kwargs)
 
     def _on_debug_motion_button(self, *args, **kwargs):
-        _ph._on_debug_motion_button(self, *args, **kwargs)
+        _ph._on_debug_motion_button(self)
 
     def _debug_motion_wait_for_continue(self, *args, **kwargs):
         return _ph._debug_motion_wait_for_continue(self, *args, **kwargs)
@@ -2032,7 +2032,7 @@ class ControlPanelV2(QMainWindow):
         _gs._stop_all(self, *args, **kwargs)
 
     def _recover_runtime(self, *args, **kwargs):
-        _gs._recover_runtime(self, *args, **kwargs)
+        _gs._recover_runtime(self)
 
     def _system_running(self, *args, **kwargs):
         return _gs._system_running(self, *args, **kwargs)
@@ -2041,7 +2041,7 @@ class ControlPanelV2(QMainWindow):
         _gs._schedule_start_enable_check(self, *args, **kwargs)
 
     def _start_gazebo(self, *args, **kwargs):
-        _gs._start_gazebo(self, *args, **kwargs)
+        _gs._start_gazebo(self)
 
     def _parse_first_json_object(self, *args, **kwargs):
         return _gs._parse_first_json_object(self, *args, **kwargs)
@@ -2068,7 +2068,7 @@ class ControlPanelV2(QMainWindow):
         _gs._throw_objects(self, *args, **kwargs)
 
     def _toggle_debug_poses(self, *args, **kwargs):
-        _gs._toggle_debug_poses(self, *args, **kwargs)
+        _gs._toggle_debug_poses(self)
 
     def _start_debug_poses(self, *args, **kwargs):
         _gs._start_debug_poses(self, *args, **kwargs)
@@ -2091,7 +2091,7 @@ class ControlPanelV2(QMainWindow):
         _sm._drop_detach_supported(self, *args, **kwargs)
 
     def _release_objects(self, *args, **kwargs):
-        _sm._release_objects(self, *args, **kwargs)
+        _sm._release_objects(self)
 
     def _schedule_release_retry(self, *args, **kwargs):
         _sm._schedule_release_retry(self, *args, **kwargs)
@@ -2151,7 +2151,7 @@ class ControlPanelV2(QMainWindow):
         _sm._stop_world_tf_publisher(self, *args, **kwargs)
 
     def _stop_gazebo(self, *args, **kwargs):
-        _sm._stop_gazebo(self, *args, **kwargs)
+        _sm._stop_gazebo(self)
 
     def _start_robot_state_publisher(self, *args, **kwargs):
         _sm._start_robot_state_publisher(self, *args, **kwargs)
@@ -2305,7 +2305,7 @@ class ControlPanelV2(QMainWindow):
         _mc._run_baseline_motion(self, *args, **kwargs)
 
     def _go_home(self, *args, **kwargs):
-        _mc._go_home(self, *args, **kwargs)
+        _mc._go_home(self)
 
     def _set_test_failed(self, *args, **kwargs):
         _mc._set_test_failed(self, *args, **kwargs)
@@ -2329,14 +2329,14 @@ class ControlPanelV2(QMainWindow):
         _mc._maybe_send_auto(self, *args, **kwargs)
 
     def _send_joints(self, *args, **kwargs):
-        _mc._send_joints(self, *args, **kwargs)
+        _mc._send_joints(self)
 
     def _send_joints_retry(self, *args, **kwargs):
         _mc._send_joints_retry(self, *args, **kwargs)
 
 
     def _tfm_infer_grasp(self, *args, **kwargs):
-        return tfm_infer_grasp(self, *args, **kwargs)
+        return tfm_infer_grasp(self)
 
     def _tfm_canonical_use_pick_object(self, *args, **kwargs):
         return tfm_canonical_use_pick_object(self, *args, **kwargs)
@@ -2378,7 +2378,7 @@ class ControlPanelV2(QMainWindow):
         return sync_tfm_module_grasp_state(self, *args, **kwargs)
 
     def _tfm_visualize_grasp(self, *args, **kwargs):
-        return tfm_visualize_grasp(self, *args, **kwargs)
+        return tfm_visualize_grasp(self)
 
     def _wait_tfm_moveit_result(self, *args, **kwargs):
         return wait_tfm_moveit_result(self, *args, **kwargs)
@@ -2387,7 +2387,7 @@ class ControlPanelV2(QMainWindow):
         return execute_tfm_world_grasp(self, *args, **kwargs)
 
     def _on_tfm_grasp_object_clicked(self, *args, **kwargs):
-        return on_tfm_grasp_object_clicked(self, *args, **kwargs)
+        return on_tfm_grasp_object_clicked(self)
 
     def _tfm_publish_grasp(self, *args, **kwargs):
         return tfm_publish_grasp(self, *args, **kwargs)
@@ -2420,7 +2420,7 @@ class ControlPanelV2(QMainWindow):
         _ca._publish_calib_grid_marker(self, *args, **kwargs)
 
     def _start_calibration(self, *args, **kwargs):
-        _ca._start_calibration(self, *args, **kwargs)
+        _ca._start_calibration(self)
 
     def _set_calibrate_button_text(self, *args, **kwargs):
         _ca._set_calibrate_button_text(self, *args, **kwargs)
@@ -2435,10 +2435,10 @@ class ControlPanelV2(QMainWindow):
         return _ca._pick_confirm_dialog(self, *args, **kwargs)
 
     def _run_pick_demo(self, *args, **kwargs):
-        _ca._run_pick_demo(self, *args, **kwargs)
+        _ca._run_pick_demo(self)
 
     def _run_pick_object(self, *args, **kwargs):
-        _ca._run_pick_object(self, *args, **kwargs)
+        _ca._run_pick_object(self)
 
     def _get_object_world_position(self, *args, **kwargs):
         return _ca._get_object_world_position(self, *args, **kwargs)
@@ -2480,10 +2480,10 @@ class ControlPanelV2(QMainWindow):
         _om._log_object_report(self, *args, **kwargs)
 
     def _go_table(self, *args, **kwargs):
-        _om._go_table(self, *args, **kwargs)
+        _om._go_table(self)
 
     def _go_basket(self, *args, **kwargs):
-        _om._go_basket(self, *args, **kwargs)
+        _om._go_basket(self)
 
     def _toggle_gripper_button(self, *args, **kwargs):
         _om._toggle_gripper_button(self, *args, **kwargs)
@@ -2636,7 +2636,7 @@ class ControlPanelV2(QMainWindow):
         _ts._on_tfm_checkpoint_selection_changed(self, *args, **kwargs)
 
     def _tfm_apply_memoria_case(self, *args, **kwargs):
-        _ts._tfm_apply_memoria_case(self, *args, **kwargs)
+        _ts._tfm_apply_memoria_case(self)
 
     def _tfm_repro_checkpoint(self, *args, **kwargs):
         return _ts._tfm_repro_checkpoint(self, *args, **kwargs)
@@ -2666,10 +2666,10 @@ class ControlPanelV2(QMainWindow):
         return _ts._tfm_get_ckpt_path(self, *args, **kwargs)
 
     def _tfm_apply_experiment(self, *args, **kwargs):
-        _ts._tfm_apply_experiment(self, *args, **kwargs)
+        _ts._tfm_apply_experiment(self)
 
     def _tfm_reset_grasp(self, *args, **kwargs):
-        _ts._tfm_reset_grasp(self, *args, **kwargs)
+        _ts._tfm_reset_grasp(self)
 
     def _load_experiment_info(self, *args, **kwargs):
         _ts._load_experiment_info(self, *args, **kwargs)

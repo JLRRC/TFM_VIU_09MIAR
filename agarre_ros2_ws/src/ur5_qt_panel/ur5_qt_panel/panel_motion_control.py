@@ -101,12 +101,12 @@ def _update_ui_state(panel):
     for slider in panel.joint_sliders:
         slider.setEnabled(manual_boot_enabled)
 
-    # Botones de movimiento (bloqueados hasta bridge)
+    # Botones de movimiento
     panel.btn_debug_motion.setEnabled(True)
     panel._set_debug_motion_button_waiting(False)
-    panel.btn_home.setEnabled(False)
-    panel.btn_table.setEnabled(False)
-    panel.btn_basket.setEnabled(False)
+    panel.btn_home.setEnabled(True)
+    panel.btn_table.setEnabled(True)
+    panel.btn_basket.setEnabled(True)
     panel.btn_gripper.setEnabled(False)
     panel.btn_pick_demo.setEnabled(False)
     panel.btn_pick_object.setEnabled(False)

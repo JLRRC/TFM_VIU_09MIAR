@@ -1424,14 +1424,17 @@ class RosWorker(QObject):
                 self._joint_sub = None
             try:
                 self._joint_topic = topic
+                # joint_state_broadcaster publica con RELIABLE (rclcpp::QoS(1)).
+                # BEST_EFFORT subscriber puede ser incompatible en algunos RMW.
+                _js_qos = 10  # RELIABLE VOLATILE KEEP_LAST(10)
                 self._joint_sub = self._node.create_subscription(
                     JointState,
                     topic,
                     lambda msg, t=topic: self._on_joint_state(msg, t),
-                    qos_profile_sensor_data,
+                    _js_qos,
                     callback_group=self._io_callback_group,
                 )
-                self._safe_log(f"[ROS] Suscrito a {topic} (joint_states)")
+                self._safe_log(f"[ROS] Suscrito a {topic} (joint_states, qos=RELIABLE)")
             except Exception as exc:
                 self._safe_log(f"[ROS] ERROR suscribiendo joint_states: {exc}")
 
