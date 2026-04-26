@@ -8,6 +8,7 @@ import math
 import pytest
 
 from ur5_qt_panel import panel_pick_demo as pick_demo
+from ur5_qt_panel.directo_geometry import _compute_demo_joint_prep_waypoint
 
 
 class _FakePanel:
@@ -298,7 +299,7 @@ def test_compute_demo_transport_micro_recovery_target_skips_short_residual() -> 
 
 
 def test_compute_demo_joint_prep_waypoint_blends_shortest_joint_deltas() -> None:
-    prep = pick_demo._compute_demo_joint_prep_waypoint(
+    prep = _compute_demo_joint_prep_waypoint(
         [0.0, -1.50, 0.0],
         [0.20, -1.90, 0.60],
         blend=0.5,

@@ -67,21 +67,34 @@ fi
 # ---------------------------------------------------------------------------
 # 3. Unit tests — directo_geometry and directo_gate_evaluator (no ROS needed)
 # ---------------------------------------------------------------------------
-_sep "Unit tests (geometry + gate evaluator + panel config)"
+_sep "Unit tests (ur5_qt_panel — no ROS)"
 ut1_ok=0
 if PYTHONPATH="src/ur5_qt_panel:src/ur5_tools:${PYTHONPATH:-}" python3 -m pytest \
      src/ur5_qt_panel/test/test_directo_geometry.py \
      src/ur5_qt_panel/test/test_directo_gate_evaluator.py \
      src/ur5_qt_panel/test/test_panel_config.py \
+     src/ur5_qt_panel/test/test_panel_utils.py \
+     src/ur5_qt_panel/test/test_panel_settings_defaults.py \
+     src/ur5_qt_panel/test/test_step_pipeline.py \
+     src/ur5_qt_panel/test/test_panel_tfm_apply_gate.py \
+     src/ur5_qt_panel/test/test_state_machine.py \
+     src/ur5_qt_panel/test/test_panel_pick_demo_basket_confirmation.py \
+     src/ur5_qt_panel/test/test_panel_pick_demo_direct_grasp_z.py \
+     src/ur5_qt_panel/test/test_panel_pick_demo_live_pose.py \
+     src/ur5_qt_panel/test/test_panel_pick_demo_transport_follow.py \
+     src/ur5_qt_panel/test/test_panel_pick_object_moveit_init.py \
      -q --tb=short 2>&1; then
   ut1_ok=1
 fi
 
-_sep "Unit tests (moveit bridge utils + launch helpers + cycle logger)"
+_sep "Unit tests (ur5_tools + ur5_bringup — no ROS)"
 ut2_ok=0
 if python3 -m pytest \
      src/ur5_tools/test/test_moveit_bridge_utils.py \
+     src/ur5_tools/test/test_moveit_bridge_plan_success.py \
      src/ur5_tools/test/test_cycle_logger.py \
+     src/ur5_tools/test/test_gripper_geometry.py \
+     src/ur5_tools/test/test_system_state_machine.py \
      src/ur5_bringup/test/test_launch_helpers.py \
      -q --tb=short 2>&1; then
   ut2_ok=1
@@ -112,8 +125,11 @@ REQUIRED_FILES=(
   "src/ur5_qt_panel/ur5_qt_panel/panel_config.py"
   "src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py"
   "src/ur5_qt_panel/ur5_qt_panel/panel_v2.py"
-  "src/ur5_tools/ur5_tools/gripper_geometry.py"
+  "src/ur5_qt_panel/ur5_qt_panel/step_pipeline_helpers.py"
   "src/ur5_qt_panel/ur5_qt_panel/ur5_kinematics.py"
+  "src/ur5_tools/ur5_tools/gripper_geometry.py"
+  "src/ur5_tools/ur5_tools/moveit_bridge_utils.py"
+  "src/ur5_tools/ur5_tools/cycle_logger.py"
 )
 for f in "${REQUIRED_FILES[@]}"; do
   if [[ -f "$f" ]]; then

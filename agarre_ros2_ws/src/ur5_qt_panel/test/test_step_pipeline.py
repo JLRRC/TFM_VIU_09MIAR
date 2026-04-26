@@ -10,9 +10,10 @@ from ur5_qt_panel.step_pipeline_helpers import (
 )
 
 
-def test_direct_sequence_starts_with_approach_coarse() -> None:
+def test_direct_sequence_structure() -> None:
     sequence = step_phase_sequence("DIRECT")
-    assert sequence[0] == "APPROACH_COARSE"
+    assert sequence[0] == "INITIAL_SNAPSHOT"
+    assert "APPROACH_COARSE" in sequence
     assert "INICIO" not in sequence
 
 
