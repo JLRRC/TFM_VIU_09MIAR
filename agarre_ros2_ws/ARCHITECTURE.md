@@ -247,7 +247,7 @@ bash scripts/smoke_test.sh --fast   # ~6 s, 444 tests
 
 | FASE | Descripción | Impacto |
 |------|-------------|---------|
-| 0 | Auditoría completa arquitectura | +auditoria/auditoria_arquitectura_20260426.md |
+| 0 | Auditoría completa arquitectura | +reports/auditoria_moveit_step_20260424.md |
 | 1 | Eliminar 57 imports F401 en 19 ficheros | −57 imports no usados |
 | 2 | Constante TABLE_TOP_Z, eliminar 0.850 hardcoded | +mantenibilidad |
 | 3a | Extraer `directo_geometry.py` | 20 funciones puras, sin ROS/Qt |
@@ -255,31 +255,31 @@ bash scripts/smoke_test.sh --fast   # ~6 s, 444 tests
 | 4 | 129 tests unitarios (geometry + gate evaluator) | cobertura sin ROS |
 | 5a | Extraer `moveit_bridge_utils.py` | 16 helpers puros + 2 TF freshness helpers |
 | 5b | Extraer `launch_helpers.py` | ur5_stack.launch.py −27% (1176→863 líneas) |
-| 7 | `CycleLogger` (cycle_logger.py) | logger JSON thread-safe por ciclo pick |
-| 8 | IK: CachedKDLKinematicsPlugin | kinematics.yaml — cache 5000 poses |
-| 9 | Auditoría bridge_cameras.yaml | 78 bridges categorizados, todos justificados |
-| 10 | `smoke_test.sh` — 265 tests | CI: AST + F401 + unit tests sin ROS |
-| 11 | `test_panel_config.py` (34 tests) | cobertura de constantes panel_config |
-| 12 | TF freshness: `stamp_age_sec` / `is_stamp_fresh` | helpers para guards de frescura TF |
-| 13 | `ARCHITECTURE.md` + README link | documentación de arquitectura C4 |
+| 6 | `CycleLogger` (cycle_logger.py) | logger JSON thread-safe por ciclo pick |
+| 7 | IK: CachedKDLKinematicsPlugin | kinematics.yaml — cache 5000 poses |
+| 8 | Auditoría bridge_cameras.yaml | 78 bridges categorizados, todos justificados |
+| 9 | `smoke_test.sh` + `validate_before_demo.sh` | CI: AST + F401 + unit tests sin ROS |
+| 10 | `ARCHITECTURE.md` + README link | documentación de arquitectura C4 |
+| 11 | TF freshness: `stamp_age_sec` / `is_stamp_fresh` | helpers para guards de frescura TF |
+| 12 | Campaña 100% cobertura — 15 módulos puros | 593 tests, todos los módulos testables al 100% |
 
 **Totales de la rama ENTREGA.V3 vs. main:**
-- Ficheros nuevos: 11 módulos + 6 ficheros de test + 2 scripts bash
+- Ficheros nuevos: 11 módulos + 17 ficheros de test + 2 scripts bash
 - Tests: 593 tests sin ROS en <6 s
 - Imports F401: 0 violaciones
 - `panel_v2.py`: 18 600 → 2 859 líneas (−85%) en commits previos a esta rama
 - `directo_geometry.py`: 65% → 100% cobertura
-- `attach_gate_evaluator.py`: 90% → 100% cobertura
-- `moveit_bridge_utils.py`: 75% → 99% cobertura
 - `directo_gate_evaluator.py`: 98% → 100% cobertura
+- `attach_gate_evaluator.py`: 90% → 100% cobertura
 - `ur5_kinematics.py`: 95% → 100% cobertura
-- `cycle_logger.py`: 97% → 100% cobertura
-- `param_utils.py`: 90% → 100% cobertura
+- `panel_config.py`: 97% → 100% cobertura
 - `panel_state.py`: 0% → 100% cobertura
 - `panel_state_machine.py`: 90% → 100% cobertura
 - `panel_external_state.py`: 69% → 100% cobertura
 - `logging_utils.py`: 64% → 100% cobertura
 - `step_pipeline_helpers.py`: 98% → 100% cobertura
-- `panel_config.py`: 97% → 100% cobertura
+- `cycle_logger.py`: 97% → 100% cobertura
+- `moveit_bridge_utils.py`: 75% → 100% cobertura
 - `gripper_geometry.py`: 74% → 100% cobertura
+- `param_utils.py`: 90% → 100% cobertura
 - `launch_helpers.py`: 93% → 100% cobertura
