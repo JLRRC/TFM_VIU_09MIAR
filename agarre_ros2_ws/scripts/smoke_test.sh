@@ -85,6 +85,7 @@ if PYTHONPATH="src/ur5_qt_panel:src/ur5_tools:${PYTHONPATH:-}" python3 -m pytest
      src/ur5_qt_panel/test/test_panel_pick_object_moveit_init.py \
      src/ur5_qt_panel/test/test_pick_geometry.py \
      src/ur5_qt_panel/test/test_attach_gate_evaluator.py \
+     src/ur5_qt_panel/test/test_ur5_kinematics.py \
      -q --tb=short 2>&1; then
   ut1_ok=1
 fi
