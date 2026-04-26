@@ -76,6 +76,24 @@ from control_msgs.msg import JointTolerance
 from controller_manager_msgs.srv import ListControllers
 
 from .param_utils import read_float_param, read_str_list_param, read_str_param
+from .moveit_bridge_utils import (
+    bridge_env_float,
+    normalize_action_name,
+    parse_request_meta,
+    plan_success_code,
+    plan_success_ok,
+    plan_error_code_val,
+    describe_execute_result,
+    result_meta_to_message,
+    diag_to_message,
+    goal_status_text,
+    wait_future_done,
+    joint_trajectory_duration_sec,
+    joint_trajectory_initial_segment_max_delta,
+    scale_joint_trajectory_timing,
+    pose_to_matrix,
+    matrix_to_pose,
+)
 
 _BRIDGE_CODE_REV = "2026-04-20-approach-replan-v1"
 
@@ -1029,13 +1047,7 @@ class UR5MoveItBridge(Node):
 
     @staticmethod
     def _env_float(name: str, default: float) -> float:
-        raw = os.environ.get(name, "")
-        if not raw:
-            return float(default)
-        try:
-            return float(raw)
-        except Exception:
-            return float(default)
+        return bridge_env_float(name, default)
 
     def _available_action_names(self) -> list[str]:
         try:
@@ -1046,12 +1058,7 @@ class UR5MoveItBridge(Node):
 
     @staticmethod
     def _normalize_action_name(name: str) -> str:
-        raw = str(name or "").strip()
-        if not raw:
-            return ""
-        if not raw.startswith("/"):
-            raw = f"/{raw}"
-        return raw.replace("//", "/")
+        return normalize_action_name(name)
 
     def _destroy_fjt_action_client(self) -> None:
         with self._action_client_lock:
@@ -1270,135 +1277,35 @@ class UR5MoveItBridge(Node):
 
     @staticmethod
     def _diag_to_message(diag: dict[str, Any]) -> str:
-        js_age = diag.get("joint_state_age_sec")
-        js_age_txt = "n/a" if js_age is None else f"{float(js_age):.3f}"
-        return (
-            f"{diag.get('reason')};backend={diag.get('backend')};"
-            f"use_sim_time={str(diag.get('use_sim_time')).lower()};"
-            f"controller={diag.get('controller')};"
-            f"action={diag.get('controller_action')};"
-            f"action_matched={diag.get('controller_action_matched') or 'none'};"
-            f"action_available={str(diag.get('controller_action_available')).lower()};"
-            f"controller_manager={diag.get('controller_manager')};"
-            f"active_controllers={','.join(diag.get('active_controllers') or []) or 'none'};"
-            f"joint_state_age_sec={js_age_txt};"
-            f"trajectory_topic_pubs={diag.get('trajectory_topic_pubs')};"
-            f"trajectory_topic_subs={diag.get('trajectory_topic_subs')}"
-        )
+        return diag_to_message(diag)
 
     @staticmethod
     def _describe_execute_result(result: Any) -> dict[str, Any]:
-        if result is None:
-            return {"type": "NoneType"}
-        meta: dict[str, Any] = {"type": type(result).__name__}
-        for key in ("success", "status", "message", "error_code", "val"):
-            try:
-                value = getattr(result, key)
-            except Exception:
-                continue
-            if value is not None:
-                meta[key] = value
-        return meta
+        return describe_execute_result(result)
 
     @staticmethod
     def _plan_success_code(success: Any) -> int | None:
-        if success is None:
-            return None
-        if isinstance(success, bool):
-            return 1 if success else 0
-        if isinstance(success, (int, float)):
-            return int(success)
-        for attr in ("val", "value", "code"):
-            try:
-                if hasattr(success, attr):
-                    return int(getattr(success, attr))
-            except Exception:
-                continue
-        return None
+        return plan_success_code(success)
 
     @classmethod
     def _plan_success_ok(cls, success: Any) -> bool:
-        # moveit_msgs/MoveItErrorCodes.SUCCESS == 1
-        code = cls._plan_success_code(success)
-        if code is not None:
-            return int(code) == 1
-        if isinstance(success, str):
-            token = success.strip().upper()
-            if token in ("SUCCESS", "SUCCEEDED", "OK"):
-                return True
-            if token in ("FAIL", "FAILED", "ERROR", "ABORTED"):
-                return False
-        if success is None:
-            # Some bindings omit explicit success when trajectory is valid.
-            return True
-        return bool(success)
+        return plan_success_ok(success)
 
     @staticmethod
     def _plan_error_code_val(plan) -> int | None:
-        """Return integer MoveIt error code from *plan*.error_code, or None."""
-        ec = getattr(plan, "error_code", None)
-        if ec is None:
-            return None
-        # moveit_msgs/MoveItErrorCodes has .val; raw int also possible.
-        val = getattr(ec, "val", None)
-        if val is not None:
-            return int(val)
-        if isinstance(ec, (int, float)):
-            return int(ec)
-        return None
+        return plan_error_code_val(plan)
 
     @staticmethod
     def _result_meta_to_message(meta: dict[str, Any]) -> str:
-        pieces: list[str] = []
-        for key in (
-            "type",
-            "success",
-            "status",
-            "status_text",
-            "message",
-            "error_code",
-            "error_string",
-            "action",
-            "accepted",
-            "timeout_sec",
-            "goal_check",
-            "ee_goal_check",
-            "joint_goal_check",
-            "joint_motion",
-            "feedback_goal_check",
-            "retry_timeout_sec",
-            "retry_goal_time_tol_sec",
-            "diag_reason",
-            "joint_state_age_sec",
-            "controller_action_available",
-            "active_controllers",
-            "val",
-        ):
-            if key in meta:
-                pieces.append(f"{key}={meta[key]}")
-        return ",".join(pieces) if pieces else "none"
+        return result_meta_to_message(meta)
 
     @staticmethod
     def _goal_status_text(status: int) -> str:
-        mapping = {
-            GoalStatus.STATUS_UNKNOWN: "UNKNOWN",
-            GoalStatus.STATUS_ACCEPTED: "ACCEPTED",
-            GoalStatus.STATUS_EXECUTING: "EXECUTING",
-            GoalStatus.STATUS_CANCELING: "CANCELING",
-            GoalStatus.STATUS_SUCCEEDED: "SUCCEEDED",
-            GoalStatus.STATUS_CANCELED: "CANCELED",
-            GoalStatus.STATUS_ABORTED: "ABORTED",
-        }
-        return mapping.get(int(status), f"STATUS_{int(status)}")
+        return goal_status_text(status)
 
     @staticmethod
     def _wait_future_done(future, timeout_sec: float) -> bool:
-        deadline = time.monotonic() + max(0.1, timeout_sec)
-        while time.monotonic() < deadline:
-            if future.done():
-                return True
-            time.sleep(0.02)
-        return bool(future.done())
+        return wait_future_done(future, timeout_sec)
 
     def _execute_moveit_py_with_timeout(self, trajectory) -> tuple[bool, Any, str]:
         if self._moveit_py is None:
@@ -3176,17 +3083,7 @@ class UR5MoveItBridge(Node):
 
     @staticmethod
     def _joint_trajectory_initial_segment_max_delta(jt: JointTrajectory) -> float:
-        points = list(getattr(jt, "points", []) or [])
-        if len(points) < 2:
-            return -1.0
-        try:
-            p0 = list(getattr(points[0], "positions", []) or [])
-            p1 = list(getattr(points[1], "positions", []) or [])
-            if len(p0) != len(p1) or not p0:
-                return -1.0
-            return max(abs(float(b) - float(a)) for a, b in zip(p0, p1))
-        except Exception:
-            return -1.0
+        return joint_trajectory_initial_segment_max_delta(jt)
 
     def _prepare_joint_trajectory_for_controller(
         self,
@@ -3579,37 +3476,11 @@ class UR5MoveItBridge(Node):
 
     @staticmethod
     def _scale_joint_trajectory_timing(jt: JointTrajectory, scale: float = 2.0) -> JointTrajectory:
-        scaled = deepcopy(jt)
-        factor = max(1.0, float(scale))
-        for point in list(getattr(scaled, "points", []) or []):
-            tfs = getattr(point, "time_from_start", None)
-            if tfs is None:
-                continue
-            total = (float(getattr(tfs, "sec", 0) or 0) + float(getattr(tfs, "nanosec", 0) or 0) / 1_000_000_000.0)
-            total = max(0.0, total * factor)
-            sec = int(total)
-            nsec = int(round((total - sec) * 1_000_000_000.0))
-            if nsec >= 1_000_000_000:
-                sec += 1
-                nsec -= 1_000_000_000
-            point.time_from_start.sec = sec
-            point.time_from_start.nanosec = nsec
-        return scaled
+        return scale_joint_trajectory_timing(jt, scale)
 
     @staticmethod
     def _joint_trajectory_duration_sec(jt: JointTrajectory | None) -> float:
-        if jt is None:
-            return 0.0
-        points = list(getattr(jt, "points", []) or [])
-        if not points:
-            return 0.0
-        tfs = getattr(points[-1], "time_from_start", None)
-        if tfs is None:
-            return 0.0
-        try:
-            return max(0.0, float(tfs.sec) + float(tfs.nanosec) / 1_000_000_000.0)
-        except Exception:
-            return 0.0
+        return joint_trajectory_duration_sec(jt)
 
     @staticmethod
     def _qos_summary(qos: QoSProfile) -> str:
@@ -3620,37 +3491,7 @@ class UR5MoveItBridge(Node):
 
     @staticmethod
     def _parse_request_meta(frame_raw: str) -> tuple[str, int | None, str, dict[str, Any]]:
-        raw = str(frame_raw or "").strip()
-        if not raw:
-            return "", None, "", {}
-        parts = [p.strip() for p in raw.split("|")]
-        frame = parts[0] if parts else raw
-        req_id = None
-        req_uuid = ""
-        meta: dict[str, Any] = {}
-        for token in parts[1:]:
-            key, sep, value = token.partition("=")
-            if sep != "=":
-                continue
-            k = key.strip().lower()
-            v = value.strip()
-            if not v:
-                continue
-            if k in ("rid", "request_id"):
-                try:
-                    req_id = int(v)
-                except Exception:
-                    req_id = None
-            elif k in ("uid", "uuid", "request_uuid"):
-                req_uuid = v
-            elif k in ("tol", "tol_m", "ee_tol", "ee_target_tol_m"):
-                try:
-                    meta["tol_m"] = float(v)
-                except Exception:
-                    pass
-            elif k in ("phase", "label"):
-                meta["phase_label"] = v
-        return frame, req_id, req_uuid, meta
+        return parse_request_meta(frame_raw)
 
     def _pose_callback(self, msg: PoseStamped, cartesian: bool = False, topic_name: str = "") -> None:
         try:
@@ -4332,60 +4173,11 @@ class UR5MoveItBridge(Node):
 
     @staticmethod
     def _pose_to_matrix(pose: "Pose") -> "np.ndarray":
-        """Convert geometry_msgs.msg.Pose to 4x4 homogeneous transform (numpy)."""
-        q = pose.orientation
-        x, y, z, w = float(q.x), float(q.y), float(q.z), float(q.w)
-        R = np.array([
-            [1 - 2*(y*y + z*z), 2*(x*y - w*z),     2*(x*z + w*y)],
-            [2*(x*y + w*z),     1 - 2*(x*x + z*z), 2*(y*z - w*x)],
-            [2*(x*z - w*y),     2*(y*z + w*x),     1 - 2*(x*x + y*y)],
-        ], dtype=float)
-        T = np.eye(4, dtype=float)
-        T[:3, :3] = R
-        T[0, 3] = float(pose.position.x)
-        T[1, 3] = float(pose.position.y)
-        T[2, 3] = float(pose.position.z)
-        return T
+        return pose_to_matrix(pose)
 
     @staticmethod
     def _matrix_to_pose(T: "np.ndarray") -> "Any":
-        """Convert 4x4 numpy homogeneous transform to geometry_msgs.msg.Pose."""
-        from geometry_msgs.msg import Pose as _Pose
-        R = T[:3, :3]
-        trace = R[0, 0] + R[1, 1] + R[2, 2]
-        if trace > 0:
-            s = 0.5 / math.sqrt(trace + 1.0)
-            w = 0.25 / s
-            x = (R[2, 1] - R[1, 2]) * s
-            y = (R[0, 2] - R[2, 0]) * s
-            z = (R[1, 0] - R[0, 1]) * s
-        elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
-            s = 2.0 * math.sqrt(max(0.0, 1.0 + R[0, 0] - R[1, 1] - R[2, 2]))
-            w = (R[2, 1] - R[1, 2]) / s if s > 1e-9 else 1.0
-            x = 0.25 * s
-            y = (R[0, 1] + R[1, 0]) / s if s > 1e-9 else 0.0
-            z = (R[0, 2] + R[2, 0]) / s if s > 1e-9 else 0.0
-        elif R[1, 1] > R[2, 2]:
-            s = 2.0 * math.sqrt(max(0.0, 1.0 + R[1, 1] - R[0, 0] - R[2, 2]))
-            w = (R[0, 2] - R[2, 0]) / s if s > 1e-9 else 1.0
-            x = (R[0, 1] + R[1, 0]) / s if s > 1e-9 else 0.0
-            y = 0.25 * s
-            z = (R[1, 2] + R[2, 1]) / s if s > 1e-9 else 0.0
-        else:
-            s = 2.0 * math.sqrt(max(0.0, 1.0 + R[2, 2] - R[0, 0] - R[1, 1]))
-            w = (R[1, 0] - R[0, 1]) / s if s > 1e-9 else 1.0
-            x = (R[0, 2] + R[2, 0]) / s if s > 1e-9 else 0.0
-            y = (R[1, 2] + R[2, 1]) / s if s > 1e-9 else 0.0
-            z = 0.25 * s
-        pose = _Pose()
-        pose.position.x = float(T[0, 3])
-        pose.position.y = float(T[1, 3])
-        pose.position.z = float(T[2, 3])
-        pose.orientation.x = float(x)
-        pose.orientation.y = float(y)
-        pose.orientation.z = float(z)
-        pose.orientation.w = float(w)
-        return pose
+        return matrix_to_pose(T)
 
     def _robot_state_frame_transform_matrix(
         self,
