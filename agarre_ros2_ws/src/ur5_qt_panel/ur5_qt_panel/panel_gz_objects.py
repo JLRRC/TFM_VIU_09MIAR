@@ -10,7 +10,19 @@ import subprocess
 import time
 from typing import Optional, Tuple
 
-from .panel_config import WORLDS_DIR, ROS_AVAILABLE
+from .panel_config import (
+    ATTACH_DIST_M,
+    BASE_FRAME,
+    DEFAULT_WORLD_CANDIDATES,
+    DROP_ANCHOR_PREFIX,
+    GRIPPER_ATTACH_PREFIX,
+    GZ_WORLD,
+    NUDGE_DROP_DZ,
+    NUDGE_DROP_OBJECTS,
+    NUDGE_DROP_Z_MIN,
+    ROS_AVAILABLE,
+    WORLDS_DIR,
+)
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
 from .panel_objects import (
     ObjectLogicalState,

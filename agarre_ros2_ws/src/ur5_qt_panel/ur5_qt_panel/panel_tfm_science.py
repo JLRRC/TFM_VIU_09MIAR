@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .panel_config import (
+    INFER_CKPT,
     VISION_EXP_DIR,
 )
 from .panel_utils import (

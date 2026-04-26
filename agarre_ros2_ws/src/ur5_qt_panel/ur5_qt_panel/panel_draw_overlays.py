@@ -12,6 +12,10 @@ from typing import Dict, List, Optional, Tuple
 from PyQt5.QtGui import QImage
 
 from .panel_config import (
+    OVERLAY_ANTIALIAS,
+    OVERLAY_CALIB,
+    OVERLAY_REACH,
+    OVERLAY_SELECTION,
     TABLE_CENTER_X,
     TABLE_CENTER_Y,
     TABLE_SIZE_X,

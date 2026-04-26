@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import QPushButton, QTableWidgetItem
 
 from .panel_config import (
     GRIPPER_CLOSED_RAD,
+    GRIPPER_JOINT_NAMES,
     GRIPPER_OPEN_RAD,
     UR5_JOINT_NAMES,
 )

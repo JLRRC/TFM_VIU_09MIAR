@@ -10,10 +10,14 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 from .panel_config import (
+    PICK_TF_RETRY_SEC,
     PICK_TF_TIMEOUT_SEC,
     SELECTION_SNAP_DIST,
+    SELECTION_TIMEOUT_SEC,
     TABLE_CENTER_X,
     TABLE_CENTER_Y,
+    TABLE_SIZE_X,
+    TABLE_SIZE_Y,
     WORLD_FRAME,
 )
 from .panel_objects import (

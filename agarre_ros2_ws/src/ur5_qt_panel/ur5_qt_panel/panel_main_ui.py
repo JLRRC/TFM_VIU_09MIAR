@@ -32,6 +32,7 @@ from .panel_config import (
     JOINT_SLIDER_DEG_MAX,
     JOINT_SLIDER_DEG_MIN,
     JOINT_SLIDER_SCALE,
+    UR5_JOINT_NAMES,
 )
 from .panel_utils import load_home_pose
 

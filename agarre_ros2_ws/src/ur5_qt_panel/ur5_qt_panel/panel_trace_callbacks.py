@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import QApplication, QTableWidgetItem
 
 from .panel_config import (
     ROS_AVAILABLE,
+    TF_INIT_GRACE_SEC,
 )
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
 from .panel_utils import (

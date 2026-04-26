@@ -27,6 +27,7 @@ from .panel_config import (
     TABLE_SIZE_X,
     TABLE_SIZE_Y,
     TABLE_TOP_Z,
+    UR5_JOINT_NAMES,
     WORLD_FRAME,
 )
 from .panel_calibration import start_calibration
