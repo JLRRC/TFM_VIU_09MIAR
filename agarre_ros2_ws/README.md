@@ -3,6 +3,16 @@
 Workspace ROS 2 del TFM para panel, simulacion y planificacion del UR5 con Gazebo y MoveIt 2.
 Se conserva el nombre `agarre_ros2_ws` por compatibilidad con scripts y rutas absolutas ya validadas.
 
+## Documentación de arquitectura
+
+El documento [ARCHITECTURE.md](ARCHITECTURE.md) describe la arquitectura completa del sistema:
+- Diagrama C4 nivel 1 (sistema → stack ROS 2 → panel Qt)
+- Mapa de módulos de `ur5_qt_panel` y `ur5_tools` con capas de responsabilidad
+- Flujos de datos de los pipelines DIRECTO y MoveIt
+- Topología de nodos ROS 2 en runtime
+- Geometría TCP semántico del gripper RG2
+- Inventario de tests y guía de CI
+
 ## Estructura
 
 - `src/ur5_qt_panel/`: panel Qt principal y logica de UI.
@@ -103,6 +113,16 @@ Notas importantes:
 - El boton `Caso TFM Memoria` deja activado de una vez `EXP3 seed_0 + raw` y aplica el experimento.
 - Todos los experimentos disponibles pueden cargarse y usarse desde el panel.
 - La UI y los logs indican ahora tanto la politica de seleccion del checkpoint como si la prediccion ha recibido ajustes posteriores de angulo, centro o tamano.
+
+## CI rápido (sin ROS)
+
+```bash
+# AST parse + F401 + 179 tests unitarios — ~5 s, no requiere Gazebo ni ROS
+bash scripts/smoke_test.sh --fast
+
+# Checklist pre-demo completo (requiere stack arrancado)
+bash scripts/validate_before_demo.sh
+```
 
 ## Scripts operativos utiles
 

@@ -32,15 +32,16 @@ echo "[SMOKE] workspace=$ROOT_DIR  fast=$FAST  $(date -Iseconds)"
 _sep "AST parse"
 PY_FILES_QT=$(find src/ur5_qt_panel/ur5_qt_panel -name "*.py" 2>/dev/null | sort)
 PY_FILES_UT=$(find src/ur5_tools/ur5_tools -name "*.py" 2>/dev/null | sort)
+PY_FILES_BU=$(find src/ur5_bringup/launch -name "*.py" 2>/dev/null | sort)
 parse_errors=0
-for f in $PY_FILES_QT $PY_FILES_UT; do
+for f in $PY_FILES_QT $PY_FILES_UT $PY_FILES_BU; do
   if ! python3 -c "import ast; ast.parse(open('$f').read())" 2>/dev/null; then
     _fail "Syntax error in $f"
     parse_errors=$((parse_errors + 1))
   fi
 done
 if [ "$parse_errors" -eq 0 ]; then
-  count=$(echo "$PY_FILES_QT $PY_FILES_UT" | wc -w)
+  count=$(echo "$PY_FILES_QT $PY_FILES_UT $PY_FILES_BU" | wc -w)
   _ok "All $count Python files parse cleanly"
 fi
 
@@ -49,7 +50,11 @@ fi
 # ---------------------------------------------------------------------------
 _sep "F401 unused imports"
 if command -v python3 -m flake8 >/dev/null 2>&1 || python3 -c "import flake8" 2>/dev/null; then
-  f401_out=$(python3 -m flake8 src/ur5_qt_panel/ur5_qt_panel src/ur5_tools/ur5_tools --select=F401 2>&1 || true)
+  f401_out=$(python3 -m flake8 \
+    src/ur5_qt_panel/ur5_qt_panel \
+    src/ur5_tools/ur5_tools \
+    src/ur5_bringup/launch \
+    --select=F401 2>&1 || true)
   if [[ -n "$f401_out" ]]; then
     _fail "F401 violations:\n$f401_out"
   else
@@ -63,10 +68,25 @@ fi
 # 3. Unit tests — directo_geometry and directo_gate_evaluator (no ROS needed)
 # ---------------------------------------------------------------------------
 _sep "Unit tests (geometry + gate evaluator)"
-if python3 -m pytest src/ur5_qt_panel/test/test_directo_geometry.py \
+ut1_ok=0
+if python3 -m pytest \
+     src/ur5_qt_panel/test/test_directo_geometry.py \
      src/ur5_qt_panel/test/test_directo_gate_evaluator.py \
      -q --tb=short 2>&1; then
-  _ok "Unit tests PASS"
+  ut1_ok=1
+fi
+
+_sep "Unit tests (moveit bridge utils + launch helpers)"
+ut2_ok=0
+if python3 -m pytest \
+     src/ur5_tools/test/test_moveit_bridge_utils.py \
+     src/ur5_bringup/test/test_launch_helpers.py \
+     -q --tb=short 2>&1; then
+  ut2_ok=1
+fi
+
+if [ "$ut1_ok" -eq 1 ] && [ "$ut2_ok" -eq 1 ]; then
+  _ok "All unit tests PASS"
 else
   _fail "Unit tests FAIL — see output above"
 fi
