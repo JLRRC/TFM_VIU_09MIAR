@@ -13,6 +13,7 @@ from ur5_tools.moveit_bridge_utils import (
     describe_execute_result,
     diag_to_message,
     goal_status_text,
+    is_stamp_fresh,
     joint_trajectory_duration_sec,
     joint_trajectory_initial_segment_max_delta,
     matrix_to_pose,
@@ -24,6 +25,7 @@ from ur5_tools.moveit_bridge_utils import (
     pose_to_matrix,
     result_meta_to_message,
     scale_joint_trajectory_timing,
+    stamp_age_sec,
     wait_future_done,
 )
 
@@ -352,3 +354,37 @@ def test_matrix_to_pose_identity():
     pose = matrix_to_pose(T)
     assert pose.position.x == pytest.approx(0.0)
     assert pose.orientation.w == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# stamp_age_sec / is_stamp_fresh
+# ---------------------------------------------------------------------------
+
+def test_stamp_age_fresh():
+    assert stamp_age_sec(100.0, 100.5) == pytest.approx(0.5)
+
+
+def test_stamp_age_zero_when_equal():
+    assert stamp_age_sec(50.0, 50.0) == pytest.approx(0.0)
+
+
+def test_stamp_age_clamps_negative():
+    # clock skew / future stamp must not produce negative age
+    assert stamp_age_sec(100.5, 100.0) == pytest.approx(0.0)
+
+
+def test_is_stamp_fresh_within_limit():
+    assert is_stamp_fresh(100.0, 100.3, max_age_sec=0.5) is True
+
+
+def test_is_stamp_fresh_exactly_at_limit():
+    assert is_stamp_fresh(100.0, 100.5, max_age_sec=0.5) is True
+
+
+def test_is_stamp_fresh_just_over_limit():
+    assert is_stamp_fresh(100.0, 100.51, max_age_sec=0.5) is False
+
+
+def test_is_stamp_fresh_negative_max_age_disabled():
+    # max_age_sec < 0 means freshness checking is disabled
+    assert is_stamp_fresh(0.0, 9999.0, max_age_sec=-1.0) is True

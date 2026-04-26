@@ -238,7 +238,7 @@ scripts/
 Ejecutar sin ROS:
 ```bash
 cd agarre_ros2_ws
-bash scripts/smoke_test.sh --fast   # ~5 s, 179 tests
+bash scripts/smoke_test.sh --fast   # ~6 s, 265 tests
 ```
 
 ---
@@ -253,12 +253,18 @@ bash scripts/smoke_test.sh --fast   # ~5 s, 179 tests
 | 3a | Extraer `directo_geometry.py` | 20 funciones puras, sin ROS/Qt |
 | 3b | Extraer `directo_gate_evaluator.py` | 11 evaluadores de gate |
 | 4 | 129 tests unitarios (geometry + gate evaluator) | cobertura sin ROS |
-| 5a | Extraer `moveit_bridge_utils.py` | 16 helpers puros de UR5MoveItBridge |
+| 5a | Extraer `moveit_bridge_utils.py` | 16 helpers puros + 2 TF freshness helpers |
 | 5b | Extraer `launch_helpers.py` | ur5_stack.launch.py −27% (1176→863 líneas) |
-| 7 | `smoke_test.sh` + `validate_before_demo.sh` | CI y checklist pre-demo |
+| 7 | `CycleLogger` (cycle_logger.py) | logger JSON thread-safe por ciclo pick |
+| 8 | IK: CachedKDLKinematicsPlugin | kinematics.yaml — cache 5000 poses |
+| 9 | Auditoría bridge_cameras.yaml | 78 bridges categorizados, todos justificados |
+| 10 | `smoke_test.sh` — 265 tests | CI: AST + F401 + unit tests sin ROS |
+| 11 | `test_panel_config.py` (34 tests) | cobertura de constantes panel_config |
+| 12 | TF freshness: `stamp_age_sec` / `is_stamp_fresh` | helpers para guards de frescura TF |
+| 13 | `ARCHITECTURE.md` + README link | documentación de arquitectura C4 |
 
 **Totales de la rama ENTREGA.V3 vs. main:**
-- Ficheros nuevos: 7 módulos + 3 scripts de test + 2 scripts bash
-- Tests: 179 tests sin ROS en <6 s
+- Ficheros nuevos: 11 módulos + 6 ficheros de test + 2 scripts bash
+- Tests: 265 tests sin ROS en <6 s
 - Imports F401: 0 violaciones
 - `panel_v2.py`: 18 600 → 2 859 líneas (−85%) en commits previos a esta rama

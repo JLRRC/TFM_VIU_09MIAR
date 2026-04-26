@@ -67,11 +67,12 @@ fi
 # ---------------------------------------------------------------------------
 # 3. Unit tests — directo_geometry and directo_gate_evaluator (no ROS needed)
 # ---------------------------------------------------------------------------
-_sep "Unit tests (geometry + gate evaluator)"
+_sep "Unit tests (geometry + gate evaluator + panel config)"
 ut1_ok=0
-if python3 -m pytest \
+if PYTHONPATH="src/ur5_qt_panel:src/ur5_tools:${PYTHONPATH:-}" python3 -m pytest \
      src/ur5_qt_panel/test/test_directo_geometry.py \
      src/ur5_qt_panel/test/test_directo_gate_evaluator.py \
+     src/ur5_qt_panel/test/test_panel_config.py \
      -q --tb=short 2>&1; then
   ut1_ok=1
 fi

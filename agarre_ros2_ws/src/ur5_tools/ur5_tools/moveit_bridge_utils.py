@@ -362,3 +362,19 @@ def matrix_to_pose(T: "np.ndarray") -> Any:
     pose.orientation.z = float(z)
     pose.orientation.w = float(w)
     return pose
+
+
+# ---------------------------------------------------------------------------
+# TF stamp freshness helpers
+# ---------------------------------------------------------------------------
+
+def stamp_age_sec(stamp_sec: float, now_sec: float) -> float:
+    """Return how many seconds old a TF stamp is (non-negative)."""
+    return max(0.0, now_sec - stamp_sec)
+
+
+def is_stamp_fresh(stamp_sec: float, now_sec: float, max_age_sec: float) -> bool:
+    """Return True if the stamp is younger than *max_age_sec* seconds."""
+    if max_age_sec < 0:
+        return True  # sentinel: freshness checking disabled
+    return stamp_age_sec(stamp_sec, now_sec) <= max_age_sec
