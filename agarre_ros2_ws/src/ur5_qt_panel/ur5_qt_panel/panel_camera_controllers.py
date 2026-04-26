@@ -28,8 +28,6 @@ from .panel_utils import base_to_world, gripper_controller_defined
 from .ur5_kinematics import fk_ur5
 from PyQt5.QtCore import QTimer
 from .panel_config import (
-    CAMERA_TOPIC_PREFIX,
-    CONTROLLER_CHECK_INTERVAL_SEC,
     CONTROLLER_LAST_OK_GRACE_SEC,
     CONTROLLER_LIST_RETRY_STEP_SEC,
     CONTROLLER_LIST_RETRY_WINDOW_SEC,

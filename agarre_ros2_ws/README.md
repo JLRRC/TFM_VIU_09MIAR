@@ -124,6 +124,32 @@ bash scripts/smoke_test.sh --fast
 bash scripts/validate_before_demo.sh
 ```
 
+## Limpieza de emergencia
+
+Cuando el daemon DDS queda colgado, hay procesos zombi del stack o la memoria compartida FastDDS está contaminada:
+
+```bash
+# Desde la raiz del proyecto:
+./limpia_stack.sh
+
+# Con PIDs concretos conocidos que no responden:
+./limpia_stack.sh 103569 103652
+```
+
+O directamente desde este workspace:
+
+```bash
+./scripts/limpia_stack.sh
+```
+
+Garantías del script:
+- Nunca llama a `ros2` sin `timeout` (raíz del cuelgue crónico entre reinicios).
+- Mata primero cualquier `ros2 node list / topic list / ...` colgado con SIGKILL.
+- Para el daemon con `timeout 5s ros2 daemon stop` y lo reinicia.
+- Limpia `/dev/shm/fastrtps_*`, `fastdds_*`, `sem.*`, `cyclonedds*`.
+- Idempotente: siempre devuelve `exit 0`.
+- Verificación final no bloqueante: `ps aux` + `timeout 5s ros2 node list --no-daemon`.
+
 ## Scripts operativos utiles
 
 Arranque y estado:

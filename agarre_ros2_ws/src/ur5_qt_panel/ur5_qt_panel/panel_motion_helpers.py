@@ -5,7 +5,6 @@
 """Motion helper utilities for the UR5 panel."""
 from __future__ import annotations
 
-import warnings
 from typing import Iterable
 
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint

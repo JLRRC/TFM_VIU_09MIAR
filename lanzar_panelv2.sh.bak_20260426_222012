@@ -250,12 +250,9 @@ for NODE in "/gripper_attach_backend" "/world_tf_publisher" "/system_state_manag
 done
 
 # Esperar a que system_state_manager declare READY tras pasar TF, cámaras y self-check geométrico.
-# Con LAUNCH_STRICT_READY=1: abortar si READY no llega (comportamiento original).
-# Sin LAUNCH_STRICT_READY: advertir y continuar si los nodos críticos siguen vivos.
-LAUNCH_STRICT_READY="${LAUNCH_STRICT_READY:-0}"
 STATE_WAIT_SEC=180
 STATE_WAIT_START=$(date +%s)
-echo "[LAUNCH] Esperando /system_state=READY (timeout=${STATE_WAIT_SEC}s, strict=${LAUNCH_STRICT_READY})..."
+echo "[LAUNCH] Esperando /system_state=READY (timeout=${STATE_WAIT_SEC}s)..."
 while true; do
     if ! kill -0 "$STACK_PID" 2>/dev/null; then
         echo "[ERROR] El stack terminó antes de publicar READY. Revisa $STACK_LOG"
@@ -278,20 +275,12 @@ while true; do
     NOW=$(date +%s)
     ELAPSED=$(( NOW - STATE_WAIT_START ))
     if (( ELAPSED >= STATE_WAIT_SEC )); then
-        if [[ "$LAUNCH_STRICT_READY" == "1" ]]; then
-            echo "[ERROR] LAUNCH_STRICT_READY=1: timeout esperando /system_state=READY."
-            echo "[ERROR] Último estado='${STATE_SAMPLE:-none}'. Revisa $STACK_LOG"
-            exit 1
-        fi
-        echo "[WARN]  Timeout esperando /system_state=READY (${STATE_WAIT_SEC}s)."
-        echo "[WARN]  Último estado='${STATE_SAMPLE:-none}'. Los nodos críticos están vivos."
-        echo "[WARN]  Abriendo panel en estado degradado. Log: $STACK_LOG"
-        echo "[WARN]  Para abortar en este caso: export LAUNCH_STRICT_READY=1"
-        break
+        echo "[ERROR] Timeout esperando /system_state=READY. Último estado='${STATE_SAMPLE:-none}'. Revisa $STACK_LOG"
+        exit 1
     fi
     sleep 2
 done
-echo "[LAUNCH] /system_state listo ($(( $(date +%s) - STATE_WAIT_START ))s, estado='${STATE_SAMPLE:-READY}')"
+echo "[LAUNCH] /system_state READY ($(( $(date +%s) - STATE_WAIT_START ))s)"
 
 # Matar zombis/detenidos antes de abrir el panel (PANEL_COLD_BOOT=0 omite esto en start_panel_v2.sh)
 # Los zombis no se pueden matar directamente (ya están muertos); hay que matar al padre.

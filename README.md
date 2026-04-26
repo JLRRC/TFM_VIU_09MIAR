@@ -16,7 +16,31 @@ Arranque canónico, oficial y válido del panel completo:
 ./lanzar_panelc2.sh
 ```
 
-`./lanzar_panelv2.sh` se mantiene como alias de compatibilidad.
+El launcher detecta el estado del stack automáticamente antes de actuar:
+
+| Situación detectada | Comportamiento |
+|---|---|
+| `/system_state=READY` ya publicado | Abre el panel directamente sin tocar Gazebo ni MoveIt (~6 s) |
+| Stack no detectado | Cold boot completo: limpia, lanza Gazebo + MoveIt2 + controllers, abre panel |
+| Nodos críticos vivos pero sin READY | Con `PANEL_ALLOW_DEGRADED_STACK=1`: abre panel con warning |
+
+Variables de control disponibles:
+
+```bash
+# Siempre arrancar desde cero (mata todo y relanza el stack completo)
+PANEL_FORCE_COLD_BOOT=1 ./lanzar_panelc2.sh
+
+# Solo abrir el panel si el stack ya está READY; salir si no lo está
+PANEL_FAST_ONLY=1 ./lanzar_panelc2.sh
+
+# Abrir el panel aunque /system_state no sea READY (stack degradado)
+PANEL_ALLOW_DEGRADED_STACK=1 ./lanzar_panelc2.sh
+
+# En cold boot: abortar si READY no llega antes del timeout (comportamiento estricto)
+LAUNCH_STRICT_READY=1 ./lanzar_panelc2.sh
+```
+
+`./lanzar_panelv2.sh` implementa el cold boot completo; `./lanzar_panelc2.sh` lo invoca cuando el stack no está corriendo.
 La repetición manual final de las pruebas operativas debe ejecutarse con `./lanzar_panelc2.sh`.
 
 Parar el stack ROS 2:
@@ -24,6 +48,20 @@ Parar el stack ROS 2:
 ```bash
 ./agarre_ros2_ws/scripts/stop_panel_v2.sh
 ```
+
+Limpieza de emergencia (daemon DDS colgado, procesos zombi, SHM contaminada):
+
+```bash
+./limpia_stack.sh
+```
+
+Matar PIDs concretos conocidos y luego limpiar el resto:
+
+```bash
+./limpia_stack.sh 103569 103652
+```
+
+El script es idempotente y siempre devuelve `exit 0`. Nunca llama a comandos ROS 2 sin `timeout`; usa `--no-daemon` en todas las consultas al grafo. Útil cuando `ros2 node list` queda bloqueado o el daemon DDS no responde entre reinicios del stack.
 
 Relanzar entrenamientos base del capitulo 5:
 
