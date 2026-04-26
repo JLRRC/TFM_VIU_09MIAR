@@ -131,8 +131,8 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
             release_ok = False
             release_tip = "Soltar objetos ya ejecutado en este arranque"
         else:
-            release_ok = not system_error
-            release_tip = "" if release_ok else "Sistema en error"
+            release_ok = gz_active and not system_error
+            release_tip = "" if release_ok else ("Gazebo no activo" if not gz_active else "Sistema en error")
         panel._set_btn_state(panel.btn_release_objects, release_ok, release_tip)
 
     camera_ready = panel._camera_stream_ok
