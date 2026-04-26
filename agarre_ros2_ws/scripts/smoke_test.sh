@@ -72,7 +72,10 @@ fi
 # ---------------------------------------------------------------------------
 _sep "Unit tests (ur5_qt_panel — no ROS)"
 ut1_ok=0
-if PYTHONPATH="src/ur5_qt_panel:src/ur5_tools:${PYTHONPATH:-}" python3 -m pytest \
+# Strip the ROS Python path so the conftest stubs don't clash with rclpy C
+# extensions when this script is sourced from a ROS-active shell. Tests are
+# designed to run without ROS, so the isolated PYTHONPATH is correct here.
+if PYTHONPATH="src/ur5_qt_panel:src/ur5_tools" python3 -m pytest \
      src/ur5_qt_panel/test/test_directo_geometry.py \
      src/ur5_qt_panel/test/test_directo_gate_evaluator.py \
      src/ur5_qt_panel/test/test_panel_config.py \

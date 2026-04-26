@@ -9,9 +9,14 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import List
 
-from .launch_helpers import (
+# ros2 launch loads this file without a parent package, so relative imports
+# don't work. Add the launch directory to sys.path for the helper module.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from launch_helpers import (
     PANEL_ENV_DEFAULTS,
     build_gz_plugin_path,
     build_gz_resource_path,
