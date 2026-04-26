@@ -26,6 +26,7 @@ from .panel_config import (
     TABLE_CENTER_Y,
     TABLE_SIZE_X,
     TABLE_SIZE_Y,
+    TABLE_TOP_Z,
     WORLD_FRAME,
 )
 from .panel_calibration import start_calibration
@@ -143,7 +144,7 @@ def _auto_calibrate_from_camera(panel) -> bool:
         panel._log("[CALIB] Auto: tamaño de imagen desconocido")
         return False
 
-    table_z = 0.850
+    table_z = TABLE_TOP_Z
     corners = [
         (TABLE_CENTER_X - TABLE_SIZE_X / 2.0, TABLE_CENTER_Y + TABLE_SIZE_Y / 2.0, table_z),
         (TABLE_CENTER_X + TABLE_SIZE_X / 2.0, TABLE_CENTER_Y + TABLE_SIZE_Y / 2.0, table_z),

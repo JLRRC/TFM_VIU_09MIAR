@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from .panel_config import (
     TABLE_CENTER_X,
     TABLE_CENTER_Y,
+    TABLE_TOP_Z,
     WORLDS_DIR,
 )
 from .panel_robot_presets import JOINT_TABLE_POSE_RAD
@@ -33,7 +34,7 @@ def _resolve_table_top_z(panel) -> float:
         return panel._table_top_z
     panel._load_sdf_geometry_cache()
     if panel._table_top_z is None:
-        panel._table_top_z = 0.850
+        panel._table_top_z = TABLE_TOP_Z
     return panel._table_top_z
 
 def _resolve_safety_surface_z(panel, table_top: float) -> float:
