@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import os
 import time
-import threading
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .panel_config import (
     ROS_AVAILABLE,
@@ -16,8 +15,6 @@ from .panel_config import (
 )
 from .panel_utils import (
     list_controllers_state,
-    parse_ros_topics,
-    resolve_controller_manager,
     rclpy,
 )
 

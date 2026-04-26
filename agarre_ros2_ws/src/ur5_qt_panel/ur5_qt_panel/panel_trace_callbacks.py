@@ -14,8 +14,6 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QTableWidgetItem
 
 from .panel_config import (
-    BASE_FRAME,
-    GRIPPER_TCP_Z_OFFSET,
     ROS_AVAILABLE,
 )
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
@@ -23,11 +21,8 @@ from .panel_utils import (
     discover_base_and_ee_frames,
     get_object_positions,
     yaw_from_quaternion,
-    world_to_base,
     ROBOT_FRAME_KEYWORDS,
 )
-from .panel_workers import _FnThread
-from .logging_utils import timestamped_line
 
 
 def _log_exception(context: str, exc: Exception) -> None:

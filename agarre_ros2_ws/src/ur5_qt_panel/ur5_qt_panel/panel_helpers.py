@@ -5,13 +5,11 @@
 """Helper method callbacks (readiness, logging, UI controls, step mode) for ControlPanelV2."""
 from __future__ import annotations
 
-import hashlib
 import math
 import os
 import time
-import threading
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 try:
     import psutil
@@ -21,11 +19,10 @@ except ImportError:
 from .panel_config import (
     CAMERA_READY_MAX_AGE_SEC,
     DROP_OBJECT_NAMES,
-    ROS_AVAILABLE,
     STATUS_TOPIC_CACHE_SEC,
     WS_DIR,
 )
-from .panel_state import MoveItState, SystemState, EXTERNAL_STATE_MAP
+from .panel_state import MoveItState, SystemState
 from .panel_external_state import (
     external_state_active,
     resolve_external_state,

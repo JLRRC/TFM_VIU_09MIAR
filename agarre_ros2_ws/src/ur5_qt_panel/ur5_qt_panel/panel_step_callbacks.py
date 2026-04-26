@@ -6,13 +6,11 @@
 from __future__ import annotations
 
 import math
-import os
 import time
-import threading
 from typing import Dict, List, Optional, Tuple
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QBrush, QColor, QFont
+from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import QPushButton, QTableWidgetItem
 
 from .panel_config import (

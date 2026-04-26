@@ -7,13 +7,11 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
-from PyQt5.QtCore import Qt, QPointF
-from PyQt5.QtGui import QBrush, QColor, QImage, QPainter, QPen
+from PyQt5.QtGui import QImage
 
 from .panel_config import (
-    REACH_OVERLAY_Z,
     TABLE_CENTER_X,
     TABLE_CENTER_Y,
     TABLE_SIZE_X,
@@ -45,9 +43,9 @@ def _compute_homography(pixel_points: List[Tuple[float, float]], world_points: L
 
 def _draw_calib_overlay(panel, qimg: QImage, w: int, h: int) -> QImage:
     """Dibujar malla y puntos de calibración sobre la imagen."""
-    from PyQt5.QtGui import QPainter, QPen, QColor, QBrush
+    from PyQt5.QtGui import QPainter, QPen, QColor
     from PyQt5.QtCore import Qt, QPointF
-    
+
     # Copiar imagen para no modificar original
     img_copy = qimg.copy()
     painter = QPainter(img_copy)
@@ -527,7 +525,7 @@ def _draw_test_corner_overlay(panel, qimg: QImage, w: int, h: int) -> QImage:
 def _draw_tcp_pose_overlay(panel, qimg: QImage, w: int, h: int) -> QImage:
     """Draw a live TCP pose HUD over the camera view."""
     from PyQt5.QtGui import QPainter, QPen, QColor, QBrush
-    from PyQt5.QtCore import Qt, QRectF, QPointF
+    from PyQt5.QtCore import QRectF, QPointF
 
     img_copy = qimg.copy()
     painter = QPainter(img_copy)

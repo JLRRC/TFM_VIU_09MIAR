@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 import math
 import signal
-import subprocess
 import sys
 import threading
 import time
@@ -72,7 +71,6 @@ from .panel_utils import (
     RosWorker,
     get_object_positions,
     load_object_positions,
-    shutdown_tf_helper,
     rclpy,
 )
 from .panel_state import (
@@ -81,7 +79,6 @@ from .panel_state import (
     SystemState,
 )
 from .panel_physics import PanelPhysics
-from .panel_shutdown import terminate_process
 from .panel_tf_monitor import TFMonitor
 from .panel_moveit_publishers import init_moveit_publishers
 from .panel_tfm import (

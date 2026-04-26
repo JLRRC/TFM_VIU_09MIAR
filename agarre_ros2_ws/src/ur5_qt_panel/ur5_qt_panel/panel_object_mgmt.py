@@ -5,8 +5,6 @@
 """Object management and table/calibration callbacks for ControlPanelV2."""
 from __future__ import annotations
 
-import json
-import math
 import os
 import time
 from typing import Dict, List, Optional, Set, Tuple

@@ -7,18 +7,15 @@ Uso:
   ros2 run tfm_grasping grasp_inference
 """
 
-import os
 import sys
 from pathlib import Path
 from typing import Optional
 
 try:
     import cv2
-    import numpy as np
     import rclpy
     from rclpy.node import Node
     from sensor_msgs.msg import Image
-    from geometry_msgs.msg import Point
     from std_msgs.msg import Float32MultiArray
     from cv_bridge import CvBridge
     import torch

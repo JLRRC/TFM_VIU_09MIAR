@@ -9,8 +9,7 @@ import math
 import os
 import subprocess
 import time
-import threading
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 try:
     import psutil

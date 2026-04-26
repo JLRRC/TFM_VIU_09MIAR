@@ -10,8 +10,6 @@ from typing import Dict, List, Optional, Tuple
 
 from .panel_config import (
     AUTO_START_BRIDGE_MAX_RETRIES,
-    BASE_FRAME,
-    ROS_AVAILABLE,
 )
 from .panel_physics import OBJECT_SETTLE_TIMEOUT_SEC
 from .panel_state import (

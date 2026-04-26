@@ -201,7 +201,7 @@ def _pick_confirm_dialog(parent, btn_label: str, frame: str, pose_str: str) -> b
     if os.environ.get("PANEL_FORCE_OFFSCREEN", "0") == "1" or \
             os.environ.get("PANEL_AUTO_RUN_PICK_DEMO", "0") in ("1", "true", "yes", "on"):
         return True
-    from PyQt5.QtWidgets import QMessageBox, QPushButton
+    from PyQt5.QtWidgets import QMessageBox
     dlg = QMessageBox(parent)
     dlg.setWindowTitle(f"Confirmar: {btn_label}")
     dlg.setText(

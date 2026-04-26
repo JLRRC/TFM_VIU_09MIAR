@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import json
 import time
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Optional, Tuple
 
 from PyQt5.QtWidgets import QFileDialog
 
@@ -16,11 +16,9 @@ from .panel_config import (
     BRIDGE_BASE_YAML,
     DEFAULT_WORLD_CANDIDATES,
     GZ_WORLD,
-    ROS_AVAILABLE,
     SCRIPTS_DIR,
     TF_INIT_GRACE_SEC,
     WORLDS_DIR,
-    WORLD_FRAME,
 )
 from .panel_utils import read_world_name
 

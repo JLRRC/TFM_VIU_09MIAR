@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Optional, Tuple
 
 from .panel_config import WORLDS_DIR, ROS_AVAILABLE
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME

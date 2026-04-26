@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .panel_config import (
     PICK_TF_TIMEOUT_SEC,

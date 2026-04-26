@@ -22,7 +22,6 @@ from PyQt5.QtGui import (
     QPainter,
     QPen,
     QColor,
-    QPolygonF,
     QFont,
     QFontMetrics,
 )

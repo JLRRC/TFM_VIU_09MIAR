@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import math
 import os
 import time
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 
 from geometry_msgs.msg import Pose, PoseStamped

@@ -5,16 +5,12 @@
 """TFM checkpoint discovery, experiment loading, and science UI callbacks."""
 from __future__ import annotations
 
-import json
 import math
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .panel_config import (
-    GRIPPER_TCP_Z_OFFSET,
-    TABLE_CENTER_X,
-    TABLE_CENTER_Y,
     VISION_EXP_DIR,
 )
 from .panel_utils import (

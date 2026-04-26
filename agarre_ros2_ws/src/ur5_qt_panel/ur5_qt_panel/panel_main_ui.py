@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import math
-import os
 import time
 
 from PyQt5.QtCore import Qt, QTimer
