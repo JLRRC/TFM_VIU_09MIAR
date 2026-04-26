@@ -238,7 +238,7 @@ scripts/
 Ejecutar sin ROS:
 ```bash
 cd agarre_ros2_ws
-bash scripts/smoke_test.sh --fast   # ~6 s, 366 tests
+bash scripts/smoke_test.sh --fast   # ~6 s, 388 tests
 ```
 
 ---
@@ -265,6 +265,6 @@ bash scripts/smoke_test.sh --fast   # ~6 s, 366 tests
 
 **Totales de la rama ENTREGA.V3 vs. main:**
 - Ficheros nuevos: 11 módulos + 6 ficheros de test + 2 scripts bash
-- Tests: 366 tests sin ROS en <6 s
+- Tests: 388 tests sin ROS en <6 s
 - Imports F401: 0 violaciones
 - `panel_v2.py`: 18 600 → 2 859 líneas (−85%) en commits previos a esta rama
