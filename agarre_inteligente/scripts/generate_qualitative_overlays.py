@@ -28,7 +28,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--predictions", required=True, help="CSV con pred y gt")
     ap.add_argument("--data-root", default="data/processed")
-    ap.add_argument("--out-dir", default="reports/figures/qualitative")
+    ap.add_argument("--out-dir", default="report/figures/qualitative")
     ap.add_argument("--max-samples", type=int, default=24)
     args = ap.parse_args()
 

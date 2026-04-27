@@ -5,7 +5,7 @@
 set -euo pipefail
 
 WS_DIR="/home/laboratorio/TFM/agarre_ros2_ws"
-BASE_DIR="$WS_DIR/reports/touch_tuner/baselines"
+BASE_DIR="$WS_DIR/report/touch_tuner/baselines"
 mkdir -p "$BASE_DIR"
 
 cd "$WS_DIR"
@@ -13,7 +13,7 @@ cd "$WS_DIR"
 if [[ $# -ge 1 ]]; then
   VALIDATION_DIR="$1"
 else
-  VALIDATION_DIR="$(ls -1dt reports/touch_tuner/*_dual_validation | head -n 1 || true)"
+  VALIDATION_DIR="$(ls -1dt report/touch_tuner/*_dual_validation | head -n 1 || true)"
 fi
 
 if [[ -z "${VALIDATION_DIR:-}" || ! -d "$VALIDATION_DIR" ]]; then

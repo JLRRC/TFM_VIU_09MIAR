@@ -40,7 +40,7 @@ def _agg(df: pd.DataFrame, exp_name: str) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--experiments-root", default="experiments")
-    ap.add_argument("--output", default="reports/tables/summary_results.csv")
+    ap.add_argument("--output", default="report/tables/summary_results.csv")
     ap.add_argument("--include-aux", action="store_true", help="Incluye experimentos auxiliares como EXP1.1 y EXP1.2.")
     args = ap.parse_args()
 

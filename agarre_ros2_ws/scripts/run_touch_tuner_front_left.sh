@@ -6,7 +6,7 @@ set -euo pipefail
 
 WS_DIR="/home/laboratorio/TFM/agarre_ros2_ws"
 STAMP="$(date +%Y-%m-%d_%H-%M-%S)"
-OUT_DIR="$WS_DIR/reports/touch_tuner/$STAMP"
+OUT_DIR="$WS_DIR/report/touch_tuner/$STAMP"
 mkdir -p "$OUT_DIR"
 LOG_FILE="$OUT_DIR/run.log"
 

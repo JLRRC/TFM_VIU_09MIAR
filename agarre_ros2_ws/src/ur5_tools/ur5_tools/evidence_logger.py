@@ -4,7 +4,7 @@
 """Evidence logger node: registro JSONL/CSV por sesion para defensa academica.
 
 Suscribe a topics clave del pipeline pick & place y escribe eventos
-estructurados en ``reports/runs/<timestamp>/`` con dos formatos:
+estructurados en ``report/runs/<timestamp>/`` con dos formatos:
 
 * ``events.jsonl`` — JSON Lines, una linea por evento, con campos
   ``ts_iso``, ``ts_mono``, ``ts_sim_ns``, ``topic``, ``kind``, ``data``.
@@ -18,7 +18,7 @@ Topics suscritos:
 - ``/system_diag`` (std_msgs/String) — diagnosticos del system_state_manager.
 - ``/gripper/<obj>/state`` (std_msgs/Bool) — attach/detach por objeto.
 
-El directorio raiz por defecto es ``${WS_DIR}/reports/runs/<timestamp>/``,
+El directorio raiz por defecto es ``${WS_DIR}/report/runs/<timestamp>/``,
 configurable con el parametro ROS ``output_root``.
 
 Uso:
@@ -97,7 +97,7 @@ class EvidenceLogger(Node):
             root = Path(output_root_param).expanduser().resolve()
         else:
             ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
-            root = Path(ws_dir) / "reports" / "runs"
+            root = Path(ws_dir) / "report" / "runs"
         root.mkdir(parents=True, exist_ok=True)
         self._session_dir = _safe_unique_dir(root)
         self._events_path = self._session_dir / "events.jsonl"

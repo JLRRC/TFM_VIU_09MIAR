@@ -3,7 +3,7 @@
 ## Contexto
 
 La memoria del TFM ya está cerrada. Los experimentos oficiales (EXP1..EXP4) y
-sus artefactos en `reports/` son **inmutables**. Este documento describe las
+sus artefactos en `report/` son **inmutables**. Este documento describe las
 discrepancias metodológicas identificadas entre el workspace real y la formulación
 teórica del TFM, y cómo se han resuelto **sin** tocar los resultados oficiales.
 
@@ -120,7 +120,7 @@ explícito y el comportamiento es idéntico al original.
 
 | Artefacto | Tipo | Estado |
 |---|---|---|
-| `reports/` (todo el árbol) | OFICIAL TFM | Inmutable — no tocar |
+| `report/` (todo el árbol) | OFICIAL TFM | Inmutable — no tocar |
 | `experiments/EXP1..EXP4` (checkpoints) | OFICIAL TFM | Inmutable |
 | `src/training/metrics.py` — funciones `*_axis_aligned*`, `cornell_success`, `summarize_batch` | OFICIAL TFM (comportamiento) | Conservadas sin cambio |
 | `src/evaluation/evaluator.py` — clase `Evaluator` | OFICIAL TFM (comportamiento) | Conservada sin cambio |
@@ -135,7 +135,7 @@ explícito y el comportamiento es idéntico al original.
 
 ## Impacto sobre los resultados oficiales
 
-Los val_success reportados en `reports/metrics/validated/` para EXP1..EXP4 son
+Los val_success reportados en `report/metrics/validated/` para EXP1..EXP4 son
 **cota superior** del éxito real con IoU orientada. La diferencia cuantitativa
 depende del modelo: un modelo que predice ángulos muy precisos verá poca
 diferencia; un modelo con errores de ángulo significativos verá una reducción

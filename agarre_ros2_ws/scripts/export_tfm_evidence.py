@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exporta la evidencia mas reciente del bloque TFM a reports/evidence/ros2."""
+"""Exporta la evidencia mas reciente del bloque TFM a report/evidence/ros2."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ def _write_manifest(out_dir: Path, session: dict, copied: list[str]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--audit-root", default="auditoria/panel_audit")
-    ap.add_argument("--out-root", default="reports/evidence/ros2/tfm_session_exports")
+    ap.add_argument("--out-root", default="report/evidence/ros2/tfm_session_exports")
     args = ap.parse_args()
 
     audit_root = Path(args.audit_root)

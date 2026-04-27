@@ -43,16 +43,16 @@ for exp_dir in "${official_experiments[@]}"; do
 done
 
 echo "[3/6] Generando resumen global..."
-python3 scripts/summarize_results.py --experiments-root experiments --output reports/tables/summary_results.csv
+python3 scripts/summarize_results.py --experiments-root experiments --output report/tables/summary_results.csv
 
 echo "[4/6] Generando figuras..."
-python3 scripts/generate_figures.py --experiments-root experiments --summary reports/tables/summary_results.csv --out-dir reports/figures
+python3 scripts/generate_figures.py --experiments-root experiments --summary report/tables/summary_results.csv --out-dir report/figures
 
 echo "[5/7] Validando scope oficial..."
-python3 scripts/validate_official_scope.py --summary reports/tables/summary_results.csv --results-by-seed reports/tables/results_by_seed.csv
+python3 scripts/validate_official_scope.py --summary report/tables/summary_results.csv --results-by-seed report/tables/results_by_seed.csv
 
 echo "[6/7] Generando tablas..."
-python3 scripts/generate_tables.py --summary reports/tables/summary_results.csv --out-dir reports/tables
+python3 scripts/generate_tables.py --summary report/tables/summary_results.csv --out-dir report/tables
 
 echo "[7/7] Validación de artefactos..."
 python3 scripts/validate_artifacts.py --strict

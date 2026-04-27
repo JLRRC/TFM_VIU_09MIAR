@@ -261,7 +261,7 @@ class PanelSettings:
         tfm_root_dir = os.path.dirname(ws_dir)
         vision_summary = os.path.join(
             tfm_root_dir,
-            "reports",
+            "report",
             "metrics",
             "validated",
             "chapter5_experiment_summary_validated.csv",

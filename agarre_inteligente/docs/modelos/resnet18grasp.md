@@ -124,7 +124,7 @@ la variante orientada posterior del repo.
 
 ### 5.1 Resultados agregados oficiales
 
-Fuente: `reports/metrics/validated/chapter5_experiment_summary_validated.csv`
+Fuente: `report/metrics/validated/chapter5_experiment_summary_validated.csv`
 
 | Variante | Experimento | best_epoch medio | val_success | val_iou | val_angle_deg | val_loss |
 |---|---|---:|---:|---:|---:|---:|
@@ -150,7 +150,7 @@ Lectura rapida:
 
 ### 5.3 Comparativa oficial frente a SimpleGraspCNN
 
-Fuente: `reports/tables/cap5/Tabla_5-4_comparativa_por_modalidad_entre_simplegraspcnn_y_resnet18grasp.csv`
+Fuente: `report/tables/cap5/Tabla_5-4_comparativa_por_modalidad_entre_simplegraspcnn_y_resnet18grasp.csv`
 
 | Modalidad | val_success ResNet18Grasp | val_success SimpleGraspCNN | Delta absoluto |
 |---|---:|---:|---:|
@@ -159,7 +159,7 @@ Fuente: `reports/tables/cap5/Tabla_5-4_comparativa_por_modalidad_entre_simplegra
 
 ### 5.4 Tamano y latencia
 
-Fuente: `reports/tables/cap5/Tabla_5-3_medicion_de_latencia_de_inferencia_por_experimento_y_dispositivo.csv`
+Fuente: `report/tables/cap5/Tabla_5-3_medicion_de_latencia_de_inferencia_por_experimento_y_dispositivo.csv`
 
 | Variante | Parametros | Tamano aprox. fp32 | CPU ms | CPU FPS | CUDA ms | CUDA FPS |
 |---|---:|---:|---:|---:|---:|---:|

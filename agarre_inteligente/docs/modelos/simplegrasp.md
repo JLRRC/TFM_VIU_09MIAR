@@ -185,7 +185,7 @@ Calculado localmente con la implementacion actual:
 | RGB | 1704709 | 6.5029 MB |
 | RGB-D | 1706277 | 6.5089 MB |
 
-No existe en `reports/` un benchmark de latencia curado y oficial para
+No existe en `report/` un benchmark de latencia curado y oficial para
 `SimpleGrasp`, asi que aqui conviene no mezclarlo con las tablas oficiales del
 capitulo 5.
 

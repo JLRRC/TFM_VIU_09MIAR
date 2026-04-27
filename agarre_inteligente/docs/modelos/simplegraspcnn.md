@@ -148,7 +148,7 @@ Detalle importante:
 
 ### 5.1 Resultados agregados oficiales
 
-Fuente: `reports/metrics/validated/chapter5_experiment_summary_validated.csv`
+Fuente: `report/metrics/validated/chapter5_experiment_summary_validated.csv`
 
 | Variante | Experimento | best_epoch medio | val_success | val_iou | val_angle_deg | val_loss |
 |---|---|---:|---:|---:|---:|---:|
@@ -176,7 +176,7 @@ Fuente: `agarre_inteligente/experiments/EXP*/best_epoch_summary.csv`
 
 ### 5.3 Tamano y latencia
 
-Fuente de latencia: `reports/tables/cap5/Tabla_5-3_medicion_de_latencia_de_inferencia_por_experimento_y_dispositivo.csv`
+Fuente de latencia: `report/tables/cap5/Tabla_5-3_medicion_de_latencia_de_inferencia_por_experimento_y_dispositivo.csv`
 
 | Variante | Parametros | Tamano aprox. fp32 | CPU ms | CPU FPS | CUDA ms | CUDA FPS |
 |---|---:|---:|---:|---:|---:|---:|

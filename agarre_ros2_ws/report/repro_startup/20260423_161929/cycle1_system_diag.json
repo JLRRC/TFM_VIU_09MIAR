@@ -1,0 +1,92 @@
+{
+  "reason": "Sistema listo",
+  "state": "READY",
+  "clock_age_sec": 0.0006784469587728381,
+  "pose_age_sec": 0.00564413599204272,
+  "camera_age_sec": 0.0313317229738459,
+  "controllers_ready": true,
+  "controllers_reason": "controllers activos",
+  "moveit_ready": true,
+  "geometry_ok": true,
+  "geometry_reason": "ok",
+  "geometry_tool_frame": "tool0",
+  "geometry_urdf_source": "/home/laboratorio/TFM/agarre_ros2_ws/src/ur5_description/urdf/ur5.urdf.xacro",
+  "geometry_expected_xyz": {
+    "rg2_tcp": [
+      0.0,
+      0.0,
+      0.0050885
+    ],
+    "rg2_pinch_center": [
+      0.0,
+      0.0,
+      0.0050885
+    ]
+  },
+  "geometry_actual_xyz": {
+    "rg2_tcp": [
+      0.0,
+      0.0,
+      0.0050885
+    ],
+    "rg2_pinch_center": [
+      0.0,
+      0.0,
+      0.0050885
+    ]
+  },
+  "geometry_frame_error_m": {
+    "rg2_tcp": 0.0,
+    "rg2_pinch_center": 0.0
+  },
+  "geometry_pair_error_m": 0.0,
+  "geometry_snapshot": {
+    "tool_frame": "tool0",
+    "source_path": "/home/laboratorio/TFM/agarre_ros2_ws/src/ur5_description/urdf/ur5.urdf.xacro",
+    "expected_xyz": {
+      "rg2_tcp": [
+        0.0,
+        0.0,
+        0.0050885
+      ],
+      "rg2_pinch_center": [
+        0.0,
+        0.0,
+        0.0050885
+      ]
+    },
+    "actual_xyz": {
+      "rg2_tcp": [
+        0.0,
+        0.0,
+        0.0050885
+      ],
+      "rg2_pinch_center": [
+        0.0,
+        0.0,
+        0.0050885
+      ]
+    },
+    "frame_error_m": {
+      "rg2_tcp": 0.0,
+      "rg2_pinch_center": 0.0
+    },
+    "offset_tol_m": 0.002,
+    "pair_tol_m": 0.001,
+    "pair_error_m": 0.0,
+    "ok": true,
+    "reason": "ok",
+    "urdf_source": "/home/laboratorio/TFM/agarre_ros2_ws/src/ur5_description/urdf/ur5.urdf.xacro"
+  },
+  "pose_model_seen": true,
+  "pose_entities_seen": true,
+  "controllers": {
+    "gripper_controller": "active",
+    "joint_trajectory_controller": "active",
+    "joint_state_broadcaster": "active"
+  },
+  "fatal": false,
+  "clock_ok": true,
+  "pose_ok": true,
+  "camera_ok": true
+}

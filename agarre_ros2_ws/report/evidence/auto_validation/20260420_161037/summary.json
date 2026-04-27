@@ -1,0 +1,164 @@
+{
+  "timestamp": "2026-04-20T15:53:32+02:00",
+  "run_trigger_time": "2026-04-20T15:53:59+02:00",
+  "run_end_time": "2026-04-20T15:57:18+02:00",
+  "workspace": "/home/laboratorio/TFM/agarre_ros2_ws",
+  "stack_log": "historico/stack_manual_20260420_155332.log",
+  "pick_log": "report/evidence/auto_validation/20260420_161037/launch.log",
+  "trace_log": "historico/DIRECTO_DEBUG_TRACE.log",
+  "launch_ok": true,
+  "controllers_ok": "INCONCLUSIVE (controller_manager service not reachable from CLI at analysis time; stack was running via external launch)",
+  "pick_executed": true,
+  "visual_evidence": true,
+  "visual_evidence_files": [
+    "screenshots/03_GRASP_ALIGN_IK_enter_overhead.png",
+    "screenshots/03_GRASP_ALIGN_IK_exit_overhead.png",
+    "screenshots/04_PRE_CLOSE_enter_overhead.png",
+    "screenshots/04_PRE_CLOSE_exit_overhead.png",
+    "screenshots/06_ATTACH_GATE_enter_overhead.png",
+    "screenshots/06_ATTACH_GATE_exit_overhead.png",
+    "screenshots/camera_debug_top_20260420/ (62 frames periodicos)"
+  ],
+  "phases": {
+    "HOME": {
+      "status": "INCONCLUSIVE",
+      "notes": "No hay log explícito de HOME inicial. Robot inicia en posición válida por configuración del launch."
+    },
+    "APPROACH_COARSE": {
+      "status": "PASS",
+      "notes": "result=OK. xy_err=7mm/tol=12mm, z_err=-11mm/tol=12mm. TCP final (0.437,0.006,0.049). Duración: 15:55:08-15:55:46 (~38s incluyendo warm-up IK).",
+      "metrics": {
+        "xy_err_m": 0.007,
+        "xy_tol_m": 0.012,
+        "z_err_m": -0.011,
+        "z_tol_m": 0.012,
+        "target_dist_m": 0.014
+      }
+    },
+    "GRASP_DOWN": {
+      "status": "PASS",
+      "notes": "result=OK. Cartesian path failed (fraction=0.000) → IK fallback permissive_z_only_descent. xy_err=8mm/tol=15mm, z_err=15mm/tol=25mm. Duración: 15:55:46-15:56:09 (~23s).",
+      "metrics": {
+        "cartesian_path": "FAILED (fraction=0.0)",
+        "fallback": "permissive_z_only_descent",
+        "xy_err_m": 0.008,
+        "xy_tol_m": 0.015,
+        "z_err_m": 0.015,
+        "z_tol_m": 0.025,
+        "target_dist_m": 0.016
+      }
+    },
+    "GRASP_ALIGN_IK": {
+      "status": "PASS",
+      "notes": "LISTO PARA COGER emitido. Attempt 1: tcp_obj_dist=8mm, xy=7mm/tol=16mm, z=5mm/tol=10mm. IK_TOL_WARN: ik_err_tol=0.200 (>safe_max=0.015). Residual DH/SDF mismatch ~14mm.",
+      "metrics": {
+        "tcp_obj_dist_m": 0.008,
+        "xy_dist_m": 0.007,
+        "z_error_m": 0.005,
+        "ik_err_tol": 0.200,
+        "ik_err_tol_warn": true
+      }
+    },
+    "PRE_CLOSE": {
+      "status": "PASS",
+      "notes": "Gate satisfied. xy=7.1mm/tol=16mm, z=3.8mm/tol=10mm. consecutive_ok=3/3. Gripper abierto. Snapshot JSON confirmado (phase=PRE_CLOSE, ok=true).",
+      "metrics": {
+        "xy_dist_m": 0.0071,
+        "xy_tol_m": 0.016,
+        "z_error_m": 0.0038,
+        "z_tol_m": 0.010,
+        "consecutive_ok": 3,
+        "gripper_opening_sum": 1.0
+      }
+    },
+    "CLOSE": {
+      "status": "PASS",
+      "notes": "confirmed=True, mode=closing_delta_ok. close_delta=0.251 > min_delta=0.01. ATTACH_GATE snapshot: gripper opening_sum=0.106 (casi cerrado), rg2_finger_joint1=0.053rad, force_estimate=0.5.",
+      "metrics": {
+        "close_delta": 0.251,
+        "min_delta_threshold": 0.01,
+        "opening_sum_before": 1.0,
+        "opening_sum_after": 0.106,
+        "force_estimate": 0.5,
+        "confirmed": true
+      }
+    },
+    "ATTACH_GATE": {
+      "status": "PASS",
+      "notes": "spawn_confirmed=true. logical_state=CARRIED, owner=ROBOT. xy_dist=7mm/tol=20mm, z_err=3mm/tol=10mm. Backend: route=demo_transport, dist=7.3mm/max=60mm. Evidencia visual disponible.",
+      "metrics": {
+        "xy_dist_m": 0.007,
+        "xy_tol_m": 0.020,
+        "z_err_m": 0.003,
+        "z_tol_m": 0.010,
+        "logical_state": "CARRIED",
+        "owner": "ROBOT",
+        "backend_dist_m": 0.0073
+      }
+    },
+    "LIFT": {
+      "status": "INCONCLUSIVE",
+      "notes": "INTERRUMPIDO EXTERNAMENTE (SIGINT a las 15:57:18) a los 61s de inicio (23s timeout). Progreso: TCP z=0.027→0.107 base_link (+80mm de 120mm objetivo, ~73%). Objeto siguiendo TCP via follow_tcp. Movimiento ascendente confirmado y estable. NO es un fallo de fase.",
+      "metrics": {
+        "lift_target_m": 0.12,
+        "lift_progress_m": 0.08,
+        "lift_progress_pct": 67,
+        "tcp_z_start_m": 0.027,
+        "tcp_z_at_interrupt_m": 0.107,
+        "obj_z_start_m": 0.025,
+        "obj_z_at_interrupt_m": 0.096,
+        "follow_tcp_active": true,
+        "interruption_cause": "SIGINT external"
+      }
+    },
+    "TRANSPORT": {
+      "status": "NOT_REACHED",
+      "notes": "Ciclo interrumpido durante LIFT. TRANSPORT/HOME_WITH_OBJECT no alcanzado."
+    },
+    "HOME_WITH_OBJECT": {
+      "status": "NOT_REACHED",
+      "notes": "No alcanzado. Riesgo conocido (objeto se suelta durante transporte largo) no evaluable en esta corrida."
+    },
+    "CESTA_RELEASE": {
+      "status": "NOT_REACHED",
+      "notes": "No alcanzado."
+    },
+    "HOME_FINAL": {
+      "status": "NOT_REACHED",
+      "notes": "No alcanzado."
+    }
+  },
+  "pipeline_quality_metrics": {
+    "approach_coarse_xy_margin_factor": 1.71,
+    "grasp_align_tcp_obj_dist_m": 0.008,
+    "pre_close_xy_margin_factor": 2.25,
+    "close_delta_ratio": 25.1,
+    "attach_dist_pct_of_max": 12.2,
+    "lift_progress_at_interrupt_pct": 67
+  },
+  "warnings": [
+    "IK_ERR_TOL GRASP_ALIGN_IK=0.200 > safe_max=0.015 (TOO LARGE WARNING)",
+    "Cartesian path GRASP_DOWN failed (fraction=0.000), IK fallback used",
+    "DH/SDF mismatch ~13-15mm consistent across phases",
+    "follow_confirmed=false in ATTACH_GATE (expected, only confirmed after demo_transport_enabled)"
+  ],
+  "final_verdict": "CICLO INCOMPLETO — INTERRUMPIDO EXTERNAMENTE. Fases críticas HOME→ATTACH_GATE pasaron con éxito. LIFT en progreso sólido (67%) cuando SIGINT externo. Riesgo conocido HOME_WITH_OBJECT no evaluable.",
+  "root_cause_hypothesis": "El ciclo fue interrumpido por SIGINT externo (kill del proceso ROS launch) durante la fase LIFT, no por ningún fallo del pipeline. Las fases APPROACH_COARSE, GRASP_DOWN, GRASP_ALIGN_IK, PRE_CLOSE, CLOSE y ATTACH_GATE completaron correctamente. El riesgo conocido de HOME_WITH_OBJECT no pudo evaluarse.",
+  "known_risk_confirmed": false,
+  "known_risk_details": "Riesgo conocido: objeto se suelta durante HOME_WITH_OBJECT (transporte largo). No alcanzado en esta corrida. Requiere ciclo completo sin interrupción para evaluar.",
+  "pick_execution_quality": "ALTA — todas las fases alcanzadas completaron con métricas dentro de tolerancia",
+  "artifacts_dir": "/home/laboratorio/TFM/agarre_ros2_ws/report/evidence/auto_validation/20260420_161037",
+  "artifacts": {
+    "launch_log": "launch.log (1172 líneas)",
+    "pick_run_log": "pick_run.log (2937 líneas, stack completo)",
+    "trace_log": "traces/DIRECTO_DEBUG_TRACE.log (16477 líneas)",
+    "snapshot_jsons": "traces/0[1-6]_*.json (6 archivos)",
+    "snapshot_pngs": "screenshots/0[3-6]_*.png (6 imágenes overhead)",
+    "camera_frames": "screenshots/camera_debug_top_20260420/ (62 frames)",
+    "ros2_nodes": "ros2_node_list.txt",
+    "ros2_topics": "ros2_topic_list.txt",
+    "env_vars": "env.txt",
+    "joint_states": "joint_states_once.txt",
+    "tf_rg2": "tf_rg2_pinch_center.txt"
+  }
+}

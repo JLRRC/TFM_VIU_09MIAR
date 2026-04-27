@@ -2,7 +2,7 @@
 
 ## Principio fundamental
 
-El árbol `reports/` en la raíz del proyecto contiene evidencia oficial del TFM
+El árbol `report/` en la raíz del proyecto contiene evidencia oficial del TFM
 presentado. No debe modificarse bajo ningún concepto en trabajos posteriores.
 
 ## Dónde van las salidas nuevas
@@ -12,12 +12,12 @@ presentado. No debe modificarse bajo ningún concepto en trabajos posteriores.
 | Logs operativos y auditoría del panel | `auditoria/panel_audit/` (excluido de git) |
 | Campañas de validación y debug | `auditoria/` (excluido de git) |
 | Nuevos experimentos de entrenamiento | `agarre_inteligente/experiments/EXP5_*` o superior |
-| Evidencia de runs de reproducción | `agarre_ros2_ws/reports/repro_startup/` (excluido de git) |
+| Evidencia de runs de reproducción | `agarre_ros2_ws/report/repro_startup/` (excluido de git) |
 | Resultados trackeados de V2 en adelante | `reports_v2/` (si se crea, debe documentarse explícitamente) |
 
 ## Scripts que NO deben ejecutarse en ENTREGA.V2 sin control explícito
 
-Los siguientes scripts escriben directamente en `reports/` y pueden contaminar
+Los siguientes scripts escriben directamente en `report/` y pueden contaminar
 la evidencia oficial si se ejecutan sin cambiar previamente sus rutas de salida:
 
 - `recrear_artefactos_tfm.sh`
@@ -37,9 +37,9 @@ Cualquier experimento nuevo debe usar:
 
 Nunca sobreescribir los directorios EXP1..EXP4 ni EXP1.1/EXP1.2.
 
-## Referencia de integridad de reports/
+## Referencia de integridad de report/
 
 - Commit de referencia: `dacace8`
-- Fingerprint MD5 del árbol reports/ en el momento de crear ENTREGA.V2:
+- Fingerprint MD5 del árbol report/ en el momento de crear ENTREGA.V2:
   `e06c4c1abd0094b674023470f9cf1f84`
-- Verificar integridad: `find ~/TFM/reports -type f | sort | xargs md5sum | md5sum`
+- Verificar integridad: `find ~/TFM/report -type f | sort | xargs md5sum | md5sum`

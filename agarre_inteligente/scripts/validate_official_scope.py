@@ -30,8 +30,8 @@ def _check_csv_scope(csv_path: Path) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--summary", default="reports/tables/summary_results.csv")
-    ap.add_argument("--results-by-seed", default="reports/tables/results_by_seed.csv")
+    ap.add_argument("--summary", default="report/tables/summary_results.csv")
+    ap.add_argument("--results-by-seed", default="report/tables/results_by_seed.csv")
     args = ap.parse_args()
 
     _check_csv_scope(Path(args.summary))

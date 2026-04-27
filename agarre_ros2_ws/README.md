@@ -205,16 +205,16 @@ Benchmark y trazas:
 
 ## Evidencias y trazabilidad
 
-- Evidencias curadas del sistema ROS 2: `../reports/evidence/ros2/`
-- Evidencias del bloque del TFM en resultados: `../reports/evidence/chapter5/`
-- Logs de reproducibilidad: `../reports/logs/reproducibility/`
+- Evidencias curadas del sistema ROS 2: `../report/evidence/ros2/`
+- Evidencias del bloque del TFM en resultados: `../report/evidence/chapter5/`
+- Logs de reproducibilidad: `../report/logs/reproducibility/`
 
 Artefactos operativos utiles del panel:
 
-- `../reports/evidence/ros2/panel_audit/artifacts/checkpoints_index.json`
-- `../reports/evidence/ros2/panel_audit/artifacts/grasp_last.json`
-- `../reports/evidence/ros2/panel_audit/figures/overlay_last.png`
-- `../reports/evidence/ros2/tfm_session_exports/`: exportaciones curadas de sesiones TFM listas para compartir o revisar.
+- `../report/evidence/ros2/panel_audit/artifacts/checkpoints_index.json`
+- `../report/evidence/ros2/panel_audit/artifacts/grasp_last.json`
+- `../report/evidence/ros2/panel_audit/figures/overlay_last.png`
+- `../report/evidence/ros2/tfm_session_exports/`: exportaciones curadas de sesiones TFM listas para compartir o revisar.
 
 Notas de uso de estos artefactos:
 

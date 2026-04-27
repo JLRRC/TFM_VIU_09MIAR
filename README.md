@@ -6,7 +6,7 @@ Workspace principal del TFM de percepcion e inferencia de agarre para UR5 con RO
 
 - `agarre_inteligente/`: bloque de vision, entrenamiento, evaluacion y resultados por experimento.
 - `agarre_ros2_ws/`: workspace ROS 2 del panel, simulacion, planificacion e integracion del bloque TFM.
-- `reports/`: artefactos curados de memoria, metricas validadas, evidencias y exportaciones, incluyendo el PDF final actualmente tomado como referencia.
+- `report/`: artefactos curados de memoria, metricas validadas, evidencias y exportaciones, incluyendo el PDF final actualmente tomado como referencia.
 
 ## Flujos principales
 
@@ -85,7 +85,7 @@ Regenerar la tabla de latencia de inferencia:
 
 - Vision y resultados experimentales: `agarre_inteligente/`
 - Integracion ROS 2 y panel: `agarre_ros2_ws/`
-- Figuras, tablas y metricas que respaldan la memoria: `reports/`
+- Figuras, tablas y metricas que respaldan la memoria: `report/`
 
 En vision conviven dos familias ligeras:
 
@@ -95,7 +95,7 @@ En vision conviven dos familias ligeras:
 Notas de rigor:
 
 - La recreacion oficial del TFM se mantiene sobre `EXP1..EXP4`.
-- El PDF de referencia del TFM en este workspace es `reports/TFM_Lozano_Rodriguez-Jesus.pdf`.
+- El PDF de referencia del TFM en este workspace es `report/TFM_Lozano_Rodriguez-Jesus.pdf`.
 - Todos los experimentos disponibles pueden cargarse y usarse desde el panel de inferencia.
 
 ## Convenciones utiles
@@ -107,7 +107,7 @@ Notas de rigor:
 
 - `agarre_inteligente/README.md`
 - `agarre_ros2_ws/README.md`
-- `reports/README.md`
+- `report/README.md`
 
 ## Nota final sobre el split Cornell
 
@@ -123,7 +123,7 @@ Notas de rigor:
 - El codigo historico con el que se generaron los resultados oficiales de `EXP1..EXP4` no aplicaba esa formulacion completa: `Evaluator` usa `iou_axis_aligned_boxes` y el entrenamiento oficial usa `SmoothL1Loss`.
 - `ENTREGA.V2` añade en paralelo la variante alineada con la formulacion del documento: `iou_oriented_boxes`, `cornell_success_oriented`, `EvaluatorOriented` y `GraspLoss`.
 - Por tanto, el workspace actual ya permite ejecutar una evaluacion metodologicamente consistente con el TFM cuando se usa la via nueva documentada en `agarre_inteligente/METHODOLOGY_ALIGNMENT.md` y en `agarre_inteligente/config/exp_methodology_v2.yaml`.
-- Los resultados oficiales ya publicados en `reports/metrics/validated/` no se reescriben: siguen reflejando el pipeline historico de `EXP1..EXP4` y deben interpretarse como evidencia oficial congelada del TFM.
+- Los resultados oficiales ya publicados en `report/metrics/validated/` no se reescriben: siguen reflejando el pipeline historico de `EXP1..EXP4` y deben interpretarse como evidencia oficial congelada del TFM.
 
 ## Nota de trazabilidad — módulo de panel Qt
 
@@ -161,7 +161,7 @@ y EXP1.1/EXP1.2. Cambios respecto a `ENTREGA`:
 - **docs:** `agarre_ros2_ws/README.md` y `start_panel_v2.sh` alineados con
   `lanzar_panelc2.sh` como entrypoint canónico.
 - **protocolo:** `agarre_inteligente/EXPERIMENTS_V2_PROTOCOL.md` define dónde
-  van las salidas de trabajo futuro (nunca en `reports/`).
+  van las salidas de trabajo futuro (nunca en `report/`).
 - **alineación metodológica** (posterior al TFM, no invalida resultados oficiales):
   implementación de IoU Cornell con rectángulos orientados (`iou_oriented_boxes`,
   algoritmo Sutherland-Hodgman), criterio de éxito por imagen con IoU orientada
@@ -170,7 +170,7 @@ y EXP1.1/EXP1.2. Cambios respecto a `ENTREGA`:
   conservan intactas; las nuevas se añaden en paralelo. Véase
   `agarre_inteligente/METHODOLOGY_ALIGNMENT.md`.
 
-Integridad de `reports/` verificada: MD5 `d68e1d99da013bf3c00deb79f01b4fe3`
+Integridad de `report/` verificada: MD5 `d68e1d99da013bf3c00deb79f01b4fe3`
 (contenido trackeado por git idéntico al de `ENTREGA@dacace8`, evidencia oficial del TFM intacta).
 
 ## Refactor estructural (rama `ENTREGA.V3`, 2026-04-27)
@@ -237,7 +237,7 @@ excluye porque sus tests cargan PyQt5 con display.
 ### Evidence logger
 
 `ros2 run ur5_tools evidence_logger` graba JSON Lines + CSV por sesión en
-`reports/runs/<timestamp>/`. Suscribe a `/desired_grasp/result`,
+`report/runs/<timestamp>/`. Suscribe a `/desired_grasp/result`,
 `/system_state`, `/system_diag` y `/gripper/<obj>/state` para producir
 métricas auditables por ciclo de pick (defensa académica).
-Verificable con: `git ls-files reports/ | sort | xargs -I{} sh -c 'cat "$1"' _ {} | md5sum`
+Verificable con: `git ls-files report/ | sort | xargs -I{} sh -c 'cat "$1"' _ {} | md5sum`

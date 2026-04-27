@@ -6,7 +6,7 @@ set -euo pipefail
 
 WS_DIR="/home/laboratorio/TFM/agarre_ros2_ws"
 STAMP="$(date +%Y%m%d_%H%M%S)"
-OUT_DIR="$WS_DIR/reports/diag_startup/$STAMP"
+OUT_DIR="$WS_DIR/report/diag_startup/$STAMP"
 LOG_FILE="$OUT_DIR/health.log"
 SYSTEM_DIAG_JSON="$OUT_DIR/system_diag.json"
 STATUS_FILE="$OUT_DIR/status.txt"

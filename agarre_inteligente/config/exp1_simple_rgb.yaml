@@ -50,7 +50,7 @@ checkpointing:
 
 outputs:
   experiments_root: "experiments"
-  reports_root: "reports"
+  reports_root: "report"
 
 benchmark:
   device: "cpu"

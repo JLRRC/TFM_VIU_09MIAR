@@ -11,25 +11,25 @@ Esta auditoria consolida el estado actual del workspace completo `TFM` con foco 
 - consistencia entre panel, pipeline de pick, pipeline CNN y artefactos de memoria
 - riesgos abiertos que impiden declarar el proyecto completamente cerrado
 
-Se prioriza como fuente de verdad el estado actual del repo, seguido de artefactos curados en `reports/` y de informes técnicos recientes en `auditoria/`.
+Se prioriza como fuente de verdad el estado actual del repo, seguido de artefactos curados en `report/` y de informes técnicos recientes en `auditoria/`.
 
 ## 2. PDFs canónicos cerrados
 
 ### 2.1 Set canónico identificado
 
-- `reports/TFM_Lozano_Rodriguez-Jesus.pdf`
+- `report/TFM_Lozano_Rodriguez-Jesus.pdf`
   - Rol: memoria final de referencia del TFM en este workspace.
   - Estado: documento principal que debe tomarse como referencia editorial y de defensa.
-- `reports/exports/chapter_artifacts/08_anexos/Artefacto_8-A1_documento_pdf_del_tfm_utilizado_como_referencia_editorial.pdf`
+- `report/exports/chapter_artifacts/08_anexos/Artefacto_8-A1_documento_pdf_del_tfm_utilizado_como_referencia_editorial.pdf`
   - Rol: exportación/artefacto derivado de la memoria final para anexos y trazabilidad editorial.
   - Estado: secundario respecto al PDF principal; útil como copia curada, no como fuente primaria independiente.
-- `reports/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf`
+- `report/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf`
   - Rol: base técnica histórica exportada a PDF.
   - Estado: material de apoyo técnico e histórico, no sustituto de la memoria final.
 
 ### 2.2 Documento técnico canónico de apoyo
 
-- `reports/BaseDeConocimiento/2026-04-23_base_conocimiento_tecnica_TFM.md`
+- `report/BaseDeConocimiento/2026-04-23_base_conocimiento_tecnica_TFM.md`
   - Rol: base de conocimiento técnica actualizada con inventario de paquetes, launches, frames, geometría y flujo pick.
   - Estado: referencia técnica operativa más útil para auditoría interna que el PDF histórico de base de conocimiento.
 
@@ -37,10 +37,10 @@ Se prioriza como fuente de verdad el estado actual del repo, seguido de artefact
 
 La tarea de “Extraer PDFs canónicos” queda cerrada en el sentido de clasificación y jerarquía documental:
 
-- fuente primaria de entrega: `reports/TFM_Lozano_Rodriguez-Jesus.pdf`
-- copia editorial derivada: `reports/exports/chapter_artifacts/08_anexos/Artefacto_8-A1_documento_pdf_del_tfm_utilizado_como_referencia_editorial.pdf`
-- soporte técnico histórico: `reports/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf`
-- soporte técnico vivo para auditoría: `reports/BaseDeConocimiento/2026-04-23_base_conocimiento_tecnica_TFM.md`
+- fuente primaria de entrega: `report/TFM_Lozano_Rodriguez-Jesus.pdf`
+- copia editorial derivada: `report/exports/chapter_artifacts/08_anexos/Artefacto_8-A1_documento_pdf_del_tfm_utilizado_como_referencia_editorial.pdf`
+- soporte técnico histórico: `report/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf`
+- soporte técnico vivo para auditoría: `report/BaseDeConocimiento/2026-04-23_base_conocimiento_tecnica_TFM.md`
 
 ## 3. Inventario de paquetes y launch files
 
@@ -81,7 +81,7 @@ Además de los launch files, el workspace usa wrappers y orquestadores con valor
 
 ### 3.4 Estado del inventario
 
-El inventario básico de paquetes y launches queda cerrado y consistente con la base técnica curada en `reports/BaseDeConocimiento/2026-04-23_base_conocimiento_tecnica_TFM.md`.
+El inventario básico de paquetes y launches queda cerrado y consistente con la base técnica curada en `report/BaseDeConocimiento/2026-04-23_base_conocimiento_tecnica_TFM.md`.
 
 ## 4. Pendiente técnico acotado abierto: `CESTA_STAGE_1_RECOVER_2`
 
@@ -230,7 +230,7 @@ No es un fallo de implementación actual, pero sí un punto que debe quedar expl
 
 El canon operativo del repo queda fijado en `3541/1569`.
 
-Durante esta auditoría se detectó y corrigió una incoherencia viva en `reports/cornell_audit/README.md`, donde se mezclaba el conteo materializado `3542` con el dataset efectivamente utilizable. Tras la corrección:
+Durante esta auditoría se detectó y corrigió una incoherencia viva en `report/cornell_audit/README.md`, donde se mezclaba el conteo materializado `3542` con el dataset efectivamente utilizable. Tras la corrección:
 
 - `3542` queda como huella de materialización previa al descarte
 - `3541/1569` queda como referencia técnica efectiva para ejecución y validación
@@ -243,9 +243,9 @@ Veredicto del bloque CNN: consistente y defendible, con riesgo principal de inte
 
 Los documentos canónicos principales quedan alineados en los puntos críticos:
 
-- `README.md`: fija `./lanzar_panelc2.sh` como launcher canónico, señala `reports/TFM_Lozano_Rodriguez-Jesus.pdf` como PDF principal y explica el split `3541/1569`
+- `README.md`: fija `./lanzar_panelc2.sh` como launcher canónico, señala `report/TFM_Lozano_Rodriguez-Jesus.pdf` como PDF principal y explica el split `3541/1569`
 - `agarre_ros2_ws/README.md`: mantiene el mismo launcher canónico y trata `lanzar_panelv2.sh` como alias de compatibilidad
-- `reports/README.md`: identifica el PDF final del TFM y deja claro que `auditoria/` contiene la referencia runtime más reciente
+- `report/README.md`: identifica el PDF final del TFM y deja claro que `auditoria/` contiene la referencia runtime más reciente
 - `agarre_inteligente/README.md`: separa resultados oficiales, experimentos auxiliares y metodología posterior
 
 ### 8.2 Material histórico
@@ -274,7 +274,7 @@ Persisten referencias a `lanzar_panelv2.sh` en documentación histórica, especi
 ### 9.3 Riesgos bajos o ya mitigados
 
 - La jerarquía documental principal está alineada en launcher, PDF canónico y relación entre bloques del proyecto.
-- La inconsistencia viva detectada en `reports/cornell_audit/README.md` ha quedado corregida.
+- La inconsistencia viva detectada en `report/cornell_audit/README.md` ha quedado corregida.
 - `main_panel.py` ya no es una fuente de ambigüedad real: existe como wrapper explícito y la lógica operativa sigue centralizada en `panel_v2.py`.
 
 ## 10. Conclusión ejecutiva

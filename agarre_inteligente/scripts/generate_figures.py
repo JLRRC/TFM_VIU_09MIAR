@@ -63,8 +63,8 @@ def _bar_from_summary(summary: pd.DataFrame, col_mean: str, title: str, out: Pat
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--experiments-root", default="experiments")
-    ap.add_argument("--summary", default="reports/tables/summary_results.csv")
-    ap.add_argument("--out-dir", default="reports/figures")
+    ap.add_argument("--summary", default="report/tables/summary_results.csv")
+    ap.add_argument("--out-dir", default="report/figures")
     ap.add_argument("--include-aux", action="store_true", help="Incluye experimentos auxiliares como EXP1.1 y EXP1.2.")
     args = ap.parse_args()
 

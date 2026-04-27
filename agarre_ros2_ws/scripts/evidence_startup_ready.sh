@@ -7,7 +7,7 @@ set -euo pipefail
 WS_DIR="/home/laboratorio/TFM/agarre_ros2_ws"
 CYCLES="${1:-3}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
-OUT_DIR="$WS_DIR/reports/evidence_startup_ready/$STAMP"
+OUT_DIR="$WS_DIR/report/evidence_startup_ready/$STAMP"
 mkdir -p "$OUT_DIR"
 
 cd "$WS_DIR"
@@ -84,12 +84,12 @@ RESULT_ENV="$OUT_DIR/result.env"
   echo "result=$result"
 } > "$RESULT_ENV"
 
-ln -sfn "$OUT_DIR" "$WS_DIR/reports/evidence_startup_ready/latest"
+ln -sfn "$OUT_DIR" "$WS_DIR/report/evidence_startup_ready/latest"
 
 log "RESULT=$result"
 log "summary_file=$OUT_DIR/summary.log"
 log "result_env=$RESULT_ENV"
-log "latest_link=$WS_DIR/reports/evidence_startup_ready/latest"
+log "latest_link=$WS_DIR/report/evidence_startup_ready/latest"
 
 if [[ "$result" == "PASS" ]]; then
   exit 0

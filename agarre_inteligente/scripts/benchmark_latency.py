@@ -50,7 +50,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
     ap.add_argument("--checkpoint", required=True)
-    ap.add_argument("--output", default="reports/bench/latency_results.csv")
+    ap.add_argument("--output", default="report/bench/latency_results.csv")
     ap.add_argument("--warmup", type=int, default=20)
     ap.add_argument("--repeats", type=int, default=100)
     ap.add_argument("--device", choices=("cpu", "cuda"), default=None)

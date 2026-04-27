@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 PROJECT_ROOT = Path.home() / "TFM" / "agarre_inteligente"
 EXPERIMENTS_DIR = PROJECT_ROOT / "experiments"
-OUT_DIR = PROJECT_ROOT / "reports" / "tfm_figuras_cap5_1"
+OUT_DIR = PROJECT_ROOT / "report" / "tfm_figuras_cap5_1"
 
 EXPERIMENTS = {
     "EXP1_SIMPLE_RGB": "EXP1 RGB",

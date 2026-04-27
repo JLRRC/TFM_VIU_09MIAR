@@ -9,7 +9,7 @@ warn() { echo "[VALIDATE][WARN] $*" >&2; }
 fail=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="${WS_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-OUT_DIR="${OUT_DIR:-$WS_DIR/reports/validate_panel_flow_$(date +%Y%m%d_%H%M%S)}"
+OUT_DIR="${OUT_DIR:-$WS_DIR/report/validate_panel_flow_$(date +%Y%m%d_%H%M%S)}"
 mkdir -p "$OUT_DIR"
 
 if [[ -f /opt/ros/jazzy/setup.bash ]]; then

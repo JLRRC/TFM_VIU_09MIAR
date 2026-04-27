@@ -247,7 +247,7 @@ bash scripts/smoke_test.sh --fast   # ~6 s, 444 tests
 
 | FASE | Descripción | Impacto |
 |------|-------------|---------|
-| 0 | Auditoría completa arquitectura | +reports/auditoria_moveit_step_20260424.md |
+| 0 | Auditoría completa arquitectura | +report/auditoria_moveit_step_20260424.md |
 | 1 | Eliminar 57 imports F401 en 19 ficheros | −57 imports no usados |
 | 2 | Constante TABLE_TOP_Z, eliminar 0.850 hardcoded | +mantenibilidad |
 | 3a | Extraer `directo_geometry.py` | 20 funciones puras, sin ROS/Qt |

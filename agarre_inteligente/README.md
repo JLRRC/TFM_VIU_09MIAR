@@ -64,7 +64,7 @@ La justificacion practica es sencilla:
 
 Regla de lectura para memoria, resultados y defensa:
 
-- los resultados oficiales ya publicados en `reports/`, incluidas las tablas y figuras del capitulo 5, deben interpretarse con el pipeline historico oficial de `EXP1`, `EXP2`, `EXP3` y `EXP4`
+- los resultados oficiales ya publicados en `report/`, incluidas las tablas y figuras del capitulo 5, deben interpretarse con el pipeline historico oficial de `EXP1`, `EXP2`, `EXP3` y `EXP4`
 - la via metodologicamente alineada con la formulacion geometrica completa del TFM vive hoy en `EXP1.1`, `EXP1.2` y en los componentes añadidos posteriormente (`EvaluatorOriented`, `cornell_success_oriented`, `GraspLoss`, `exp_methodology_v2.yaml`)
 - ambos niveles conviven en el workspace, pero no deben mezclarse al justificar resultados: lo historico respalda la memoria publicada y lo alineado posterior funciona como implementacion y extension metodologica del repo
 
@@ -131,7 +131,7 @@ Evaluar un experimento:
 python3 scripts/evaluate.py \
   --config config/exp3_resnet18_rgb_augment.yaml \
   --checkpoint experiments/EXP3_RESNET18_RGB_AUGMENT/seed_0/checkpoints/best.pth \
-  --output reports/eval_exp3_seed0.csv
+  --output report/eval_exp3_seed0.csv
 ```
 
 Bench de latencia:
@@ -140,7 +140,7 @@ Bench de latencia:
 python3 scripts/benchmark_latency.py \
   --config config/exp3_resnet18_rgb_augment.yaml \
   --checkpoint experiments/EXP3_RESNET18_RGB_AUGMENT/seed_0/checkpoints/best.pth \
-  --output reports/bench/latency_exp3_seed0.csv
+  --output report/bench/latency_exp3_seed0.csv
 ```
 
 ## Fuente de verdad
@@ -182,6 +182,6 @@ El entrenamiento valida que el tamano real de los splits cargados coincida con l
 - `scripts/generate_tfm_chapter_reports.py`
 - `scripts/validate_artifacts.py`
 
-## Relacion con `reports/`
+## Relacion con `report/`
 
-Este directorio produce resultados tecnicos y artefactos intermedios. Las figuras, tablas y metricas finales que se citan en memoria se curan y publican en `../reports/`.
+Este directorio produce resultados tecnicos y artefactos intermedios. Las figuras, tablas y metricas finales que se citan en memoria se curan y publican en `../report/`.

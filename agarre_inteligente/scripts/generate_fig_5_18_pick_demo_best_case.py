@@ -446,13 +446,13 @@ def main() -> int:
     root = Path(__file__).resolve().parents[2]
     infer_log = root / "auditoria" / "panel_audit" / "logs" / "infer.log"
 
-    out_png = root / "reports" / "evidence" / "chapter5" / "fig_5_18_overlay_prediccion_plausible.png"
-    out_pdf = root / "reports" / "evidence" / "chapter5" / "fig_5_18_overlay_prediccion_plausible.pdf"
-    out_csv = root / "reports" / "evidence" / "chapter5" / "fig_5_18_overlay_prediccion_plausible_candidates.csv"
-    out_trace = root / "reports" / "evidence" / "chapter5" / "fig_5_18_overlay_prediccion_plausible_trace.md"
+    out_png = root / "report" / "evidence" / "chapter5" / "fig_5_18_overlay_prediccion_plausible.png"
+    out_pdf = root / "report" / "evidence" / "chapter5" / "fig_5_18_overlay_prediccion_plausible.pdf"
+    out_csv = root / "report" / "evidence" / "chapter5" / "fig_5_18_overlay_prediccion_plausible_candidates.csv"
+    out_trace = root / "report" / "evidence" / "chapter5" / "fig_5_18_overlay_prediccion_plausible_trace.md"
     out_figure_official = (
         root
-        / "reports"
+        / "report"
         / "figures"
         / "cap5"
         / "Ilustracion_5-18_evidencia_funcional_adicional_del_pipeline_percepcion_publicacion_consumo_en_ros.png"

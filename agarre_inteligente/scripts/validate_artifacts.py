@@ -8,12 +8,12 @@ from pathlib import Path
 
 
 REQUIRED = [
-    "reports/tables/summary_results.csv",
-    "reports/tables/table_metrics_final.csv",
-    "reports/tables/table_validation_aggregated.csv",
-    "reports/figures/loss_val_by_epoch.png",
-    "reports/figures/val_success_by_epoch.png",
-    "reports/figures/bar_val_success_final.png",
+    "report/tables/summary_results.csv",
+    "report/tables/table_metrics_final.csv",
+    "report/tables/table_validation_aggregated.csv",
+    "report/figures/loss_val_by_epoch.png",
+    "report/figures/val_success_by_epoch.png",
+    "report/figures/bar_val_success_final.png",
 ]
 
 

@@ -14,7 +14,7 @@ import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_EXPERIMENTS_ROOT = PROJECT_ROOT / "experiments"
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "reports" / "tfm_figuras_cap5_1"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "report" / "tfm_figuras_cap5_1"
 DEFAULT_MARGIN_RATIO = 0.05
 DEFAULT_LOG_PATH = DEFAULT_OUTPUT_DIR / "LOG_regeneracion_curvas_loss_shared_ylim.md"
 LOSS_EXPERIMENTS = (

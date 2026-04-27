@@ -7,7 +7,7 @@ set -euo pipefail
 WS_DIR="/home/laboratorio/TFM/agarre_ros2_ws"
 CYCLES="${1:-3}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
-OUT_DIR="$WS_DIR/reports/repro_startup/$STAMP"
+OUT_DIR="$WS_DIR/report/repro_startup/$STAMP"
 mkdir -p "$OUT_DIR"
 
 cd "$WS_DIR"

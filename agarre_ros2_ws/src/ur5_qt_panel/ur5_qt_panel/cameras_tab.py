@@ -621,7 +621,7 @@ class CameraTile(QWidget):
         self.log_fn(f"[EVID] Guardado: {out}")
         if self.name.lower().startswith("mesa"):
             try:
-                manual_dir = os.path.join(WS_DIR, "reports", "tfm_evidencias", "manual")
+                manual_dir = os.path.join(WS_DIR, "report", "tfm_evidencias", "manual")
                 ensure_dir(manual_dir)
                 for old in os.listdir(manual_dir):
                     if old.startswith("ilustracion_1_1_a_gazebo."):

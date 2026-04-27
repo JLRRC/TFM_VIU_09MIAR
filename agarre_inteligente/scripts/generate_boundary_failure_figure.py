@@ -40,7 +40,7 @@ CONFIG_BY_EXPERIMENT = {
     "EXP1.2_SIMPLEGRASP_RGBD": PROJECT_ROOT / "config" / "exp1_2_simplegrasp_rgbd.yaml",
 }
 
-DEFAULT_OUTPUT_DIR = WORKSPACE_ROOT / "reports" / "figures" / "chapter5"
+DEFAULT_OUTPUT_DIR = WORKSPACE_ROOT / "report" / "figures" / "chapter5"
 DEFAULT_BASE_NAME = "fig_5_15_false_negative_plausible"
 
 
