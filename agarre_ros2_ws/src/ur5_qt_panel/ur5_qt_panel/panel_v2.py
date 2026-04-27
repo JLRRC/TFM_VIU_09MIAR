@@ -219,52 +219,13 @@ def _env_flag(name: str, default: bool) -> bool:
     return str(raw).strip().lower() in ("1", "true", "yes", "on")
 
 
-# ── TFM Grasp geometry helpers ─────────────────────────────────────────────
-
-def _tfm_clamp(value: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, value))
-
-
-def _tfm_normalize_angle(angle: float) -> float:
-    while angle > math.pi:
-        angle -= 2.0 * math.pi
-    while angle < -math.pi:
-        angle += 2.0 * math.pi
-    return angle
-
-
-def _compute_minor_axis_from_grasp_rect(
-    w_px: float, h_px: float, theta_img: float
-):
-    """Calcula el eje fino del rectángulo rojo de inferencia.
-
-    Devuelve (minor_px, opening_axis_theta_img).
-    opening_axis_theta_img es la dirección de apertura/cierre de la pinza en imagen.
-    """
-    if w_px <= h_px:
-        minor_px = w_px
-        opening_axis_theta_img = _tfm_normalize_angle(theta_img + math.pi / 2.0)
-    else:
-        minor_px = h_px
-        opening_axis_theta_img = _tfm_normalize_angle(theta_img)
-    return minor_px, opening_axis_theta_img
-
-
-def _compute_rg2_preopen_from_minor_width(
-    minor_width_m: float,
-    safety_margin_m: float = 0.015,
-    min_open_m: float = 0.015,
-    max_open_m: float = 0.110,
-    max_finger_rad: float = 1.18,
-):
-    """Calcula la apertura previa del RG2 desde el ancho fino del rectángulo rojo."""
-    pre_open_width_m = _tfm_clamp(
-        minor_width_m + safety_margin_m, min_open_m, max_open_m
-    )
-    finger_cmd_rad = _tfm_clamp(
-        (pre_open_width_m / max_open_m) * max_finger_rad, 0.0, max_finger_rad
-    )
-    return pre_open_width_m, finger_cmd_rad
+# TFM Grasp geometry helpers (compartidos con panel_tfm via panel_tfm_geometry).
+from .panel_tfm_geometry import (  # noqa: E402,F401
+    _compute_minor_axis_from_grasp_rect,
+    _compute_rg2_preopen_from_minor_width,
+    _tfm_clamp,
+    _tfm_normalize_angle,
+)
 
 
 SETTLE_MANUAL = {"pick_demo"}
