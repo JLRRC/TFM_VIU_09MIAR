@@ -1,0 +1,89 @@
+# Ruta/archivo: .github/workflows/colcon.yml
+# Contenido: CI para colcon build + tests en GitHub Actions sobre Ubuntu + ROS 2 Jazzy.
+# Uso breve: Se dispara en push y PR a ENTREGA.V3 / main; ejecuta ament_flake8,
+# ament_pep257 y los tests unitarios de ur5_tools, ur5_bringup, tfm_grasping.
+#
+# Notas:
+#   * ur5_qt_panel no se incluye en CI por defecto: requiere PyQt5 + display
+#     virtual y los tests cargan el panel completo. Si en el futuro se quiere
+#     incluir, configurar Xvfb (xvfb-run -a colcon test --packages-select
+#     ur5_qt_panel) o aislar los tests no-Qt.
+#   * El job es minimal viable: build + lint + tests unitarios. No corre
+#     E2E (validate_pick_3_cycles.sh) porque requiere Gazebo Sim moderno
+#     que no esta disponible en el runner Ubuntu por defecto.
+
+name: colcon
+
+on:
+  push:
+    branches:
+      - ENTREGA.V3
+      - main
+  pull_request:
+    branches:
+      - ENTREGA.V3
+      - main
+
+jobs:
+  build-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    container:
+      image: ros:jazzy-ros-base
+      options: --user root
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install rosdep deps
+        shell: bash
+        working-directory: agarre_ros2_ws
+        run: |
+          set -euo pipefail
+          apt-get update
+          rosdep update --rosdistro=jazzy || true
+          rosdep install --from-paths src --ignore-src \
+            --rosdistro=jazzy -y \
+            --skip-keys "PyQt5 python3-pyqt5 python3-pyqt5.qtwebengine xvfb gazebo_ros gz_ros2_control" \
+            || true
+
+      - name: colcon build (ur5_tools + ur5_bringup + tfm_grasping + interfaces)
+        shell: bash
+        working-directory: agarre_ros2_ws
+        run: |
+          set -euo pipefail
+          source /opt/ros/jazzy/setup.bash
+          colcon build --symlink-install \
+            --packages-select \
+              ur5_panel_interfaces \
+              ur5_description \
+              ur5_moveit_config \
+              ur5_bringup \
+              ur5_tools \
+              tfm_grasping
+
+      - name: colcon test (excluye ur5_qt_panel; necesita Qt display)
+        shell: bash
+        working-directory: agarre_ros2_ws
+        run: |
+          set -euo pipefail
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          colcon test \
+            --packages-select \
+              ur5_tools \
+              ur5_bringup \
+              tfm_grasping \
+            --pytest-args -q
+          colcon test-result --verbose
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: agarre_ros2_ws/build/*/pytest.xml
+          retention-days: 14

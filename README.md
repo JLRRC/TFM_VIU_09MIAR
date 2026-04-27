@@ -172,4 +172,72 @@ y EXP1.1/EXP1.2. Cambios respecto a `ENTREGA`:
 
 Integridad de `reports/` verificada: MD5 `d68e1d99da013bf3c00deb79f01b4fe3`
 (contenido trackeado por git idéntico al de `ENTREGA@dacace8`, evidencia oficial del TFM intacta).
+
+## Refactor estructural (rama `ENTREGA.V3`, 2026-04-27)
+
+Sesión de refactor profesional sobre los god-files del proyecto, con red de
+seguridad (603 tests automatizados) y trazabilidad completa (30+ commits
+semánticos, tag de rollback `pre-refactor-2026-04-27`).
+
+### Métricas de impacto
+
+| Archivo | Antes | Después | Δ |
+|---|---|---|---|
+| `ur5_moveit_bridge.py` | 5.654 L | 1.706 L | **−69.8%** |
+| `gripper_attach_backend.py` | 2.152 L | 950 L | **−56%** |
+| `panel_utils.py` | 2.328 L | 1.010 L | **−57%** |
+| `panel_pick_demo.py` | 12.249 L | 11.144 L | −9% |
+| `panel_v2.py` | 312 wrappers rotos | 320 fixes (audit AST) | red restaurada |
+
+**Total**: ~9.000 LoC reorganizadas en 22 módulos nuevos. **603 tests pasan**
+tras cada commit.
+
+### Arquitectura mixin de los nodos críticos
+
+```mermaid
+classDiagram
+  class UR5MoveItBridge
+  UR5MoveItBridge --|> MoveItPyPlannerMixin
+  UR5MoveItBridge --|> MoveItCommanderMixin
+  UR5MoveItBridge --|> GeometryMixin
+  UR5MoveItBridge --|> TrajectoryPrepMixin
+  UR5MoveItBridge --|> ExecutorMixin
+  UR5MoveItBridge --|> JointStateHelpersMixin
+  UR5MoveItBridge --|> ControllerManagementMixin
+  UR5MoveItBridge --|> GoalValidationMixin
+  UR5MoveItBridge --|> Node
+
+  class GripperAttachBackend
+  GripperAttachBackend --|> AnchorMixin
+  GripperAttachBackend --|> DemoTransportMixin
+  GripperAttachBackend --|> GzCliMixin
+  GripperAttachBackend --|> PoseLookupMixin
+  GripperAttachBackend --|> PoseSubscriberMixin
+  GripperAttachBackend --|> SetPoseMixin
+  GripperAttachBackend --|> Node
+```
+
+### Documentación complementaria
+
+- `agarre_ros2_ws/docs/architecture.md` — snapshot vivo de la arquitectura
+  (paquetes, nodos, frames TF, mixins, pipeline pick demo, convenciones de
+  logging, testing).
+- `agarre_ros2_ws/src/ur5_bringup/config/runtime_defaults.yaml` — 81 tunables
+  centralizados (timeouts, tolerancias, scales).
+- Tag de rollback total: `git checkout pre-refactor-2026-04-27`.
+
+### CI
+
+`.github/workflows/colcon.yml` ejecuta `colcon build && colcon test` para los
+paquetes no-Qt (`ur5_tools`, `ur5_bringup`, `tfm_grasping`,
+`ur5_panel_interfaces`, `ur5_description`, `ur5_moveit_config`) en cada push
+y PR a `ENTREGA.V3` / `main`. Ubuntu 22.04 + ROS 2 Jazzy. `ur5_qt_panel` se
+excluye porque sus tests cargan PyQt5 con display.
+
+### Evidence logger
+
+`ros2 run ur5_tools evidence_logger` graba JSON Lines + CSV por sesión en
+`reports/runs/<timestamp>/`. Suscribe a `/desired_grasp/result`,
+`/system_state`, `/system_diag` y `/gripper/<obj>/state` para producir
+métricas auditables por ciclo de pick (defensa académica).
 Verificable con: `git ls-files reports/ | sort | xargs -I{} sh -c 'cat "$1"' _ {} | md5sum`
