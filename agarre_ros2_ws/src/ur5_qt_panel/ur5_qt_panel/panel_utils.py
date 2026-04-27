@@ -156,6 +156,20 @@ from .panel_controllers_query import (  # noqa: F401
     ros2_control_running,
 )
 
+# Helpers de status del sistema extraidos a panel_system_status (B.4).
+from .panel_system_status import (  # noqa: F401
+    _create_graph_node,
+    _run_cmd_rc,
+    bridge_status,
+    clock_status,
+    detect_arm_trajectory_topic,
+    gz_sim_running,
+    gz_sim_status,
+    parse_ros_topics,
+    robot_control_available,
+    ros_clock_available,
+)
+
 try:
     from geometry_msgs.msg import PointStamped, PoseStamped, Quaternion, TransformStamped
     from builtin_interfaces.msg import Time as BuiltinTime
@@ -638,137 +652,6 @@ def visible_table_object(name: str, position: Tuple[float, float, float]) -> boo
 
 
 
-def _run_cmd_rc(cmd: str, timeout_sec: float = 2.0) -> Tuple[int, str]:
-    res = run_cmd(cmd, timeout=timeout_sec, capture_output=True)
-    return res.returncode, res.stdout or res.stderr or ""
-
-
-def gz_sim_status() -> Tuple[bool, str]:
-    global _GZ_SIM_STATUS_CACHE
-    now = time.monotonic()
-    cached_ts, cached_ok, cached_reason = _GZ_SIM_STATUS_CACHE
-    if (now - cached_ts) < _GZ_SIM_STATUS_TTL_SEC:
-        return cached_ok, cached_reason
-    if psutil is not None:
-        try:
-            for proc in psutil.process_iter(attrs=["cmdline", "status"]):
-                info = proc.info
-                if info.get("status") == psutil.STATUS_ZOMBIE:
-                    continue
-                cmdline = info.get("cmdline") or []
-                if not cmdline:
-                    continue
-                joined = " ".join(cmdline).lower()
-                if "gz sim" in joined:
-                    _GZ_SIM_STATUS_CACHE = (now, True, "proc")
-                    return True, "proc"
-        except Exception as exc:
-            _log_exception("gz_sim_status psutil", exc)
-    res = run_cmd("pgrep -af 'gz sim' || true", timeout=1.2, capture_output=True)
-    lines = [line.strip() for line in (res.stdout or "").splitlines() if line.strip()]
-    for line in lines:
-        pid = line.split(maxsplit=1)[0]
-        stat = run_cmd(f"ps -o stat= -p {shlex.quote(pid)}", timeout=0.8, capture_output=True)
-        state = (stat.stdout or "").strip()
-        if state and "Z" not in state:
-            _GZ_SIM_STATUS_CACHE = (now, True, "proc")
-            return True, "proc"
-    _GZ_SIM_STATUS_CACHE = (now, False, "none")
-    return False, "none"
-
-
-def gz_sim_running() -> bool:
-    ok, _reason = gz_sim_status()
-    return ok
-
-
-def bridge_status() -> Tuple[bool, str]:
-    node = _create_graph_node("panel_bridge_check")
-    if node is None:
-        return False, "node"
-    try:
-        names = node.get_node_names_and_namespaces()
-        for name, _ns in names:
-            if name in ("parameter_bridge", "ros_gz_bridge"):
-                return True, "rosnode"
-        return False, "none"
-    except Exception as exc:
-        _log_exception("bridge_status", exc)
-        return False, "err"
-    finally:
-        try:
-            node.destroy_node()
-        except Exception as exc:
-            _log_exception("destroy bridge check node", exc)
-
-
-def clock_status() -> Tuple[bool, str]:
-    node = _create_graph_node("panel_clock_check")
-    if node is None:
-        return False, "node"
-    try:
-        topics = node.get_topic_names_and_types()
-        has_clock = any(name == "/clock" for name, _ in topics)
-        if not has_clock:
-            return False, "none"
-        pubs = node.get_publishers_info_by_topic("/clock")
-        if pubs:
-            return True, "publisher"
-        return True, "topic"
-    except Exception as exc:
-        _log_exception("clock_status", exc)
-        return False, "err"
-    finally:
-        try:
-            node.destroy_node()
-        except Exception as exc:
-            _log_exception("destroy clock check node", exc)
-
-
-def _create_graph_node(name: str):
-    if not ROS_AVAILABLE:
-        return None
-    try:
-        if not rclpy.ok():
-            rclpy.init(args=None)
-    except Exception as exc:
-        _log_exception("rclpy.init", exc)
-        return None
-    try:
-        return rclpy.create_node(name)
-    except Exception as exc:
-        _log_exception("create node", exc)
-        return None
-
-
-def ros_clock_available() -> bool:
-    ok, _reason = clock_status()
-    return ok
-
-
-def robot_control_available() -> bool:
-    cm_path = resolve_controller_manager()
-    return ros2_control_running(cm_path) or (gz_sim_running() and ros_clock_available())
-
-
-def detect_arm_trajectory_topic() -> str:
-    force_ros2 = os.environ.get("FORCE_ROS2_CONTROL", "0") == "1"
-    if not force_ros2 and gz_sim_running():
-        return ARM_TRAJ_TOPIC_DEFAULT
-    cm_path = resolve_controller_manager()
-    active, err = list_active_controllers(controller_manager=cm_path)
-    if not err and active and "joint_trajectory_controller" in active:
-        return "/joint_trajectory_controller/joint_trajectory"
-    return ARM_TRAJ_TOPIC_DEFAULT
-
-
-def parse_ros_topics(raw: str) -> Tuple[List[str], List[str]]:
-    items = [t.strip() for t in raw.split() if t.strip()]
-    if not items:
-        return [], []
-    invalid = [t for t in items if not ROS_TOPIC_RE.match(t)]
-    valid = [t for t in items if t not in invalid]
-    return valid, invalid
 
 
 # ------------------------------------------------------------------
