@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effective_reason: str) -> None:
     btn_test_robot = getattr(panel, "btn_test_robot", None)
     btn_tfm_apply = getattr(panel, "btn_tfm_apply", None)
+    btn_tfm_memoria_case = getattr(panel, "btn_tfm_memoria_case", None)
     btn_tfm_infer = getattr(panel, "btn_tfm_infer", None)
     btn_tfm_visualize = getattr(panel, "btn_tfm_visualize", None)
     btn_tfm_publish = getattr(panel, "btn_tfm_publish", None)
@@ -318,6 +319,9 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     tfm_selector_ready = bool(panel.tfm_module)
     tfm_selector_tip = "" if tfm_selector_ready else "Modelo no disponible"
     tfm_controls_tip = "" if tfm_action_ready else tfm_block_tip
+    # "Inferir agarre" también requiere cámara lista; mostrar razón en tooltip
+    infer_btn_ready = tfm_action_ready and infer_ok
+    infer_btn_tip = (infer_reason or "Cámara no lista") if (tfm_action_ready and not infer_ok) else ("" if infer_btn_ready else tfm_block_tip)
     if hasattr(panel, "combo_tfm_experiment"):
         panel.combo_tfm_experiment.setEnabled(tfm_selector_ready)
     if hasattr(panel, "chk_tfm_repro_mode"):
@@ -325,7 +329,8 @@ def apply_ui_state(panel: "ControlPanelV2", effective_state: SystemState, effect
     if hasattr(panel, "chk_tfm_raw_output"):
         panel.chk_tfm_raw_output.setEnabled(tfm_selector_ready)
     _set_optional_btn_state(btn_tfm_apply, tfm_selector_ready, tfm_selector_tip)
-    _set_optional_btn_state(btn_tfm_infer, tfm_action_ready, "" if tfm_action_ready else tfm_block_tip)
+    _set_optional_btn_state(btn_tfm_memoria_case, tfm_selector_ready, tfm_selector_tip)
+    _set_optional_btn_state(btn_tfm_infer, infer_btn_ready, infer_btn_tip)
     _set_optional_btn_state(
         btn_tfm_visualize,
         tfm_action_ready,

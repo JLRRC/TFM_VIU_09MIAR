@@ -252,8 +252,8 @@ def _tfm_apply_experiment(panel) -> None:
                 "logs/apply_experiment.log",
                 f"[TFM] apply_experiment FAIL ckpt={ckpt_path} err={err}",
             )
-            return
             panel._tfm_preprocessed_cache = None
+            return
     model_info = panel.tfm_module.model_info() if panel.tfm_module else {}
     panel._load_experiment_info()
     panel._audit_write_json(
