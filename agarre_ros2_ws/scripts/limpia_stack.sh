@@ -21,9 +21,14 @@ LIMPIAR_CLEAN_LOGS="${LIMPIAR_CLEAN_LOGS:-0}"
 
 # Asegurarse de que ros2 está en PATH (necesario para daemon y node list)
 # Se sourcea solo si ros2 no está ya disponible en el entorno actual.
+# CRITICO: setup.bash referencia AMENT_TRACE_SETUP_FILES sin fallback, asi
+# que con `set -u` activo el source falla y aborta el script. Desactivamos
+# `set -u` solo durante el source (mismo patron que lanzar_panelv2.sh).
 if ! command -v ros2 >/dev/null 2>&1; then
+  set +u
   [[ -f /opt/ros/jazzy/setup.bash ]] && source /opt/ros/jazzy/setup.bash || true
   [[ -f "$WS_DIR/install/setup.bash" ]] && source "$WS_DIR/install/setup.bash" || true
+  set -u
 fi
 
 # ── 0. PIDs explícitos pasados como argumentos ───────────────────────────────
