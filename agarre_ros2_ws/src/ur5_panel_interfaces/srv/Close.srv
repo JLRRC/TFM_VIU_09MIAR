@@ -1,0 +1,5 @@
+# Cerrar el gripper RG2 hasta posicion 0 (cerrado total).
+# Sin argumentos en la peticion. La respuesta indica exito + diagnostico.
+---
+bool success
+string message

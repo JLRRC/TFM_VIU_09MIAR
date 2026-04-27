@@ -1,0 +1,5 @@
+# Abrir el gripper RG2 a su apertura maxima.
+# Sin argumentos en la peticion. La respuesta indica exito + diagnostico.
+---
+bool success
+string message

@@ -1,0 +1,6 @@
+# Liberar un objeto previamente attached. Si object_name es "" libera todos.
+string object_name
+---
+bool success
+string message
+int32 detached_count

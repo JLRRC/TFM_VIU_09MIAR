@@ -1,0 +1,7 @@
+# Mover el gripper RG2 a una apertura concreta (en metros).
+# La apertura efectiva se reporta en actual_width_m tras el move.
+float64 width_m
+---
+bool success
+string message
+float64 actual_width_m

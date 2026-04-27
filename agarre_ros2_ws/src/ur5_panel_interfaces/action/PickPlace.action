@@ -1,0 +1,21 @@
+# Action de pick & place de alto nivel.
+# Goal: objeto a recoger + punto de drop (en world).
+# Result: success + reason + duracion total.
+# Feedback: fase actual del pipeline + progreso normalizado [0,1] +
+#   indice de fase para correlar con el evidence_logger.
+
+# Goal
+string object_name
+geometry_msgs/Point drop_xyz_world
+---
+# Result
+bool success
+string reason
+float64 duration_sec
+int32 cycles_completed
+---
+# Feedback
+string current_phase
+float32 progress
+int32 phase_index
+string detail

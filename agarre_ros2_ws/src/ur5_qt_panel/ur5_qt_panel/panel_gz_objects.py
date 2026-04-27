@@ -224,7 +224,10 @@ def _release_objects(panel):
                 panel._invalidate_settle("objetos liberados", restart=True)
             panel._maybe_nudge_drop_objects("release_success")
         except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
             panel._log_error(f"Soltar objetos error: {e}")
+            panel._emit_log(f"[PHYSICS][DROP][TRACEBACK] {tb}")
             panel._ui_set_status(f"Error soltando objetos: {e}", error=True)
         finally:
             panel._detach_inflight = False
