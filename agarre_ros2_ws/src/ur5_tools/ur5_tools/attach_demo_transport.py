@@ -42,6 +42,13 @@ class DemoTransportMixin:
         from .gripper_attach_backend import DemoTransportState
         return DemoTransportState
 
+    @staticmethod
+    def _import_attached_target():
+        """Lazy import to avoid circular dependency with gripper_attach_backend."""
+
+        from .gripper_attach_backend import AttachedTarget
+        return AttachedTarget
+
     def _demo_dynamic_sdf(self, name: str) -> Optional[str]:
         if name != "pick_demo":
             return None
@@ -302,7 +309,8 @@ class DemoTransportMixin:
             ),
         )
         rel_q = _quat_multiply(tcp_q_inv, obj_q)
-        attached = AttachedTarget(
+        AttachedTargetCls = self._import_attached_target()
+        attached = AttachedTargetCls(
             name=name,
             offset_x=float(rel_pos[0]),
             offset_y=float(rel_pos[1]),

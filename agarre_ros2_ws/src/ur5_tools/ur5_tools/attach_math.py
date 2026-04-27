@@ -95,7 +95,7 @@ def _matvec3(
 
 
 def _dh_transform(
-    a: float, alpha: float, d: float, theta: float
+    a: float, d: float, alpha: float, theta: float
 ) -> Tuple[Tuple[Tuple[float, float, float], ...], Tuple[float, float, float]]:
     ca = math.cos(alpha)
     sa = math.sin(alpha)
