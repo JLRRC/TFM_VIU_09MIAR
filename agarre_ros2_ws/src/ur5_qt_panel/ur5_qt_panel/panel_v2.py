@@ -1230,10 +1230,10 @@ class ControlPanelV2(QMainWindow):
         return _stm.transform_pose_to_base(self, *args, **kwargs)
 
     def log_pose_base(self, *args, **kwargs):
-        return _stm.log_pose_base(self, *args, **kwargs)
+        _stm.log_pose_base(self, *args, **kwargs)
 
     def log_pose(self, *args, **kwargs):
-        return _stm.log_pose(self, *args, **kwargs)
+        _stm.log_pose(self, *args, **kwargs)
 
     def get_pose_in_base(self, *args, **kwargs):
         return _stm.get_pose_in_base(self, *args, **kwargs)
@@ -1242,31 +1242,31 @@ class ControlPanelV2(QMainWindow):
         return _stm._moveit_publish_context(self, *args, **kwargs)
 
     def _request_auto_bridge_start(self, *args, **kwargs):
-        return _stm._request_auto_bridge_start(self, *args, **kwargs)
+        _stm._request_auto_bridge_start(self, *args, **kwargs)
 
     def _auto_bridge_tick(self, *args, **kwargs):
-        return _stm._auto_bridge_tick(self, *args, **kwargs)
+        _stm._auto_bridge_tick(self, *args, **kwargs)
 
     def _get_traj_publisher(self, *args, **kwargs):
-        return _stm._get_traj_publisher(self, *args, **kwargs)
+        _stm._get_traj_publisher(self, *args, **kwargs)
 
     def _get_gripper_publisher(self, *args, **kwargs):
-        return _stm._get_gripper_publisher(self, *args, **kwargs)
+        _stm._get_gripper_publisher(self, *args, **kwargs)
 
     def _get_attach_publisher(self, *args, **kwargs):
-        return _stm._get_attach_publisher(self, *args, **kwargs)
+        _stm._get_attach_publisher(self, *args, **kwargs)
 
     def _normalize_attach_name(self, *args, **kwargs):
         return _stm._normalize_attach_name(self, *args, **kwargs)
 
     def _find_attach_candidate(self, *args, **kwargs):
-        return _stm._find_attach_candidate(self, *args, **kwargs)
+        _stm._find_attach_candidate(self, *args, **kwargs)
 
     def _attempt_attach(self, *args, **kwargs):
-        return _stm._attempt_attach(self, *args, **kwargs)
+        _stm._attempt_attach(self, *args, **kwargs)
 
     def _schedule_attach_attempt(self, *args, **kwargs):
-        return _stm._schedule_attach_attempt(self, *args, **kwargs)
+        _stm._schedule_attach_attempt(self, *args, **kwargs)
 
     def _command_gripper(self, *args, **kwargs):
         return _stm._command_gripper(self, *args, **kwargs)
@@ -1281,7 +1281,7 @@ class ControlPanelV2(QMainWindow):
         return _stm._resolve_traj_action_name(self, *args, **kwargs)
 
     def _get_action_client(self, *args, **kwargs):
-        return _stm._get_action_client(self, *args, **kwargs)
+        _stm._get_action_client(self, *args, **kwargs)
 
     def _wait_action_server(self, *args, **kwargs):
         return _stm._wait_action_server(self, *args, **kwargs)
@@ -1293,109 +1293,109 @@ class ControlPanelV2(QMainWindow):
         return _stm._joint_motion_since(self, *args, **kwargs)
 
     def _wait_for_joint_target(self, *args, **kwargs):
-        return _stm._wait_for_joint_target(self, *args, **kwargs)
+        _stm._wait_for_joint_target(self, *args, **kwargs)
 
     def _wait_for_tcp_base_z(self, *args, **kwargs):
-        return _stm._wait_for_tcp_base_z(self, *args, **kwargs)
+        _stm._wait_for_tcp_base_z(self, *args, **kwargs)
 
     def _wait_for_tcp_base_target(self, *args, **kwargs):
-        return _stm._wait_for_tcp_base_target(self, *args, **kwargs)
+        _stm._wait_for_tcp_base_target(self, *args, **kwargs)
 
     def _send_joint_trajectory_action(self, *args, **kwargs):
-        return _stm._send_joint_trajectory_action(self, *args, **kwargs)
+        _stm._send_joint_trajectory_action(self, *args, **kwargs)
 
     def _schedule_traj_action_fallback(self, *args, **kwargs):
-        return _stm._schedule_traj_action_fallback(self, *args, **kwargs)
+        _stm._schedule_traj_action_fallback(self, *args, **kwargs)
 
     def _clamp_joint_positions(self, *args, **kwargs):
-        return _stm._clamp_joint_positions(self, *args, **kwargs)
+        _stm._clamp_joint_positions(self, *args, **kwargs)
 
     def _publish_joint_trajectory(self, *args, **kwargs):
-        return _stm._publish_joint_trajectory(self, *args, **kwargs)
+        _stm._publish_joint_trajectory(self, *args, **kwargs)
 
     def _log_traj_action_fallback(self, *args, **kwargs):
-        return _stm._log_traj_action_fallback(self, *args, **kwargs)
+        _stm._log_traj_action_fallback(self, *args, **kwargs)
 
     def _publish_moveit_pose(self, *args, **kwargs):
-        return _stm._publish_moveit_pose(self, *args, **kwargs)
+        _stm._publish_moveit_pose(self, *args, **kwargs)
 
     def _start_objects_settle_watch(self, *args, **kwargs):
-        return _stm._start_objects_settle_watch(self, *args, **kwargs)
+        _stm._start_objects_settle_watch(self, *args, **kwargs)
 
     def _invalidate_settle(self, *args, **kwargs):
-        return _stm._invalidate_settle(self, *args, **kwargs)
+        _stm._invalidate_settle(self, *args, **kwargs)
 
     def _run_fall_test_async(self, *args, **kwargs):
-        return _stm._run_fall_test_async(self, *args, **kwargs)
+        _stm._run_fall_test_async(self, *args, **kwargs)
 
     def _objects_settle_worker(self, *args, **kwargs):
-        return _stm._objects_settle_worker(self, *args, **kwargs)
+        _stm._objects_settle_worker(self, *args, **kwargs)
 
     def _handle_objects_settled(self, *args, **kwargs):
-        return _stm._handle_objects_settled(self, *args, **kwargs)
+        _stm._handle_objects_settled(self, *args, **kwargs)
 
     def _log_calib_blocked(self, *args, **kwargs):
-        return _stm._log_calib_blocked(self, *args, **kwargs)
+        _stm._log_calib_blocked(self, *args, **kwargs)
 
     def _log_settle_snapshot(self, *args, **kwargs):
-        return _stm._log_settle_snapshot(self, *args, **kwargs)
+        _stm._log_settle_snapshot(self, *args, **kwargs)
 
     def _request_settle_snapshot(self, *args, **kwargs):
-        return _stm._request_settle_snapshot(self, *args, **kwargs)
+        _stm._request_settle_snapshot(self, *args, **kwargs)
 
     def wait_for_objects_to_settle(self, *args, **kwargs):
         return _stm.wait_for_objects_to_settle(self, *args, **kwargs)
 
     def _build_ui(self, *args, **kwargs):
-        return _stm._build_ui(self, *args, **kwargs)
+        _stm._build_ui(self, *args, **kwargs)
 
     def _debounced_btn_action(self, *args, **kwargs):
-        return _stm._debounced_btn_action(self, *args, **kwargs)
+        _stm._debounced_btn_action(self, *args, **kwargs)
 
     def showEvent(self, *args, **kwargs):
-        return _stm.showEvent(self, *args, **kwargs)
+        _stm.showEvent(self, *args, **kwargs)
 
     def _set_status(self, *args, **kwargs):
-        return _stm._set_status(self, *args, **kwargs)
+        _stm._set_status(self, *args, **kwargs)
 
     def _set_status_async(self, *args, **kwargs):
-        return _stm._set_status_async(self, *args, **kwargs)
+        _stm._set_status_async(self, *args, **kwargs)
 
     def _set_led_async(self, *args, **kwargs):
-        return _stm._set_led_async(self, *args, **kwargs)
+        _stm._set_led_async(self, *args, **kwargs)
 
     def _on_tf_ready_signal(self, *args, **kwargs):
-        return _stm._on_tf_ready_signal(self, *args, **kwargs)
+        _stm._on_tf_ready_signal(self, *args, **kwargs)
 
     def _on_calib_ready_signal(self, *args, **kwargs):
-        return _stm._on_calib_ready_signal(self, *args, **kwargs)
+        _stm._on_calib_ready_signal(self, *args, **kwargs)
 
     def _run_startup_tf_sanity_check_once(self, *args, **kwargs):
-        return _stm._run_startup_tf_sanity_check_once(self, *args, **kwargs)
+        _stm._run_startup_tf_sanity_check_once(self, *args, **kwargs)
 
     def _on_controllers_ready_signal(self, *args, **kwargs):
-        return _stm._on_controllers_ready_signal(self, *args, **kwargs)
+        _stm._on_controllers_ready_signal(self, *args, **kwargs)
 
     def _on_error_signal(self, *args, **kwargs):
-        return _stm._on_error_signal(self, *args, **kwargs)
+        _stm._on_error_signal(self, *args, **kwargs)
 
     def _on_moveit_state_signal(self, *args, **kwargs):
-        return _stm._on_moveit_state_signal(self, *args, **kwargs)
+        _stm._on_moveit_state_signal(self, *args, **kwargs)
 
     def _on_trace_ready(self, *args, **kwargs):
-        return _stm._on_trace_ready(self, *args, **kwargs)
+        _stm._on_trace_ready(self, *args, **kwargs)
 
     def _on_calibration_check(self, *args, **kwargs):
-        return _stm._on_calibration_check(self, *args, **kwargs)
+        _stm._on_calibration_check(self, *args, **kwargs)
 
     def _set_system_state(self, *args, **kwargs):
-        return _stm._set_system_state(self, *args, **kwargs)
+        _stm._set_system_state(self, *args, **kwargs)
 
     def _effective_system_state(self, *args, **kwargs):
         return _stm._effective_system_state(self, *args, **kwargs)
 
     def _trigger_fatal(self, *args, **kwargs):
-        return _stm._trigger_fatal(self, *args, **kwargs)
+        _stm._trigger_fatal(self, *args, **kwargs)
 
     def _resolve_system_state(self, *args, **kwargs):
         return _stm._resolve_system_state(self, *args, **kwargs)
@@ -1404,13 +1404,13 @@ class ControlPanelV2(QMainWindow):
         return _stm._build_state_snapshot(self, *args, **kwargs)
 
     def _evaluate_system_state(self, *args, **kwargs):
-        return _stm._evaluate_system_state(self, *args, **kwargs)
+        _stm._evaluate_system_state(self, *args, **kwargs)
 
     def _update_system_state(self, *args, **kwargs):
-        return _stm._update_system_state(self, *args, **kwargs)
+        _stm._update_system_state(self, *args, **kwargs)
 
     def _check_critical_timeouts(self, *args, **kwargs):
-        return _stm._check_critical_timeouts(self, *args, **kwargs)
+        _stm._check_critical_timeouts(self, *args, **kwargs)
 
     def _resolve_critical_fault(self, *args, **kwargs):
         return _stm._resolve_critical_fault(self, *args, **kwargs)
@@ -1472,7 +1472,7 @@ class ControlPanelV2(QMainWindow):
         return _ph._current_grasp_status(self, *args, **kwargs)
 
     def _restore_execute_selection_context(self, *args, **kwargs):
-        return _ph._restore_execute_selection_context(self, *args, **kwargs)
+        _ph._restore_execute_selection_context(self, *args, **kwargs)
 
     def _calibration_action_status(self, *args, **kwargs):
         return _ph._calibration_action_status(self, *args, **kwargs)
@@ -1496,31 +1496,31 @@ class ControlPanelV2(QMainWindow):
         return _ph._bridge_publishers_only(self, *args, **kwargs)
 
     def _set_robot_test_blocked(self, *args, **kwargs):
-        return _ph._set_robot_test_blocked(self, *args, **kwargs)
+        _ph._set_robot_test_blocked(self, *args, **kwargs)
 
     def _await_external_publishers_clear(self, *args, **kwargs):
-        return _ph._await_external_publishers_clear(self, *args, **kwargs)
+        _ph._await_external_publishers_clear(self, *args, **kwargs)
 
     def _schedule_robot_test_cleanup_check(self, *args, **kwargs):
-        return _ph._schedule_robot_test_cleanup_check(self, *args, **kwargs)
+        _ph._schedule_robot_test_cleanup_check(self, *args, **kwargs)
 
     def _update_camera_topics_async(self, *args, **kwargs):
-        return _ph._update_camera_topics_async(self, *args, **kwargs)
+        _ph._update_camera_topics_async(self, *args, **kwargs)
 
     def _emit_log(self, *args, **kwargs):
-        return _ph._emit_log(self, *args, **kwargs)
+        _ph._emit_log(self, *args, **kwargs)
 
     def _metric_mark(self, *args, **kwargs):
-        return _ph._metric_mark(self, *args, **kwargs)
+        _ph._metric_mark(self, *args, **kwargs)
 
     def _audit_root(self, *args, **kwargs):
         return _ph._audit_root(self, *args, **kwargs)
 
     def _audit_append(self, *args, **kwargs):
-        return _ph._audit_append(self, *args, **kwargs)
+        _ph._audit_append(self, *args, **kwargs)
 
     def _audit_write_json(self, *args, **kwargs):
-        return _ph._audit_write_json(self, *args, **kwargs)
+        _ph._audit_write_json(self, *args, **kwargs)
 
     def _sha256_file(self, *args, **kwargs):
         return _ph._sha256_file(self, *args, **kwargs)
@@ -1529,13 +1529,13 @@ class ControlPanelV2(QMainWindow):
         return _ph._should_emit_log(self, *args, **kwargs)
 
     def _set_motion_lock(self, *args, **kwargs):
-        return _ph._set_motion_lock(self, *args, **kwargs)
+        _ph._set_motion_lock(self, *args, **kwargs)
 
     def _set_btn_state(self, *args, **kwargs):
-        return _ph._set_btn_state(self, *args, **kwargs)
+        _ph._set_btn_state(self, *args, **kwargs)
 
     def _set_launching_style(self, *args, **kwargs):
-        return _ph._set_launching_style(self, *args, **kwargs)
+        _ph._set_launching_style(self, *args, **kwargs)
 
     def _clear_launching_if_timeout(self, *args, **kwargs):
         return _ph._clear_launching_if_timeout(self, *args, **kwargs)
@@ -1553,7 +1553,7 @@ class ControlPanelV2(QMainWindow):
         return _ph._pick_demo_remote_ready_status(self, *args, **kwargs)
 
     def _auto_release_drop_objects_when_ready(self, *args, **kwargs):
-        return _ph._auto_release_drop_objects_when_ready(self, *args, **kwargs)
+        _ph._auto_release_drop_objects_when_ready(self, *args, **kwargs)
 
     def _require_ready_vision(self, *args, **kwargs):
         return _ph._require_ready_vision(self, *args, **kwargs)
@@ -1562,238 +1562,238 @@ class ControlPanelV2(QMainWindow):
         return _ph._require_manual_ready(self, *args, **kwargs)
 
     def _log(self, *args, **kwargs):
-        return _ph._log(self, *args, **kwargs)
+        _ph._log(self, *args, **kwargs)
 
     def _emit_log_throttled(self, *args, **kwargs):
-        return _ph._emit_log_throttled(self, *args, **kwargs)
+        _ph._emit_log_throttled(self, *args, **kwargs)
 
     def _block_if_managed(self, *args, **kwargs):
         return _ph._block_if_managed(self, *args, **kwargs)
 
     def _log_error(self, *args, **kwargs):
-        return _ph._log_error(self, *args, **kwargs)
+        _ph._log_error(self, *args, **kwargs)
 
     def _log_warning(self, *args, **kwargs):
-        return _ph._log_warning(self, *args, **kwargs)
+        _ph._log_warning(self, *args, **kwargs)
 
     def _on_async_error(self, *args, **kwargs):
-        return _ph._on_async_error(self, *args, **kwargs)
+        _ph._on_async_error(self, *args, **kwargs)
 
     def _run_ui_callable(self, *args, **kwargs):
-        return _ph._run_ui_callable(self, *args, **kwargs)
+        _ph._run_ui_callable(self, *args, **kwargs)
 
     def _run_ui_delayed(self, *args, **kwargs):
-        return _ph._run_ui_delayed(self, *args, **kwargs)
+        _ph._run_ui_delayed(self, *args, **kwargs)
 
     def _set_debug_motion_button_waiting(self, *args, **kwargs):
-        return _ph._set_debug_motion_button_waiting(self, *args, **kwargs)
+        _ph._set_debug_motion_button_waiting(self, *args, **kwargs)
 
     def _on_step_mode_combo_changed(self, *args, **kwargs):
-        return _ph._on_step_mode_combo_changed(self, *args, **kwargs)
+        _ph._on_step_mode_combo_changed(self, *args, **kwargs)
 
     def _set_step_mode(self, *args, **kwargs):
-        return _ph._set_step_mode(self, *args, **kwargs)
+        _ph._set_step_mode(self, *args, **kwargs)
 
     def _ensure_step_window(self, *args, **kwargs):
-        return _ph._ensure_step_window(self, *args, **kwargs)
+        _ph._ensure_step_window(self, *args, **kwargs)
 
     def _step_cart_debug_trace_path(self, *args, **kwargs):
         return _ph._step_cart_debug_trace_path(self, *args, **kwargs)
 
     def _step_cart_debug_log_event(self, *args, **kwargs):
-        return _ph._step_cart_debug_log_event(self, *args, **kwargs)
+        _ph._step_cart_debug_log_event(self, *args, **kwargs)
 
     def _step_cart_debug_sample(self, *args, **kwargs):
         return _ph._step_cart_debug_sample(self, *args, **kwargs)
 
     def _step_cart_debug_set_status(self, *args, **kwargs):
-        return _ph._step_cart_debug_set_status(self, *args, **kwargs)
+        _ph._step_cart_debug_set_status(self, *args, **kwargs)
 
     def _step_cart_debug_refresh(self, *args, **kwargs):
-        return _ph._step_cart_debug_refresh(self, *args, **kwargs)
+        _ph._step_cart_debug_refresh(self, *args, **kwargs)
 
     def _step_cart_debug_step_m(self, *args, **kwargs):
         return _ph._step_cart_debug_step_m(self, *args, **kwargs)
 
     def _direct_clear_waiting_for_approach_confirmation(self, *args, **kwargs):
-        return _ph._direct_clear_waiting_for_approach_confirmation(self, *args, **kwargs)
+        _ph._direct_clear_waiting_for_approach_confirmation(self, *args, **kwargs)
 
     def _direct_enter_waiting_for_approach_confirmation(self, *args, **kwargs):
-        return _ph._direct_enter_waiting_for_approach_confirmation(self, *args, **kwargs)
+        _ph._direct_enter_waiting_for_approach_confirmation(self, *args, **kwargs)
 
     def _direct_release_waiting_for_approach_confirmation(self, *args, **kwargs):
-        return _ph._direct_release_waiting_for_approach_confirmation(self, *args, **kwargs)
+        _ph._direct_release_waiting_for_approach_confirmation(self, *args, **kwargs)
 
     def _direct_waiting_for_approach_confirmation(self, *args, **kwargs):
-        return _ph._direct_waiting_for_approach_confirmation(self, *args, **kwargs)
+        _ph._direct_waiting_for_approach_confirmation(self, *args, **kwargs)
 
     def _ensure_step_cart_debug_window(self, *args, **kwargs):
-        return _ph._ensure_step_cart_debug_window(self, *args, **kwargs)
+        _ph._ensure_step_cart_debug_window(self, *args, **kwargs)
 
     def _on_step_continue_clicked(self, *args, **kwargs):
-        return _ph._on_step_continue_clicked(self, *args, **kwargs)
+        _ph._on_step_continue_clicked(self, *args, **kwargs)
 
     def _on_step_phase_start_clicked(self, *args, **kwargs):
-        return _ph._on_step_phase_start_clicked(self, *args, **kwargs)
+        _ph._on_step_phase_start_clicked(self, *args, **kwargs)
 
     def _on_step_window_finished(self, *args, **kwargs):
-        return _ph._on_step_window_finished(self, *args, **kwargs)
+        _ph._on_step_window_finished(self, *args, **kwargs)
 
     def _read_gripper_feedback_state(self, *args, **kwargs):
-        return _ph._read_gripper_feedback_state(self, *args, **kwargs)
+        _ph._read_gripper_feedback_state(self, *args, **kwargs)
 
     def _show_step_cart_debug_window(self, *args, **kwargs):
-        return _ph._show_step_cart_debug_window(self, *args, **kwargs)
+        _ph._show_step_cart_debug_window(self, *args, **kwargs)
 
     def _step_assess_target_reached(self, *args, **kwargs):
-        return _ph._step_assess_target_reached(self, *args, **kwargs)
+        _ph._step_assess_target_reached(self, *args, **kwargs)
 
     def _step_capture_start_pose(self, *args, **kwargs):
-        return _ph._step_capture_start_pose(self, *args, **kwargs)
+        _ph._step_capture_start_pose(self, *args, **kwargs)
 
     def _step_cart_debug_handle_axis(self, *args, **kwargs):
-        return _ph._step_cart_debug_handle_axis(self, *args, **kwargs)
+        _ph._step_cart_debug_handle_axis(self, *args, **kwargs)
 
     def _step_cart_debug_move_delta(self, *args, **kwargs):
-        return _ph._step_cart_debug_move_delta(self, *args, **kwargs)
+        _ph._step_cart_debug_move_delta(self, *args, **kwargs)
 
     def _step_cart_debug_run_validation_xyz(self, *args, **kwargs):
-        return _ph._step_cart_debug_run_validation_xyz(self, *args, **kwargs)
+        _ph._step_cart_debug_run_validation_xyz(self, *args, **kwargs)
 
     def _step_cartesian_move_runtime_target(self, *args, **kwargs):
-        return _ph._step_cartesian_move_runtime_target(self, *args, **kwargs)
+        _ph._step_cartesian_move_runtime_target(self, *args, **kwargs)
 
     def _step_display_position(self, *args, **kwargs):
-        return _ph._step_display_position(self, *args, **kwargs)
+        _ph._step_display_position(self, *args, **kwargs)
 
     def _step_effective_flow(self, *args, **kwargs):
-        return _ph._step_effective_flow(self, *args, **kwargs)
+        _ph._step_effective_flow(self, *args, **kwargs)
 
     def _step_fetch_live_pose(self, *args, **kwargs):
-        return _ph._step_fetch_live_pose(self, *args, **kwargs)
+        _ph._step_fetch_live_pose(self, *args, **kwargs)
 
     def _step_fetch_object_world(self, *args, **kwargs):
-        return _ph._step_fetch_object_world(self, *args, **kwargs)
+        _ph._step_fetch_object_world(self, *args, **kwargs)
 
     def _step_find_history_row(self, *args, **kwargs):
-        return _ph._step_find_history_row(self, *args, **kwargs)
+        _ph._step_find_history_row(self, *args, **kwargs)
 
     def _step_format_inline_rpy(self, *args, **kwargs):
-        return _ph._step_format_inline_rpy(self, *args, **kwargs)
+        _ph._step_format_inline_rpy(self, *args, **kwargs)
 
     def _step_format_inline_xyz(self, *args, **kwargs):
-        return _ph._step_format_inline_xyz(self, *args, **kwargs)
+        _ph._step_format_inline_xyz(self, *args, **kwargs)
 
     def _step_format_xyz(self, *args, **kwargs):
-        return _ph._step_format_xyz(self, *args, **kwargs)
+        _ph._step_format_xyz(self, *args, **kwargs)
 
     def _step_live_gripper_state(self, *args, **kwargs):
-        return _ph._step_live_gripper_state(self, *args, **kwargs)
+        _ph._step_live_gripper_state(self, *args, **kwargs)
 
     def _step_live_pose_text(self, *args, **kwargs):
-        return _ph._step_live_pose_text(self, *args, **kwargs)
+        _ph._step_live_pose_text(self, *args, **kwargs)
 
     def _step_operational_frame_name(self, *args, **kwargs):
-        return _ph._step_operational_frame_name(self, *args, **kwargs)
+        _ph._step_operational_frame_name(self, *args, **kwargs)
 
     def _step_phase_action_text(self, *args, **kwargs):
-        return _ph._step_phase_action_text(self, *args, **kwargs)
+        _ph._step_phase_action_text(self, *args, **kwargs)
 
     def _step_phase_completed(self, *args, **kwargs):
-        return _ph._step_phase_completed(self, *args, **kwargs)
+        _ph._step_phase_completed(self, *args, **kwargs)
 
     def _step_phase_gate_already_owned(self, *args, **kwargs):
-        return _ph._step_phase_gate_already_owned(self, *args, **kwargs)
+        _ph._step_phase_gate_already_owned(self, *args, **kwargs)
 
     def _step_phase_gripper_state(self, *args, **kwargs):
-        return _ph._step_phase_gripper_state(self, *args, **kwargs)
+        _ph._step_phase_gripper_state(self, *args, **kwargs)
 
     def _step_phase_intent(self, *args, **kwargs):
-        return _ph._step_phase_intent(self, *args, **kwargs)
+        _ph._step_phase_intent(self, *args, **kwargs)
 
     def _step_phase_sequence(self, *args, **kwargs):
-        return _ph._step_phase_sequence(self, *args, **kwargs)
+        _ph._step_phase_sequence(self, *args, **kwargs)
 
     def _step_pipeline_phase_state(self, *args, **kwargs):
-        return _ph._step_pipeline_phase_state(self, *args, **kwargs)
+        _ph._step_pipeline_phase_state(self, *args, **kwargs)
 
     def _step_pipeline_rebuild(self, *args, **kwargs):
-        return _ph._step_pipeline_rebuild(self, *args, **kwargs)
+        _ph._step_pipeline_rebuild(self, *args, **kwargs)
 
     def _step_pre_insert_inicio_row(self, *args, **kwargs):
-        return _ph._step_pre_insert_inicio_row(self, *args, **kwargs)
+        _ph._step_pre_insert_inicio_row(self, *args, **kwargs)
 
     def _step_predict_next_phase(self, *args, **kwargs):
-        return _ph._step_predict_next_phase(self, *args, **kwargs)
+        _ph._step_predict_next_phase(self, *args, **kwargs)
 
     def _step_prepare_pipeline_view(self, *args, **kwargs):
-        return _ph._step_prepare_pipeline_view(self, *args, **kwargs)
+        _ph._step_prepare_pipeline_view(self, *args, **kwargs)
 
     def _step_present_flow_name(self, *args, **kwargs):
-        return _ph._step_present_flow_name(self, *args, **kwargs)
+        _ph._step_present_flow_name(self, *args, **kwargs)
 
     def _step_record_current_phase_actual(self, *args, **kwargs):
-        return _ph._step_record_current_phase_actual(self, *args, **kwargs)
+        _ph._step_record_current_phase_actual(self, *args, **kwargs)
 
     def _step_record_direct_event_snapshot(self, *args, **kwargs):
-        return _ph._step_record_direct_event_snapshot(self, *args, **kwargs)
+        _ph._step_record_direct_event_snapshot(self, *args, **kwargs)
 
     def _step_record_direct_home_initial(self, *args, **kwargs):
-        return _ph._step_record_direct_home_initial(self, *args, **kwargs)
+        _ph._step_record_direct_home_initial(self, *args, **kwargs)
 
     def _step_record_direct_initial_snapshot(self, *args, **kwargs):
-        return _ph._step_record_direct_initial_snapshot(self, *args, **kwargs)
+        _ph._step_record_direct_initial_snapshot(self, *args, **kwargs)
 
     def _step_record_direct_mesa_ready(self, *args, **kwargs):
-        return _ph._step_record_direct_mesa_ready(self, *args, **kwargs)
+        _ph._step_record_direct_mesa_ready(self, *args, **kwargs)
 
     def _step_record_history(self, *args, **kwargs):
-        return _ph._step_record_history(self, *args, **kwargs)
+        _ph._step_record_history(self, *args, **kwargs)
 
     def _step_refresh_pipeline_table(self, *args, **kwargs):
-        return _ph._step_refresh_pipeline_table(self, *args, **kwargs)
+        _ph._step_refresh_pipeline_table(self, *args, **kwargs)
 
     def _step_reset_sequence_view(self, *args, **kwargs):
-        return _ph._step_reset_sequence_view(self, *args, **kwargs)
+        _ph._step_reset_sequence_view(self, *args, **kwargs)
 
     def _step_runtime_refresh(self, *args, **kwargs):
-        return _ph._step_runtime_refresh(self, *args, **kwargs)
+        _ph._step_runtime_refresh(self, *args, **kwargs)
 
     def _step_selected_object_name(self, *args, **kwargs):
-        return _ph._step_selected_object_name(self, *args, **kwargs)
+        _ph._step_selected_object_name(self, *args, **kwargs)
 
     def _step_set_exec_target(self, *args, **kwargs):
-        return _ph._step_set_exec_target(self, *args, **kwargs)
+        _ph._step_set_exec_target(self, *args, **kwargs)
 
     def _step_status_item(self, *args, **kwargs):
-        return _ph._step_status_item(self, *args, **kwargs)
+        _ph._step_status_item(self, *args, **kwargs)
 
     def _step_update_phase_result(self, *args, **kwargs):
-        return _ph._step_update_phase_result(self, *args, **kwargs)
+        _ph._step_update_phase_result(self, *args, **kwargs)
 
     def _step_update_row_object_metrics(self, *args, **kwargs):
-        return _ph._step_update_row_object_metrics(self, *args, **kwargs)
+        _ph._step_update_row_object_metrics(self, *args, **kwargs)
 
     def _step_upsert_history_row_ordered(self, *args, **kwargs):
-        return _ph._step_upsert_history_row_ordered(self, *args, **kwargs)
+        _ph._step_upsert_history_row_ordered(self, *args, **kwargs)
 
     def _step_wait_for_phase(self, *args, **kwargs):
-        return _ph._step_wait_for_phase(self, *args, **kwargs)
+        _ph._step_wait_for_phase(self, *args, **kwargs)
 
     def _step_window_hide(self, *args, **kwargs):
-        return _ph._step_window_hide(self, *args, **kwargs)
+        _ph._step_window_hide(self, *args, **kwargs)
 
     def _step_window_maybe_refresh(self, *args, **kwargs):
-        return _ph._step_window_maybe_refresh(self, *args, **kwargs)
+        _ph._step_window_maybe_refresh(self, *args, **kwargs)
 
     def _step_window_refresh(self, *args, **kwargs):
-        return _ph._step_window_refresh(self, *args, **kwargs)
+        _ph._step_window_refresh(self, *args, **kwargs)
 
     def _step_window_set_waiting(self, *args, **kwargs):
-        return _ph._step_window_set_waiting(self, *args, **kwargs)
+        _ph._step_window_set_waiting(self, *args, **kwargs)
 
     def _on_debug_motion_button(self, *args, **kwargs):
-        return _ph._on_debug_motion_button(self)
+        _ph._on_debug_motion_button(self)
 
     def _debug_motion_wait_for_continue(self, *args, **kwargs):
         return _ph._debug_motion_wait_for_continue(self, *args, **kwargs)
@@ -1802,10 +1802,10 @@ class ControlPanelV2(QMainWindow):
         return _ph._run_async(self, *args, **kwargs)
 
     def _log_ros_message(self, *args, **kwargs):
-        return _ph._log_ros_message(self, *args, **kwargs)
+        _ph._log_ros_message(self, *args, **kwargs)
 
     def _on_system_state_update(self, *args, **kwargs):
-        return _ph._on_system_state_update(self, *args, **kwargs)
+        _ph._on_system_state_update(self, *args, **kwargs)
 
     def _external_state_active(self, *args, **kwargs):
         return _ph._external_state_active(self, *args, **kwargs)
@@ -1814,13 +1814,13 @@ class ControlPanelV2(QMainWindow):
         return _ph._resolve_external_state(self, *args, **kwargs)
 
     def _apply_external_system_state(self, *args, **kwargs):
-        return _ph._apply_external_system_state(self, *args, **kwargs)
+        _ph._apply_external_system_state(self, *args, **kwargs)
 
     def _log_camera_diagnostics(self, *args, **kwargs):
-        return _ph._log_camera_diagnostics(self, *args, **kwargs)
+        _ph._log_camera_diagnostics(self, *args, **kwargs)
 
     def _sync_moveit_from_system_state(self, *args, **kwargs):
-        return _ph._sync_moveit_from_system_state(self, *args, **kwargs)
+        _ph._sync_moveit_from_system_state(self, *args, **kwargs)
 
     def _clock_status(self, *args, **kwargs):
         return _ph._clock_status(self, *args, **kwargs)
@@ -1876,172 +1876,172 @@ class ControlPanelV2(QMainWindow):
         return _gs._select_traj_topic(self, *args, **kwargs)
 
     def _ensure_pose_subscription(self, *args, **kwargs):
-        return _gs._ensure_pose_subscription(self, *args, **kwargs)
+        _gs._ensure_pose_subscription(self, *args, **kwargs)
 
     def _discover_pose_info_topic(self, *args, **kwargs):
         return _gs._discover_pose_info_topic(self, *args, **kwargs)
 
     def _start_pose_info_watch(self, *args, **kwargs):
-        return _gs._start_pose_info_watch(self, *args, **kwargs)
+        _gs._start_pose_info_watch(self, *args, **kwargs)
 
     def _update_pose_info_status(self, *args, **kwargs):
-        return _gs._update_pose_info_status(self, *args, **kwargs)
+        _gs._update_pose_info_status(self, *args, **kwargs)
 
     def _log_button(self, *args, **kwargs):
-        return _gs._log_button(self, *args, **kwargs)
+        _gs._log_button(self, *args, **kwargs)
 
     def _cleanup_stray_processes(self, *args, **kwargs):
-        return _gs._cleanup_stray_processes(self, *args, **kwargs)
+        _gs._cleanup_stray_processes(self, *args, **kwargs)
 
     def _clean_cache_dirs(self, *args, **kwargs):
-        return _gs._clean_cache_dirs(self, *args, **kwargs)
+        _gs._clean_cache_dirs(self, *args, **kwargs)
 
     def _close_terminal(self, *args, **kwargs):
-        return _gs._close_terminal(self, *args, **kwargs)
+        _gs._close_terminal(self, *args, **kwargs)
 
     def _refresh_camera_topics(self, *args, **kwargs):
-        return _gs._refresh_camera_topics(self, *args, **kwargs)
+        _gs._refresh_camera_topics(self, *args, **kwargs)
 
     def _controllers_ready(self, *args, **kwargs):
-        return _gs._controllers_ready(self, *args, **kwargs)
+        _gs._controllers_ready(self, *args, **kwargs)
 
     def _is_transient_controller_reason(self, *args, **kwargs):
-        return _gs._is_transient_controller_reason(self, *args, **kwargs)
+        _gs._is_transient_controller_reason(self, *args, **kwargs)
 
     def _controllers_last_ok_age(self, *args, **kwargs):
-        return _gs._controllers_last_ok_age(self, *args, **kwargs)
+        _gs._controllers_last_ok_age(self, *args, **kwargs)
 
     def _can_use_controller_last_ok(self, *args, **kwargs):
-        return _gs._can_use_controller_last_ok(self, *args, **kwargs)
+        _gs._can_use_controller_last_ok(self, *args, **kwargs)
 
     def _controller_state_kind(self, *args, **kwargs):
-        return _gs._controller_state_kind(self, *args, **kwargs)
+        _gs._controller_state_kind(self, *args, **kwargs)
 
     def _list_controllers(self, *args, **kwargs):
-        return _gs._list_controllers(self, *args, **kwargs)
+        _gs._list_controllers(self, *args, **kwargs)
 
     def _wait_for_controllers_ready(self, *args, **kwargs):
-        return _gs._wait_for_controllers_ready(self, *args, **kwargs)
+        _gs._wait_for_controllers_ready(self, *args, **kwargs)
 
     def _schedule_camera_health_check(self, *args, **kwargs):
-        return _gs._schedule_camera_health_check(self, *args, **kwargs)
+        _gs._schedule_camera_health_check(self, *args, **kwargs)
 
     def _check_camera_topic_health(self, *args, **kwargs):
-        return _gs._check_camera_topic_health(self, *args, **kwargs)
+        _gs._check_camera_topic_health(self, *args, **kwargs)
 
     def _update_camera_topics(self, *args, **kwargs):
-        return _gs._update_camera_topics(self, *args, **kwargs)
+        _gs._update_camera_topics(self, *args, **kwargs)
 
     def _connect_camera(self, *args, **kwargs):
-        return _gs._connect_camera(self, *args, **kwargs)
+        _gs._connect_camera(self, *args, **kwargs)
 
     def _switch_camera_topic(self, *args, **kwargs):
-        return _gs._switch_camera_topic(self, *args, **kwargs)
+        _gs._switch_camera_topic(self, *args, **kwargs)
 
     def _set_far_front_camera_view(self, *args, **kwargs):
-        return _gs._set_far_front_camera_view(self, *args, **kwargs)
+        _gs._set_far_front_camera_view(self, *args, **kwargs)
 
     def _set_top_camera_view(self, *args, **kwargs):
-        return _gs._set_top_camera_view(self, *args, **kwargs)
+        _gs._set_top_camera_view(self, *args, **kwargs)
 
     def _set_wrist_camera_view(self, *args, **kwargs):
-        return _gs._set_wrist_camera_view(self, *args, **kwargs)
+        _gs._set_wrist_camera_view(self, *args, **kwargs)
 
     def _subscribe_camera(self, *args, **kwargs):
-        return _gs._subscribe_camera(self, *args, **kwargs)
+        _gs._subscribe_camera(self, *args, **kwargs)
 
     def _start_camera_health_check(self, *args, **kwargs):
-        return _gs._start_camera_health_check(self, *args, **kwargs)
+        _gs._start_camera_health_check(self, *args, **kwargs)
 
     def _unsubscribe_camera(self, *args, **kwargs):
-        return _gs._unsubscribe_camera(self, *args, **kwargs)
+        _gs._unsubscribe_camera(self, *args, **kwargs)
 
     def _clear_camera_frame(self, *args, **kwargs):
-        return _gs._clear_camera_frame(self, *args, **kwargs)
+        _gs._clear_camera_frame(self, *args, **kwargs)
 
     def _resolve_camera_msg_type(self, *args, **kwargs):
-        return _gs._resolve_camera_msg_type(self, *args, **kwargs)
+        _gs._resolve_camera_msg_type(self, *args, **kwargs)
 
     def _auto_connect_camera(self, *args, **kwargs):
-        return _gs._auto_connect_camera(self, *args, **kwargs)
+        _gs._auto_connect_camera(self, *args, **kwargs)
 
     def _ensure_ros_worker_started(self, *args, **kwargs):
-        return _gs._ensure_ros_worker_started(self, *args, **kwargs)
+        _gs._ensure_ros_worker_started(self, *args, **kwargs)
 
     def _ensure_grasp_rect_subscription(self, *args, **kwargs):
-        return _gs._ensure_grasp_rect_subscription(self, *args, **kwargs)
+        _gs._ensure_grasp_rect_subscription(self, *args, **kwargs)
 
     def _auto_subscribe_joints(self, *args, **kwargs):
-        return _gs._auto_subscribe_joints(self, *args, **kwargs)
+        _gs._auto_subscribe_joints(self, *args, **kwargs)
 
     def _discover_joint_states_topic(self, *args, **kwargs):
-        return _gs._discover_joint_states_topic(self, *args, **kwargs)
+        _gs._discover_joint_states_topic(self, *args, **kwargs)
 
     def _on_bridge_ready(self, *args, **kwargs):
-        return _gs._on_bridge_ready(self, *args, **kwargs)
+        _gs._on_bridge_ready(self, *args, **kwargs)
 
     def _on_image(self, *args, **kwargs):
-        return _gs._on_image(self, *args, **kwargs)
+        _gs._on_image(self, *args, **kwargs)
 
     def _on_grasp_rect(self, *args, **kwargs):
-        return _gs._on_grasp_rect(self, *args, **kwargs)
+        _gs._on_grasp_rect(self, *args, **kwargs)
 
     def _reset_camera_retry_backoff(self, *args, **kwargs):
-        return _gs._reset_camera_retry_backoff(self, *args, **kwargs)
+        _gs._reset_camera_retry_backoff(self, *args, **kwargs)
 
     def _refresh_camera_display(self, *args, **kwargs):
-        return _gs._refresh_camera_display(self, *args, **kwargs)
+        _gs._refresh_camera_display(self, *args, **kwargs)
 
     def _check_camera_stream(self, *args, **kwargs):
-        return _gs._check_camera_stream(self, *args, **kwargs)
+        _gs._check_camera_stream(self, *args, **kwargs)
 
     def _on_joint_state(self, *args, **kwargs):
-        return _gs._on_joint_state(self, *args, **kwargs)
+        _gs._on_joint_state(self, *args, **kwargs)
 
     def _fill_worlds(self, *args, **kwargs):
-        return _gs._fill_worlds(self, *args, **kwargs)
+        _gs._fill_worlds(self, *args, **kwargs)
 
     def _fill_bridge_presets(self, *args, **kwargs):
-        return _gs._fill_bridge_presets(self, *args, **kwargs)
+        _gs._fill_bridge_presets(self, *args, **kwargs)
 
     def _apply_bridge_preset(self, *args, **kwargs):
-        return _gs._apply_bridge_preset(self, *args, **kwargs)
+        _gs._apply_bridge_preset(self, *args, **kwargs)
 
     def _choose_world(self, *args, **kwargs):
-        return _gs._choose_world(self, *args, **kwargs)
+        _gs._choose_world(self, *args, **kwargs)
 
     def _choose_yaml(self, *args, **kwargs):
-        return _gs._choose_yaml(self, *args, **kwargs)
+        _gs._choose_yaml(self, *args, **kwargs)
 
     def _run_script(self, *args, **kwargs):
-        return _gs._run_script(self, *args, **kwargs)
+        _gs._run_script(self, *args, **kwargs)
 
     def _toggle_debug(self, *args, **kwargs):
-        return _gs._toggle_debug(self, *args, **kwargs)
+        _gs._toggle_debug(self, *args, **kwargs)
 
     def _start_all(self, *args, **kwargs):
-        return _gs._start_all(self, *args, **kwargs)
+        _gs._start_all(self, *args, **kwargs)
 
     def _log_moveit_autostart_blocked(self, *args, **kwargs):
-        return _gs._log_moveit_autostart_blocked(self, *args, **kwargs)
+        _gs._log_moveit_autostart_blocked(self, *args, **kwargs)
 
     def _on_start_fatal(self, *args, **kwargs):
-        return _gs._on_start_fatal(self, *args, **kwargs)
+        _gs._on_start_fatal(self, *args, **kwargs)
 
     def _stop_all(self, *args, **kwargs):
-        return _gs._stop_all(self, *args, **kwargs)
+        _gs._stop_all(self, *args, **kwargs)
 
     def _recover_runtime(self, *args, **kwargs):
-        return _gs._recover_runtime(self)
+        _gs._recover_runtime(self)
 
     def _system_running(self, *args, **kwargs):
         return _gs._system_running(self, *args, **kwargs)
 
     def _schedule_start_enable_check(self, *args, **kwargs):
-        return _gs._schedule_start_enable_check(self, *args, **kwargs)
+        _gs._schedule_start_enable_check(self, *args, **kwargs)
 
     def _start_gazebo(self, *args, **kwargs):
-        return _gs._start_gazebo(self)
+        _gs._start_gazebo(self)
 
     def _parse_first_json_object(self, *args, **kwargs):
         return _gs._parse_first_json_object(self, *args, **kwargs)
@@ -2059,156 +2059,156 @@ class ControlPanelV2(QMainWindow):
         return _gs._probe_pose_motion(self, *args, **kwargs)
 
     def check_physics_runtime(self, *args, **kwargs):
-        return _gs.check_physics_runtime(self, *args, **kwargs)
+        _gs.check_physics_runtime(self, *args, **kwargs)
 
     def _schedule_physics_runtime_check(self, *args, **kwargs):
-        return _gs._schedule_physics_runtime_check(self, *args, **kwargs)
+        _gs._schedule_physics_runtime_check(self, *args, **kwargs)
 
     def _throw_objects(self, *args, **kwargs):
-        return _gs._throw_objects(self, *args, **kwargs)
+        _gs._throw_objects(self, *args, **kwargs)
 
     def _toggle_debug_poses(self, *args, **kwargs):
-        return _gs._toggle_debug_poses(self)
+        _gs._toggle_debug_poses(self)
 
     def _start_debug_poses(self, *args, **kwargs):
-        return _gs._start_debug_poses(self, *args, **kwargs)
+        _gs._start_debug_poses(self, *args, **kwargs)
 
     def _stop_debug_poses(self, *args, **kwargs):
-        return _gs._stop_debug_poses(self, *args, **kwargs)
+        _gs._stop_debug_poses(self, *args, **kwargs)
 
 
 
     def _log_trace(self, *args, **kwargs):
-        return _sm._log_trace(self, *args, **kwargs)
+        _sm._log_trace(self, *args, **kwargs)
 
     def _apply_debug_button_style(self, *args, **kwargs):
-        return _sm._apply_debug_button_style(self, *args, **kwargs)
+        _sm._apply_debug_button_style(self, *args, **kwargs)
 
     def _print_pose_snapshot(self, *args, **kwargs):
-        return _sm._print_pose_snapshot(self, *args, **kwargs)
+        _sm._print_pose_snapshot(self, *args, **kwargs)
 
     def _drop_detach_supported(self, *args, **kwargs):
-        return _sm._drop_detach_supported(self, *args, **kwargs)
+        _sm._drop_detach_supported(self, *args, **kwargs)
 
     def _release_objects(self, *args, **kwargs):
-        return _sm._release_objects(self)
+        _sm._release_objects(self)
 
     def _schedule_release_retry(self, *args, **kwargs):
-        return _sm._schedule_release_retry(self, *args, **kwargs)
+        _sm._schedule_release_retry(self, *args, **kwargs)
 
     def _attach_drop_objects(self, *args, **kwargs):
-        return _sm._attach_drop_objects(self, *args, **kwargs)
+        _sm._attach_drop_objects(self, *args, **kwargs)
 
     def _maybe_nudge_drop_objects(self, *args, **kwargs):
-        return _sm._maybe_nudge_drop_objects(self, *args, **kwargs)
+        _sm._maybe_nudge_drop_objects(self, *args, **kwargs)
 
     def _resolve_set_pose_service(self, *args, **kwargs):
-        return _sm._resolve_set_pose_service(self, *args, **kwargs)
+        _sm._resolve_set_pose_service(self, *args, **kwargs)
 
     def _resolve_gz_cli(self, *args, **kwargs):
-        return _sm._resolve_gz_cli(self, *args, **kwargs)
+        _sm._resolve_gz_cli(self, *args, **kwargs)
 
     def _resolve_world_sdf_path(self, *args, **kwargs):
-        return _sm._resolve_world_sdf_path(self, *args, **kwargs)
+        _sm._resolve_world_sdf_path(self, *args, **kwargs)
 
     def _load_pick_demo_recover_sdf(self, *args, **kwargs):
-        return _sm._load_pick_demo_recover_sdf(self, *args, **kwargs)
+        _sm._load_pick_demo_recover_sdf(self, *args, **kwargs)
 
     def _run_gz_service_cli(self, *args, **kwargs):
-        return _sm._run_gz_service_cli(self, *args, **kwargs)
+        _sm._run_gz_service_cli(self, *args, **kwargs)
 
     def _recover_pick_demo_to_table_gz(self, *args, **kwargs):
-        return _sm._recover_pick_demo_to_table_gz(self, *args, **kwargs)
+        _sm._recover_pick_demo_to_table_gz(self, *args, **kwargs)
 
     def _maybe_hold_drop_objects(self, *args, **kwargs):
-        return _sm._maybe_hold_drop_objects(self, *args, **kwargs)
+        _sm._maybe_hold_drop_objects(self, *args, **kwargs)
 
     def _maybe_recover_pick_demo(self, *args, **kwargs):
-        return _sm._maybe_recover_pick_demo(self, *args, **kwargs)
+        _sm._maybe_recover_pick_demo(self, *args, **kwargs)
 
     def _recover_pick_demo_to_table(self, *args, **kwargs):
-        return _sm._recover_pick_demo_to_table(self, *args, **kwargs)
+        _sm._recover_pick_demo_to_table(self, *args, **kwargs)
 
     def _hold_drop_objects(self, *args, **kwargs):
-        return _sm._hold_drop_objects(self, *args, **kwargs)
+        _sm._hold_drop_objects(self, *args, **kwargs)
 
     def _hold_drop_objects_gz(self, *args, **kwargs):
-        return _sm._hold_drop_objects_gz(self, *args, **kwargs)
+        _sm._hold_drop_objects_gz(self, *args, **kwargs)
 
     def _drop_hold_tick(self, *args, **kwargs):
-        return _sm._drop_hold_tick(self, *args, **kwargs)
+        _sm._drop_hold_tick(self, *args, **kwargs)
 
     def _nudge_drop_objects(self, *args, **kwargs):
-        return _sm._nudge_drop_objects(self, *args, **kwargs)
+        _sm._nudge_drop_objects(self, *args, **kwargs)
 
     def _start_release_service(self, *args, **kwargs):
-        return _sm._start_release_service(self, *args, **kwargs)
+        _sm._start_release_service(self, *args, **kwargs)
 
     def _start_world_tf_publisher(self, *args, **kwargs):
-        return _sm._start_world_tf_publisher(self, *args, **kwargs)
+        _sm._start_world_tf_publisher(self, *args, **kwargs)
 
     def _stop_world_tf_publisher(self, *args, **kwargs):
-        return _sm._stop_world_tf_publisher(self, *args, **kwargs)
+        _sm._stop_world_tf_publisher(self, *args, **kwargs)
 
     def _stop_gazebo(self, *args, **kwargs):
-        return _sm._stop_gazebo(self)
+        _sm._stop_gazebo(self)
 
     def _start_robot_state_publisher(self, *args, **kwargs):
-        return _sm._start_robot_state_publisher(self, *args, **kwargs)
+        _sm._start_robot_state_publisher(self, *args, **kwargs)
 
     def _start_bridge(self, *args, **kwargs):
-        return _sm._start_bridge(self, *args, **kwargs)
+        _sm._start_bridge(self, *args, **kwargs)
 
     def _spawn_controllers_async(self, *args, **kwargs):
-        return _sm._spawn_controllers_async(self, *args, **kwargs)
+        _sm._spawn_controllers_async(self, *args, **kwargs)
 
     def _stop_bridge(self, *args, **kwargs):
-        return _sm._stop_bridge(self, *args, **kwargs)
+        _sm._stop_bridge(self, *args, **kwargs)
 
     def _start_moveit(self, *args, **kwargs):
-        return _sm._start_moveit(self, *args, **kwargs)
+        _sm._start_moveit(self, *args, **kwargs)
 
     def _stop_moveit(self, *args, **kwargs):
-        return _sm._stop_moveit(self, *args, **kwargs)
+        _sm._stop_moveit(self, *args, **kwargs)
 
     def _wait_for_moveit_ready(self, *args, **kwargs):
-        return _sm._wait_for_moveit_ready(self, *args, **kwargs)
+        _sm._wait_for_moveit_ready(self, *args, **kwargs)
 
     def _start_moveit_bridge(self, *args, **kwargs):
-        return _sm._start_moveit_bridge(self, *args, **kwargs)
+        _sm._start_moveit_bridge(self, *args, **kwargs)
 
     def _stop_moveit_bridge(self, *args, **kwargs):
-        return _sm._stop_moveit_bridge(self, *args, **kwargs)
+        _sm._stop_moveit_bridge(self, *args, **kwargs)
 
     def _clear_moveit_bridge_launching(self, *args, **kwargs):
-        return _sm._clear_moveit_bridge_launching(self, *args, **kwargs)
+        _sm._clear_moveit_bridge_launching(self, *args, **kwargs)
 
     def _kill_proc(self, *args, **kwargs):
-        return _sm._kill_proc(self, *args, **kwargs)
+        _sm._kill_proc(self, *args, **kwargs)
 
     def _proc_alive(self, *args, **kwargs):
         return _sm._proc_alive(self, *args, **kwargs)
 
     def _save_home_from_sliders(self, *args, **kwargs):
-        return _sm._save_home_from_sliders(self, *args, **kwargs)
+        _sm._save_home_from_sliders(self, *args, **kwargs)
 
     def _rosbag_running(self, *args, **kwargs):
         return _sm._rosbag_running(self, *args, **kwargs)
 
     def _start_bag(self, *args, **kwargs):
-        return _sm._start_bag(self, *args, **kwargs)
+        _sm._start_bag(self, *args, **kwargs)
 
     def _stop_bag(self, *args, **kwargs):
-        return _sm._stop_bag(self, *args, **kwargs)
+        _sm._stop_bag(self, *args, **kwargs)
 
     def _refresh_status_sync(self, *args, **kwargs):
-        return _sm._refresh_status_sync(self, *args, **kwargs)
+        _sm._refresh_status_sync(self, *args, **kwargs)
 
     def _refresh_status_async(self, *args, **kwargs):
-        return _sm._refresh_status_async(self, *args, **kwargs)
+        _sm._refresh_status_async(self, *args, **kwargs)
 
     def _apply_status(self, *args, **kwargs):
-        return _sm._apply_status(self, *args, **kwargs)
+        _sm._apply_status(self, *args, **kwargs)
 
     def _moveit_topics_ready(self, *args, **kwargs):
         return _sm._moveit_topics_ready(self, *args, **kwargs)
@@ -2250,13 +2250,13 @@ class ControlPanelV2(QMainWindow):
         return _sm._moveit_ready(self, *args, **kwargs)
 
     def _update_moveit_status_label(self, *args, **kwargs):
-        return _sm._update_moveit_status_label(self, *args, **kwargs)
+        _sm._update_moveit_status_label(self, *args, **kwargs)
 
     def _update_system_stats(self, *args, **kwargs):
-        return _sm._update_system_stats(self, *args, **kwargs)
+        _sm._update_system_stats(self, *args, **kwargs)
 
     def _set_stat_label(self, *args, **kwargs):
-        return _sm._set_stat_label(self, *args, **kwargs)
+        _sm._set_stat_label(self, *args, **kwargs)
 
     def _known_process_pids(self, *args, **kwargs):
         return _sm._known_process_pids(self, *args, **kwargs)
@@ -2268,29 +2268,29 @@ class ControlPanelV2(QMainWindow):
         return _sm._detect_stale_processes(self, *args, **kwargs)
 
     def _refresh_controls(self, *args, **kwargs):
-        return _sm._refresh_controls(self, *args, **kwargs)
+        _sm._refresh_controls(self, *args, **kwargs)
 
     def _maybe_auto_run_pick_demo(self, *args, **kwargs):
-        return _sm._maybe_auto_run_pick_demo(self, *args, **kwargs)
+        _sm._maybe_auto_run_pick_demo(self, *args, **kwargs)
 
     def _wait_for_state_change(self, *args, **kwargs):
         return _sm._wait_for_state_change(self, *args, **kwargs)
 
     def _schedule_controller_check(self, *args, **kwargs):
-        return _sm._schedule_controller_check(self, *args, **kwargs)
+        _sm._schedule_controller_check(self, *args, **kwargs)
 
 
     def _update_ui_state(self, *args, **kwargs):
-        return _mc._update_ui_state(self, *args, **kwargs)
+        _mc._update_ui_state(self, *args, **kwargs)
 
     def _effective_mode(self, *args, **kwargs):
         return _mc._effective_mode(self, *args, **kwargs)
 
     def _apply_home_joint2_offset(self, *args, **kwargs):
-        return _mc._apply_home_joint2_offset(self, *args, **kwargs)
+        _mc._apply_home_joint2_offset(self, *args, **kwargs)
 
     def _schedule_home_offset_retry(self, *args, **kwargs):
-        return _mc._schedule_home_offset_retry(self, *args, **kwargs)
+        _mc._schedule_home_offset_retry(self, *args, **kwargs)
 
     def _get_home_joint_pose(self, *args, **kwargs):
         return _mc._get_home_joint_pose(self, *args, **kwargs)
@@ -2302,37 +2302,37 @@ class ControlPanelV2(QMainWindow):
         return _mc._wait_for_joint_convergence(self, *args, **kwargs)
 
     def _run_baseline_motion(self, *args, **kwargs):
-        return _mc._run_baseline_motion(self, *args, **kwargs)
+        _mc._run_baseline_motion(self, *args, **kwargs)
 
     def _go_home(self, *args, **kwargs):
-        return _mc._go_home(self)
+        _mc._go_home(self)
 
     def _set_test_failed(self, *args, **kwargs):
-        return _mc._set_test_failed(self, *args, **kwargs)
+        _mc._set_test_failed(self, *args, **kwargs)
 
     def _set_robot_test_done(self, *args, **kwargs):
-        return _mc._set_robot_test_done(self, *args, **kwargs)
+        _mc._set_robot_test_done(self, *args, **kwargs)
 
     def _set_panel_flow_state(self, *args, **kwargs):
-        return _mc._set_panel_flow_state(self, *args, **kwargs)
+        _mc._set_panel_flow_state(self, *args, **kwargs)
 
     def _update_panel_flow_state(self, *args, **kwargs):
-        return _mc._update_panel_flow_state(self, *args, **kwargs)
+        _mc._update_panel_flow_state(self, *args, **kwargs)
 
     def _compute_reach_overlay_points(self, *args, **kwargs):
         return _mc._compute_reach_overlay_points(self, *args, **kwargs)
 
     def _step_joint(self, *args, **kwargs):
-        return _mc._step_joint(self, *args, **kwargs)
+        _mc._step_joint(self, *args, **kwargs)
 
     def _maybe_send_auto(self, *args, **kwargs):
-        return _mc._maybe_send_auto(self, *args, **kwargs)
+        _mc._maybe_send_auto(self, *args, **kwargs)
 
     def _send_joints(self, *args, **kwargs):
-        return _mc._send_joints(self)
+        _mc._send_joints(self)
 
     def _send_joints_retry(self, *args, **kwargs):
-        return _mc._send_joints_retry(self, *args, **kwargs)
+        _mc._send_joints_retry(self, *args, **kwargs)
 
 
     def _tfm_infer_grasp(self, *args, **kwargs):
@@ -2417,16 +2417,16 @@ class ControlPanelV2(QMainWindow):
         _rc._on_remote_object_select_request(self, name, source)
 
     def _publish_calib_grid_marker(self, *args, **kwargs):
-        return _ca._publish_calib_grid_marker(self, *args, **kwargs)
+        _ca._publish_calib_grid_marker(self, *args, **kwargs)
 
     def _start_calibration(self, *args, **kwargs):
-        return _ca._start_calibration(self)
+        _ca._start_calibration(self)
 
     def _set_calibrate_button_text(self, *args, **kwargs):
-        return _ca._set_calibrate_button_text(self, *args, **kwargs)
+        _ca._set_calibrate_button_text(self, *args, **kwargs)
 
     def _capture_calibration_frame(self, *args, **kwargs):
-        return _ca._capture_calibration_frame(self, *args, **kwargs)
+        _ca._capture_calibration_frame(self, *args, **kwargs)
 
     def _auto_calibrate_from_camera(self, *args, **kwargs):
         return _ca._auto_calibrate_from_camera(self, *args, **kwargs)
@@ -2435,22 +2435,22 @@ class ControlPanelV2(QMainWindow):
         return _ca._pick_confirm_dialog(self, *args, **kwargs)
 
     def _run_pick_demo(self, *args, **kwargs):
-        return _ca._run_pick_demo(self)
+        _ca._run_pick_demo(self)
 
     def _run_pick_object(self, *args, **kwargs):
-        return _ca._run_pick_object(self)
+        _ca._run_pick_object(self)
 
     def _get_object_world_position(self, *args, **kwargs):
         return _ca._get_object_world_position(self, *args, **kwargs)
 
     def _on_slider_change(self, *args, **kwargs):
-        return _ca._on_slider_change(self, *args, **kwargs)
+        _ca._on_slider_change(self, *args, **kwargs)
 
     def _slider_to_deg(self, *args, **kwargs):
         return _ca._slider_to_deg(self, *args, **kwargs)
 
     def _current_joint_positions_rad(self, *args, **kwargs):
-        return _ca._current_joint_positions_rad(self, *args, **kwargs)
+        _ca._current_joint_positions_rad(self, *args, **kwargs)
 
     def _resolve_table_top_z(self, *args, **kwargs):
         return _om._resolve_table_top_z(self, *args, **kwargs)
@@ -2462,13 +2462,13 @@ class ControlPanelV2(QMainWindow):
         return _om._check_robot_above_table(self, *args, **kwargs)
 
     def _load_sdf_geometry_cache(self, *args, **kwargs):
-        return _om._load_sdf_geometry_cache(self, *args, **kwargs)
+        _om._load_sdf_geometry_cache(self, *args, **kwargs)
 
     def _load_joint_limits(self, *args, **kwargs):
-        return _om._load_joint_limits(self, *args, **kwargs)
+        _om._load_joint_limits(self, *args, **kwargs)
 
     def _post_calibration_pipeline(self, *args, **kwargs):
-        return _om._post_calibration_pipeline(self, *args, **kwargs)
+        _om._post_calibration_pipeline(self, *args, **kwargs)
 
     def _build_object_report(self, *args, **kwargs):
         return _om._build_object_report(self, *args, **kwargs)
@@ -2477,25 +2477,25 @@ class ControlPanelV2(QMainWindow):
         return _om._is_pickable(self, *args, **kwargs)
 
     def _log_object_report(self, *args, **kwargs):
-        return _om._log_object_report(self, *args, **kwargs)
+        _om._log_object_report(self, *args, **kwargs)
 
     def _go_table(self, *args, **kwargs):
-        return _om._go_table(self)
+        _om._go_table(self)
 
     def _go_basket(self, *args, **kwargs):
-        return _om._go_basket(self)
+        _om._go_basket(self)
 
     def _toggle_gripper_button(self, *args, **kwargs):
-        return _om._toggle_gripper_button(self, *args, **kwargs)
+        _om._toggle_gripper_button(self, *args, **kwargs)
 
     def _on_camera_click(self, *args, **kwargs):
-        return _om._on_camera_click(self, *args, **kwargs)
+        _om._on_camera_click(self, *args, **kwargs)
 
     def _load_table_calibration(self, *args, **kwargs):
-        return _om._load_table_calibration(self, *args, **kwargs)
+        _om._load_table_calibration(self, *args, **kwargs)
 
     def _refresh_objects_from_gz_async(self, *args, **kwargs):
-        return _om._refresh_objects_from_gz_async(self, *args, **kwargs)
+        _om._refresh_objects_from_gz_async(self, *args, **kwargs)
 
     def _resolve_pose_object_name(self, *args, **kwargs):
         return _om._resolve_pose_object_name(self, *args, **kwargs)
@@ -2504,7 +2504,7 @@ class ControlPanelV2(QMainWindow):
         return _om._extract_pose_updates(self, *args, **kwargs)
 
     def _refresh_objects_from_gz(self, *args, **kwargs):
-        return _om._refresh_objects_from_gz(self, *args, **kwargs)
+        _om._refresh_objects_from_gz(self, *args, **kwargs)
 
     def _settle_targets(self, *args, **kwargs):
         return _om._settle_targets(self, *args, **kwargs)
@@ -2515,7 +2515,7 @@ class ControlPanelV2(QMainWindow):
 
 
     def _compute_homography(self, *args, **kwargs):
-        return _do._compute_homography(self, *args, **kwargs)
+        _do._compute_homography(self, *args, **kwargs)
 
     def _draw_calib_overlay(self, *args, **kwargs):
         return _do._draw_calib_overlay(self, *args, **kwargs)
@@ -2570,25 +2570,25 @@ class ControlPanelV2(QMainWindow):
 
 
     def _handle_calibration_click(self, *args, **kwargs):
-        return _cs._handle_calibration_click(self, *args, **kwargs)
+        _cs._handle_calibration_click(self, *args, **kwargs)
 
     def _finish_calibration(self, *args, **kwargs):
-        return _cs._finish_calibration(self, *args, **kwargs)
+        _cs._finish_calibration(self, *args, **kwargs)
 
     def _handle_object_selection_click(self, *args, **kwargs):
-        return _cs._handle_object_selection_click(self, *args, **kwargs)
+        _cs._handle_object_selection_click(self, *args, **kwargs)
 
     def _select_object(self, *args, **kwargs):
-        return _cs._select_object(self, *args, **kwargs)
+        _cs._select_object(self, *args, **kwargs)
 
     def _log_selection_tf(self, *args, **kwargs):
-        return _cs._log_selection_tf(self, *args, **kwargs)
+        _cs._log_selection_tf(self, *args, **kwargs)
 
     def _start_tf_diagnose_async(self, *args, **kwargs):
-        return _cs._start_tf_diagnose_async(self, *args, **kwargs)
+        _cs._start_tf_diagnose_async(self, *args, **kwargs)
 
     def _start_pick_tf_resolve(self, *args, **kwargs):
-        return _cs._start_pick_tf_resolve(self, *args, **kwargs)
+        _cs._start_pick_tf_resolve(self, *args, **kwargs)
 
     def _selection_candidate(self, *args, **kwargs):
         return _cs._selection_candidate(self, *args, **kwargs)
@@ -2597,19 +2597,19 @@ class ControlPanelV2(QMainWindow):
         return _cs._selection_to_base(self, *args, **kwargs)
 
     def _on_object_clicked(self, *args, **kwargs):
-        return _cs._on_object_clicked(self, *args, **kwargs)
+        _cs._on_object_clicked(self, *args, **kwargs)
 
     def _update_objects(self, *args, **kwargs):
-        return _cs._update_objects(self, *args, **kwargs)
+        _cs._update_objects(self, *args, **kwargs)
 
     def _push_history(self, *args, **kwargs):
-        return _cs._push_history(self, *args, **kwargs)
+        _cs._push_history(self, *args, **kwargs)
 
     def _mean_history(self, *args, **kwargs):
         return _cs._mean_history(self, *args, **kwargs)
 
     def _update_fps_stats(self, *args, **kwargs):
-        return _cs._update_fps_stats(self, *args, **kwargs)
+        _cs._update_fps_stats(self, *args, **kwargs)
 
     def _tfm_repro_profile_env(self, *args, **kwargs):
         return _ts._tfm_repro_profile_env(self, *args, **kwargs)
@@ -2627,16 +2627,16 @@ class ControlPanelV2(QMainWindow):
         return _ts._tfm_postprocess_policy_label(self, *args, **kwargs)
 
     def _on_tfm_repro_mode_changed(self, *args, **kwargs):
-        return _ts._on_tfm_repro_mode_changed(self, *args, **kwargs)
+        _ts._on_tfm_repro_mode_changed(self, *args, **kwargs)
 
     def _on_tfm_postprocess_mode_changed(self, *args, **kwargs):
-        return _ts._on_tfm_postprocess_mode_changed(self, *args, **kwargs)
+        _ts._on_tfm_postprocess_mode_changed(self, *args, **kwargs)
 
     def _on_tfm_checkpoint_selection_changed(self, *args, **kwargs):
-        return _ts._on_tfm_checkpoint_selection_changed(self, *args, **kwargs)
+        _ts._on_tfm_checkpoint_selection_changed(self, *args, **kwargs)
 
     def _tfm_apply_memoria_case(self, *args, **kwargs):
-        return _ts._tfm_apply_memoria_case(self)
+        _ts._tfm_apply_memoria_case(self)
 
     def _tfm_repro_checkpoint(self, *args, **kwargs):
         return _ts._tfm_repro_checkpoint(self, *args, **kwargs)
@@ -2657,7 +2657,7 @@ class ControlPanelV2(QMainWindow):
         return _ts._pick_default_tfm_checkpoint(self, *args, **kwargs)
 
     def _refresh_tfm_checkpoint_options(self, *args, **kwargs):
-        return _ts._refresh_tfm_checkpoint_options(self, *args, **kwargs)
+        _ts._refresh_tfm_checkpoint_options(self, *args, **kwargs)
 
     def _format_ckpt_label(self, *args, **kwargs):
         return _ts._format_ckpt_label(self, *args, **kwargs)
@@ -2666,19 +2666,19 @@ class ControlPanelV2(QMainWindow):
         return _ts._tfm_get_ckpt_path(self, *args, **kwargs)
 
     def _tfm_apply_experiment(self, *args, **kwargs):
-        return _ts._tfm_apply_experiment(self)
+        _ts._tfm_apply_experiment(self)
 
     def _tfm_reset_grasp(self, *args, **kwargs):
-        return _ts._tfm_reset_grasp(self)
+        _ts._tfm_reset_grasp(self)
 
     def _load_experiment_info(self, *args, **kwargs):
-        return _ts._load_experiment_info(self, *args, **kwargs)
+        _ts._load_experiment_info(self, *args, **kwargs)
 
     def _format_value(self, *args, **kwargs):
         return _ts._format_value(self, *args, **kwargs)
 
     def _refresh_science_ui(self, *args, **kwargs):
-        return _ts._refresh_science_ui(self, *args, **kwargs)
+        _ts._refresh_science_ui(self, *args, **kwargs)
 
     def _world_to_pixel(self, *args, **kwargs):
         return _ts._world_to_pixel(self, *args, **kwargs)
@@ -2699,13 +2699,13 @@ class ControlPanelV2(QMainWindow):
         return _ts._world_grasp_to_base(self, *args, **kwargs)
 
     def _update_cornell_metrics(self, *args, **kwargs):
-        return _ts._update_cornell_metrics(self, *args, **kwargs)
+        _ts._update_cornell_metrics(self, *args, **kwargs)
 
     def _refresh_cornell_metrics(self, *args, **kwargs):
-        return _ts._refresh_cornell_metrics(self, *args, **kwargs)
+        _ts._refresh_cornell_metrics(self, *args, **kwargs)
 
     def _save_episode(self, *args, **kwargs):
-        return _ts._save_episode(self, *args, **kwargs)
+        _ts._save_episode(self, *args, **kwargs)
 
     def _build_science_group(self) -> QGroupBox:
         return build_science_group(self)
@@ -2714,19 +2714,19 @@ class ControlPanelV2(QMainWindow):
         return build_trace_group(self)
 
     def _start_trace_timer(self):
-        return _tc._start_trace_timer(self)
+        _tc._start_trace_timer(self)
 
     def _resolve_trace_frames(self, world_frame: str) -> Tuple[str, Optional[str]]:
         return _tc._resolve_trace_frames(self, world_frame)
 
     def _refresh_trace_data(self):
-        return _tc._refresh_trace_data(self)
+        _tc._refresh_trace_data(self)
 
     def _log_trace_transform_warning(self, message: str) -> None:
         _tc._log_trace_transform_warning(self, message)
 
     def _maybe_log_tf_not_ready(self):
-        return _tc._maybe_log_tf_not_ready(self)
+        _tc._maybe_log_tf_not_ready(self)
 
     def _maybe_log_trace(self, now: float):
         _tc._maybe_log_trace(self, now)
@@ -2735,7 +2735,7 @@ class ControlPanelV2(QMainWindow):
         _tc._reset_trace_throttle(self, reason)
 
     def _run_trace_diag_once(self):
-        return _tc._run_trace_diag_once(self)
+        _tc._run_trace_diag_once(self)
 
     def _tf_sanity_check(self) -> Tuple[bool, str]:
         return _tc._tf_sanity_check(self)
@@ -2750,10 +2750,10 @@ class ControlPanelV2(QMainWindow):
         _tc._trace_diag_worker(self)
 
     def _try_mark_tf_ready(self):
-        return _tc._try_mark_tf_ready(self)
+        _tc._try_mark_tf_ready(self)
 
     def _start_tf_ready_timer(self):
-        return _tc._start_tf_ready_timer(self)
+        _tc._start_tf_ready_timer(self)
 
     def _wait_for_tf_ready(self, world_frame: str, helper) -> Optional[str]:
         return _tc._wait_for_tf_ready(self, world_frame, helper)
@@ -2762,7 +2762,7 @@ class ControlPanelV2(QMainWindow):
         return _tc._tf_world_base_valid(self, helper, base_frame, world_frame)
 
     def _stop_tf_ready_timer(self):
-        return _tc._stop_tf_ready_timer(self)
+        _tc._stop_tf_ready_timer(self)
 
     def _log_tf_chain_once(self, world_frame: str, base_frame: str, ee_frame) -> None:
         _tc._log_tf_chain_once(self, world_frame, base_frame, ee_frame)
@@ -2806,14 +2806,14 @@ class ControlPanelV2(QMainWindow):
         return _tc._format_pose_summary(self, label, data)
 
     def _copy_trace_text(self):
-        return _tc._copy_trace_text(self)
+        _tc._copy_trace_text(self)
 
     def closeEvent(self, event):
         _sd.closeEvent(self, event)
 
 
     def _force_cleanup_leftovers(self, *args, **kwargs):
-        return _gs._force_cleanup_leftovers(self, *args, **kwargs)
+        _gs._force_cleanup_leftovers(self, *args, **kwargs)
 
 def _normalize_joint_name(name) -> str:
     text = str(name).strip()
