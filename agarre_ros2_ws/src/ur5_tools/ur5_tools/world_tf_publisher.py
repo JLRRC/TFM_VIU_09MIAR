@@ -291,7 +291,14 @@ class WorldTfPublisher(Node):
             return 100
         if name.endswith(f"::{self._base_frame}"):
             return 95
-        if name.endswith(self._base_frame):
+        # Do NOT match by bare suffix `endswith(base_frame)` without a "::" or "/"
+        # separator: that would accidentally pick links like `rg2_base_link`
+        # (the gripper's base) when base_frame=="base_link", because
+        # "rg2_base_link".endswith("base_link") is True. Bug observed
+        # 2026-04-27: pose/info had `rg2_base_link` with -90deg X rotation;
+        # the publisher used it as world->base_link, producing unreachable
+        # IK targets in panel_pick_demo (pos_err_m≈0.487).
+        if "/" in name and name.split("/")[-1] == self._base_frame:
             return 85
         if self._model_name and name == self._model_name:
             # model-level pose accepted as fallback when link-level (::base_link) unavailable
