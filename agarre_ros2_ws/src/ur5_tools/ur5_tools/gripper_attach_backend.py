@@ -33,6 +33,17 @@ except Exception:  # pragma: no cover - optional at runtime
     GzEntity = None
     SetEntityPose = None
 
+from .attach_math import (  # noqa: F401  helpers reexportados (C.1 refactor)
+    _dh_transform,
+    _matmul3,
+    _matvec3,
+    _quat_from_rot3,
+    _quat_inverse,
+    _quat_multiply,
+    _quat_multiply_raw,
+    _quat_normalize,
+    _rotate_vector,
+)
 from .gripper_geometry import (
     RG2_PINCH_CENTER_FRAME,
     RG2_TCP_FRAME,
@@ -132,139 +143,6 @@ class DemoTransportState:
     world_qz: float = 0.0
     world_qw: float = 1.0
     use_world_locked_pose: bool = True
-
-
-def _quat_normalize(q: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
-    x, y, z, w = q
-    norm = math.sqrt((x * x) + (y * y) + (z * z) + (w * w))
-    if norm <= 1e-9:
-        return (0.0, 0.0, 0.0, 1.0)
-    inv = 1.0 / norm
-    return (x * inv, y * inv, z * inv, w * inv)
-
-
-def _quat_inverse(q: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
-    x, y, z, w = _quat_normalize(q)
-    return (-x, -y, -z, w)
-
-
-def _quat_multiply_raw(
-    a: Tuple[float, float, float, float],
-    b: Tuple[float, float, float, float],
-) -> Tuple[float, float, float, float]:
-    ax, ay, az, aw = a
-    bx, by, bz, bw = b
-    return (
-        (aw * bx) + (ax * bw) + (ay * bz) - (az * by),
-        (aw * by) - (ax * bz) + (ay * bw) + (az * bx),
-        (aw * bz) + (ax * by) - (ay * bx) + (az * bw),
-        (aw * bw) - (ax * bx) - (ay * by) - (az * bz),
-    )
-
-
-def _quat_multiply(
-    a: Tuple[float, float, float, float],
-    b: Tuple[float, float, float, float],
-) -> Tuple[float, float, float, float]:
-    return _quat_normalize(
-        _quat_multiply_raw(a, b)
-    )
-
-
-def _rotate_vector(
-    q: Tuple[float, float, float, float],
-    v: Tuple[float, float, float],
-) -> Tuple[float, float, float]:
-    qn = _quat_normalize(q)
-    vx, vy, vz = v
-    vec_q = (vx, vy, vz, 0.0)
-    rx, ry, rz, _rw = _quat_multiply_raw(
-        _quat_multiply_raw(qn, vec_q),
-        _quat_inverse(qn),
-    )
-    return (rx, ry, rz)
-
-
-def _matmul3(
-    a: Tuple[Tuple[float, float, float], ...],
-    b: Tuple[Tuple[float, float, float], ...],
-) -> Tuple[Tuple[float, float, float], ...]:
-    return tuple(
-        tuple(
-            sum(float(a[i][k]) * float(b[k][j]) for k in range(3))
-            for j in range(3)
-        )
-        for i in range(3)
-    )
-
-
-def _matvec3(
-    a: Tuple[Tuple[float, float, float], ...],
-    v: Tuple[float, float, float],
-) -> Tuple[float, float, float]:
-    return tuple(
-        sum(float(a[i][k]) * float(v[k]) for k in range(3))
-        for i in range(3)
-    )
-
-
-def _dh_transform(
-    a: float,
-    d: float,
-    alpha: float,
-    theta: float,
-) -> Tuple[Tuple[Tuple[float, float, float], ...], Tuple[float, float, float]]:
-    ct = math.cos(theta)
-    st = math.sin(theta)
-    ca = math.cos(alpha)
-    sa = math.sin(alpha)
-    rot = (
-        (ct, -st * ca, st * sa),
-        (st, ct * ca, -ct * sa),
-        (0.0, sa, ca),
-    )
-    pos = (a * ct, a * st, d)
-    return rot, pos
-
-
-def _quat_from_rot3(
-    rot: Tuple[Tuple[float, float, float], ...],
-) -> Tuple[float, float, float, float]:
-    m00 = float(rot[0][0])
-    m01 = float(rot[0][1])
-    m02 = float(rot[0][2])
-    m10 = float(rot[1][0])
-    m11 = float(rot[1][1])
-    m12 = float(rot[1][2])
-    m20 = float(rot[2][0])
-    m21 = float(rot[2][1])
-    m22 = float(rot[2][2])
-    trace = m00 + m11 + m22
-    if trace > 0.0:
-        s = math.sqrt(trace + 1.0) * 2.0
-        qw = 0.25 * s
-        qx = (m21 - m12) / s
-        qy = (m02 - m20) / s
-        qz = (m10 - m01) / s
-    elif m00 > m11 and m00 > m22:
-        s = math.sqrt(1.0 + m00 - m11 - m22) * 2.0
-        qw = (m21 - m12) / s
-        qx = 0.25 * s
-        qy = (m01 + m10) / s
-        qz = (m02 + m20) / s
-    elif m11 > m22:
-        s = math.sqrt(1.0 + m11 - m00 - m22) * 2.0
-        qw = (m02 - m20) / s
-        qx = (m01 + m10) / s
-        qy = 0.25 * s
-        qz = (m12 + m21) / s
-    else:
-        s = math.sqrt(1.0 + m22 - m00 - m11) * 2.0
-        qw = (m10 - m01) / s
-        qx = (m02 + m20) / s
-        qy = (m12 + m21) / s
-        qz = 0.25 * s
-    return _quat_normalize((qx, qy, qz, qw))
 
 
 class GripperAttachBackend(Node):
