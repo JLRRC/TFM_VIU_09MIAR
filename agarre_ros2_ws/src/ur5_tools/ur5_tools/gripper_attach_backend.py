@@ -35,6 +35,7 @@ from .attach_anchor import AnchorMixin
 from .attach_demo_transport import DemoTransportMixin
 from .attach_gz_cli import GzCliMixin
 from .attach_pose_lookup import PoseLookupMixin
+from .attach_pose_sub import PoseSubscriberMixin
 from .attach_set_pose import SetPoseMixin
 from .attach_math import (  # noqa: F401  helpers reexportados (C.1 refactor)
     _dh_transform,
@@ -148,7 +149,15 @@ class DemoTransportState:
     use_world_locked_pose: bool = True
 
 
-class GripperAttachBackend(AnchorMixin, DemoTransportMixin, GzCliMixin, PoseLookupMixin, SetPoseMixin, Node):
+class GripperAttachBackend(
+    AnchorMixin,
+    DemoTransportMixin,
+    GzCliMixin,
+    PoseLookupMixin,
+    PoseSubscriberMixin,
+    SetPoseMixin,
+    Node,
+):
     """Backend que mantiene los objetos adheridos siguiendo fisicamente el TCP."""
 
     def __init__(self) -> None:
@@ -457,117 +466,6 @@ class GripperAttachBackend(AnchorMixin, DemoTransportMixin, GzCliMixin, PoseLook
             f"pose_topic={self._pose_topic} joint_states_topic={self._joint_states_topic} "
             f"base_frame={self._base_frame} tcp_frame={self._tcp_frame}"
         )
-
-    def _on_pose_info(self, msg: TFMessage) -> None:
-        now_ns = int(self.get_clock().now().nanoseconds)
-        for tf in getattr(msg, "transforms", []) or []:
-            name = str(getattr(tf, "child_frame_id", "") or "").strip()
-            if not name:
-                continue
-            stamp = getattr(tf, "header", None)
-            stamp_msg = getattr(stamp, "stamp", None)
-            if stamp_msg is not None:
-                stamp_ns = int(stamp_msg.sec) * 1_000_000_000 + int(stamp_msg.nanosec)
-            else:
-                stamp_ns = now_ns
-            tr = tf.transform.translation
-            rot = tf.transform.rotation
-            sample = PoseSample(
-                x=float(tr.x),
-                y=float(tr.y),
-                z=float(tr.z),
-                qx=float(rot.x),
-                qy=float(rot.y),
-                qz=float(rot.z),
-                qw=float(rot.w),
-                stamp_ns=stamp_ns,
-            )
-            self._pose_cache[name] = sample
-            if "::" in name:
-                model = name.split("::")[0].strip()
-                if model:
-                    # Mantenemos el alias del modelo en la muestra mas reciente;
-                    # setdefault dejaria congelados valores viejos.
-                    self._pose_cache[model] = sample
-
-    def _on_joint_states(self, msg: JointState) -> None:
-        names = list(getattr(msg, "name", []) or [])
-        positions = list(getattr(msg, "position", []) or [])
-        if not names or len(names) != len(positions):
-            return
-        index = {str(name): idx for idx, name in enumerate(names)}
-        try:
-            ordered = tuple(
-                float(positions[index[joint_name]])
-                for joint_name in UR5_ARM_JOINT_ORDER
-            )
-        except Exception:
-            return
-        stamp = getattr(msg, "header", None)
-        stamp_msg = getattr(stamp, "stamp", None)
-        stamp_ns = 0
-        if stamp_msg is not None:
-            stamp_ns = int(stamp_msg.sec) * 1_000_000_000 + int(stamp_msg.nanosec)
-        if stamp_ns <= 0:
-            stamp_ns = int(self.get_clock().now().nanoseconds)
-        self._joint_state_positions = ordered
-        self._joint_state_stamp_ns = int(stamp_ns)
-
-    def _joint_state_tcp_base_pose(self) -> Optional[PoseSample]:
-        joints = self._joint_state_positions
-        stamp_ns = int(self._joint_state_stamp_ns)
-        if joints is None or len(joints) != len(UR5_ARM_JOINT_ORDER) or stamp_ns <= 0:
-            return None
-        rot = (
-            (1.0, 0.0, 0.0),
-            (0.0, 1.0, 0.0),
-            (0.0, 0.0, 1.0),
-        )
-        pos = (0.0, 0.0, 0.0)
-        for joint_idx, theta in enumerate(joints):
-            step_rot, step_pos = _dh_transform(
-                float(_UR5_DH_A[joint_idx]),
-                float(_UR5_DH_D[joint_idx]),
-                float(_UR5_DH_ALPHA[joint_idx]),
-                float(theta),
-            )
-            pos = tuple(
-                float(pos[i]) + float(_matvec3(rot, step_pos)[i])
-                for i in range(3)
-            )
-            rot = _matmul3(rot, step_rot)
-        base_pos = (-float(pos[0]), -float(pos[1]), float(pos[2]))
-        base_rot = _matmul3(_BASE_LINK_FIX_R, rot)
-        offset = _GRIPPER_GEOMETRY.xyz_for_frame(self._tcp_frame)
-        offset_base = _matvec3(
-            base_rot,
-            (float(offset[0]), float(offset[1]), float(offset[2])),
-        )
-        tcp_base_pos = tuple(
-            float(base_pos[i]) + float(offset_base[i])
-            for i in range(3)
-        )
-        qx, qy, qz, qw = _quat_from_rot3(base_rot)
-        return PoseSample(
-            x=float(tcp_base_pos[0]),
-            y=float(tcp_base_pos[1]),
-            z=float(tcp_base_pos[2]),
-            qx=float(qx),
-            qy=float(qy),
-            qz=float(qz),
-            qw=float(qw),
-            stamp_ns=stamp_ns,
-        )
-
-    def _pose_age_ok(self, pose: PoseSample) -> bool:
-        age = self._pose_age_sec(pose)
-        return -0.25 <= age <= self._max_pose_age_sec
-
-    def _pose_age_sec(self, pose: PoseSample) -> float:
-        now_ns = int(self.get_clock().now().nanoseconds)
-        if pose.stamp_ns <= 0 or now_ns <= 0:
-            return float("inf")
-        return (now_ns - pose.stamp_ns) / 1_000_000_000.0
 
     def _drop_attached_target(
         self,
