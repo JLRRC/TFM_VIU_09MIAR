@@ -1,0 +1,9 @@
+{
+  "reference": "/home/laboratorio/TFM/agarre_ros2_ws/report/pick_traces/trace_probe_pick_demo_20260317_081957.json",
+  "candidate": "/home/laboratorio/TFM/agarre_ros2_ws/report/pick_traces/trace_full_pick_demo_20260317_083406.json",
+  "comparison": {
+    "candidate_detached_minus_reference": 0,
+    "candidate_far_attached_minus_reference": 0,
+    "candidate_max_dist_minus_reference": null
+  }
+}

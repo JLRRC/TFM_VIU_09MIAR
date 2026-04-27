@@ -10,7 +10,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="${ROOT_DIR}/agarre_ros2_ws"
-REPORTS_DIR="${ROOT_DIR}/reports"
+REPORTS_DIR="${ROOT_DIR}/report"
 BASE_CONOCIMIENTO_DIR="${REPORTS_DIR}/BaseDeConocimiento"
 DATE_TAG="$(date +%F)"
 

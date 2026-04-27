@@ -1141,10 +1141,10 @@ def main() -> None:
     basket_floor_top = top_surface_from_model(basket_pose_parts[2], 0.0, basket_base_size_parts[2])
 
     audit_doc = root / "auditoria/informe_fix_visual_grasp_20260419.md"
-    reports_status = root / "reports/evidence/ros2/moveit2_system_status.json"
-    tcp_incident_path = root / "reports/incidents/2026-04-21_tcp_geometry_incident.md"
-    tcp_closure_path = root / "agarre_ros2_ws/reports/incidents/2026-04-22_rg2_tcp_incident_closure.md"
-    basket_followup_path = root / "agarre_ros2_ws/reports/incidents/2026-04-23_directo_basket_transport_ik_followup.md"
+    reports_status = root / "report/evidence/ros2/moveit2_system_status.json"
+    tcp_incident_path = root / "report/incidents/2026-04-21_tcp_geometry_incident.md"
+    tcp_closure_path = root / "agarre_ros2_ws/report/incidents/2026-04-22_rg2_tcp_incident_closure.md"
+    basket_followup_path = root / "agarre_ros2_ws/report/incidents/2026-04-23_directo_basket_transport_ik_followup.md"
     audit_text = read_text(audit_doc) if audit_doc.exists() else ""
     reports_status_text = read_text(reports_status) if reports_status.exists() else ""
     tcp_incident_text = read_text(tcp_incident_path) if tcp_incident_path.exists() else ""
@@ -1820,10 +1820,10 @@ def main() -> None:
     parts.append("### 10.2 Cronología reciente de incidentes")
     parts.append("")
     parts.append(
-        f"- `{tcp_incident_closure_date or '2026-04-22'}`: `reports/incidents/2026-04-21_tcp_geometry_incident.md` documenta el cierre operativo del TCP con `tool0 -> rg2_tcp.z = {tcp_closure_offset_txt}`, batch `DIRECTO={tcp_closure_batch_txt}` y repetición manual final `{tcp_incident_manual_date or 'fecha no extraída'}` con `./lanzar_panelc2.sh`."
+        f"- `{tcp_incident_closure_date or '2026-04-22'}`: `report/incidents/2026-04-21_tcp_geometry_incident.md` documenta el cierre operativo del TCP con `tool0 -> rg2_tcp.z = {tcp_closure_offset_txt}`, batch `DIRECTO={tcp_closure_batch_txt}` y repetición manual final `{tcp_incident_manual_date or 'fecha no extraída'}` con `./lanzar_panelc2.sh`."
     )
     parts.append(
-        f"- `{tcp_closure_geometric_date or '2026-04-23'}`: `agarre_ros2_ws/reports/incidents/2026-04-22_rg2_tcp_incident_closure.md` ratifica el cierre geométrico del TCP (`{tcp_closure_status or 'estado no consignado'}`) y deja separado el corredor de cesta / IK con señal representativa `{basket_followup_signal}`."
+        f"- `{tcp_closure_geometric_date or '2026-04-23'}`: `agarre_ros2_ws/report/incidents/2026-04-22_rg2_tcp_incident_closure.md` ratifica el cierre geométrico del TCP (`{tcp_closure_status or 'estado no consignado'}`) y deja separado el corredor de cesta / IK con señal representativa `{basket_followup_signal}`."
     )
     parts.append("")
     parts.append(preserved_block("Detalle histórico recuperado (2026-04-18)", historical_sections.get("8. Bugs Conocidos y Fixes Aplicados", ""), shift=1).strip())

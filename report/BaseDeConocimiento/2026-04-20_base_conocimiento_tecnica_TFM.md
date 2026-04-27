@@ -114,11 +114,11 @@ ros2 run ur5_qt_panel panel_v2
 - `agarre_ros2_ws/src/ur5_qt_panel/setup.py`
 - `agarre_ros2_ws/src/ur5_tools/setup.py`
 - `agarre_ros2_ws/src/tfm_grasping/setup.py`
-- `reports/BaseDeConocimiento/2026-04-20_base_conocimiento_tecnica_TFM.md`
+- `report/BaseDeConocimiento/2026-04-20_base_conocimiento_tecnica_TFM.md`
 - `agarre_ros2_ws/historico/2026-04-18_base_conocimiento_tecnica.md`
-- `reports/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf`
+- `report/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf`
 - `auditoria/informe_fix_visual_grasp_20260419.md`
-- `reports/evidence/ros2/moveit2_system_status.json`
+- `report/evidence/ros2/moveit2_system_status.json`
 - `auditoria/spatial_20260418/directo_validation_20260418_201902/helper.log`
 - `auditoria/spatial_20260419/directo_validation_20260419_164750/helper.log`
 - `auditoria/spatial_20260419/directo_validation_20260419_181539/helper.log`
@@ -1797,8 +1797,8 @@ ros2 topic echo /gz_ros2_control/status  # si existe
 
 ### 15.2 Índice de fuentes usadas por el generador
 
-- `reports/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20/fuentes_verificadas.txt`
-- `reports/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20`
+- `report/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20/fuentes_verificadas.txt`
+- `report/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20`
 
 ### 15.3 Confirmación de merge
 
@@ -1928,11 +1928,11 @@ ros2 run ur5_qt_panel panel_v2
 - `agarre_ros2_ws/src/ur5_qt_panel/setup.py`
 - `agarre_ros2_ws/src/ur5_tools/setup.py`
 - `agarre_ros2_ws/src/tfm_grasping/setup.py`
-- `reports/BaseDeConocimiento/2026-04-20_base_conocimiento_tecnica_TFM.md`
+- `report/BaseDeConocimiento/2026-04-20_base_conocimiento_tecnica_TFM.md`
 - `agarre_ros2_ws/historico/2026-04-18_base_conocimiento_tecnica.md`
-- `reports/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf`
+- `report/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf`
 - `auditoria/informe_fix_visual_grasp_20260419.md`
-- `reports/evidence/ros2/moveit2_system_status.json`
+- `report/evidence/ros2/moveit2_system_status.json`
 - `auditoria/spatial_20260418/directo_validation_20260418_201902/helper.log`
 - `auditoria/spatial_20260419/directo_validation_20260419_164750/helper.log`
 - `auditoria/spatial_20260419/directo_validation_20260419_181539/helper.log`
@@ -3238,7 +3238,7 @@ Las variables se inyectan en `ur5_stack.launch.py` mediante `os.environ.get(VAR,
 - follow_tcp:
   - Es el modo base del backend por launch.
   - Sigue el TCP con offset relativo para objetos que no entran por demo_transport.
-  - También es la semántica que describe reports/evidence/ros2/moveit2_system_status.json.
+  - También es la semántica que describe report/evidence/ros2/moveit2_system_status.json.
 - world_locked:
   - Se activa para pick_demo porque ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS incluye pick_demo y _activate_demo_transport_attachment fija use_world_locked_pose=True.
   - En esta rama el backend calcula desired = tcp + world_offset fijo y mantiene la orientación world_q* almacenada en el attach.
@@ -3938,8 +3938,8 @@ ros2 topic echo /gz_ros2_control/status  # si existe
 
 #### 15.2 Índice de fuentes usadas por el generador
 
-- `reports/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20/fuentes_verificadas.txt`
-- `reports/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20`
+- `report/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20/fuentes_verificadas.txt`
+- `report/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20`
 
 #### 15.3 Confirmación de merge
 
@@ -3979,8 +3979,8 @@ Documento generado automáticamente a partir del estado real del workspace, sin 
 - auditoria/spatial_20260419/directo_validation_20260419_164750/helper.log
 - auditoria/spatial_20260419/directo_validation_20260419_184049/stack.log
 - auditoria/spatial_20260419/directo_validation_20260419_164750/stack.log
-- reports/evidence/ros2/moveit2_system_status.json
-- reports/2026-04-18_base_conocimiento_tecnica_TFM.pdf
+- report/evidence/ros2/moveit2_system_status.json
+- report/2026-04-18_base_conocimiento_tecnica_TFM.pdf
 
 #### 3. Arquitectura del Proyecto
 
@@ -3989,7 +3989,7 @@ Documento generado automáticamente a partir del estado real del workspace, sin 
 - El backend implementa dos comportamientos conceptuales distintos:
   - follow_tcp como modo general de attach cinemático.
   - demo_transport para pick_demo, con rama world_locked activa por defecto.
-- Según reports/evidence/ros2/moveit2_system_status.json, Mueve fisicamente objetos siguiendo rg2_tcp en modo follow_tcp cuando esta habilitado., lo que refuerza que follow_tcp sigue siendo la semántica base del backend fuera del caso pick_demo.
+- Según report/evidence/ros2/moveit2_system_status.json, Mueve fisicamente objetos siguiendo rg2_tcp en modo follow_tcp cuando esta habilitado., lo que refuerza que follow_tcp sigue siendo la semántica base del backend fuera del caso pick_demo.
 
 #### 4. Frames y Offsets
 
@@ -4082,7 +4082,7 @@ El punto crítico no es el attach lógico, sino la transición ATTACH_GATE -> CA
 - follow_tcp:
   - Es el modo base del backend por launch.
   - Sigue el TCP con offset relativo para objetos que no entran por demo_transport.
-  - También es la semántica que describe reports/evidence/ros2/moveit2_system_status.json.
+  - También es la semántica que describe report/evidence/ros2/moveit2_system_status.json.
 - world_locked:
   - Se activa para pick_demo porque ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS incluye pick_demo y _activate_demo_transport_attachment fija use_world_locked_pose=True.
   - En esta rama el backend calcula desired = tcp + world_offset fijo y mantiene la orientación world_q* almacenada en el attach.
@@ -4214,8 +4214,8 @@ El punto crítico no es el attach lógico, sino la transición ATTACH_GATE -> CA
 
 El índice completo de fuentes usadas por este generador queda en:
 
-- reports/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20/fuentes_verificadas.txt
-- reports/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20/generacion.log
+- report/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20/fuentes_verificadas.txt
+- report/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-20/generacion.log
 
 ### 15.5 Inventario exhaustivo de variables actuales
 

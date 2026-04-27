@@ -1,5 +1,5 @@
 {
-  "source_trace": "/home/laboratorio/TFM/agarre_ros2_ws/reports/pick_traces/trace_live_full_pick_demo_20260317_084806.json",
+  "source_trace": "/home/laboratorio/TFM/agarre_ros2_ws/report/pick_traces/trace_live_full_pick_demo_20260317_084806.json",
   "source_log": "/home/laboratorio/TFM/agarre_ros2_ws/log/ros2_launch.log",
   "object": "pick_demo",
   "events": {

@@ -10,9 +10,9 @@ WARMUP="${WARMUP:-5}"
 REPEATS="${REPEATS:-20}"
 STAMP="${STAMP:-$(date +%Y%m%d_%H%M%S)}"
 
-TMP_CSV="$ROOT/reports/bench/latency_results_${STAMP}.csv"
-OFFICIAL_CSV="$ROOT/reports/tables/cap5/Tabla_5-3_medicion_de_latencia_de_inferencia_por_experimento_y_dispositivo.csv"
-TRACE_TSV="$ROOT/reports/logs/reproducibility/tabla_5_3_latencia_${STAMP}.tsv"
+TMP_CSV="$ROOT/report/bench/latency_results_${STAMP}.csv"
+OFFICIAL_CSV="$ROOT/report/tables/cap5/Tabla_5-3_medicion_de_latencia_de_inferencia_por_experimento_y_dispositivo.csv"
+TRACE_TSV="$ROOT/report/logs/reproducibility/tabla_5_3_latencia_${STAMP}.tsv"
 
 CONFIGS=(
   "EXP1_SIMPLE_RGB config/exp1_simple_rgb.yaml"
@@ -21,7 +21,7 @@ CONFIGS=(
   "EXP4_RESNET18_RGBD config/exp4_resnet18_rgbd.yaml"
 )
 
-mkdir -p "$ROOT/reports/bench" "$ROOT/reports/tables/cap5" "$ROOT/reports/logs/reproducibility"
+mkdir -p "$ROOT/report/bench" "$ROOT/report/tables/cap5" "$ROOT/report/logs/reproducibility"
 rm -f "$TMP_CSV"
 
 if [[ ! -x "$PYTHON_BIN" ]]; then

@@ -861,8 +861,8 @@
     "[python-12] [2026-03-16T20:24:19] [ERROR] Error en pick objeto: carry_coherence_failed_strict_lift_stage_3 dist=0.190 best=0.189 max=0.180"
   ],
   "generated_files": [
-    "/home/laboratorio/TFM/agarre_ros2_ws/reports/moveit2_audit/moveit2_system_audit.md",
-    "/home/laboratorio/TFM/agarre_ros2_ws/reports/moveit2_audit/moveit2_system_summary.md",
-    "/home/laboratorio/TFM/agarre_ros2_ws/reports/moveit2_audit/moveit2_system_status.json"
+    "/home/laboratorio/TFM/agarre_ros2_ws/report/moveit2_audit/moveit2_system_audit.md",
+    "/home/laboratorio/TFM/agarre_ros2_ws/report/moveit2_audit/moveit2_system_summary.md",
+    "/home/laboratorio/TFM/agarre_ros2_ws/report/moveit2_audit/moveit2_system_status.json"
   ]
 }

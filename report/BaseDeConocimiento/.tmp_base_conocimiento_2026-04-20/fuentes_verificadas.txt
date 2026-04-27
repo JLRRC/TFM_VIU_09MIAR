@@ -1,7 +1,6 @@
 agarre_ros2_ws/src/ur5_bringup/launch/ur5_stack.launch.py
 agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py
 agarre_ros2_ws/src/ur5_tools/ur5_tools/gripper_attach_backend.py
-agarre_ros2_ws/src/ur5_tools/ur5_tools/gripper_geometry.py
 agarre_ros2_ws/src/ur5_description/urdf/ur5.urdf.xacro
 agarre_ros2_ws/models/ur5_rg2/model.sdf
 agarre_ros2_ws/worlds/ur5_mesa_objetos.sdf
@@ -10,8 +9,6 @@ agarre_ros2_ws/src/ur5_qt_panel/config/panel_settings.yaml
 agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/attach_gate_evaluator.py
 agarre_ros2_ws/src/ur5_tools/ur5_tools/world_tf_publisher.py
 agarre_ros2_ws/scripts/start_panel_v2.sh
-agarre_ros2_ws/scripts/panel_runtime_validated.env
-agarre_ros2_ws/scripts/validate_startup_repro.sh
 agarre_ros2_ws/src/ur5_bringup/package.xml
 agarre_ros2_ws/src/ur5_description/package.xml
 agarre_ros2_ws/src/ur5_moveit_config/package.xml
@@ -22,14 +19,13 @@ agarre_ros2_ws/src/ur5_panel_interfaces/package.xml
 agarre_ros2_ws/src/ur5_qt_panel/setup.py
 agarre_ros2_ws/src/ur5_tools/setup.py
 agarre_ros2_ws/src/tfm_grasping/setup.py
+report/BaseDeConocimiento/2026-04-20_base_conocimiento_tecnica_TFM.md
 agarre_ros2_ws/historico/2026-04-18_base_conocimiento_tecnica.md
-reports/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf
+report/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf
 auditoria/informe_fix_visual_grasp_20260419.md
-reports/evidence/ros2/moveit2_system_status.json
-reports/incidents/2026-04-21_tcp_geometry_incident.md
-agarre_ros2_ws/reports/incidents/2026-04-22_rg2_tcp_incident_closure.md
-agarre_ros2_ws/reports/incidents/2026-04-23_directo_basket_transport_ik_followup.md
+report/evidence/ros2/moveit2_system_status.json
 auditoria/spatial_20260418/directo_validation_20260418_201902/helper.log
 auditoria/spatial_20260419/directo_validation_20260419_164750/helper.log
 auditoria/spatial_20260419/directo_validation_20260419_181539/helper.log
-auditoria/directo_batch_20260421_083327/directo_validation_20260421_083327_run01/stack.log
+auditoria/spatial_20260419/directo_validation_20260419_184049/stack.log
+auditoria/spatial_20260419/directo_validation_20260419_164750/stack.log

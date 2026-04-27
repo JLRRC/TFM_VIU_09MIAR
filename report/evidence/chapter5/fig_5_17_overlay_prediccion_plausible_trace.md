@@ -4,5 +4,5 @@
 - Rendering mode: manual zoom centered on overlap region
 - Zoom center: `(160, 108)`
 - Zoom half-size: `(70, 58)`
-- Output PNG: `/home/laboratorio/TFM/reports/evidence/chapter5/fig_5_17_overlay_prediccion_plausible.png`
-- Output PDF: `/home/laboratorio/TFM/reports/evidence/chapter5/fig_5_17_overlay_prediccion_plausible.pdf`
+- Output PNG: `/home/laboratorio/TFM/report/evidence/chapter5/fig_5_17_overlay_prediccion_plausible.png`
+- Output PDF: `/home/laboratorio/TFM/report/evidence/chapter5/fig_5_17_overlay_prediccion_plausible.pdf`

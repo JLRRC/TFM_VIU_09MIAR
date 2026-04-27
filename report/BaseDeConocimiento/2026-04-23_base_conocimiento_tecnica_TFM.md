@@ -126,12 +126,12 @@ ros2 run ur5_qt_panel panel_v2
 - `agarre_ros2_ws/src/ur5_tools/setup.py`
 - `agarre_ros2_ws/src/tfm_grasping/setup.py`
 - `agarre_ros2_ws/historico/2026-04-18_base_conocimiento_tecnica.md`
-- `reports/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf`
+- `report/BaseDeConocimiento/2026-04-18_base_conocimiento_tecnica_TFM.pdf`
 - `auditoria/informe_fix_visual_grasp_20260419.md`
-- `reports/evidence/ros2/moveit2_system_status.json`
-- `reports/incidents/2026-04-21_tcp_geometry_incident.md`
-- `agarre_ros2_ws/reports/incidents/2026-04-22_rg2_tcp_incident_closure.md`
-- `agarre_ros2_ws/reports/incidents/2026-04-23_directo_basket_transport_ik_followup.md`
+- `report/evidence/ros2/moveit2_system_status.json`
+- `report/incidents/2026-04-21_tcp_geometry_incident.md`
+- `agarre_ros2_ws/report/incidents/2026-04-22_rg2_tcp_incident_closure.md`
+- `agarre_ros2_ws/report/incidents/2026-04-23_directo_basket_transport_ik_followup.md`
 - `auditoria/spatial_20260418/directo_validation_20260418_201902/helper.log`
 - `auditoria/spatial_20260419/directo_validation_20260419_164750/helper.log`
 - `auditoria/spatial_20260419/directo_validation_20260419_181539/helper.log`
@@ -1456,8 +1456,8 @@ ros2 run tf2_ros tf2_monitor world base_link rg2_pinch_center
 
 ### 10.2 Cronología reciente de incidentes
 
-- `2026-04-22`: `reports/incidents/2026-04-21_tcp_geometry_incident.md` documenta el cierre operativo del TCP con `tool0 -> rg2_tcp.z = +0.0050885`, batch `DIRECTO=5/5` y repetición manual final `2026-04-22` con `./lanzar_panelc2.sh`.
-- `2026-04-23`: `agarre_ros2_ws/reports/incidents/2026-04-22_rg2_tcp_incident_closure.md` ratifica el cierre geométrico del TCP (`incidente TCP cerrado; follow-up funcional de cesta abierto`) y deja separado el corredor de cesta / IK con señal representativa `CESTA_STAGE_1_RECOVER_1_postcheck_failed, runtime_target_dist=0.055/0.040, model_target_err=0.055/0.040`.
+- `2026-04-22`: `report/incidents/2026-04-21_tcp_geometry_incident.md` documenta el cierre operativo del TCP con `tool0 -> rg2_tcp.z = +0.0050885`, batch `DIRECTO=5/5` y repetición manual final `2026-04-22` con `./lanzar_panelc2.sh`.
+- `2026-04-23`: `agarre_ros2_ws/report/incidents/2026-04-22_rg2_tcp_incident_closure.md` ratifica el cierre geométrico del TCP (`incidente TCP cerrado; follow-up funcional de cesta abierto`) y deja separado el corredor de cesta / IK con señal representativa `CESTA_STAGE_1_RECOVER_1_postcheck_failed, runtime_target_dist=0.055/0.040, model_target_err=0.055/0.040`.
 
 ### Detalle histórico recuperado (2026-04-18)
 
@@ -1820,8 +1820,8 @@ ros2 topic echo /gz_ros2_control/status  # si existe
 
 ### 12.1 Cronología reciente confirmada
 
-- `2026-04-22`: cierre operativo documentado en `reports/incidents/2026-04-21_tcp_geometry_incident.md`; valor canónico `+0.0050885` y aceptación manual final con `./lanzar_panelc2.sh`.
-- `2026-04-23`: nota técnica de workspace en `agarre_ros2_ws/reports/incidents/2026-04-22_rg2_tcp_incident_closure.md` ratifica el cierre geométrico y deja abierto el follow-up de cesta / IK (`abierto`), detallado también en `agarre_ros2_ws/reports/incidents/2026-04-23_directo_basket_transport_ik_followup.md`.
+- `2026-04-22`: cierre operativo documentado en `report/incidents/2026-04-21_tcp_geometry_incident.md`; valor canónico `+0.0050885` y aceptación manual final con `./lanzar_panelc2.sh`.
+- `2026-04-23`: nota técnica de workspace en `agarre_ros2_ws/report/incidents/2026-04-22_rg2_tcp_incident_closure.md` ratifica el cierre geométrico y deja abierto el follow-up de cesta / IK (`abierto`), detallado también en `agarre_ros2_ws/report/incidents/2026-04-23_directo_basket_transport_ik_followup.md`.
 
 ### 12.2 Estado operativo sintetizado
 
@@ -1873,8 +1873,8 @@ ros2 topic echo /gz_ros2_control/status  # si existe
 
 ### 15.2 Índice de fuentes usadas por el generador
 
-- `reports/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-23/fuentes_verificadas.txt`
-- `reports/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-23`
+- `report/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-23/fuentes_verificadas.txt`
+- `report/BaseDeConocimiento/.tmp_base_conocimiento_2026-04-23`
 
 ### 15.3 Confirmación de merge
 

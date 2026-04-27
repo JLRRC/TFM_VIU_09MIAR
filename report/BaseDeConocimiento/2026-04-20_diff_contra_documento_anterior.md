@@ -1,7 +1,7 @@
 # Diff contra documento anterior
 
 ```diff
---- reports/BaseDeConocimiento/2026-04-20_base_conocimiento_tecnica_TFM.md
+--- report/BaseDeConocimiento/2026-04-20_base_conocimiento_tecnica_TFM.md
 +++ 2026-04-20_base_conocimiento_tecnica_TFM.md
 @@ -1158,110 +1158,10 @@
  - `ATTACH_BACKEND_MAX_DIST_M`: launch actual=0.08; wrapper `start_panel_v2.sh` exporta 0.06 por defecto.

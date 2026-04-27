@@ -1,7 +1,7 @@
 # Diff contra documento anterior
 
 ```diff
---- reports/BaseDeConocimiento/2026-04-23_base_conocimiento_tecnica_TFM.md
+--- report/BaseDeConocimiento/2026-04-23_base_conocimiento_tecnica_TFM.md
 +++ 2026-04-23_base_conocimiento_tecnica_TFM.md
 @@ -11,7 +11,7 @@
  - Contenido vigente preservado explícitamente: attach lógico vs transporte físico, ATTACH_GATE vs CARRY, follow_tcp vs world_locked, stale_tcp_pose_soft_follow, discrepancias metadata/llamada real/telemetría y diagnósticos best_obj_move / best_lift_delta / best_tcp_dist.
@@ -66,8 +66,8 @@
  
 -- `2026-04-22`: el cierre geométrico del TCP fija `tool0 -> rg2_tcp.z = ${rg2_contact_tcp_xyz}` y consigna batch `DIRECTO=no consignado en la fuente cargada` más repetición manual final `fecha no extraída` con `./lanzar_panelc2.sh`.
 -- `2026-04-23`: se abre un follow-up distinto y explícitamente separado del TCP (`abierto`) para el corredor de cesta / IK, con señal representativa `CESTA_STAGE_1_RECOVER_1_postcheck_failed, runtime_target_dist=0.055/0.040, model_target_err=0.055/0.040`.
-+- `2026-04-22`: `reports/incidents/2026-04-21_tcp_geometry_incident.md` documenta el cierre operativo del TCP con `tool0 -> rg2_tcp.z = +0.0050885`, batch `DIRECTO=5/5` y repetición manual final `2026-04-22` con `./lanzar_panelc2.sh`.
-+- `2026-04-23`: `agarre_ros2_ws/reports/incidents/2026-04-22_rg2_tcp_incident_closure.md` ratifica el cierre geométrico del TCP (`incidente TCP cerrado; follow-up funcional de cesta abierto`) y deja separado el corredor de cesta / IK con señal representativa `CESTA_STAGE_1_RECOVER_1_postcheck_failed, runtime_target_dist=0.055/0.040, model_target_err=0.055/0.040`.
++- `2026-04-22`: `report/incidents/2026-04-21_tcp_geometry_incident.md` documenta el cierre operativo del TCP con `tool0 -> rg2_tcp.z = +0.0050885`, batch `DIRECTO=5/5` y repetición manual final `2026-04-22` con `./lanzar_panelc2.sh`.
++- `2026-04-23`: `agarre_ros2_ws/report/incidents/2026-04-22_rg2_tcp_incident_closure.md` ratifica el cierre geométrico del TCP (`incidente TCP cerrado; follow-up funcional de cesta abierto`) y deja separado el corredor de cesta / IK con señal representativa `CESTA_STAGE_1_RECOVER_1_postcheck_failed, runtime_target_dist=0.055/0.040, model_target_err=0.055/0.040`.
  
  ### Detalle histórico recuperado (2026-04-18)
  
@@ -75,10 +75,10 @@
  
  ### 12.1 Cronología reciente confirmada
  
--- `2026-04-22`: cierre geométrico del TCP RG2; valor canónico validado `${rg2_contact_tcp_xyz}` y aceptación manual final con `./lanzar_panelc2.sh` según `agarre_ros2_ws/reports/incidents/2026-04-22_rg2_tcp_incident_closure.md`.
--- `2026-04-23`: follow-up técnico abierto y separado para transporte DIRECTO a cesta / IK (`abierto`), con señal `CESTA_STAGE_1_RECOVER_1_postcheck_failed, runtime_target_dist=0.055/0.040, model_target_err=0.055/0.040` según `agarre_ros2_ws/reports/incidents/2026-04-23_directo_basket_transport_ik_followup.md`.
-+- `2026-04-22`: cierre operativo documentado en `reports/incidents/2026-04-21_tcp_geometry_incident.md`; valor canónico `+0.0050885` y aceptación manual final con `./lanzar_panelc2.sh`.
-+- `2026-04-23`: nota técnica de workspace en `agarre_ros2_ws/reports/incidents/2026-04-22_rg2_tcp_incident_closure.md` ratifica el cierre geométrico y deja abierto el follow-up de cesta / IK (`abierto`), detallado también en `agarre_ros2_ws/reports/incidents/2026-04-23_directo_basket_transport_ik_followup.md`.
+-- `2026-04-22`: cierre geométrico del TCP RG2; valor canónico validado `${rg2_contact_tcp_xyz}` y aceptación manual final con `./lanzar_panelc2.sh` según `agarre_ros2_ws/report/incidents/2026-04-22_rg2_tcp_incident_closure.md`.
+-- `2026-04-23`: follow-up técnico abierto y separado para transporte DIRECTO a cesta / IK (`abierto`), con señal `CESTA_STAGE_1_RECOVER_1_postcheck_failed, runtime_target_dist=0.055/0.040, model_target_err=0.055/0.040` según `agarre_ros2_ws/report/incidents/2026-04-23_directo_basket_transport_ik_followup.md`.
++- `2026-04-22`: cierre operativo documentado en `report/incidents/2026-04-21_tcp_geometry_incident.md`; valor canónico `+0.0050885` y aceptación manual final con `./lanzar_panelc2.sh`.
++- `2026-04-23`: nota técnica de workspace en `agarre_ros2_ws/report/incidents/2026-04-22_rg2_tcp_incident_closure.md` ratifica el cierre geométrico y deja abierto el follow-up de cesta / IK (`abierto`), detallado también en `agarre_ros2_ws/report/incidents/2026-04-23_directo_basket_transport_ik_followup.md`.
  
  ### 12.2 Estado operativo sintetizado
  

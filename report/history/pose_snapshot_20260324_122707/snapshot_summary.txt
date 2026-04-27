@@ -1,4 +1,4 @@
-snapshot_dir: /home/laboratorio/TFM/reports/history/pose_snapshot_20260324_122707
+snapshot_dir: /home/laboratorio/TFM/report/history/pose_snapshot_20260324_122707
 timestamp_iso: 2026-03-24T12:27:08
 joint_count: 8
 elbow_joint_rad: 1.918119012721105

@@ -28,7 +28,7 @@ Este artefacto deja constancia de que `EXP1.1` y `EXP1.2` existen en el workspac
 ## Restriccion de uso en recreacion oficial
 
 - `EXP1.1` y `EXP1.2` no deben entrar en la regeneracion oficial de:
-  - `reports/tables/summary_results.csv`
-  - `reports/tables/results_by_seed.csv`
+  - `report/tables/summary_results.csv`
+  - `report/tables/results_by_seed.csv`
   - figuras y tablas del bloque oficial del TFM
 - El validador `agarre_inteligente/scripts/validate_official_scope.py` se encarga de comprobar esa separacion.
