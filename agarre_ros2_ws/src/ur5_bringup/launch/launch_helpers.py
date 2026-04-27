@@ -129,6 +129,37 @@ def prepare_runtime_world_sdf(
 #   SetEnvironmentVariable(name, os.environ.get(name, default))
 # Override any of these at launch time by setting the env var before launch.
 
+def load_runtime_defaults(yaml_path: str | None = None) -> dict[str, str]:
+    """Load runtime defaults YAML as a flat ``{ENV_VAR_NAME: str_value}`` dict.
+
+    Source of truth for tunables (F2 refactor TFM). Falls back to ``{}`` if
+    yaml is unavailable or the file does not exist; callers must keep their
+    own literal defaults as last resort.
+
+    Resolution priority for any tunable (handled by the caller):
+        1. ``os.environ[ENV_NAME]`` if set (operator override).
+        2. This YAML.
+        3. Built-in literal default.
+    """
+    if yaml_path is None:
+        ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
+        yaml_path = os.path.join(ws_dir, "src", "ur5_bringup", "config", "runtime_defaults.yaml")
+    try:
+        import yaml  # type: ignore
+    except Exception:
+        return {}
+    try:
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): "" if v is None else str(v) for k, v in data.items()}
+
+
 PANEL_ENV_DEFAULTS: list[tuple[str, str]] = [
     # Debug / audit root
     ("PANEL_DIRECT_DEBUG_ROOT", "/home/laboratorio/TFM/historico"),

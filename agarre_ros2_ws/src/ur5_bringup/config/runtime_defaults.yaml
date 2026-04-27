@@ -1,0 +1,123 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_bringup/config/runtime_defaults.yaml
+# Source of truth para todos los tunables del stack UR5+RG2 (F2 del refactor TFM).
+# Cada clave aquí es el nombre EXACTO de la env var equivalente. Override en runtime:
+#   1. Env var con ese nombre (gana sobre YAML).
+#   2. Si no, YAML (este archivo).
+#   3. Si no, literal default codificado en el launch (último recurso).
+#
+# Mantén esto sincronizado con:
+#   - agarre_ros2_ws/src/ur5_bringup/launch/launch_helpers.py (PANEL_ENV_DEFAULTS)
+#   - agarre_ros2_ws/src/ur5_bringup/launch/ur5_stack.launch.py (env vars directos)
+
+# --- Sistema y paths -----------------------------------------------------------
+WS_DIR: ~/TFM/agarre_ros2_ws
+GZ_RENDER_ENGINE: ogre2
+
+# --- Panel: comportamiento básico ---------------------------------------------
+PANEL_CAMERA_REQUIRED: "1"
+PANEL_KEEP_CAMERAS: "0"
+PANEL_PYTHON: ""
+
+# --- system_state_manager: tolerancias de geometría y arranque -----------------
+SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M: "0.002"
+SYSTEM_STATE_GEOMETRY_PAIR_TOL_M: "0.001"
+SYSTEM_STATE_STARTUP_TIMEOUT_SEC: "15.0"
+
+# --- attach_backend: timeouts y modo follow ------------------------------------
+ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS: "2000"
+ATTACH_BACKEND_GZ_CMD_TIMEOUT_SEC: "3.0"
+ATTACH_BACKEND_MODE: follow_tcp
+ATTACH_BACKEND_MAX_POSE_AGE_SEC: "1.5"
+ATTACH_BACKEND_FOLLOW_RATE_HZ: "20.0"
+ATTACH_BACKEND_FOLLOW_BREAK_DIST_M: "0.18"
+ATTACH_BACKEND_MAX_DIST_M: "0.08"
+STRICT_PHYSICS_MODE: "false"
+
+# --- moveit_bridge: timeouts y scales ------------------------------------------
+PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC: "150.0"
+PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC: "180.0"
+PANEL_MOVEIT_BRIDGE_STALE_REQUEST_TTL_SEC: "120.0"
+PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC: "6.0"
+PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC: "2.5"
+PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT: "0"
+PANEL_MOVEIT_BRIDGE_UNWRAP_CONTINUOUS_JOINTS: "0"
+PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID: "1"
+PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED: "1"
+PANEL_MOVEIT_BRIDGE_DRY_RUN: "0"
+PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD: "0.35"
+PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TIME_TOL_SEC: "45.0"
+PANEL_MOVEIT_BRIDGE_CONTROLLER_PATH_TOL_RAD: "4.0"
+PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TOL_RAD: "0.20"
+PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE: "0.30"
+PANEL_MOVEIT_BRIDGE_ACCEL_SCALE: "0.30"
+
+# --- Debug / audit root --------------------------------------------------------
+PANEL_DIRECT_DEBUG_ROOT: /home/laboratorio/TFM/historico
+
+# --- pick_demo: GRASP_DOWN segmented IK descent --------------------------------
+PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M: "0.005"
+PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN: "1"
+PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT: "0.035"
+PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL: "0.200"
+PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M: "0.005"
+PANEL_PICK_DEMO_GRASP_DOWN_FORCE_INHERIT_XY: "1"
+PANEL_PICK_DEMO_GRASP_DOWN_DISABLE_PERMISSIVE_FALLBACK: "1"
+PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_MAX_DEV_RAD: "0.28"
+PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_SUM_DEV_RAD: "0.60"
+PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M: "0.015"
+PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M: "0.008"
+PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M: "0.012"
+PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS: "4"
+PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M: "0.015"
+
+# --- pick_demo: ATTACH gate tolerances -----------------------------------------
+PANEL_PICK_DEMO_ATTACH_XY_TOL_M: "0.020"
+PANEL_PICK_DEMO_ATTACH_Z_TOL_M: "0.010"
+PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M: "0.040"
+PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M: "0.012"
+PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC: "0.35"
+PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES: "5"
+PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M: "0.020"
+
+# --- pick_demo: Gripper close confirmation -------------------------------------
+PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M: "0.020"
+PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC: "3.0"
+PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM: "0.01"
+PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M: "0.12"
+
+# --- pick_object: TF stability gate for GRASP_DOWN post-motion check -----------
+PANEL_PICK_OBJECT_GRASP_TF_STABLE_TOL_M: "0.045"
+PANEL_PICK_OBJECT_GRASP_TF_STABLE_SAMPLES: "5"
+PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK: "4"
+
+# --- pick_demo: Approach coarse gate -------------------------------------------
+PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M: "0.035"
+PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M: "0.012"
+PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M: "0.012"
+
+# --- pick_demo: PRE_CLOSE tolerances -------------------------------------------
+PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M: "0.020"
+PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M: "0.010"
+PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES: "2"
+
+# --- pick_demo: CLOSE tolerances -----------------------------------------------
+PANEL_PICK_DEMO_CLOSE_XY_TOL_M: "0.008"
+PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M: "0.008"
+
+# --- pick_demo: GRASP_ALIGN_IK convergence -------------------------------------
+PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL: "0.200"
+PANEL_PICK_DEMO_ALIGN_IK_SEED_WEIGHT: "0.80"
+PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M: "0.020"
+PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M: "0.010"
+PANEL_PICK_DEMO_ALIGN_Z_RESIDUAL_TOL_M: "0.008"
+
+# --- pick_demo: Pose source freshness ------------------------------------------
+PANEL_PICK_DEMO_POSE_SOURCE_AGE_TOL_SEC: "0.400"
+PANEL_PICK_DEMO_POSE_SOURCE_TOL_M: "0.006"
+PANEL_PICK_DEMO_PHASE_JUMP_TOL_M: "0.010"
+
+# --- pick_demo: Direct IK runtime settle ---------------------------------------
+PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SEC: "2.5"
+PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_DELTA_M: "0.003"
+PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SAMPLES: "3"
+PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_POLL_SEC: "0.10"

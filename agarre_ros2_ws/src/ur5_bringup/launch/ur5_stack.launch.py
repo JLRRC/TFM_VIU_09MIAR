@@ -21,11 +21,18 @@ from launch_helpers import (
     build_gz_plugin_path,
     build_gz_resource_path,
     copy_runtime_model,
+    load_runtime_defaults,
     patch_bridge_yaml,
     prepare_runtime_world_sdf,
     resolve_gz_partition,
     resolve_world_name,
 )
+
+
+# Runtime defaults loaded from YAML at module import time.
+# Resolution priority for any tunable: env var > this dict > literal default.
+# See: agarre_ros2_ws/src/ur5_bringup/config/runtime_defaults.yaml
+_RUNTIME_DEFAULTS: dict[str, str] = load_runtime_defaults()
 
 from launch import LaunchDescription
 from launch.actions import (
@@ -57,13 +64,24 @@ from ur5_tools.gripper_geometry import (
 )
 
 
+def _resolve_runtime(name: str, default: str) -> str:
+    """Env var > runtime_defaults.yaml > literal default. Returns string."""
+    raw = os.environ.get(name)
+    if raw is not None and raw.strip() != "":
+        return raw
+    yaml_val = _RUNTIME_DEFAULTS.get(name)
+    if yaml_val is not None and yaml_val.strip() != "":
+        return yaml_val
+    return default
+
+
 def _env_flag(name: str, default: bool) -> bool:
-    raw = str(os.environ.get(name, "1" if default else "0") or "").strip().lower()
+    raw = _resolve_runtime(name, "1" if default else "0").strip().lower()
     return raw in ("1", "true", "yes", "on")
 
 
 def _env_float(name: str, default: float) -> float:
-    raw = str(os.environ.get(name, str(default)) or "").strip()
+    raw = _resolve_runtime(name, str(default)).strip()
     try:
         value = float(raw)
     except Exception:
@@ -102,13 +120,13 @@ def _prepare_runtime(context, *_args) -> List[object]:
 
     resource_path = build_gz_resource_path(runtime_models_root, ws_dir)
     plugin_path = build_gz_plugin_path()
-    render_engine = os.environ.get("GZ_RENDER_ENGINE", "").strip() or "ogre2"
+    render_engine = _resolve_runtime("GZ_RENDER_ENGINE", "ogre2").strip() or "ogre2"
     fastdds_profile = os.path.join(ws_dir, "scripts", "fastdds_no_shm.xml")
     # Prefer the explicit launch argument (camera_required:="0/1") over the env var,
     # because env var propagation via SetEnvironmentVariable is unreliable for
     # ExecuteProcess (panel) when DISPLAY is not usable (offscreen mode).
     launch_arg_camera = LaunchConfiguration("camera_required").perform(context).strip()
-    camera_required_env = os.environ.get("PANEL_CAMERA_REQUIRED", "").strip()
+    camera_required_env = _resolve_runtime("PANEL_CAMERA_REQUIRED", "").strip()
     if launch_arg_camera in ("0", "false", "False", "no", "off"):
         camera_required_env = "0"
     elif launch_arg_camera in ("1", "true", "True", "yes", "on"):
@@ -228,7 +246,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
         raise RuntimeError(f"Runtime geometry sync failed: {exc}") from exc
 
     headless_mode = LaunchConfiguration("headless").perform(context)
-    keep_cameras = os.environ.get("PANEL_KEEP_CAMERAS", "").strip() in ("1", "true", "True")
+    keep_cameras = _resolve_runtime("PANEL_KEEP_CAMERAS", "0").strip() in ("1", "true", "True")
     if not keep_cameras:
         keep_cameras = camera_required
     if str(headless_mode).lower() in ("1", "true", "yes") and not keep_cameras:
@@ -563,17 +581,17 @@ def generate_launch_description():
             {"moveit_required": ParameterValue(launch_moveit, value_type=bool)},
             {
                 "geometry_offset_tol_m": float(
-                    os.environ.get("SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M", "0.002")
+                    _resolve_runtime("SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M", "0.002")
                 )
             },
             {
                 "geometry_pair_tol_m": float(
-                    os.environ.get("SYSTEM_STATE_GEOMETRY_PAIR_TOL_M", "0.001")
+                    _resolve_runtime("SYSTEM_STATE_GEOMETRY_PAIR_TOL_M", "0.001")
                 )
             },
             {
                 "startup_timeout_sec": float(
-                    os.environ.get("SYSTEM_STATE_STARTUP_TIMEOUT_SEC", "15.0")
+                    _resolve_runtime("SYSTEM_STATE_STARTUP_TIMEOUT_SEC", "15.0")
                 )
             },
         ],
@@ -642,8 +660,8 @@ def generate_launch_description():
                 "attach_backend_max_dist_m"
             )
         },
-        {"gz_service_timeout_ms": int(os.environ.get("ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS", "2000"))},
-        {"gz_cmd_timeout_sec": float(os.environ.get("ATTACH_BACKEND_GZ_CMD_TIMEOUT_SEC", "3.0"))},
+        {"gz_service_timeout_ms": int(_resolve_runtime("ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS", "2000"))},
+        {"gz_cmd_timeout_sec": float(_resolve_runtime("ATTACH_BACKEND_GZ_CMD_TIMEOUT_SEC", "3.0"))},
         # detachable_shadow_follow=False: disables the physics-joint shadow path for
         # non-demo-transport objects. pick_demo goes through demo_transport exclusively
         # (demo_transport_objects check fires first in _on_gripper_attach), so this
@@ -764,7 +782,7 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("launch_moveit_bridge")),
     )
 
-    panel_python = os.environ.get("PANEL_PYTHON", "")
+    panel_python = _resolve_runtime("PANEL_PYTHON", "")
     if panel_python:
         panel_cmd = [panel_python, "-m", "ur5_qt_panel.panel_v2"]
     else:
@@ -792,23 +810,23 @@ def generate_launch_description():
             DeclareLaunchArgument("launch_attach_backend", default_value="true"),
             DeclareLaunchArgument(
                 "attach_backend_mode",
-                default_value=os.environ.get("ATTACH_BACKEND_MODE", "follow_tcp"),
+                default_value=_resolve_runtime("ATTACH_BACKEND_MODE", "follow_tcp"),
             ),
             DeclareLaunchArgument(
                 "strict_physics_mode",
-                default_value=os.environ.get("STRICT_PHYSICS_MODE", "false"),
+                default_value=_resolve_runtime("STRICT_PHYSICS_MODE", "false"),
             ),
             DeclareLaunchArgument(
                 "attach_backend_max_pose_age_sec",
-                default_value=os.environ.get("ATTACH_BACKEND_MAX_POSE_AGE_SEC", "1.5"),
+                default_value=_resolve_runtime("ATTACH_BACKEND_MAX_POSE_AGE_SEC", "1.5"),
             ),
             DeclareLaunchArgument(
                 "attach_backend_follow_rate_hz",
-                default_value=os.environ.get("ATTACH_BACKEND_FOLLOW_RATE_HZ", "20.0"),
+                default_value=_resolve_runtime("ATTACH_BACKEND_FOLLOW_RATE_HZ", "20.0"),
             ),
             DeclareLaunchArgument(
                 "attach_backend_follow_break_dist_m",
-                default_value=os.environ.get("ATTACH_BACKEND_FOLLOW_BREAK_DIST_M", "0.18"),
+                default_value=_resolve_runtime("ATTACH_BACKEND_FOLLOW_BREAK_DIST_M", "0.18"),
             ),
             # FIX-ATTACH-THRESHOLD: max 3D distance (m) for backend to accept attach.
             # Was 0.15 (default in gripper_attach_backend.py). Tightened for real
@@ -817,7 +835,7 @@ def generate_launch_description():
             # movements during descent while remaining far below 0.150 false-grasp risk.
             DeclareLaunchArgument(
                 "attach_backend_max_dist_m",
-                default_value=os.environ.get("ATTACH_BACKEND_MAX_DIST_M", "0.08"),
+                default_value=_resolve_runtime("ATTACH_BACKEND_MAX_DIST_M", "0.08"),
             ),
             # FIX-MOVEIT-BRIDGE: launch ur5_moveit_bridge so /desired_grasp has a real subscriber.
             DeclareLaunchArgument("launch_moveit_bridge", default_value="true"),
