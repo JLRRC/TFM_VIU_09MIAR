@@ -137,6 +137,21 @@ def _direct_runtime_target_tol_m(label: str) -> float:
             0.005,
             float(os.environ.get("PANEL_PICK_DEMO_GRASP_ALIGN_TCP_TOL_M", "0.015") or 0.015),
         )
+    # CESTA_STAGE_* (transport hacia cesta) y CESTA_RELEASE: la cesta es
+    # grande comparada con la pinza; 40mm de tolerancia (default heredado)
+    # bloqueaba los TRANSPORT_POSTCHECK con error 49mm (ver Layer 9
+    # 2026-04-27). Default elevado a 60mm; override via env si hace falta.
+    if label_name.startswith("CESTA_STAGE_") or label_name == "CESTA_RELEASE":
+        return max(
+            0.02,
+            float(
+                os.environ.get(
+                    "PANEL_PICK_DEMO_BASKET_TRANSPORT_TCP_TOL_M",
+                    "0.060",
+                )
+                or 0.060
+            ),
+        )
     return max(
         0.01,
         float(os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_TCP_TOL_M", "0.040") or 0.040),
