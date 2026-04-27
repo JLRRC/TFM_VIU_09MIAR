@@ -27,6 +27,7 @@ setup(
     entry_points={
         "console_scripts": [
             "controller_bootstrap = ur5_tools.controller_bootstrap:main",
+            "evidence_logger = ur5_tools.evidence_logger:main",
             "gz_pose_bridge = ur5_tools.gz_pose_bridge:main",
             "gz_ros_control_guard = ur5_tools.gz_ros_control_guard:main",
             "gripper_attach_backend = ur5_tools.gripper_attach_backend:main",

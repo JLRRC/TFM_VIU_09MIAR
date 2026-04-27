@@ -477,6 +477,24 @@ def _apply_status(panel,
         panel._start_tf_ready_timer()
         if panel._camera_required:
             QTimer.singleShot(600, panel._auto_connect_camera)
+        panel._emit_log("[STATUS] Bridge externo detectado (transicion); inicializando suscripciones")
+    # Programar auto-release directamente cuando el bridge esta detectado y no
+    # se ha hecho. Cubre el caso de bridge externo (PANEL_AUTO_BRIDGE=0) en
+    # el que ni start_bridge() ni signal_bridge_ready se invocan: sin este
+    # bloque, _auto_release_drop_objects_when_ready nunca se programa y
+    # validate_pick_3_cycles.sh queda con "release de objetos pendiente".
+    if (
+        br_ok
+        and getattr(panel, "_auto_release_drop_objects", False)
+        and not getattr(panel, "_objects_release_done", False)
+        and not getattr(panel, "_auto_release_external_scheduled", False)
+        and not getattr(panel, "_detach_inflight", False)
+    ):
+        panel._auto_release_external_scheduled = True
+        panel._emit_log(
+            "[PHYSICS] Auto-release DROP scheduled (bridge externo detectado)"
+        )
+        QTimer.singleShot(400, panel._auto_release_drop_objects_when_ready)
     if panel._moveit_state == MoveItState.OFF and moveit_ok:
         panel._moveit_state = MoveItState.READY
         if panel._moveit_bridge_detected():

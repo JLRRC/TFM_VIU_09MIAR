@@ -517,6 +517,11 @@ def start_bridge(panel):
         panel._check_camera_topic_health()
         panel.signal_calibration_check.emit()
         panel.signal_refresh_controls.emit()
+        # Emitir signal_bridge_ready tambien cuando detectamos el bridge
+        # externo (lanzado por ur5_stack.launch.py). Sin esto, _on_bridge_ready
+        # no se ejecuta y el auto-release de objetos nunca se programa,
+        # bloqueando validate_pick_3_cycles.sh con "release de objetos pendiente".
+        panel.signal_bridge_ready.emit()
         return
     panel._log_button("Start bridge")
     panel._camera_stream_ok = False
