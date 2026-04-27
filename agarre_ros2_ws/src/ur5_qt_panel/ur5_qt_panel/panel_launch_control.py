@@ -70,7 +70,15 @@ def start_release_service(panel) -> None:
         svc_log = os.path.join(LOG_DIR, "release_objects_service.log")
         rotate_log(svc_log)
         env = build_gz_env(panel.gz_partition) + f"export ROS_LOG_DIR='{LOG_DIR}/ros' ; "
-        cmd_core = with_line_buffer("ros2 run ur5_tools release_objects_service")
+        ros_args = ""
+        world_file = str(getattr(panel, "world_combo", None) and panel.world_combo.currentText() or "").strip()
+        world_name = str(getattr(panel, "_gz_world_name", None) or "").strip()
+        if world_file:
+            ros_args += f" -p world_sdf:='{world_file}'"
+        if world_name:
+            ros_args += f" -p world_name:='{world_name}'"
+        ros_args_flag = f" --ros-args{ros_args}" if ros_args else ""
+        cmd_core = with_line_buffer(f"ros2 run ur5_tools release_objects_service{ros_args_flag}")
         cmd = bash_preamble(panel.ws_dir) + env + f"{cmd_core} > '{svc_log}' 2>&1"
         panel.release_service_proc = subprocess.Popen(
             ["bash", "-lc", cmd],

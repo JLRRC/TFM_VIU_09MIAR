@@ -670,6 +670,22 @@ class ReleaseObjectsService(Node):
         )
 
     def _wait_release_settled(self, env_prefix: str, world_name: str, names: List[str]) -> bool:
+        # If table geometry isn't configured (no world_sdf param), skip the "on table"
+        # positional check entirely — repeating detach messages while objects are falling
+        # triggers the delete/spawn fallback, causing objects to fall a second time.
+        if self._load_table_geometry() is None:
+            pose_map = self._list_pose_info_entity_poses(env_prefix, world_name)
+            missing = [n for n in names if n not in pose_map]
+            if missing:
+                msg = f"validacion release falló: entidades faltantes {missing}"
+                self.get_logger().error(f"[PHYSICS][DROP] {msg}")
+                self._set_error(msg)
+                return False
+            self.get_logger().info(
+                "[PHYSICS][DROP] settle check omitido: geometría de mesa no disponible; "
+                f"entidades presentes={len(names)}"
+            )
+            return True
         timeout_sec = read_float_param(self, "settle_timeout_sec", 6.0, min_value=0.5)
         poll_sec = read_float_param(self, "settle_poll_sec", 0.2, min_value=0.05)
         confirmations = read_int_param(self, "settle_confirmations", 1, min_value=1)
@@ -695,11 +711,6 @@ class ReleaseObjectsService(Node):
             else:
                 stable_hits = 0
                 last_pending = ", ".join(pending[:4])
-                pending_names = [item.split(":", 1)[0] for item in pending]
-                self._publish_detach_topics(
-                    pending_names,
-                    label="pending_retry",
-                )
             time.sleep(poll_sec)
         msg = f"validacion release falló: objetos no asentados ({last_pending})"
         self.get_logger().error(f"[PHYSICS][DROP] {msg}")
