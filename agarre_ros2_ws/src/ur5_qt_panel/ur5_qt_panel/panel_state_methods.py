@@ -592,6 +592,23 @@ def _effective_system_state(panel) -> Tuple[SystemState, str]:
     if panel._managed_mode:
         if panel._external_state_active():
             return panel._system_state, panel._system_state_reason
+        # Si la liveness externa expira transientemente pero el cache
+        # ya tiene un estado conocido (READY_* / ERROR_*), conservarlo:
+        # el `_set_system_state` solo se invoca cuando el panel recibe
+        # estado externo, asi que un cache READY_MOVEIT confirma que
+        # /system_state estuvo vivo recientemente. Bajar a
+        # WAITING_GAZEBO en cada hueco causa falsos rechazos en gates
+        # como `_state_ready_basic` durante release_objects o spin
+        # backlog.
+        cached = panel._system_state
+        if cached in (
+            SystemState.READY_BASIC,
+            SystemState.READY_VISION,
+            SystemState.READY_MOVEIT,
+            SystemState.ERROR,
+            SystemState.ERROR_FATAL,
+        ):
+            return cached, panel._system_state_reason
         return SystemState.WAITING_GAZEBO, "Esperando /system_state"
     return panel._resolve_system_state()
 

@@ -51,7 +51,12 @@ from .panel_config import (
 )
 
 try:
-    from std_srvs.srv import Empty
+    # FIX: Empty se usa como std_msgs/msg/Empty en pub.publish(Empty()).
+    # Antes importabamos std_srvs/srv/Empty (clase de servicio que NO se
+    # puede instanciar) y eso lanzaba NotImplementedError dentro del
+    # worker async de _release_objects, dejando _objects_release_done
+    # eternamente en False y bloqueando validate_pick_3_cycles.sh.
+    from std_msgs.msg import Empty
 except Exception:
     Empty = None  # type: ignore
 

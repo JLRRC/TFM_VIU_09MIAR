@@ -361,6 +361,7 @@ def discover_base_and_ee_frames(world_frame: Optional[str] = None, timeout_sec: 
     if "base_link" in all_frames and _can_transform_between(helper, "base_link", target_world, timeout_sec):
         base_frame = "base_link"
     fallback_base = "base_link"
+    from .panel_pose_helpers import _select_ee_frame  # lazy import (circular)
     ee_frame = _select_ee_frame(helper, all_frames, children, parent_map, fallback_base, timeout_sec)
     effective_base = base_frame or fallback_base
     disallowed_ee = {effective_base}

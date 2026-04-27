@@ -495,7 +495,7 @@ def clamp_joint_positions(panel, positions: List[float]) -> Tuple[List[float], L
     """Clamp each joint to its physical limit and return (clamped_list, warnings)."""
     clamped = list(positions)
     warnings: List[str] = []
-    for idx, (lo, hi) in enumerate(panel._UR5_JOINT_POS_LIMITS):
+    for idx, (lo, hi) in enumerate(_UR5_JOINT_POS_LIMITS):
         if idx >= len(clamped):
             break
         val = float(clamped[idx])
