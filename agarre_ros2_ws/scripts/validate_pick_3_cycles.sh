@@ -21,7 +21,7 @@ run_cycle() {
   cd "$ROOT_DIR"
   ./scripts/stop_panel_v2.sh >/dev/null 2>&1 || true
   sleep 4
-  PANEL_COLD_BOOT=1 PANEL_FORCE_OFFSCREEN=1 PANEL_START_STACK=1 PANEL_LAUNCH_MOVEIT=1 MOVEIT_MODE=move_group PANEL_AUTO_BRIDGE=0 ./scripts/start_panel_v2.sh --bg >/dev/null 2>&1
+  PANEL_COLD_BOOT=1 PANEL_FORCE_OFFSCREEN=1 PANEL_START_STACK=1 PANEL_LAUNCH_MOVEIT=1 MOVEIT_MODE=move_group PANEL_AUTO_BRIDGE=0 PANEL_AUTO_RELEASE_DROP_OBJECTS=1 ./scripts/start_panel_v2.sh --bg >/dev/null 2>&1
 
   if [[ -f "$log_file" ]]; then
     start_line=$(( $(wc -l < "$log_file") + 1 ))
