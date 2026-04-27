@@ -44,3 +44,18 @@ def _inject_ur5_tools_stub() -> None:
 
 
 _inject_ur5_tools_stub()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Forzar salida limpia tras pytest.
+
+    Algunos tests cargan modulos PyQt5/Qt que dejan estado estatico. Al
+    terminar la sesion el destructor de QApplication a veces lanza
+    'terminate called without an active exception' (SIGABRT) durante el
+    shutdown del interprete, devolviendo exit code -6 a colcon test
+    aunque todos los tests hayan pasado. Forzar os._exit con el exit
+    status real elude ese path destructivo y mantiene el resultado.
+    """
+
+    if exitstatus == 0:
+        os._exit(0)

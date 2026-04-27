@@ -6,10 +6,8 @@
 from __future__ import annotations
 
 from collections import deque
-from copy import deepcopy
 import gc
 import json
-import math
 import os
 from pathlib import Path
 import sys
@@ -17,8 +15,6 @@ import threading
 import time
 import traceback
 from typing import Any
-
-import numpy as np
 
 try:
     from moveit.planning import MoveItPy, PlanningComponent  # type: ignore
@@ -45,16 +41,9 @@ except Exception as exc:  # pragma: no cover
     _MOVEIT_COMMANDER_IMPORT_ERROR = exc
 else:
     _MOVEIT_COMMANDER_IMPORT_ERROR = None
-from ament_index_python.packages import (
-    get_package_share_directory,
-    PackageNotFoundError,
-)
 from geometry_msgs.msg import PoseStamped
-from moveit_configs_utils import MoveItConfigsBuilder
-from moveit_msgs.msg import Constraints, JointConstraint, RobotState as MoveItRobotStateMsg
 from moveit_msgs.srv import GetCartesianPath
 import rclpy
-from action_msgs.msg import GoalStatus
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.node import Node
@@ -71,8 +60,6 @@ from tf2_ros import (
     TransformListener,
 )
 from trajectory_msgs.msg import JointTrajectory
-from control_msgs.action import FollowJointTrajectory
-from control_msgs.msg import JointTolerance
 from controller_manager_msgs.srv import ListControllers
 
 from .moveit_bridge.controller_management import ControllerManagementMixin
@@ -86,7 +73,6 @@ from .moveit_bridge.trajectory_prep import TrajectoryPrepMixin
 from .param_utils import read_float_param, read_str_list_param, read_str_param
 from .moveit_bridge_utils import (
     bridge_env_float,
-    normalize_action_name,
     parse_request_meta,
     plan_success_code,
     plan_success_ok,
@@ -96,11 +82,6 @@ from .moveit_bridge_utils import (
     diag_to_message,
     goal_status_text,
     wait_future_done,
-    joint_trajectory_duration_sec,
-    joint_trajectory_initial_segment_max_delta,
-    scale_joint_trajectory_timing,
-    pose_to_matrix,
-    matrix_to_pose,
 )
 
 _BRIDGE_CODE_REV = "2026-04-20-approach-replan-v1"
