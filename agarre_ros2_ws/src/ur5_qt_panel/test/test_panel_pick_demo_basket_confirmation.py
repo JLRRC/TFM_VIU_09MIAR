@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from ur5_qt_panel.panel_objects import ObjectOwner
 from ur5_qt_panel import panel_pick_demo as pick_demo
+from ur5_qt_panel.pick_demo import internal_helpers as _ih
 
 
 class _FakePanel:
@@ -28,8 +29,8 @@ class _FakePanel:
 
 def _freeze_monotonic(monkeypatch, values):
     ticks = iter(values)
-    monkeypatch.setattr(pick_demo.time, "monotonic", lambda: next(ticks))
-    monkeypatch.setattr(pick_demo.time, "sleep", lambda _sec: None)
+    monkeypatch.setattr(_ih.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(_ih.time, "sleep", lambda _sec: None)
 
 
 def test_demo_object_in_basket_requires_real_basket_proximity(monkeypatch) -> None:
@@ -41,9 +42,9 @@ def test_demo_object_in_basket_requires_real_basket_proximity(monkeypatch) -> No
         position=final_obj_world,
     )
 
-    monkeypatch.setattr(pick_demo, "get_object_state", lambda _name: state)
+    monkeypatch.setattr(_ih, "get_object_state", lambda _name: state)
     monkeypatch.setattr(
-        pick_demo,
+        _ih,
         "transform_point_to_frame",
         lambda point, *_args, **_kwargs: (tuple(float(v) for v in point), None),
     )
@@ -64,14 +65,14 @@ def test_demo_object_in_basket_accepts_object_inside_basket(monkeypatch) -> None
         position=basket_world,
     )
 
-    monkeypatch.setattr(pick_demo, "get_object_state", lambda _name: state)
+    monkeypatch.setattr(_ih, "get_object_state", lambda _name: state)
     monkeypatch.setattr(
-        pick_demo,
+        _ih,
         "transform_point_to_frame",
         lambda point, *_args, **_kwargs: (tuple(float(v) for v in point), None),
     )
-    monkeypatch.setattr(pick_demo.time, "monotonic", lambda: 0.0)
-    monkeypatch.setattr(pick_demo.time, "sleep", lambda _sec: None)
+    monkeypatch.setattr(_ih.time, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(_ih.time, "sleep", lambda _sec: None)
 
     assert pick_demo._demo_object_in_basket(panel, timeout_sec=0.1) is True
     assert any("confirmacion cesta OK" in line for line in panel._logs)
