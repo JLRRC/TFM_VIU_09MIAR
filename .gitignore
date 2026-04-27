@@ -24,6 +24,6 @@ TRACE_PANEL_V2.log
 .claude
 .pytest_cache/
 
-# Temporales dentro de reports
-reports/bench/latency_results_*.csv
-reports/logs/training/*.pid
+# Temporales dentro de report
+report/bench/latency_results_*.csv
+report/logs/training/*.pid
