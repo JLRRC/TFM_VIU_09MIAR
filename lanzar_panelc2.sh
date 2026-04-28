@@ -10,6 +10,11 @@
 #   LAUNCH_STRICT_READY=1 ./...           En cold-boot: abortar si READY no llega a tiempo
 set -eo pipefail
 
+# Demo manual: por defecto los objetos quedan suspendidos (Z=2 m) hasta que
+# el usuario pulse "Soltar objetos" en el panel. Para forzar auto-release
+# (modo CI/E2E), invocar con PANEL_AUTO_RELEASE_DROP_OBJECTS=1 ./lanzar_panelc2.sh.
+export PANEL_AUTO_RELEASE_DROP_OBJECTS="${PANEL_AUTO_RELEASE_DROP_OBJECTS:-0}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$SCRIPT_DIR/agarre_ros2_ws"
 LOG_DIR="$SCRIPT_DIR/historico"
