@@ -238,6 +238,27 @@ def _pixel_to_world_at_z(px: float, py: float, w: int, h: int, z_target: float) 
     return xw, yw
 
 
+def _live_table_calib() -> Tuple[Optional[List[List[float]]], Optional[List[List[float]]], Optional[dict]]:
+    # load_table_calib() in panel_utils mutates these via `global`; the static
+    # `from .panel_config import TABLE_PIXEL_*` at the top of this module was
+    # bound at import time and never refreshed (same root cause as the
+    # TABLE_CAM_INFO bug). Return the live values so calibration JSON is
+    # honoured at runtime; fall back to module-level defaults if panel_utils
+    # is not available.
+    try:
+        from .panel_utils import (
+            TABLE_PIXEL_HOMOGRAPHY as _LIVE_HOM,
+            TABLE_PIXEL_AFFINE as _LIVE_AFF,
+            TABLE_PIXEL_RECT as _LIVE_RECT,
+        )
+    except Exception:
+        return TABLE_PIXEL_HOMOGRAPHY, TABLE_PIXEL_AFFINE, TABLE_PIXEL_RECT
+    hom = _LIVE_HOM if _LIVE_HOM else TABLE_PIXEL_HOMOGRAPHY
+    aff = _LIVE_AFF if _LIVE_AFF else TABLE_PIXEL_AFFINE
+    rect = _LIVE_RECT if _LIVE_RECT else TABLE_PIXEL_RECT
+    return hom, aff, rect
+
+
 def pixel_to_table_xy(px: int, py: int, w: int, h: int, z_target: Optional[float] = None) -> Tuple[float, float]:
     if w <= 0 or h <= 0:
         return 0.0, 0.0
@@ -245,22 +266,23 @@ def pixel_to_table_xy(px: int, py: int, w: int, h: int, z_target: Optional[float
         out = _pixel_to_world_at_z(float(px), float(py), w, h, float(z_target))
         if out:
             return out
-    if TABLE_PIXEL_HOMOGRAPHY:
+    _hom, _aff, _rect = _live_table_calib()
+    if _hom:
         nx, ny = _pixel_to_norm(float(px), float(py), w, h)
-        out = _apply_homography(TABLE_PIXEL_HOMOGRAPHY, nx, ny)
+        out = _apply_homography(_hom, nx, ny)
         if out:
             return out
-    if TABLE_PIXEL_AFFINE:
-        a, b, c = TABLE_PIXEL_AFFINE[0]
-        d, e, f = TABLE_PIXEL_AFFINE[1]
+    if _aff:
+        a, b, c = _aff[0]
+        d, e, f = _aff[1]
         x = (a * px) + (b * py) + c
         y = (d * px) + (e * py) + f
         return x, y
-    if TABLE_PIXEL_RECT:
-        px1, py1 = TABLE_PIXEL_RECT["p1"]
-        px2, py2 = TABLE_PIXEL_RECT["p2"]
-        x1, y1 = TABLE_PIXEL_RECT["w1"]
-        x2, y2 = TABLE_PIXEL_RECT["w2"]
+    if _rect:
+        px1, py1 = _rect["p1"]
+        px2, py2 = _rect["p2"]
+        x1, y1 = _rect["w1"]
+        x2, y2 = _rect["w2"]
         nx, ny = _pixel_to_norm(px, py, w, h)
         npx1, npy1 = _pixel_to_norm(px1, py1, w, h)
         npx2, npy2 = _pixel_to_norm(px2, py2, w, h)
@@ -362,8 +384,9 @@ def table_xy_to_pixel(x: float, y: float, w: int, h: int) -> Optional[Tuple[int,
 def table_xy_to_pixel_float(x: float, y: float, w: int, h: int) -> Optional[Tuple[float, float]]:
     if w <= 0 or h <= 0:
         return None
-    if TABLE_PIXEL_HOMOGRAPHY:
-        inv = _invert_3x3(TABLE_PIXEL_HOMOGRAPHY)
+    _hom, _aff, _rect = _live_table_calib()
+    if _hom:
+        inv = _invert_3x3(_hom)
         if not inv:
             return None
         out = _apply_homography(inv, float(x), float(y))
@@ -382,9 +405,9 @@ def table_xy_to_pixel_float(x: float, y: float, w: int, h: int) -> Optional[Tupl
             py = (ny + 0.5) * h
             return max(0.0, min(float(w - 1), float(px))), max(0.0, min(float(h - 1), float(py)))
         return None
-    if TABLE_PIXEL_AFFINE:
-        a, b, c = TABLE_PIXEL_AFFINE[0]
-        d, e, f = TABLE_PIXEL_AFFINE[1]
+    if _aff:
+        a, b, c = _aff[0]
+        d, e, f = _aff[1]
         det = (a * e) - (b * d)
         if abs(det) < 1e-8:
             return None
@@ -394,11 +417,11 @@ def table_xy_to_pixel_float(x: float, y: float, w: int, h: int) -> Optional[Tupl
         px = (inv[0][0] * tx) + (inv[0][1] * ty)
         py = (inv[1][0] * tx) + (inv[1][1] * ty)
         return max(0.0, min(float(w - 1), float(px))), max(0.0, min(float(h - 1), float(py)))
-    if TABLE_PIXEL_RECT:
-        px1, py1 = TABLE_PIXEL_RECT["p1"]
-        px2, py2 = TABLE_PIXEL_RECT["p2"]
-        x1, y1 = TABLE_PIXEL_RECT["w1"]
-        x2, y2 = TABLE_PIXEL_RECT["w2"]
+    if _rect:
+        px1, py1 = _rect["p1"]
+        px2, py2 = _rect["p2"]
+        x1, y1 = _rect["w1"]
+        x2, y2 = _rect["w2"]
         npx1, npy1 = _pixel_to_norm(px1, py1, w, h)
         npx2, npy2 = _pixel_to_norm(px2, py2, w, h)
         sx = (npx2 - npx1) / max(1e-6, (x2 - x1))
