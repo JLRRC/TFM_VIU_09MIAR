@@ -287,10 +287,52 @@ def build_step_window(panel) -> None:
 
     layout.addWidget(lbl_title)
     layout.addLayout(info_grid)
+
+    # ── Secciones colapsables: 3 bloques con botón ▶/▼ que muestran/ocultan
+    # su contenido. Por defecto todos arrancan cerrados; el usuario expande
+    # solo el bloque que quiere consultar.
+    def _make_collapsible(title: str, widgets: list, start_open: bool = False):
+        toggle_btn = QPushButton(("▼ " if start_open else "▶ ") + title)
+        toggle_btn.setCheckable(True)
+        toggle_btn.setChecked(start_open)
+        toggle_btn.setStyleSheet(
+            "QPushButton {"
+            " text-align: left; font-weight: 700; padding: 6px 8px;"
+            " border: 1px solid #cbd5e1; border-radius: 4px;"
+            " background: #f1f5f9;"
+            "}"
+            "QPushButton:checked { background: #e0e7ff; }"
+        )
+        for w in widgets:
+            w.setVisible(start_open)
+
+        def _on_toggle(checked, btn=toggle_btn, ws=widgets, t=title):
+            btn.setText(("▼ " if checked else "▶ ") + t)
+            for _w in ws:
+                _w.setVisible(checked)
+        toggle_btn.toggled.connect(_on_toggle)
+        return toggle_btn
+
+    btn_runtime = _make_collapsible(
+        "Verificación runtime Gazebo/TF",
+        [runtime_group],
+    )
+    btn_pipeline = _make_collapsible(
+        "Pipeline completo",
+        [lbl_pipeline_title, pipeline_table, lbl_pipeline_help],
+    )
+    btn_history = _make_collapsible(
+        "Histórico ejecutado",
+        [lbl_history_title, lbl_history_frame_help, history_table],
+    )
+
+    layout.addWidget(btn_runtime)
     layout.addWidget(runtime_group)
+    layout.addWidget(btn_pipeline)
     layout.addWidget(lbl_pipeline_title)
     layout.addWidget(pipeline_table)
     layout.addWidget(lbl_pipeline_help)
+    layout.addWidget(btn_history)
     layout.addWidget(lbl_history_title)
     layout.addWidget(lbl_history_frame_help)
     layout.addWidget(history_table, 1)

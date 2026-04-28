@@ -176,7 +176,13 @@ def compute_homography(
 
 
 def _pixel_to_world_at_z(px: float, py: float, w: int, h: int, z_target: float) -> Optional[Tuple[float, float]]:
-    cam = TABLE_CAM_INFO
+    # See world_xyz_to_pixel_float: TABLE_CAM_INFO is updated at runtime in
+    # panel_utils via `global`; read live to honour calibration JSON.
+    try:
+        from .panel_utils import TABLE_CAM_INFO as _LIVE_CAM_INFO
+    except Exception:
+        _LIVE_CAM_INFO = None
+    cam = _LIVE_CAM_INFO if _LIVE_CAM_INFO else TABLE_CAM_INFO
     if not cam:
         return None
     pos = cam.get("position")
@@ -287,7 +293,15 @@ def world_xyz_to_pixel(x: float, y: float, z: float, w: int, h: int) -> Optional
 def world_xyz_to_pixel_float(x: float, y: float, z: float, w: int, h: int) -> Optional[Tuple[float, float]]:
     if w <= 0 or h <= 0:
         return None
-    cam = TABLE_CAM_INFO
+    # load_table_calib() updates panel_utils.TABLE_CAM_INFO via `global`, but the
+    # module-level `from .panel_config import TABLE_CAM_INFO` here was bound at
+    # import time to None and never refreshed. Look up the live value from
+    # panel_utils each call so the calibration JSON actually takes effect.
+    try:
+        from .panel_utils import TABLE_CAM_INFO as _LIVE_CAM_INFO
+    except Exception:
+        _LIVE_CAM_INFO = None
+    cam = _LIVE_CAM_INFO if _LIVE_CAM_INFO else TABLE_CAM_INFO
     if not cam:
         return None
     pos = cam.get("position")
