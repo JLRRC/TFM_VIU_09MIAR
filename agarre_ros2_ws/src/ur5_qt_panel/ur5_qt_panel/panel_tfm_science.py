@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import csv
-import datetime
+from datetime import datetime
 import math
 import os
 import re
