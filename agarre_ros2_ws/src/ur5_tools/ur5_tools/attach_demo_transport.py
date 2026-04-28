@@ -46,7 +46,7 @@ class DemoTransportMixin:
     def _import_attached_target():
         """Lazy import to avoid circular dependency with gripper_attach_backend."""
 
-        from .gripper_attach_backend import AttachedTarget
+        from .gripper_attach_backend import AttachedTarget  # noqa: F811  rebound at runtime to avoid circular import
         return AttachedTarget
 
     def _demo_dynamic_sdf(self, name: str) -> Optional[str]:
