@@ -87,6 +87,7 @@ from .panel_state import MoveItState, SystemState
 from .panel_utils import angle_shortest_diff_rad, get_pose, world_to_base
 from .logging_utils import timestamped_line
 from .panel_robot_presets import _build_pose_stamped
+from .panel_moveit_flow import publish_moveit_pose as _publish_moveit_pose_flow
 
 
 def _log_exception(context: str, exc: Exception) -> None:
@@ -719,7 +720,7 @@ def publish_moveit_pose(panel,
     except Exception:
         pass
     context = panel._moveit_publish_context()
-    panel._moveit_block_reason, _published = publish_moveit_pose(
+    panel._moveit_block_reason, _published = _publish_moveit_pose_flow(
         label=label,
         pose_data=normalized,
         cartesian=cartesian,

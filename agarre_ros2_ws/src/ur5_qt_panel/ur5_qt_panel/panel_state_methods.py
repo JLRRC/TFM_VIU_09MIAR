@@ -47,9 +47,8 @@ from .panel_motion_helpers import (
 from .panel_ros_publishers import get_attach_publisher, get_gripper_publisher, get_traj_publisher
 from .panel_objects import get_object_positions, recalc_object_states
 from .panel_tf import get_tf_helper
-from .panel_moveit_flow import publish_moveit_pose
 from .panel_utils import set_led, transform_point_to_frame
-from .panel_motion_helpers import traj_action_target
+from .panel_motion_helpers import publish_moveit_pose, traj_action_target
 from PyQt5.QtCore import QTimer
 from .panel_robot_presets import _build_pose_stamped
 
