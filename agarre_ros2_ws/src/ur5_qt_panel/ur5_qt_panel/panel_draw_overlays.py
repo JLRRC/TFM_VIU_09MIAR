@@ -204,11 +204,24 @@ def _draw_selection_overlay(panel, qimg: QImage, w: int, h: int) -> QImage:
     """Dibujar selección actual sobre la imagen."""
     from PyQt5.QtGui import QPainter, QPen, QColor
     from PyQt5.QtCore import Qt, QPointF
-    
+
     if not panel._selected_px:
         return qimg
-    
+
     px, py = panel._selected_px
+    # Compensación de paralaje: la cámara overhead está inclinada (~58.5° desde
+    # la vertical), así que proyectar el centro del cuerpo del objeto (Z + ~2.5 cm
+    # para los objetos pequeños de la mesa) alinea visualmente el marcador con
+    # la silueta del objeto. Si falta selected_world o la proyección 3D falla,
+    # se mantiene el píxel original (sin regresión).
+    if panel._selected_world:
+        try:
+            wx, wy, wz = panel._selected_world
+            adjusted = world_xyz_to_pixel(float(wx), float(wy), float(wz) + 0.025, w, h)
+            if adjusted is not None:
+                px, py = adjusted
+        except Exception as exc:
+            _log_exception("selection overlay parallax", exc)
     img_copy = qimg.copy()
     painter = QPainter(img_copy)
     if OVERLAY_ANTIALIAS:

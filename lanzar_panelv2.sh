@@ -178,12 +178,16 @@ if [[ "${HEADLESS}" == "true" ]]; then
     EXTRA_LAUNCH_ARGS="headless:=true camera_required:=false"
     export PANEL_CAMERA_REQUIRED=0
 else
-    # FIX: forzar headless:=true para Gazebo aunque tengamos display local.
-    # La GUI de Gazebo (gz-4) falla con QSGRenderLoop::handleContextCreationFailure
-    # porque Qt5 Quick no puede crear contexto OpenGL en este entorno.
-    # El servidor de Gazebo (gz-3) corre correctamente en headless; el panel
-    # accede a la simulación via ros_gz_bridge, que no depende de la GUI de gz.
-    EXTRA_LAUNCH_ARGS="headless:=true"
+    # Por defecto, en sesión local con DISPLAY se lanza la GUI de Gazebo para
+    # poder ver la simulación durante la demo. Si la GUI crashea con
+    # QSGRenderLoop::handleContextCreationFailure (Qt5 Quick sin contexto OpenGL),
+    # forzar PANEL_GZ_HEADLESS=1 ./lanzar_panelc2.sh para volver al modo solo
+    # servidor (la simulación funcional sigue corriendo vía ros_gz_bridge).
+    if [[ "${PANEL_GZ_HEADLESS:-0}" == "1" ]]; then
+        EXTRA_LAUNCH_ARGS="headless:=true"
+    else
+        EXTRA_LAUNCH_ARGS="headless:=false"
+    fi
 fi
 
 # shellcheck disable=SC2086
