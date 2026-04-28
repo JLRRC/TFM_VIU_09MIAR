@@ -1,0 +1,45 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/config/pick_demo_runtime.yaml
+# Contenido: Parámetros runtime del flujo pick_demo (F2 parcial).
+# Uso breve: editar valores y relanzar el panel; los env vars siguen
+# teniendo prioridad si quieres override puntual sin tocar este fichero.
+#
+# Prioridad de resolución en panel_pick_demo_params.load_pick_demo_params():
+#   env var (PANEL_PICK_DEMO_*)  >  esta clave YAML  >  default del dataclass
+#
+# Para conocer la env var equivalente de cada clave consulta el comentario
+# de cada campo en panel_pick_demo_params.py:PickDemoParams o
+# ENV_VAR_BY_FIELD.
+
+# ── IK seed override ────────────────────────────────────────────────────────
+# Cadena vacía = el flujo elige seed dinámicamente.
+# Ejemplo manual: "0,0,1.57,-1.57,-1.57,0"
+ik_seed_joints: ""
+
+# ── Tolerancias de gates (metros) ──────────────────────────────────────────
+# Z error tol del util GRASP_DOWN antes de decidir si bajamos más.
+grasp_down_util_z_err_tol_m: 0.025
+# Tolerancia Z al cerrar la pinza.
+close_z_err_tol_m: 0.012
+# Tolerancia XY al cerrar la pinza.
+close_xy_tol_m: 0.012
+# Tolerancia XY mantenida en el approach grueso (subir si el robot no llega).
+approach_coarse_keep_xy_tol_m: 0.020
+
+# ── Geometría TCP ──────────────────────────────────────────────────────────
+# Offset Z extra aplicado al TCP en el grasp (cero por defecto desde el
+# fix de 2026-04-08, commit 9b58910). Subir solo para depuración.
+grasp_tcp_z_offset_m: 0.0
+
+# ── Pinza RG2 ──────────────────────────────────────────────────────────────
+# Threshold de apertura para considerar la pinza "cerrada" en gates.
+gripper_closed_opening_thr_m: 0.020
+
+# ── Tiempos ────────────────────────────────────────────────────────────────
+# Tiempo del trayectoria joint en segundos. null = usa el spinbox del panel.
+# Para el botón CESTA / MESA conviene >= 5 (memoria 2026-04-28).
+move_sec: null
+
+# ── Pesos y tolerancias IK GRASP_DOWN ──────────────────────────────────────
+grasp_down_ik_err_tol: 0.080
+grasp_down_ik_seed_weight: 0.65
+grasp_down_rot_weight: 0.10
