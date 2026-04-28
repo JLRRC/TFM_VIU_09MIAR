@@ -28,7 +28,7 @@ import os
 import re
 import shlex
 import time
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 try:
     import psutil  # type: ignore

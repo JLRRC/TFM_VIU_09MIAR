@@ -21,11 +21,8 @@ nombres como atributos de modulo de ``panel_pick_demo``.
 
 from __future__ import annotations
 
-import os
-import json
 import math
 import time
-from datetime import datetime, timezone
 
 try:
     from std_msgs.msg import Empty
@@ -40,88 +37,32 @@ except Exception:  # pragma: no cover
     Marker = None
     MarkerArray = None
 
-from ur5_tools.gripper_geometry import (
-    RG2_PINCH_CENTER_FRAME,
-    RG2_TCP_FRAME,
-    TOOL0_FRAME,
-    load_gripper_geometry,
-)
-
-from ..panel_robot_presets import (
-    JOINT_TABLE_POSE_RAD,
-    JOINT_PICK_IMAGE_POSE_RAD,
-    JOINT_GRASP_DOWN_POSE_RAD,
-    JOINT_BASKET_POSE_RAD,
-    JOINT_BASKET_DEMO_RELEASE_POSE_RAD,
-    JOINT_PICK_DEMO_REFERENCE_PRE_CLOSE_POSE_RAD,
-    PICK_DEMO_OBJECT_NAME,
-)
+from ..panel_robot_presets import PICK_DEMO_OBJECT_NAME
 from ..panel_config import (
     BASKET_DROP,
     WORLD_FRAME,
     BASE_FRAME,
-    GRIPPER_ATTACH_PREFIX,
-    GRIPPER_CLOSED_RAD,
-    GRIPPER_OPEN_RAD,
-    GRIPPER_TCP_Z_OFFSET,
-    PICK_DEMO_TRANSPORT_Z_OFFSET,
-    PICK_DEMO_DROP_Z_OFFSET,
     UR5_JOINT_NAMES,
-    GRIPPER_JOINT_NAMES,
 )
 from ..panel_objects import (
-    mark_object_grasped,
-    mark_object_attached,
-    mark_object_released,
     get_object_state,
     get_object_positions,
     is_on_table,
-    update_object_state,
     ObjectOwner,
     ObjectLogicalState,
 )
-from ..panel_readiness import tf_ready_status
 from ..directo_geometry import (
-    angle_shortest_diff_rad,
     _pick_demo_tuple3,
     _pick_demo_fmt_scalar,
     _pick_demo_env_float,
-    _pick_demo_env_int,
     _pick_demo_env_flag,
-    _effective_direct_grasp_z,
-    _direct_runtime_target_tol_m,
-    _is_demo_basket_transport_stage,
-    _is_demo_basket_transport_motion,
-    _compute_demo_basket_targets,
-    _compute_demo_linear_stage_targets,
-    _compute_demo_stage_count_for_distance,
-    _compute_demo_transport_recovery_stage_targets,
-    _compute_demo_transport_micro_recovery_target,
-    _compute_demo_joint_prep_waypoints,
-    _compute_demo_transport_prep_joint_tol,
-    _joint_step_wait_timeout,
 )
 from ..panel_utils import (
     fmt_vec3,
-    get_pose,
     transform_point_to_frame,
     world_to_base,
-    world_xyz_to_pixel_float,
-    table_xy_to_pixel_float,
 )
-from ..ur5_kinematics import fk_ur5, ik_ur5
-from ..attach_gate_evaluator import AttachGateEvaluator, AttachGateConfig
-from ..directo_gate_evaluator import (
-    _should_apply_global_step_timeout_extra,
-    _coerce_ur5_joint_vector,
-    _normalize_joint_goal_for_execution,
-    _build_transport_seed_candidates,
-    _evaluate_transport_stage_preexec_model_guard,
-    _direct_pregrasp_gate_caps,
-    _should_transport_prep_failure_jump_to_replan,
-    _evaluate_transport_stage_postcheck,
-    _transport_prep_failure_policy,
-)
+from ..directo_gate_evaluator import _coerce_ur5_joint_vector
 
 
 # Las funciones extraidas se apenden aqui via sed.

@@ -9,10 +9,9 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 import math
 try:
     import yaml
@@ -49,12 +48,12 @@ from .panel_objects import (  # noqa: F401
     save_object_positions,
 )
 
-if TYPE_CHECKING:
-    from .panel_tf import TfHelper
-
 try:
-    # Import correcto cuando ur5_qt_panel es un paquete (colcon/ament)
-    from .panel_config import (
+    # Import correcto cuando ur5_qt_panel es un paquete (colcon/ament).
+    # Las constantes de tabla y robot se re-exportan deliberadamente para
+    # mantener compatibilidad con callers legacy que las importaban via
+    # ``from .panel_utils import (...)``.
+    from .panel_config import (  # noqa: F401
         ARM_TRAJ_TOPIC_DEFAULT,
         GZ_WORLD,
         SCRIPTS_DIR,
@@ -89,8 +88,8 @@ try:
         rclpy,
     )
 except Exception:
-    # Fallback si alguien ejecuta módulos fuera del contexto de paquete
-    from .panel_config import (  # type: ignore
+    # Fallback si alguien ejecuta módulos fuera del contexto de paquete.
+    from .panel_config import (  # type: ignore  # noqa: F401
         ARM_TRAJ_TOPIC_DEFAULT,
         GZ_WORLD,
         SCRIPTS_DIR,

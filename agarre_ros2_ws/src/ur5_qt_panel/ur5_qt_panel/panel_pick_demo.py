@@ -61,7 +61,6 @@ from .panel_objects import (
     mark_object_attached,
     mark_object_released,
     get_object_state,
-    get_object_positions,
     is_on_table,
     update_object_state,
     ObjectOwner,

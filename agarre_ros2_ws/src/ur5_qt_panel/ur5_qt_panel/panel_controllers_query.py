@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 try:
     from controller_manager_msgs.srv import ListControllers

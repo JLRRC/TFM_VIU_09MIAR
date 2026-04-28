@@ -46,13 +46,9 @@ from .panel_tf import get_tf_helper
 from .panel_tf_discovery import (
     EE_FRAME_CANDIDATE_BASES,
     EE_FRAME_SUBSTRING_KEYWORDS,
-    ROBOT_FRAME_KEYWORDS,
-    _build_frame_graph,
     _can_transform_between,
     _collect_leaf_frames,
     _frame_depth,
-    _load_tf_frame_records,
-    _log_ee_unavailable_once,
 )
 from . import panel_tf_discovery as _tfd  # share _BASE_FRAME_CACHE state
 

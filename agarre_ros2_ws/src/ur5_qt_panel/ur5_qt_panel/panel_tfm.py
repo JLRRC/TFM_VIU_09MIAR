@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from .panel_config import INFER_CKPT, INFER_ROI_SIZE, INFER_SCRIPT, LOG_DIR, VISION_DIR
+from .panel_config import INFER_CKPT, INFER_SCRIPT, LOG_DIR, VISION_DIR
 from .panel_utils import ensure_dir, run_cmd
 from .panel_objects import get_object_position, get_object_state, get_object_states, is_on_table, update_object_state
 from .panel_pick_object import run_pick_object
