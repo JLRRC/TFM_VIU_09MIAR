@@ -604,14 +604,23 @@ def detect_base_frame(
     helper = get_tf_helper()
     if not helper:
         return None, None, "TF helper unavailable"
-    global _BASE_FRAME_CACHE
+    # The canonical _BASE_FRAME_CACHE lives in panel_tf_discovery (see
+    # panel_pose_helpers, which does `_tfd._BASE_FRAME_CACHE = ...`). Writing
+    # `global _BASE_FRAME_CACHE` here used to create a panel_utils-only
+    # attribute that nobody read, so the cache update was silently lost.
+    # Update the shared one instead.
+    try:
+        from . import panel_tf_discovery as _tfd
+    except Exception:
+        _tfd = None  # type: ignore
     scan = ["base_link"]
     for frame in scan:
         if not frame:
             continue
         transform = helper.lookup_transform(frame, source_frame, timeout_sec=timeout_sec)
         if transform:
-            _BASE_FRAME_CACHE = frame
+            if _tfd is not None:
+                _tfd._BASE_FRAME_CACHE = frame
             return frame, transform, None
     return None, None, f"lookup {source_frame}->base_link timed out"
 
