@@ -15,9 +15,24 @@ Uso::
     ros2 run ur5_qt_panel main_panel
     python -m ur5_qt_panel.main_panel
 """
+from ur5_qt_panel.direct_pick_table import (  # noqa: F401
+    build_direct_pick_pose_stamped,
+    make_pose_stamped,
+    ros_now_msg,
+    test_direct_pick_table,
+    wait_for_valid_clock,
+)
 from ur5_qt_panel.panel_v2 import ControlPanelV2, main  # noqa: F401
 
-__all__ = ['ControlPanelV2', 'main']
+__all__ = [
+    'ControlPanelV2',
+    'build_direct_pick_pose_stamped',
+    'main',
+    'make_pose_stamped',
+    'ros_now_msg',
+    'test_direct_pick_table',
+    'wait_for_valid_clock',
+]
 
 if __name__ == '__main__':
     main()

@@ -84,6 +84,7 @@ class TrajectoryPrepMixin:
             for jname in joint_names:
                 if jname in current_map:
                     references[jname] = current_map[jname]
+            explicit_unwrap = bool(getattr(self, "_unwrap_continuous_joints", False))
             for point in points:
                 positions = list(getattr(point, "positions", []) or [])
                 if len(positions) != len(joint_names):
@@ -92,11 +93,15 @@ class TrajectoryPrepMixin:
                 for idx, jname in enumerate(joint_names):
                     if jname not in self._WRAPAROUND_JOINTS:
                         continue
-                    ref = references.get(jname)
-                    if ref is None:
-                        continue
                     target = float(adjusted_positions[idx])
-                    adjusted = target + (math.tau * round((ref - target) / math.tau))
+                    if explicit_unwrap:
+                        ref = references.get(jname)
+                        if ref is None:
+                            adjusted = self._normalize_joint_position(jname, target)
+                        else:
+                            adjusted = target + (math.tau * round((ref - target) / math.tau))
+                    else:
+                        adjusted = self._normalize_joint_position(jname, target)
                     if abs(adjusted - target) > 1e-6:
                         adjusted_counts[jname] = adjusted_counts.get(jname, 0) + 1
                     adjusted_positions[idx] = adjusted

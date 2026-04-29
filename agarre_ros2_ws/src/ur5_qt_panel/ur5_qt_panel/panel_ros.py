@@ -1967,6 +1967,28 @@ class RosWorker(QObject):
             return False
         return self.clock_alive()[0]
 
+    def ros_now_ns(self) -> int:
+        """Return the worker node ROS time in ns; 0 means sim clock is not valid yet."""
+        with self._lock:
+            node = self._node
+            fallback = int(self._last_clock_stamp_ns or 0)
+        if node is not None:
+            try:
+                return int(node.get_clock().now().nanoseconds or 0)
+            except Exception:
+                pass
+        return fallback
+
+    def wait_for_valid_ros_time(self, timeout_sec: float) -> bool:
+        """Wait until node.get_clock().now().nanoseconds > 0."""
+        deadline = _steady_time() + max(0.1, float(timeout_sec))
+        while _steady_time() < deadline:
+            if self.ros_now_ns() > 0:
+                return True
+            remaining = max(0.0, min(0.1, deadline - _steady_time()))
+            self._clock_event.wait(remaining)
+        return self.ros_now_ns() > 0
+
     def node_ready(self) -> bool:
         with self._lock:
             return self._node is not None

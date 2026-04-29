@@ -336,6 +336,15 @@ class ExecutorMixin:
                 0.20,
                 self._env_float("PANEL_MOVEIT_BRIDGE_FEEDBACK_GOAL_SETTLE_SEC", 0.35),
             )
+            allow_feedback_early_success = str(
+                os.environ.get("PANEL_MOVEIT_BRIDGE_ALLOW_FEEDBACK_EARLY_SUCCESS", "0")
+            ).strip().lower() in ("1", "true", "yes", "on")
+            allow_joint_early_success = str(
+                os.environ.get("PANEL_MOVEIT_BRIDGE_ALLOW_JOINT_EARLY_SUCCESS", "0")
+            ).strip().lower() in ("1", "true", "yes", "on")
+            allow_ee_early_success = str(
+                os.environ.get("PANEL_MOVEIT_BRIDGE_ALLOW_EE_EARLY_SUCCESS", "0")
+            ).strip().lower() in ("1", "true", "yes", "on")
             ee_goal_check_tol_m = max(
                 0.02,
                 float(ee_target_tol_m)
@@ -576,6 +585,8 @@ class ExecutorMixin:
                 except Exception:
                     pass
                 if (
+                    allow_feedback_early_success
+                    and
                     (now_mono - result_wait_started) >= max(3.0, goal_check_start_sec * 0.5)
                     and (now_mono - last_feedback_check_mono) >= goal_check_poll_sec
                 ):
@@ -728,6 +739,8 @@ class ExecutorMixin:
                             meta,
                         )
                 if (
+                    allow_joint_early_success
+                    and
                     (now_mono - result_wait_started) >= goal_check_start_sec
                     and (now_mono - last_goal_check_mono) >= goal_check_poll_sec
                 ):
@@ -763,6 +776,8 @@ class ExecutorMixin:
                         )
                         return True, f"fjt_goal_reached_before_result:{reached_early_detail}", meta
                 if (
+                    allow_ee_early_success
+                    and
                     target_pose is not None
                     and (now_mono - result_wait_started) >= goal_check_start_sec
                     and (now_mono - last_ee_check_mono) >= goal_check_poll_sec

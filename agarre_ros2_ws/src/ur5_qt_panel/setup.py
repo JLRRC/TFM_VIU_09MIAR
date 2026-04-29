@@ -32,6 +32,7 @@ setup(
         'console_scripts': [
             'panel_v2 = ur5_qt_panel.panel_v2:main',
             'main_panel = ur5_qt_panel.main_panel:main',
+            'test_direct_pick_table = ur5_qt_panel.direct_pick_table:main',
         ],
     },
 )

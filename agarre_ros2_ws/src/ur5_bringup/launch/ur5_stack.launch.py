@@ -282,6 +282,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
         ),
         SetEnvironmentVariable("PANEL_MANAGED", managed_str),
         SetEnvironmentVariable("PANEL_CAMERA_REQUIRED", camera_required_env),
+        SetEnvironmentVariable("USE_SIM_TIME", LaunchConfiguration("use_sim_time")),
         *[
             SetEnvironmentVariable(name, os.environ.get(name, default))
             for name, default in PANEL_ENV_DEFAULTS

@@ -82,6 +82,7 @@ from .panel_config import (
     TRAJ_ACTION_FALLBACK_EPS_RAD,
     TRAJ_ACTION_FALLBACK_TIMEOUT_SEC,
     UR5_JOINT_NAMES,
+    USE_SIM_TIME,
 )
 from .panel_state import MoveItState, SystemState
 from .panel_utils import angle_shortest_diff_rad, get_pose, world_to_base
@@ -681,6 +682,19 @@ def publish_moveit_pose(panel,
         return False
     # FASE 2: Validar JointState antes de enviar a MoveIt (evita "Found empty JointState message")
     if panel._ros_worker_started and panel.ros_worker:
+        if bool(USE_SIM_TIME):
+            wait_valid_time = getattr(panel.ros_worker, "wait_for_valid_ros_time", None)
+            ros_now_ns = getattr(panel.ros_worker, "ros_now_ns", None)
+            valid_time = False
+            if callable(wait_valid_time):
+                valid_time = bool(wait_valid_time(timeout_sec=5.0))
+            if not valid_time:
+                now_ns = int(ros_now_ns() if callable(ros_now_ns) else 0)
+                panel._emit_log(
+                    f"[MOVEIT] Bloqueado: {label} /clock no valido (ros_now_ns={now_ns})"
+                )
+                panel._motion_in_progress = False
+                return False
         joint_ok, joint_reason = panel.ros_worker.joint_state_valid(timeout_sec=2.0)
         if not joint_ok:
             panel._emit_log(
@@ -792,4 +806,3 @@ def _normalize_joint_name(name) -> str:
     if "/" in text:
         text = text.split("/")[-1]
     return text.strip()
-
