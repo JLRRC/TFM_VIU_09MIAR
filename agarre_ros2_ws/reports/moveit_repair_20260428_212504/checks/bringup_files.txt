@@ -1,0 +1,16 @@
+src/ur5_bringup/CMakeLists.txt
+src/ur5_bringup/config/gz_gui_ogre.config
+src/ur5_bringup/config/runtime_defaults.yaml
+src/ur5_bringup/config/system_state_manager.yaml
+src/ur5_bringup/config/ur5_mock_controllers.yaml
+src/ur5_bringup/launch/launch_helpers.py
+src/ur5_bringup/launch/__pycache__/launch_helpers.cpython-312.pyc
+src/ur5_bringup/launch/__pycache__/ur5_stack.launch.cpython-312.pyc
+src/ur5_bringup/launch/ur5_ros2_control.launch.py
+src/ur5_bringup/launch/ur5_rsp.launch.py
+src/ur5_bringup/launch/ur5_stack.launch.py
+src/ur5_bringup/package.xml
+src/ur5_bringup/test/conftest.py
+src/ur5_bringup/test/test_e2e_pick_cycles.py
+src/ur5_bringup/test/test_launch_helpers.py
+src/ur5_bringup/test/test_stack_integration.py

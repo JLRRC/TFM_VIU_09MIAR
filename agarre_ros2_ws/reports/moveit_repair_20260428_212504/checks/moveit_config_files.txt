@@ -1,0 +1,10 @@
+src/ur5_moveit_config/CMakeLists.txt
+src/ur5_moveit_config/config/joint_limits.yaml
+src/ur5_moveit_config/config/kinematics.yaml
+src/ur5_moveit_config/config/moveit_controllers.yaml
+src/ur5_moveit_config/config/ompl_planning.yaml
+src/ur5_moveit_config/config/planning_scene_monitor_parameters.yaml
+src/ur5_moveit_config/config/ur5.srdf
+src/ur5_moveit_config/config/ur5_strict.srdf
+src/ur5_moveit_config/launch/ur5_moveit_bringup.launch.py
+src/ur5_moveit_config/package.xml

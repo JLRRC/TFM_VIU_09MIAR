@@ -1,0 +1,4 @@
+ M src/ur5_moveit_config/config/ur5.srdf
+ M src/ur5_moveit_config/config/ur5_strict.srdf
+ M src/ur5_tools/ur5_tools/moveit_bridge/geometry.py
+?? reports/

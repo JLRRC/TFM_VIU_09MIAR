@@ -1,0 +1,136 @@
+--- reports/moveit_repair_20260428_212504/backups/controller_bootstrap.py.bak	2026-04-27 23:45:51.204790469 +0200
++++ reports/moveit_repair_20260428_212504/patches/controller_bootstrap.py.fixed	2026-04-28 21:34:35.359775465 +0200
+@@ -221,6 +221,23 @@
+             return False
+         return all(state_map.get(name) == "active" for name in self._required)
+ 
++    def _wait_state(self, name: str, targets, timeout: float = 3.0) -> str | None:
++        """Poll list_controllers until controller `name` is in one of `targets`.
++
++        Returns the observed state on success, or the last observed state on
++        timeout. Spins the node so client futures complete during waiting.
++        """
++        deadline = time.monotonic() + max(0.5, timeout)
++        last = None
++        while time.monotonic() < deadline:
++            state_map = self._list_controllers()
++            last = state_map.get(name)
++            if last in targets:
++                return last
++            rclpy.spin_once(self, timeout_sec=0.05)
++            time.sleep(0.05)
++        return last
++
+     def _wait_joint_identity(self) -> bool:
+         if not self._enforce_joint_identity or not self._expected_arm_joints:
+             return True
+@@ -309,47 +326,79 @@
+                 continue
+             if state is None:
+                 self.get_logger().info(f"[CTRL] {name} no cargado; cargando")
+-                if not self._load(name):
+-                    state_after_load = self._list_controllers().get(name)
+-                    if state_after_load is None:
+-                        self.get_logger().error(f"[CTRL] load failed: {name}")
+-                        ok_all = False
+-                        continue
+-                    self.get_logger().warn(
+-                        f"[CTRL] load reported failed; {name} visible ({state_after_load})"
++                self._load(name)
++                state_after_load = self._wait_state(
++                    name,
++                    ("unconfigured", "inactive", "configured", "active"),
++                    timeout=max(3.0, self._service_timeout),
++                )
++                if state_after_load is None:
++                    self.get_logger().error(f"[CTRL] load failed: {name}")
++                    ok_all = False
++                    continue
++                if state_after_load not in ("inactive", "configured", "active"):
++                    self._configure(name)
++                    state_after_cfg = self._wait_state(
++                        name,
++                        ("inactive", "configured", "active"),
++                        timeout=max(3.0, self._service_timeout),
+                     )
+-                if not self._configure(name):
+-                    state_after_cfg = self._list_controllers().get(name)
+                     if state_after_cfg not in ("inactive", "configured", "active"):
+-                        self.get_logger().error(f"[CTRL] configure failed: {name}")
++                        self.get_logger().error(
++                            f"[CTRL] configure failed: {name} state={state_after_cfg}"
++                        )
+                         ok_all = False
+                         continue
+-                    self.get_logger().warn(
+-                        f"[CTRL] configure reported failed; {name} state={state_after_cfg}"
+-                    )
+             elif state in ("unconfigured", "inactive", "configured"):
+                 if state == "unconfigured":
+-                    if not self._configure(name):
+-                        state_after_cfg = self._list_controllers().get(name)
+-                        if state_after_cfg not in ("inactive", "configured", "active"):
+-                            self.get_logger().error(f"[CTRL] configure failed: {name}")
+-                            ok_all = False
+-                            continue
+-                        self.get_logger().warn(
+-                            f"[CTRL] configure reported failed; {name} state={state_after_cfg}"
++                    self._configure(name)
++                    state_after_cfg = self._wait_state(
++                        name,
++                        ("inactive", "configured", "active"),
++                        timeout=max(3.0, self._service_timeout),
++                    )
++                    if state_after_cfg not in ("inactive", "configured", "active"):
++                        self.get_logger().error(
++                            f"[CTRL] configure failed: {name} state={state_after_cfg}"
+                         )
++                        ok_all = False
++                        continue
+             else:
+                 self.get_logger().warn(f"[CTRL] estado inesperado {name}: {state}")
+-            if not self._activate(name):
+-                state_after_act = self._list_controllers().get(name)
+-                if state_after_act != "active":
+-                    self.get_logger().error(f"[CTRL] activate failed: {name}")
+-                    ok_all = False
+-                    continue
+-                self.get_logger().warn(
+-                    f"[CTRL] activate reported failed; {name} state=active"
++            # Activate with retry: the controller_manager may take an update
++            # cycle to commit state transitions; do not trust the synchronous
++            # ok response alone, poll until state==active.
++            activate_attempts = 0
++            state_after_act = self._list_controllers().get(name)
++            while state_after_act != "active" and activate_attempts < 5:
++                activate_attempts += 1
++                self._activate(name)
++                state_after_act = self._wait_state(
++                    name, ("active",), timeout=max(2.0, self._service_timeout)
++                )
++            if state_after_act != "active":
++                self.get_logger().error(
++                    f"[CTRL] activate failed: {name} state={state_after_act}"
+                 )
++                ok_all = False
++                continue
+             self.get_logger().info(f"[CTRL] {name} activo")
++        # Final verification: re-list and confirm every required controller is
++        # actually active. This guards against ListControllers returning stale
++        # data during bootstrap.
++        if ok_all:
++            final_states = self._list_controllers()
++            not_active = [
++                f"{n}:{final_states.get(n)}"
++                for n in self._required
++                if final_states.get(n) != "active"
++            ]
++            if not_active:
++                self.get_logger().error(
++                    "[CTRL] verificacion final fallida; no activos: "
++                    + ", ".join(not_active)
++                )
++                ok_all = False
+         if ok_all and not self._wait_joint_identity():
+             ok_all = False
+         with self._lock:
