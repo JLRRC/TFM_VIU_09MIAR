@@ -1818,6 +1818,13 @@ def run_pick_demo(panel) -> None:
                         if (_now_retry - _last_cmd_retry_ts) >= cmd_retry_sec:
                             _cmd_retry_count += 1
                             panel.signal_run_ui.emit(cmd_fn)
+                            try:
+                                cmd_fn()
+                            except Exception as _exc_cmdfn:
+                                panel._emit_log(
+                                    "[PICK][DIRECT][GRIPPER][ERR] direct cmd_fn failed: "
+                                    f"{type(_exc_cmdfn).__name__}: {_exc_cmdfn}"
+                                )
                             _last_cmd_retry_ts = _now_retry
                             _append_trace(
                                 "[PICK][DIRECT][GRIPPER] "
@@ -8020,8 +8027,8 @@ def run_pick_demo(panel) -> None:
                     coarse_gate_z_ok = bool(_coarse_gate.get("z_ok"))
                     coarse_gate_pose_ok = bool(_coarse_gate.get("pose_ok"))
                     coarse_pose_metrics = _coarse_gate.get("pose_consistency") or {}
-                    _coarse_handoff_dist_tol = 0.015
-                    _coarse_handoff_dz_tol = 0.015
+                    _coarse_handoff_dist_tol = float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DIST_TOL_M", "0.015") or 0.015)
+                    _coarse_handoff_dz_tol = float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DZ_TOL_M", "0.015") or 0.015)
                     _coarse_relaxed_handoff_dist_tol = _pick_demo_env_float(
                         "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_DIST_TOL_M",
                             0.033,
@@ -8074,12 +8081,28 @@ def run_pick_demo(panel) -> None:
                             and abs(float(dz_obj_local)) <= _coarse_handoff_dz_tol
                         )
                         gate_ok_local = bool(gate_metrics_for_check.get("ok"))
+                        _relaxed_xy_cap_m = float(
+                            os.environ.get(
+                                "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_XY_TOL_M",
+                                "0.010",
+                            )
+                            or 0.010
+                        )
+                        _relaxed_skip_pose_ok = bool(
+                            int(
+                                os.environ.get(
+                                    "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_SKIP_POSE_OK",
+                                    "0",
+                                )
+                                or 0
+                            )
+                        )
                         relaxed_handoff_xy_ok_local = bool(
-                            coarse_gate_xy_err <= 0.010
+                            coarse_gate_xy_err <= _relaxed_xy_cap_m
                         )
                         relaxed_handoff_ok_local = bool(
                             relaxed_handoff_xy_ok_local
-                            and coarse_gate_pose_ok
+                            and (coarse_gate_pose_ok or _relaxed_skip_pose_ok)
                             and tcp_obj_dist_local is not None
                             and float(tcp_obj_dist_local) <= float(_coarse_relaxed_handoff_dist_tol)
                             and dz_obj_local is not None
@@ -8777,7 +8800,7 @@ def run_pick_demo(panel) -> None:
                     )
                     if (
                         _handoff_target_jump_m is not None
-                        and float(_handoff_target_jump_m) > 0.005
+                        and float(_handoff_target_jump_m) > float(os.environ.get("PANEL_PICK_DEMO_HANDOFF_TARGET_JUMP_TOL_M", "0.005") or 0.005)
                     ):
                         _abort_grasp(
                             code="GRASP_DOWN_HANDOFF_TARGET_JUMP",
@@ -9762,6 +9785,12 @@ def run_pick_demo(panel) -> None:
                 f"closed_flag={bool(close_state_pre_cmd.get('closed_flag'))}"
             )
             panel.signal_run_ui.emit(_close_only)
+            try:
+                _close_only()
+            except Exception as _exc_close:
+                panel._emit_log(
+                    f"[PICK][DIRECT][CLOSE][ERR] direct call _close_only failed: {type(_exc_close).__name__}: {_exc_close}"
+                )
             time.sleep(0.3)
             close_confirm_timeout_sec = max(
                 0.8,
@@ -10034,13 +10063,25 @@ def run_pick_demo(panel) -> None:
                 # rg2_pinch_center ya es el frame de contacto: no restar GRIPPER_TCP_Z_OFFSET
                 tcp_z_correction_m=0.0,
             )
+            _strict_physics_mode_env = str(
+                os.environ.get("PANEL_STRICT_PHYSICS_MODE", "0") or "0"
+            ).strip().lower() in ("1", "true", "yes", "on")
+            _strict_physics_attach_bypass = bool(_strict_physics_mode_env and not attach_ok)
+            if _strict_physics_attach_bypass:
+                panel._emit_log(
+                    "[PICK][DIRECT][ATTACH][STRICT_BYPASS] "
+                    "attach backend unavailable in strict_physics_mode; "
+                    "treating as physical grip (real friction must hold)."
+                )
+                attach_ok = True
             _ag_attach_reason = "attach_call_ok" if attach_ok else "attempt_attach_returned_false"
             panel._emit_log(
                 "[PICK][DIRECT][ATTACH] "
                 f"attach_result={str(bool(attach_ok)).lower()} "
                 f"tcp={_fmt_vec(tcp_base_grasp)} obj={_fmt_vec(obj_base_grasp)} "
                 f"tcp_obj_dist={_fmt_scalar(_dist(tcp_base_grasp, obj_base_grasp))} "
-                f"expected_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f}"
+                f"expected_z_gap={float(GRIPPER_TCP_Z_OFFSET):.3f} "
+                f"strict_physics_bypass={str(_strict_physics_attach_bypass).lower()}"
             )
             if not attach_ok:
                 _final_phase_trace(
@@ -10065,7 +10106,7 @@ def run_pick_demo(panel) -> None:
                 if callable(_step_finalize_fn):
                     panel.signal_run_ui.emit(_step_finalize_fn)
                 raise RuntimeError("demo_attach_failed")
-            demo_attach_published = True
+            demo_attach_published = bool(attach_ok)
 
             # ── ATTACH_GATE: leer parámetros configurables ─────────────────────
             attach_follow_timeout_sec = max(

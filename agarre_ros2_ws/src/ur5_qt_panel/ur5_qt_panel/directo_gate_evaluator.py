@@ -205,14 +205,21 @@ def _direct_pregrasp_gate_caps(phase: str | None) -> dict[str, float] | None:
     # Runtime profiles may relax generic defaults, but this interval must keep
     # tight source freshness and jump checks or the phase boundary becomes
     # meaningless.
+    import os as _os
+    def _envf(name: str, default: float) -> float:
+        try:
+            v = _os.environ.get(name)
+            return float(v) if v is not None and str(v).strip() != "" else float(default)
+        except Exception:
+            return float(default)
     return {
-        "source_tol_m": 0.006,
-        "source_age_tol_sec": 0.400,
-        "source_sync_tol_sec": 0.400,
-        "phase_jump_tol_m": 0.010,
-        "coarse_xy_tol_m": 0.006,
-        "keep_xy_tol_m": 0.005,
-        "object_divergence_tol_m": 0.020,
+        "source_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_SOURCE_TOL_M", 0.006),
+        "source_age_tol_sec": _envf("PANEL_PICK_DEMO_PREGRASP_SOURCE_AGE_TOL_SEC", 0.400),
+        "source_sync_tol_sec": _envf("PANEL_PICK_DEMO_PREGRASP_SOURCE_SYNC_TOL_SEC", 0.400),
+        "phase_jump_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_PHASE_JUMP_TOL_M", 0.010),
+        "coarse_xy_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_COARSE_XY_TOL_M", 0.006),
+        "keep_xy_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_KEEP_XY_TOL_M", 0.005),
+        "object_divergence_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_OBJ_DIV_TOL_M", 0.020),
     }
 
 

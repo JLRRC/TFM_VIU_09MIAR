@@ -266,7 +266,38 @@ class GeometryMixin:
                     )
                     continue
                 ik_state.update()
-                solved = ik_state.get_joint_group_positions(self._group_name)
+                solved = list(ik_state.get_joint_group_positions(self._group_name))
+                # Wrap-aware normalization: re-express continuous joints within
+                # +/- pi of the score reference so an IK solution that happens
+                # to come back unwound (e.g. wrist_2 = ref + 2*pi) is treated as
+                # the equivalent short-path pose. Without this the seeded IK is
+                # rejected as branch_too_far and OMPL falls back to a pose goal
+                # that may pick the same unwound branch, forcing the controller
+                # to perform a full revolution.
+                wrap_adjusted: list[str] = []
+                for jdx, jname in enumerate(group_joint_names):
+                    if jname not in self._WRAPAROUND_JOINTS:
+                        continue
+                    ref_val = score_reference_map.get(jname)
+                    if ref_val is None:
+                        continue
+                    raw_val = float(solved[jdx])
+                    adjusted = raw_val + (
+                        math.tau * round((float(ref_val) - raw_val) / math.tau)
+                    )
+                    if abs(adjusted - raw_val) > 1e-6:
+                        solved[jdx] = adjusted
+                        wrap_adjusted.append(f"{jname}:{raw_val:.3f}->{adjusted:.3f}")
+                if wrap_adjusted:
+                    ik_state.set_joint_group_positions(
+                        self._group_name,
+                        np.asarray(solved, dtype=float),
+                    )
+                    ik_state.update()
+                    self.get_logger().info(
+                        "[APPROACH_IK_SEED] wrap-normalized continuous joints "
+                        f"seed={seed_label} adjusted={','.join(wrap_adjusted)}"
+                    )
                 solved_map = dict(zip(group_joint_names, solved))
                 T_model_base_candidate, base_candidate_detail = (
                     self._robot_state_frame_transform_matrix(

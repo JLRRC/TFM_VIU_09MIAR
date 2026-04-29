@@ -124,19 +124,32 @@ def command_gripper(panel,
         panel.btn_gripper.blockSignals(False)
     if log_action:
         panel._log_button(f"{log_action} {'cerrar' if closed else 'abrir'}")
-    panel._ensure_moveit_node()
-    pub = panel._get_gripper_publisher(GRIPPER_CMD_TOPIC)
+    try:
+        panel._ensure_moveit_node()
+    except Exception as exc:
+        panel._emit_log(f"[GRIPPER][ERR] _ensure_moveit_node failed: {type(exc).__name__}: {exc}")
+        return False
+    try:
+        pub = panel._get_gripper_publisher(GRIPPER_CMD_TOPIC)
+    except Exception as exc:
+        panel._emit_log(f"[GRIPPER][ERR] _get_gripper_publisher failed: {type(exc).__name__}: {exc}")
+        return False
     if pub is None:
         panel._set_status("Gripper: publisher no disponible", error=True)
+        panel._emit_log(f"[GRIPPER][ERR] Publisher no disponible topic={GRIPPER_CMD_TOPIC}")
         panel._log_warning("[GRIPPER] Publisher no disponible")
         return False
     target = GRIPPER_CLOSED_RAD if closed else GRIPPER_OPEN_RAD
     msg = Float64MultiArray()
     msg.data = [float(target), float(target) * GRIPPER_JOINT2_SIGN]
-    pub.publish(msg)
+    try:
+        pub.publish(msg)
+    except Exception as exc:
+        panel._emit_log(f"[GRIPPER][ERR] publish failed: {type(exc).__name__}: {exc}")
+        return False
     force_tag = " (force)" if force else ""
     panel._emit_log(
-        f"[GRIPPER] cmd target={target:.3f} rad topic={GRIPPER_CMD_TOPIC}{force_tag}"
+        f"[GRIPPER] cmd target={target:.3f} rad topic={GRIPPER_CMD_TOPIC}{force_tag} data={list(msg.data)}"
     )
     panel._set_status(f"Gripper -> {target:.3f} rad{force_tag}", error=False)
     return True
@@ -483,13 +496,16 @@ def schedule_traj_action_fallback(panel, positions: List[float], sec: float, tra
 
 # Límites de posición para cada joint del UR5 (en radianes, según joint_limits.yaml).
 # Orden: shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3
+# Margen >2π en pan/wrists para que el wrap-align pueda enviar targets
+# equivalentes módulo 2π (joints continuos del UR5). El SDF aplica su
+# propio límite físico (±2π) y recorta internamente.
 _UR5_JOINT_POS_LIMITS: List[Tuple[float, float]] = [
-    (-6.2832, 6.2832),   # shoulder_pan_joint   ±360°
+    (-7.8540, 7.8540),   # shoulder_pan_joint   ±450°
     (-6.2832, 6.2832),   # shoulder_lift_joint  ±360°
     (-3.1416, 3.1416),   # elbow_joint          ±180°
-    (-6.2832, 6.2832),   # wrist_1_joint        ±360°
-    (-6.2832, 6.2832),   # wrist_2_joint        ±360°
-    (-6.2832, 6.2832),   # wrist_3_joint        ±360°
+    (-7.8540, 7.8540),   # wrist_1_joint        ±450°
+    (-7.8540, 7.8540),   # wrist_2_joint        ±450°
+    (-7.8540, 7.8540),   # wrist_3_joint        ±450°
 ]
 
 def clamp_joint_positions(panel, positions: List[float]) -> Tuple[List[float], List[str]]:
@@ -548,8 +564,48 @@ def publish_joint_trajectory(panel,
     pub = panel._get_traj_publisher(topic)
     if not pub:
         return False, "Publisher JointTrajectory no disponible"
+    # --- Wrap-align wrists al equivalente ±2π más cercano al estado actual.
+    # Evita que el controller interpole por el camino largo cuando el robot
+    # arranca con wrists enrollados (~±2π tras spawn).
+    try:
+        _wrap_disabled = str(
+            os.environ.get("PANEL_DISABLE_JOINT_WRAP_ALIGN", "0") or "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        _wrap_disabled = False
+    aligned_positions = list(positions)
+    if not _wrap_disabled:
+        snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
+        wrap_logs: List[str] = []
+        for idx in (3, 4, 5):
+            if idx >= len(aligned_positions):
+                break
+            name = UR5_JOINT_NAMES[idx]
+            curr = snapshot.get(name)
+            if curr is None:
+                continue
+            target = float(aligned_positions[idx])
+            best_target = target
+            best_diff = abs(target - float(curr))
+            for k in (-1, 1):
+                candidate = target + (2.0 * math.pi) * k
+                diff = abs(candidate - float(curr))
+                if diff < best_diff:
+                    best_diff = diff
+                    best_target = candidate
+            if best_target != target:
+                aligned_positions[idx] = best_target
+                wrap_logs.append(
+                    f"{name}: {target:.3f}→{best_target:.3f}"
+                    f" (curr={float(curr):.3f}, diff_raw={abs(target - float(curr)):.3f}"
+                    f" → diff_wrap={best_diff:.3f})"
+                )
+        if wrap_logs:
+            panel._emit_log(
+                "[PICK][JOINT_WRAP_ALIGN] " + "; ".join(wrap_logs)
+            )
     # --- Validación de límites de joints ---
-    safe_positions, limit_warnings = clamp_joint_positions(panel, positions)
+    safe_positions, limit_warnings = clamp_joint_positions(panel, aligned_positions)
     for w in limit_warnings:
         panel._emit_log(f"[ROBOT][JOINT_LIMIT] WARN: {w}")
     if prefer_action:

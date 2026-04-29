@@ -65,7 +65,7 @@
         <collision name="tablero_collision">
           <pose>0 0 0.75 0 0 0</pose>
           <geometry><box><size>0.768 0.80 0.05</size></box></geometry>
-        </collision>
+        <surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="tablero_visual">
           <pose>0 0 0.75 0 0 0</pose>
           <geometry><box><size>0.768 0.80 0.05</size></box></geometry>
@@ -77,7 +77,7 @@
         <collision name="wall_far_x_pos_c">
           <pose>0.374 0 0.785 0 0 0</pose>
           <geometry><box><size>0.02 0.76 0.02</size></box></geometry>
-        </collision>
+        <surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="wall_far_x_pos_v">
           <pose>0.374 0 0.785 0 0 0</pose>
           <geometry><box><size>0.02 0.76 0.02</size></box></geometry>
@@ -87,7 +87,7 @@
         <collision name="wall_near_x_neg_c">
           <pose>-0.374 0 0.785 0 0 0</pose>
           <geometry><box><size>0.02 0.76 0.02</size></box></geometry>
-        </collision>
+        <surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="wall_near_x_neg_v">
           <pose>-0.374 0 0.785 0 0 0</pose>
           <geometry><box><size>0.02 0.76 0.02</size></box></geometry>
@@ -97,7 +97,7 @@
         <collision name="wall_north_c">
           <pose>0 0.39 0.785 0 0 0</pose>
           <geometry><box><size>0.728 0.02 0.02</size></box></geometry>
-        </collision>
+        <surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="wall_north_v">
           <pose>0 0.39 0.785 0 0 0</pose>
           <geometry><box><size>0.728 0.02 0.02</size></box></geometry>
@@ -107,7 +107,7 @@
         <collision name="wall_south_c">
           <pose>0 -0.39 0.785 0 0 0</pose>
           <geometry><box><size>0.728 0.02 0.02</size></box></geometry>
-        </collision>
+        <surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="wall_south_v">
           <pose>0 -0.39 0.785 0 0 0</pose>
           <geometry><box><size>0.728 0.02 0.02</size></box></geometry>
@@ -157,16 +157,16 @@
         </visual>
 
         
-        <collision name="p1c"><pose> 0.334  0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <collision name="p1c"><pose> 0.334  0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="p1v"><pose> 0.334  0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.15 0.15 0.15 1</diffuse></material></visual>
 
-        <collision name="p2c"><pose> 0.334 -0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <collision name="p2c"><pose> 0.334 -0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="p2v"><pose> 0.334 -0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.15 0.15 0.15 1</diffuse></material></visual>
 
-        <collision name="p3c"><pose>-0.334  0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <collision name="p3c"><pose>-0.334  0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="p3v"><pose>-0.334  0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.15 0.15 0.15 1</diffuse></material></visual>
 
-        <collision name="p4c"><pose>-0.334 -0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <collision name="p4c"><pose>-0.334 -0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="p4v"><pose>-0.334 -0.35 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.15 0.15 0.15 1</diffuse></material></visual>
 
       </link>
@@ -325,7 +325,7 @@
         <collision name="tablero_collision">
           <pose>0 0 0.75 0 0 0</pose>
           <geometry><box><size>0.70 0.50 0.05</size></box></geometry>
-        </collision>
+        <surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="tablero_visual">
           <pose>0 0 0.75 0 0 0</pose>
           <geometry><box><size>0.70 0.50 0.05</size></box></geometry>
@@ -333,16 +333,16 @@
         </visual>
 
         
-        <collision name="p1"><pose> 0.30  0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <collision name="p1"><pose> 0.30  0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="p1v"><pose> 0.30  0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.10 0.10 0.10 1</diffuse></material></visual>
 
-        <collision name="p2"><pose> 0.30 -0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <collision name="p2"><pose> 0.30 -0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="p2v"><pose> 0.30 -0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.10 0.10 0.10 1</diffuse></material></visual>
 
-        <collision name="p3"><pose>-0.30  0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <collision name="p3"><pose>-0.30  0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="p3v"><pose>-0.30  0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.10 0.10 0.10 1</diffuse></material></visual>
 
-        <collision name="p4"><pose>-0.30 -0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry></collision>
+        <collision name="p4"><pose>-0.30 -0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><surface><contact><collide_bitmask>0x01</collide_bitmask></contact></surface></collision>
         <visual name="p4v"><pose>-0.30 -0.20 0.375 0 0 0</pose><geometry><box><size>0.05 0.05 0.75</size></box></geometry><material><diffuse>0.10 0.10 0.10 1</diffuse></material></visual>
 
         
