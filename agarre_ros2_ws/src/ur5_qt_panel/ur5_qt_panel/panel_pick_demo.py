@@ -3927,43 +3927,19 @@ def run_pick_demo(panel) -> None:
                 )
                 _branch_guard_xy_tol = max(
                     0.003,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_XY_TOL_M",
-                            "0.010",
-                        )
-                        or 0.010
-                    ),
+                    _get_pick_demo_params().grasp_down_branch_guard_xy_tol_m,
                 )
                 _branch_guard_z_min = max(
                     0.010,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_Z_MIN_M",
-                            "0.015",
-                        )
-                        or 0.015
-                    ),
+                    _get_pick_demo_params().grasp_down_branch_guard_z_min_m,
                 )
                 _branch_guard_max_dev = max(
                     0.20,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_MAX_DEV_RAD",
-                            "0.35",
-                        )
-                        or 0.35
-                    ),
+                    _get_pick_demo_params().grasp_down_branch_guard_max_dev_rad,
                 )
                 _branch_guard_sum_dev = max(
                     _branch_guard_max_dev,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_SUM_DEV_RAD",
-                            "0.75",
-                        )
-                        or 0.75
-                    ),
+                    _get_pick_demo_params().grasp_down_branch_guard_sum_dev_rad,
                 )
                 _is_local_grasp_down_descent = (
                     label == "GRASP_DOWN_JOINT"
@@ -4922,52 +4898,29 @@ def run_pick_demo(panel) -> None:
             ) -> dict:
                 phase_metrics = _joint_delta_metrics(phase_seed_joints, final_joints)
                 command_metrics = _joint_delta_metrics(command_seed_joints, final_joints)
-                branch_max_delta_tol = max(
-                    0.20,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_MAX_DELTA_RAD", "0.95") or 0.95),
-                )
-                branch_sum_delta_tol = max(
-                    branch_max_delta_tol,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_SUM_DELTA_RAD", "1.80") or 1.80),
-                )
-                phase_max_delta_tol = max(
-                    branch_max_delta_tol,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_PHASE_MAX_DELTA_RAD", "2.35") or 2.35),
-                )
-                phase_sum_delta_tol = max(
-                    phase_max_delta_tol,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_PHASE_SUM_DELTA_RAD", "6.20") or 6.20),
-                )
-                phase_critical_sum_tol = max(
-                    0.50,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_PHASE_CRITICAL_SUM_DELTA_RAD", "2.85") or 2.85),
-                )
+                _params = _get_pick_demo_params()
+                branch_max_delta_tol = max(0.20, _params.grasp_down_branch_max_delta_rad)
+                branch_sum_delta_tol = max(branch_max_delta_tol, _params.grasp_down_branch_sum_delta_rad)
+                phase_max_delta_tol = max(branch_max_delta_tol, _params.grasp_down_phase_max_delta_rad)
+                phase_sum_delta_tol = max(phase_max_delta_tol, _params.grasp_down_phase_sum_delta_rad)
+                phase_critical_sum_tol = max(0.50, _params.grasp_down_phase_critical_sum_delta_rad)
                 branch_critical_tols = {
-                    "shoulder_lift_joint": max(
-                        0.15,
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_SHOULDER_LIFT_DELTA_RAD", "0.80") or 0.80),
-                    ),
-                    "elbow_joint": max(
-                        0.15,
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_ELBOW_DELTA_RAD", "0.85") or 0.85),
-                    ),
-                    "wrist_1_joint": max(
-                        0.15,
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_WRIST1_DELTA_RAD", "0.85") or 0.85),
-                    ),
+                    "shoulder_lift_joint": max(0.15, _params.grasp_down_branch_shoulder_lift_delta_rad),
+                    "elbow_joint":         max(0.15, _params.grasp_down_branch_elbow_delta_rad),
+                    "wrist_1_joint":       max(0.15, _params.grasp_down_branch_wrist1_delta_rad),
                 }
                 phase_critical_tols = {
                     "shoulder_lift_joint": max(
                         branch_critical_tols["shoulder_lift_joint"],
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_PHASE_SHOULDER_LIFT_DELTA_RAD", "1.20") or 1.20),
+                        _params.grasp_down_phase_shoulder_lift_delta_rad,
                     ),
                     "elbow_joint": max(
                         branch_critical_tols["elbow_joint"],
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_PHASE_ELBOW_DELTA_RAD", "1.15") or 1.15),
+                        _params.grasp_down_phase_elbow_delta_rad,
                     ),
                     "wrist_1_joint": max(
                         branch_critical_tols["wrist_1_joint"],
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_PHASE_WRIST1_DELTA_RAD", "1.10") or 1.10),
+                        _params.grasp_down_phase_wrist1_delta_rad,
                     ),
                 }
                 branch_change = False
@@ -5159,18 +5112,9 @@ def run_pick_demo(panel) -> None:
                 audit_target_source: str,
                 phase_seed_joints=None,
             ) -> tuple[dict | None, str, dict]:
-                strict_xy_tol = max(
-                    0.006,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M", "0.012") or 0.012),
-                )
-                strict_z_tol = max(
-                    0.008,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M", "0.025") or 0.025),
-                )
-                target_dist_tol = max(
-                    strict_xy_tol,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M", "0.025") or 0.025),
-                )
+                strict_xy_tol = max(0.006, _get_pick_demo_params().grasp_down_strict_xy_tol_m)
+                strict_z_tol = max(0.008, _get_pick_demo_params().grasp_down_strict_z_tol_m)
+                target_dist_tol = max(strict_xy_tol, _get_pick_demo_params().grasp_down_strict_dist_tol_m)
                 max_attempts = max(
                     1,
                     int(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS", "4") or 4),
@@ -5342,13 +5286,11 @@ def run_pick_demo(panel) -> None:
                     step_divider = float(2 ** (attempt - 1))
                     waypoint_xy_step = max(
                         0.008,
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_XY_STEP_M", "0.020") or 0.020)
-                        / step_divider,
+                        _get_pick_demo_params().grasp_down_segment_xy_step_m / step_divider,
                     )
                     waypoint_z_step = max(
                         0.005,
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M", "0.005") or 0.005)
-                        / step_divider,
+                        _get_pick_demo_params().grasp_down_segment_z_step_m / step_divider,
                     )
                     waypoints = _grasp_down_waypoints(
                         actual_before,

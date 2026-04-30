@@ -63,6 +63,30 @@ def test_defaults_have_expected_values():
     assert p.grasp_align_tcp_tol_m == 0.015
     assert p.basket_transport_tcp_tol_m == 0.060
     assert p.direct_ik_tcp_tol_m == 0.040
+    # GRASP_DOWN: branch guard.
+    assert p.grasp_down_branch_guard_xy_tol_m == 0.010
+    assert p.grasp_down_branch_guard_z_min_m == 0.015
+    assert p.grasp_down_branch_guard_max_dev_rad == 0.35
+    assert p.grasp_down_branch_guard_sum_dev_rad == 0.75
+    # GRASP_DOWN: branch deltas.
+    assert p.grasp_down_branch_max_delta_rad == 0.95
+    assert p.grasp_down_branch_sum_delta_rad == 1.80
+    assert p.grasp_down_branch_shoulder_lift_delta_rad == 0.80
+    assert p.grasp_down_branch_elbow_delta_rad == 0.85
+    assert p.grasp_down_branch_wrist1_delta_rad == 0.85
+    # GRASP_DOWN: phase deltas.
+    assert p.grasp_down_phase_max_delta_rad == 2.35
+    assert p.grasp_down_phase_sum_delta_rad == 6.20
+    assert p.grasp_down_phase_critical_sum_delta_rad == 2.85
+    assert p.grasp_down_phase_shoulder_lift_delta_rad == 1.20
+    assert p.grasp_down_phase_elbow_delta_rad == 1.15
+    assert p.grasp_down_phase_wrist1_delta_rad == 1.10
+    # GRASP_DOWN: strict + segment.
+    assert p.grasp_down_strict_xy_tol_m == 0.012
+    assert p.grasp_down_strict_z_tol_m == 0.025
+    assert p.grasp_down_strict_dist_tol_m == 0.025
+    assert p.grasp_down_segment_xy_step_m == 0.020
+    assert p.grasp_down_segment_z_step_m == 0.005
 
 
 def test_env_overrides_default(monkeypatch):

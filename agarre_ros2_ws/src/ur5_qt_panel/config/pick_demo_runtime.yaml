@@ -56,3 +56,31 @@ grasp_align_tcp_tol_m: 0.015
 basket_transport_tcp_tol_m: 0.060
 # Default genérico cuando ninguna fase específica aplica.
 direct_ik_tcp_tol_m: 0.040
+
+# ── GRASP_DOWN: branch guard (gates de seguridad de rama IK) ───────────────
+grasp_down_branch_guard_xy_tol_m: 0.010
+grasp_down_branch_guard_z_min_m: 0.015
+grasp_down_branch_guard_max_dev_rad: 0.35
+grasp_down_branch_guard_sum_dev_rad: 0.75
+
+# ── GRASP_DOWN: deltas máximos del branch IK (límites por junta) ───────────
+grasp_down_branch_max_delta_rad: 0.95
+grasp_down_branch_sum_delta_rad: 1.80
+grasp_down_branch_shoulder_lift_delta_rad: 0.80
+grasp_down_branch_elbow_delta_rad: 0.85
+grasp_down_branch_wrist1_delta_rad: 0.85
+
+# ── GRASP_DOWN: deltas máximos del phase IK (rama principal) ───────────────
+grasp_down_phase_max_delta_rad: 2.35
+grasp_down_phase_sum_delta_rad: 6.20
+grasp_down_phase_critical_sum_delta_rad: 2.85
+grasp_down_phase_shoulder_lift_delta_rad: 1.20
+grasp_down_phase_elbow_delta_rad: 1.15
+grasp_down_phase_wrist1_delta_rad: 1.10
+
+# ── GRASP_DOWN: tolerancias estrictas + paso del segmento ──────────────────
+grasp_down_strict_xy_tol_m: 0.012
+grasp_down_strict_z_tol_m: 0.025
+grasp_down_strict_dist_tol_m: 0.025
+grasp_down_segment_xy_step_m: 0.020
+grasp_down_segment_z_step_m: 0.005

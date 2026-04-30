@@ -111,6 +111,34 @@ class PickDemoParams:
     basket_transport_tcp_tol_m: float = 0.060       # PANEL_PICK_DEMO_BASKET_TRANSPORT_TCP_TOL_M
     direct_ik_tcp_tol_m: float = 0.040              # PANEL_PICK_DEMO_DIRECT_IK_TCP_TOL_M
 
+    # -- GRASP_DOWN: branch guard (gates de seguridad de rama IK) ---------
+    grasp_down_branch_guard_xy_tol_m: float = 0.010    # PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_XY_TOL_M
+    grasp_down_branch_guard_z_min_m: float = 0.015     # PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_Z_MIN_M
+    grasp_down_branch_guard_max_dev_rad: float = 0.35  # PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_MAX_DEV_RAD
+    grasp_down_branch_guard_sum_dev_rad: float = 0.75  # PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_SUM_DEV_RAD
+
+    # -- GRASP_DOWN: deltas máximos del branch IK (límites por junta) -----
+    grasp_down_branch_max_delta_rad: float = 0.95              # PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_MAX_DELTA_RAD
+    grasp_down_branch_sum_delta_rad: float = 1.80              # PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_SUM_DELTA_RAD
+    grasp_down_branch_shoulder_lift_delta_rad: float = 0.80    # PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_SHOULDER_LIFT_DELTA_RAD
+    grasp_down_branch_elbow_delta_rad: float = 0.85            # PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_ELBOW_DELTA_RAD
+    grasp_down_branch_wrist1_delta_rad: float = 0.85           # PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_WRIST1_DELTA_RAD
+
+    # -- GRASP_DOWN: deltas máximos del phase IK (rama principal) ---------
+    grasp_down_phase_max_delta_rad: float = 2.35               # PANEL_PICK_DEMO_GRASP_DOWN_PHASE_MAX_DELTA_RAD
+    grasp_down_phase_sum_delta_rad: float = 6.20               # PANEL_PICK_DEMO_GRASP_DOWN_PHASE_SUM_DELTA_RAD
+    grasp_down_phase_critical_sum_delta_rad: float = 2.85      # PANEL_PICK_DEMO_GRASP_DOWN_PHASE_CRITICAL_SUM_DELTA_RAD
+    grasp_down_phase_shoulder_lift_delta_rad: float = 1.20     # PANEL_PICK_DEMO_GRASP_DOWN_PHASE_SHOULDER_LIFT_DELTA_RAD
+    grasp_down_phase_elbow_delta_rad: float = 1.15             # PANEL_PICK_DEMO_GRASP_DOWN_PHASE_ELBOW_DELTA_RAD
+    grasp_down_phase_wrist1_delta_rad: float = 1.10            # PANEL_PICK_DEMO_GRASP_DOWN_PHASE_WRIST1_DELTA_RAD
+
+    # -- GRASP_DOWN: tolerancias estrictas + paso del segmento ------------
+    grasp_down_strict_xy_tol_m: float = 0.012     # PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M
+    grasp_down_strict_z_tol_m: float = 0.025      # PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M
+    grasp_down_strict_dist_tol_m: float = 0.025   # PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M
+    grasp_down_segment_xy_step_m: float = 0.020   # PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_XY_STEP_M
+    grasp_down_segment_z_step_m: float = 0.005    # PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M
+
 
 # Mapeo campo dataclass → nombre de env var.
 # Útil para implementar la prioridad env > YAML > default y para auditar
@@ -133,6 +161,26 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "grasp_align_tcp_tol_m":            "PANEL_PICK_DEMO_GRASP_ALIGN_TCP_TOL_M",
     "basket_transport_tcp_tol_m":       "PANEL_PICK_DEMO_BASKET_TRANSPORT_TCP_TOL_M",
     "direct_ik_tcp_tol_m":              "PANEL_PICK_DEMO_DIRECT_IK_TCP_TOL_M",
+    "grasp_down_branch_guard_xy_tol_m":           "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_XY_TOL_M",
+    "grasp_down_branch_guard_z_min_m":            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_Z_MIN_M",
+    "grasp_down_branch_guard_max_dev_rad":        "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_MAX_DEV_RAD",
+    "grasp_down_branch_guard_sum_dev_rad":        "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_GUARD_SUM_DEV_RAD",
+    "grasp_down_branch_max_delta_rad":            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_MAX_DELTA_RAD",
+    "grasp_down_branch_sum_delta_rad":            "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_SUM_DELTA_RAD",
+    "grasp_down_branch_shoulder_lift_delta_rad":  "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_SHOULDER_LIFT_DELTA_RAD",
+    "grasp_down_branch_elbow_delta_rad":          "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_ELBOW_DELTA_RAD",
+    "grasp_down_branch_wrist1_delta_rad":         "PANEL_PICK_DEMO_GRASP_DOWN_BRANCH_WRIST1_DELTA_RAD",
+    "grasp_down_phase_max_delta_rad":             "PANEL_PICK_DEMO_GRASP_DOWN_PHASE_MAX_DELTA_RAD",
+    "grasp_down_phase_sum_delta_rad":             "PANEL_PICK_DEMO_GRASP_DOWN_PHASE_SUM_DELTA_RAD",
+    "grasp_down_phase_critical_sum_delta_rad":    "PANEL_PICK_DEMO_GRASP_DOWN_PHASE_CRITICAL_SUM_DELTA_RAD",
+    "grasp_down_phase_shoulder_lift_delta_rad":   "PANEL_PICK_DEMO_GRASP_DOWN_PHASE_SHOULDER_LIFT_DELTA_RAD",
+    "grasp_down_phase_elbow_delta_rad":           "PANEL_PICK_DEMO_GRASP_DOWN_PHASE_ELBOW_DELTA_RAD",
+    "grasp_down_phase_wrist1_delta_rad":          "PANEL_PICK_DEMO_GRASP_DOWN_PHASE_WRIST1_DELTA_RAD",
+    "grasp_down_strict_xy_tol_m":                 "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_XY_TOL_M",
+    "grasp_down_strict_z_tol_m":                  "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_Z_TOL_M",
+    "grasp_down_strict_dist_tol_m":               "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M",
+    "grasp_down_segment_xy_step_m":               "PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_XY_STEP_M",
+    "grasp_down_segment_z_step_m":                "PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M",
 }
 
 
