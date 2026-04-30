@@ -61,21 +61,9 @@ _DEFAULT_GRIPPER_OBJECTS = (
 )
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
-
-def _safe_unique_dir(root: Path) -> Path:
-    """Crea un directorio nuevo bajo ``root`` con timestamp + sufijo si colisiona."""
-
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    candidate = root / stamp
-    suffix = 1
-    while candidate.exists():
-        candidate = root / f"{stamp}_{suffix}"
-        suffix += 1
-    candidate.mkdir(parents=True, exist_ok=False)
-    return candidate
+# Helpers puros (re-exportados desde evidence_helpers para que sean
+# testables sin rclpy).
+from .evidence_helpers import now_iso as _now_iso, safe_unique_dir as _safe_unique_dir
 
 
 class EvidenceLogger(Node):
