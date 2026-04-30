@@ -42,6 +42,33 @@ def _inject_ur5_tools_stub() -> None:
     stub.ur5_kinematics = ki
     sys.modules["ur5_tools.ur5_kinematics"] = ki
 
+    # Stub mínimo para ur5_tools.moveit_bridge.params (F2 bucket D).
+    # Los tests no necesitan los valores reales — basta con que el
+    # módulo sea importable y exponga get_moveit_bridge_params().
+    from dataclasses import dataclass
+
+    mb_pkg = types.ModuleType("ur5_tools.moveit_bridge")
+    mb_params = types.ModuleType("ur5_tools.moveit_bridge.params")
+
+    @dataclass(frozen=True)
+    class _StubMoveItBridgeParams:
+        allow_feedback_early_success: bool = False
+        allow_joint_early_success: bool = False
+        allow_ee_early_success: bool = False
+        approach_internal_replan: bool = True
+        approach_skip_constraints: bool = False
+        approach_relaxed_constraint_retry: bool = True
+        request_timeout_sec: float = 60.0
+
+    _stub_mb_params_instance = _StubMoveItBridgeParams()
+    mb_params.MoveItBridgeParams = _StubMoveItBridgeParams
+    mb_params.get_moveit_bridge_params = lambda: _stub_mb_params_instance
+    mb_params.reset_moveit_bridge_params_cache = lambda: None
+    mb_pkg.params = mb_params
+    stub.moveit_bridge = mb_pkg
+    sys.modules["ur5_tools.moveit_bridge"] = mb_pkg
+    sys.modules["ur5_tools.moveit_bridge.params"] = mb_params
+
 
 _inject_ur5_tools_stub()
 

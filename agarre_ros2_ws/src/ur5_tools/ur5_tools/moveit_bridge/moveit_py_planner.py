@@ -28,6 +28,8 @@ from ament_index_python.packages import (
     PackageNotFoundError,
     get_package_share_directory,
 )
+from .params import get_moveit_bridge_params as _get_moveit_bridge_params
+
 from geometry_msgs.msg import PoseStamped
 from moveit_configs_utils import MoveItConfigsBuilder
 from moveit_msgs.msg import Constraints
@@ -120,12 +122,7 @@ class MoveItPyPlannerMixin:
                     phase_upper = str(phase_label or "").strip().upper()
                     relaxed_retry_allowed = (
                         phase_upper == "APPROACH"
-                        and str(
-                            os.environ.get(
-                                "PANEL_MOVEIT_BRIDGE_APPROACH_RELAXED_CONSTRAINT_RETRY",
-                                "1",
-                            )
-                        ).strip().lower() not in ("0", "false", "no", "off")
+                        and _get_moveit_bridge_params().approach_relaxed_constraint_retry
                     )
                     if relaxed_retry_allowed:
                         strict_tol = max(

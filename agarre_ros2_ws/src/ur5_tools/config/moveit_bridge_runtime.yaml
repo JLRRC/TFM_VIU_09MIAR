@@ -1,0 +1,10 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_tools/config/moveit_bridge_runtime.yaml
+# Contenido: Tunables runtime del bridge MoveIt (F2 bucket D).
+
+allow_feedback_early_success: false
+allow_joint_early_success: false
+allow_ee_early_success: false
+approach_internal_replan: true
+approach_skip_constraints: false
+approach_relaxed_constraint_retry: true
+request_timeout_sec: 60.0

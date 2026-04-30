@@ -38,6 +38,8 @@ import threading
 import time
 from typing import Any
 
+from .params import get_moveit_bridge_params as _get_moveit_bridge_params
+
 from action_msgs.msg import GoalStatus
 from control_msgs.action import FollowJointTrajectory
 from control_msgs.msg import JointTolerance
@@ -336,15 +338,10 @@ class ExecutorMixin:
                 0.20,
                 self._env_float("PANEL_MOVEIT_BRIDGE_FEEDBACK_GOAL_SETTLE_SEC", 0.35),
             )
-            allow_feedback_early_success = str(
-                os.environ.get("PANEL_MOVEIT_BRIDGE_ALLOW_FEEDBACK_EARLY_SUCCESS", "0")
-            ).strip().lower() in ("1", "true", "yes", "on")
-            allow_joint_early_success = str(
-                os.environ.get("PANEL_MOVEIT_BRIDGE_ALLOW_JOINT_EARLY_SUCCESS", "0")
-            ).strip().lower() in ("1", "true", "yes", "on")
-            allow_ee_early_success = str(
-                os.environ.get("PANEL_MOVEIT_BRIDGE_ALLOW_EE_EARLY_SUCCESS", "0")
-            ).strip().lower() in ("1", "true", "yes", "on")
+            _mb_params = _get_moveit_bridge_params()
+            allow_feedback_early_success = _mb_params.allow_feedback_early_success
+            allow_joint_early_success = _mb_params.allow_joint_early_success
+            allow_ee_early_success = _mb_params.allow_ee_early_success
             ee_goal_check_tol_m = max(
                 0.02,
                 float(ee_target_tol_m)
@@ -940,12 +937,7 @@ class ExecutorMixin:
                         )
                         if phase_label_upper == "APPROACH" and retry_timeout > approach_max_total_timeout_sec:
                             retry_timeout = float(approach_max_total_timeout_sec)
-                        approach_internal_replan_enabled = str(
-                            os.environ.get(
-                                "PANEL_MOVEIT_BRIDGE_APPROACH_INTERNAL_REPLAN",
-                                "1",
-                            )
-                        ).strip().lower() not in ("0", "false", "no", "off")
+                        approach_internal_replan_enabled = _get_moveit_bridge_params().approach_internal_replan
                         if not (phase_label_upper == "APPROACH" and approach_internal_replan_enabled):
                             self.get_logger().warning(
                                 "[BRIDGE_EXEC] approach long-wait terminal failure "
@@ -1198,13 +1190,7 @@ class ExecutorMixin:
                     phase_label_upper == "APPROACH"
                     and int(approach_replan_attempt) < int(approach_replan_max_attempts)
                 ):
-                    approach_internal_replan_enabled = str(
-                        os.environ.get(
-                            "PANEL_MOVEIT_BRIDGE_APPROACH_INTERNAL_REPLAN",
-                            "1",
-                        )
-                        or "0"
-                    ).strip().lower() not in ("0", "false", "no", "off")
+                    approach_internal_replan_enabled = _get_moveit_bridge_params().approach_internal_replan
                     if not approach_internal_replan_enabled:
                         meta["status_text"] = "APPROACH_PATH_TOL_TERMINAL"
                         meta["joint_goal_check"] = reached_after_abort_detail
@@ -1323,13 +1309,7 @@ class ExecutorMixin:
                     phase_label_upper == "APPROACH"
                     and int(approach_replan_attempt) < int(approach_replan_max_attempts)
                 ):
-                    approach_internal_replan_enabled = str(
-                        os.environ.get(
-                            "PANEL_MOVEIT_BRIDGE_APPROACH_INTERNAL_REPLAN",
-                            "1",
-                        )
-                        or "0"
-                    ).strip().lower() not in ("0", "false", "no", "off")
+                    approach_internal_replan_enabled = _get_moveit_bridge_params().approach_internal_replan
                     if not approach_internal_replan_enabled:
                         meta["status_text"] = "APPROACH_GOAL_TIME_TERMINAL"
                         meta["joint_goal_check"] = reached_after_goal_time_detail

@@ -26,6 +26,8 @@ from typing import Any
 
 import numpy as np
 
+from .params import get_moveit_bridge_params as _get_moveit_bridge_params
+
 from moveit_msgs.msg import Constraints, JointConstraint, RobotState as MoveItRobotStateMsg
 from sensor_msgs.msg import JointState
 
@@ -118,21 +120,15 @@ class JointStateHelpersMixin:
             return None
         phase_upper = str(phase_label or "").strip().upper()
         if phase_upper == "APPROACH":
-            skip_approach_raw = str(
-                os.environ.get(
-                    "PANEL_MOVEIT_BRIDGE_APPROACH_SKIP_CONSTRAINTS",
-                    "0",
-                )
-            ).strip().lower()
-            if skip_approach_raw not in ("0", "false", "no", "off"):
+            if _get_moveit_bridge_params().approach_skip_constraints:
                 self.get_logger().info(
                     "[BRIDGE_CONSTRAINT] skip constraints for APPROACH "
-                    f"phase={phase_upper} env={skip_approach_raw or '1'}"
+                    f"phase={phase_upper} env=1"
                 )
                 self.get_logger().info(
                     "[PICK][MOVEIT][CONSTRAINTS] "
                     f"phase={phase_upper} request_uuid={request_uuid or 'n/a'} "
-                    f"applied=false reason=approach_skip_env env={skip_approach_raw or '1'}"
+                    "applied=false reason=approach_skip_env env=1"
                 )
                 return None
         tol = float(tol_override) if tol_override is not None else self._path_constraint_joint_tol

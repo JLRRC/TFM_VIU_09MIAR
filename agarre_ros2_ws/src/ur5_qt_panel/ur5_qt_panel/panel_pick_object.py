@@ -51,6 +51,9 @@ from .panel_pick_geometry import compute_pick_height_profile
 from .panel_pick_object_params import (
     get_pick_object_params as _get_pick_object_params,
 )
+from ur5_tools.moveit_bridge.params import (
+    get_moveit_bridge_params as _get_moveit_bridge_params,
+)
 from .panel_robot_presets import (
     JOINT_BASKET_POSE_RAD,
     JOINT_GRASP_DOWN_POSE_RAD,
@@ -2967,9 +2970,7 @@ def run_pick_object(panel) -> None:
                     )
                     bridge_recovered = _ensure_moveit_bridge_path(moveit_pose_topic)
                     try:
-                        bridge_request_timeout = float(
-                            os.environ.get("PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC", "60.0")
-                        )
+                        bridge_request_timeout = _get_moveit_bridge_params().request_timeout_sec
                     except Exception:
                         bridge_request_timeout = 60.0
                     bridge_request_timeout = max(2.0, bridge_request_timeout)
