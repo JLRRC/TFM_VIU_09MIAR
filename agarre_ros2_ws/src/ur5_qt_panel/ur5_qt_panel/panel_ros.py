@@ -25,6 +25,7 @@ from .panel_config import (
     CAMERA_USE_BGR,
     CAMERA_COPY_FRAME,
 )
+from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 
 CLOCK_MAX_AGE_SEC = 8.0
 
@@ -150,47 +151,20 @@ class RosWorker(QObject):
         self._last_joint_wall: float = 0.0
         self._depth_cache: Dict[str, Tuple[float, float, int]] = {}
         self._latest_depth_frame: Dict[str, Tuple[object, float]] = {}
-        self._camera_connect_service = str(
-            os.environ.get("PANEL_CAMERA_CONNECT_TRIGGER_SERVICE", "/panel/camera_connect")
-            or "/panel/camera_connect"
-        ).strip() or "/panel/camera_connect"
-        self._camera_disconnect_service = str(
-            os.environ.get("PANEL_CAMERA_DISCONNECT_TRIGGER_SERVICE", "/panel/camera_disconnect")
-            or "/panel/camera_disconnect"
-        ).strip() or "/panel/camera_disconnect"
-        self._recover_topic = str(
-            os.environ.get("PANEL_RECOVER_TRIGGER_TOPIC", "/panel/recover") or "/panel/recover"
-        ).strip() or "/panel/recover"
-        self._recover_service = str(
-            os.environ.get("PANEL_RECOVER_TRIGGER_SERVICE", "/panel/recover") or "/panel/recover"
-        ).strip() or "/panel/recover"
-        self._tfm_infer_topic = str(
-            os.environ.get("PANEL_TFM_INFER_TRIGGER_TOPIC", "/panel/tfm_infer") or "/panel/tfm_infer"
-        ).strip() or "/panel/tfm_infer"
-        self._tfm_infer_service = str(
-            os.environ.get("PANEL_TFM_INFER_TRIGGER_SERVICE", "/panel/tfm_infer") or "/panel/tfm_infer"
-        ).strip() or "/panel/tfm_infer"
-        self._tfm_execute_topic = str(
-            os.environ.get("PANEL_TFM_EXECUTE_TRIGGER_TOPIC", "/panel/tfm_execute") or "/panel/tfm_execute"
-        ).strip() or "/panel/tfm_execute"
-        self._tfm_execute_service = str(
-            os.environ.get("PANEL_TFM_EXECUTE_TRIGGER_SERVICE", "/panel/tfm_execute") or "/panel/tfm_execute"
-        ).strip() or "/panel/tfm_execute"
-        self._pick_demo_service = str(
-            os.environ.get("PANEL_PICK_DEMO_TRIGGER_SERVICE", "/panel/pick_demo") or "/panel/pick_demo"
-        ).strip() or "/panel/pick_demo"
-        self._pick_object_topic = str(
-            os.environ.get("PANEL_PICK_OBJECT_TRIGGER_TOPIC", "/panel/pick_object") or "/panel/pick_object"
-        ).strip() or "/panel/pick_object"
-        self._pick_object_service = str(
-            os.environ.get("PANEL_PICK_OBJECT_TRIGGER_SERVICE", "/panel/pick_object") or "/panel/pick_object"
-        ).strip() or "/panel/pick_object"
-        self._select_object_topic = str(
-            os.environ.get("PANEL_SELECT_OBJECT_TOPIC", "/panel/select_object") or "/panel/select_object"
-        ).strip() or "/panel/select_object"
-        self._select_object_service = str(
-            os.environ.get("PANEL_SELECT_OBJECT_SERVICE", "/panel/select_object") or "/panel/select_object"
-        ).strip() or "/panel/select_object"
+        _ros_params = _get_panel_ros_params()
+        self._camera_connect_service = _ros_params.camera_connect_trigger_service.strip() or "/panel/camera_connect"
+        self._camera_disconnect_service = _ros_params.camera_disconnect_trigger_service.strip() or "/panel/camera_disconnect"
+        self._recover_topic = _ros_params.recover_trigger_topic.strip() or "/panel/recover"
+        self._recover_service = _ros_params.recover_trigger_service.strip() or "/panel/recover"
+        self._tfm_infer_topic = _ros_params.tfm_infer_trigger_topic.strip() or "/panel/tfm_infer"
+        self._tfm_infer_service = _ros_params.tfm_infer_trigger_service.strip() or "/panel/tfm_infer"
+        self._tfm_execute_topic = _ros_params.tfm_execute_trigger_topic.strip() or "/panel/tfm_execute"
+        self._tfm_execute_service = _ros_params.tfm_execute_trigger_service.strip() or "/panel/tfm_execute"
+        self._pick_demo_service = _ros_params.pick_demo_trigger_service.strip() or "/panel/pick_demo"
+        self._pick_object_topic = _ros_params.pick_object_trigger_topic.strip() or "/panel/pick_object"
+        self._pick_object_service = _ros_params.pick_object_trigger_service.strip() or "/panel/pick_object"
+        self._select_object_topic = _ros_params.select_object_topic.strip() or "/panel/select_object"
+        self._select_object_service = _ros_params.select_object_service.strip() or "/panel/select_object"
         self._camera_connect_srv = None
         self._camera_disconnect_srv = None
         self._recover_sub = None
@@ -204,20 +178,12 @@ class RosWorker(QObject):
         self._pick_object_srv = None
         self._select_object_sub = None
         self._select_object_srv = None
-        self._pick_demo_timeout_sec = float(
-            os.environ.get("PANEL_PICK_DEMO_SERVICE_TIMEOUT_SEC", "120.0") or "120.0"
-        )
+        self._pick_demo_timeout_sec = _ros_params.pick_demo_service_timeout_sec
         self._pick_demo_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
-        self._object_select_timeout_sec = float(
-            os.environ.get("PANEL_SELECT_OBJECT_SERVICE_TIMEOUT_SEC", "10.0") or "10.0"
-        )
+        self._object_select_timeout_sec = _ros_params.select_object_service_timeout_sec
         self._object_select_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
-        self._tfm_infer_timeout_sec = float(
-            os.environ.get("PANEL_TFM_INFER_SERVICE_TIMEOUT_SEC", "30.0") or "30.0"
-        )
-        self._tfm_execute_timeout_sec = float(
-            os.environ.get("PANEL_TFM_EXECUTE_SERVICE_TIMEOUT_SEC", "480.0") or "480.0"
-        )
+        self._tfm_infer_timeout_sec = _ros_params.tfm_infer_service_timeout_sec
+        self._tfm_execute_timeout_sec = _ros_params.tfm_execute_service_timeout_sec
         self._tfm_infer_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
         self._tfm_execute_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
         self._cleanup_done = False
@@ -1118,7 +1084,7 @@ class RosWorker(QObject):
         wait_timeout = max(0.1, self._object_select_timeout_sec)
         remote_wait_timeout = max(
             2.0,
-            float(os.environ.get("PANEL_REMOTE_SELECT_ON_TABLE_WAIT_SEC", "8.0") or 8.0) + 5.0,
+            _get_panel_ros_params().remote_select_on_table_wait_sec + 5.0,
         )
         ack_ok = done.wait(timeout=max(wait_timeout, remote_wait_timeout))
         with self._lock:
@@ -1544,14 +1510,7 @@ class RosWorker(QObject):
             if ReentrantCallbackGroup is not None:
                 self._service_callback_group = ReentrantCallbackGroup()
                 self._io_callback_group = ReentrantCallbackGroup()
-            executor_threads = 2
-            try:
-                executor_threads = int(
-                    os.environ.get("PANEL_ROS_EXECUTOR_THREADS", "3") or "3"
-                )
-            except Exception:
-                executor_threads = 3
-            executor_threads = max(1, executor_threads)
+            executor_threads = max(1, _get_panel_ros_params().ros_executor_threads)
             if MultiThreadedExecutor is not None and executor_threads > 1:
                 self._exec = MultiThreadedExecutor(num_threads=executor_threads)
                 self.log.emit(

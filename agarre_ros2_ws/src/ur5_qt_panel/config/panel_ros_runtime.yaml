@@ -1,0 +1,39 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/config/panel_ros_runtime.yaml
+# Contenido: Servicios/topics ROS del panel + timeouts asociados (F2 bucket B).
+# Uso: editar valores y relanzar el panel; los env vars siguen teniendo
+# prioridad si quieres override puntual.
+
+# -- Camera triggers --
+camera_connect_trigger_service: /panel/camera_connect
+camera_disconnect_trigger_service: /panel/camera_disconnect
+
+# -- Recover --
+recover_trigger_topic: /panel/recover
+recover_trigger_service: /panel/recover
+
+# -- TFM --
+tfm_infer_trigger_topic: /panel/tfm_infer
+tfm_infer_trigger_service: /panel/tfm_infer
+tfm_execute_trigger_topic: /panel/tfm_execute
+tfm_execute_trigger_service: /panel/tfm_execute
+tfm_infer_service_timeout_sec: 30.0
+tfm_execute_service_timeout_sec: 480.0
+
+# -- Pick demo --
+pick_demo_trigger_service: /panel/pick_demo
+pick_demo_service_timeout_sec: 120.0
+
+# -- Pick object --
+pick_object_trigger_topic: /panel/pick_object
+pick_object_trigger_service: /panel/pick_object
+
+# -- Select object --
+select_object_topic: /panel/select_object
+select_object_service: /panel/select_object
+select_object_service_timeout_sec: 10.0
+
+# -- Remote select gating --
+remote_select_on_table_wait_sec: 8.0
+
+# -- ROS executor --
+ros_executor_threads: 3
