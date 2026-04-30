@@ -22,6 +22,7 @@ from ur5_qt_panel.panel_pick_demo_params import (
     ENV_VAR_BY_FIELD,
     PickDemoParams,
     load_pick_demo_params,
+    reset_pick_demo_params_cache,
 )
 
 
@@ -30,6 +31,9 @@ def _isolate_env(monkeypatch):
     """Ningún env de la familia PANEL_PICK_DEMO_ debe filtrarse al test."""
     for env_name in ENV_VAR_BY_FIELD.values():
         monkeypatch.delenv(env_name, raising=False)
+    reset_pick_demo_params_cache()
+    yield
+    reset_pick_demo_params_cache()
 
 
 def test_defaults_match_dataclass():
@@ -52,6 +56,13 @@ def test_defaults_have_expected_values():
     assert p.grasp_down_ik_err_tol == 0.080
     assert p.grasp_down_ik_seed_weight == 0.65
     assert p.grasp_down_rot_weight == 0.10
+    # Tolerancias TCP por fase (consumidas en directo_geometry).
+    assert p.approach_coarse_tcp_tol_m == 0.015
+    assert p.approach_coarse_refine_tcp_tol_m == 0.006
+    assert p.grasp_down_tcp_tol_m == 0.020
+    assert p.grasp_align_tcp_tol_m == 0.015
+    assert p.basket_transport_tcp_tol_m == 0.060
+    assert p.direct_ik_tcp_tol_m == 0.040
 
 
 def test_env_overrides_default(monkeypatch):

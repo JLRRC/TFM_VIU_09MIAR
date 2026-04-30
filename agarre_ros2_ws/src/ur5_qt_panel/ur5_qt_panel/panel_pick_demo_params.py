@@ -101,6 +101,16 @@ class PickDemoParams:
     grasp_down_ik_seed_weight: float = 0.65   # PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT
     grasp_down_rot_weight: float = 0.10       # PANEL_PICK_DEMO_GRASP_DOWN_ROT_WEIGHT
 
+    # -- Tolerancias TCP por fase del pick (DIRECTO) ----------------------
+    # Consumidas en directo_geometry._direct_runtime_target_tol_m. Cada fase
+    # del flujo tiene su propia tolerancia objetivo del TCP en metros.
+    approach_coarse_tcp_tol_m: float = 0.015        # PANEL_PICK_DEMO_APPROACH_COARSE_TCP_TOL_M
+    approach_coarse_refine_tcp_tol_m: float = 0.006 # PANEL_PICK_DEMO_APPROACH_COARSE_REFINE_TCP_TOL_M
+    grasp_down_tcp_tol_m: float = 0.020             # PANEL_PICK_DEMO_GRASP_DOWN_TCP_TOL_M
+    grasp_align_tcp_tol_m: float = 0.015            # PANEL_PICK_DEMO_GRASP_ALIGN_TCP_TOL_M
+    basket_transport_tcp_tol_m: float = 0.060       # PANEL_PICK_DEMO_BASKET_TRANSPORT_TCP_TOL_M
+    direct_ik_tcp_tol_m: float = 0.040              # PANEL_PICK_DEMO_DIRECT_IK_TCP_TOL_M
+
 
 # Mapeo campo dataclass → nombre de env var.
 # Útil para implementar la prioridad env > YAML > default y para auditar
@@ -117,6 +127,12 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "grasp_down_ik_err_tol":           "PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL",
     "grasp_down_ik_seed_weight":       "PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT",
     "grasp_down_rot_weight":           "PANEL_PICK_DEMO_GRASP_DOWN_ROT_WEIGHT",
+    "approach_coarse_tcp_tol_m":        "PANEL_PICK_DEMO_APPROACH_COARSE_TCP_TOL_M",
+    "approach_coarse_refine_tcp_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_REFINE_TCP_TOL_M",
+    "grasp_down_tcp_tol_m":             "PANEL_PICK_DEMO_GRASP_DOWN_TCP_TOL_M",
+    "grasp_align_tcp_tol_m":            "PANEL_PICK_DEMO_GRASP_ALIGN_TCP_TOL_M",
+    "basket_transport_tcp_tol_m":       "PANEL_PICK_DEMO_BASKET_TRANSPORT_TCP_TOL_M",
+    "direct_ik_tcp_tol_m":              "PANEL_PICK_DEMO_DIRECT_IK_TCP_TOL_M",
 }
 
 
@@ -191,3 +207,29 @@ def load_pick_demo_params(yaml_path: Optional[Path] = None) -> PickDemoParams:
     if not overrides:
         return base
     return PickDemoParams(**{**{f.name: getattr(base, f.name) for f in fields(base)}, **overrides})
+
+
+# ---------------------------------------------------------------------------
+# Lazy singleton — usado por panel_pick_demo y directo_geometry para evitar
+# re-leer YAML/env en cada gate del pick. Vive aquí para que ambos módulos
+# importen el mismo helper sin riesgo de dependencia circular.
+# ---------------------------------------------------------------------------
+_PICK_DEMO_PARAMS_CACHE: Optional[PickDemoParams] = None
+
+
+def get_pick_demo_params() -> PickDemoParams:
+    """Lazy singleton de PickDemoParams (env > YAML > default).
+
+    F2: las lecturas migradas usan este helper en lugar de os.environ.get.
+    Para invalidar (tests), usa reset_pick_demo_params_cache().
+    """
+    global _PICK_DEMO_PARAMS_CACHE
+    if _PICK_DEMO_PARAMS_CACHE is None:
+        _PICK_DEMO_PARAMS_CACHE = load_pick_demo_params()
+    return _PICK_DEMO_PARAMS_CACHE
+
+
+def reset_pick_demo_params_cache() -> None:
+    """Invalida el singleton. Útil en tests que mutan env vars."""
+    global _PICK_DEMO_PARAMS_CACHE
+    _PICK_DEMO_PARAMS_CACHE = None

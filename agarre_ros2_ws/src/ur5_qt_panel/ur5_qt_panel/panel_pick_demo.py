@@ -56,7 +56,11 @@ from .panel_config import (
     GRIPPER_JOINT_NAMES,
 )
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
-from .panel_pick_demo_params import load_pick_demo_params, PickDemoParams
+from .panel_pick_demo_params import (
+    load_pick_demo_params,
+    PickDemoParams,
+    get_pick_demo_params as _get_pick_demo_params,
+)
 from .panel_objects import (
     mark_object_grasped,
     mark_object_attached,
@@ -118,21 +122,6 @@ from .pick_demo.internal_helpers import (
     _validate_demo_transport_follow,
     _wait_for_demo_runtime_target_progress,
 )
-
-_PICK_DEMO_PARAMS_CACHE: PickDemoParams | None = None
-
-
-def _get_pick_demo_params() -> PickDemoParams:
-    """Lazy singleton de PickDemoParams (env > YAML > default).
-
-    F2: las lecturas migradas usan este helper en lugar de os.environ.get.
-    Para invalidar (tests), reset _PICK_DEMO_PARAMS_CACHE = None.
-    """
-    global _PICK_DEMO_PARAMS_CACHE
-    if _PICK_DEMO_PARAMS_CACHE is None:
-        _PICK_DEMO_PARAMS_CACHE = load_pick_demo_params()
-    return _PICK_DEMO_PARAMS_CACHE
-
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(

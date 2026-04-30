@@ -13,6 +13,8 @@ import math
 import os
 from typing import Optional
 
+from .panel_pick_demo_params import get_pick_demo_params
+
 
 # ---------------------------------------------------------------------------
 # Math primitives
@@ -105,57 +107,22 @@ def _effective_direct_grasp_z(source_frame: str, requested_offset_m: float) -> f
 
 def _direct_runtime_target_tol_m(label: str) -> float:
     label_name = str(label or "").strip().upper()
+    p = get_pick_demo_params()
     if label_name in {"APPROACH_COARSE", "APPROACH_COARSE_XY_CORR", "APPROACH_COARSE_Z_CORR"}:
-        return max(
-            0.006,
-            float(
-                os.environ.get(
-                    "PANEL_PICK_DEMO_APPROACH_COARSE_TCP_TOL_M",
-                    "0.015",
-                )
-                or 0.015
-            ),
-        )
+        return max(0.006, p.approach_coarse_tcp_tol_m)
     if label_name == "APPROACH_COARSE_REFINE":
-        return max(
-            0.006,
-            float(
-                os.environ.get(
-                    "PANEL_PICK_DEMO_APPROACH_COARSE_REFINE_TCP_TOL_M",
-                    "0.006",
-                )
-                or 0.006
-            ),
-        )
+        return max(0.006, p.approach_coarse_refine_tcp_tol_m)
     if label_name == "GRASP_DOWN_JOINT":
-        return max(
-            0.005,
-            float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_TCP_TOL_M", "0.020") or 0.020),
-        )
+        return max(0.005, p.grasp_down_tcp_tol_m)
     if label_name == "GRASP_ALIGN_IK":
-        return max(
-            0.005,
-            float(os.environ.get("PANEL_PICK_DEMO_GRASP_ALIGN_TCP_TOL_M", "0.015") or 0.015),
-        )
+        return max(0.005, p.grasp_align_tcp_tol_m)
     # CESTA_STAGE_* (transport hacia cesta) y CESTA_RELEASE: la cesta es
     # grande comparada con la pinza; 40mm de tolerancia (default heredado)
     # bloqueaba los TRANSPORT_POSTCHECK con error 49mm (ver Layer 9
-    # 2026-04-27). Default elevado a 60mm; override via env si hace falta.
+    # 2026-04-27). Default elevado a 60mm; override via env/YAML si hace falta.
     if label_name.startswith("CESTA_STAGE_") or label_name == "CESTA_RELEASE":
-        return max(
-            0.02,
-            float(
-                os.environ.get(
-                    "PANEL_PICK_DEMO_BASKET_TRANSPORT_TCP_TOL_M",
-                    "0.060",
-                )
-                or 0.060
-            ),
-        )
-    return max(
-        0.01,
-        float(os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_TCP_TOL_M", "0.040") or 0.040),
-    )
+        return max(0.02, p.basket_transport_tcp_tol_m)
+    return max(0.01, p.direct_ik_tcp_tol_m)
 
 
 def pick_demo_target_semantics(phase_name: str) -> tuple[str, str]:

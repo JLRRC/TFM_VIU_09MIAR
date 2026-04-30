@@ -196,6 +196,15 @@ class TestEffectiveDirectGraspZ:
 # ---------------------------------------------------------------------------
 
 class TestDirectRuntimeTargetTolM:
+    @pytest.fixture(autouse=True)
+    def _reset_params_cache(self):
+        """Invalida el singleton de PickDemoParams para que cada test
+        re-lea env vars frescos (el helper get_pick_demo_params cachea)."""
+        from ur5_qt_panel.panel_pick_demo_params import reset_pick_demo_params_cache
+        reset_pick_demo_params_cache()
+        yield
+        reset_pick_demo_params_cache()
+
     def test_approach_coarse_default(self, monkeypatch):
         monkeypatch.delenv("PANEL_PICK_DEMO_APPROACH_COARSE_TCP_TOL_M", raising=False)
         result = _direct_runtime_target_tol_m("APPROACH_COARSE")

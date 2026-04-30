@@ -43,3 +43,16 @@ move_sec: null
 grasp_down_ik_err_tol: 0.080
 grasp_down_ik_seed_weight: 0.65
 grasp_down_rot_weight: 0.10
+
+# ── Tolerancias TCP por fase del pick (DIRECTO) ────────────────────────────
+# Consumidas en directo_geometry._direct_runtime_target_tol_m. Cada fase
+# del flujo tiene su tolerancia objetivo del TCP en metros. Los defaults
+# coinciden con los fallbacks históricos de los env vars del mismo nombre.
+approach_coarse_tcp_tol_m: 0.015
+approach_coarse_refine_tcp_tol_m: 0.006
+grasp_down_tcp_tol_m: 0.020
+grasp_align_tcp_tol_m: 0.015
+# Cesta es grande: 60mm de tolerancia (Layer 9, 2026-04-27).
+basket_transport_tcp_tol_m: 0.060
+# Default genérico cuando ninguna fase específica aplica.
+direct_ik_tcp_tol_m: 0.040
