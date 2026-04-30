@@ -122,6 +122,13 @@ from .pick_demo.internal_helpers import (
     _validate_demo_transport_follow,
     _wait_for_demo_runtime_target_progress,
 )
+from .pick_demo.pure_helpers import (
+    iso_now as _iso_now,
+    json_safe as _json_safe,
+    vector_minus as _vector_minus,
+    vec_norm as _vec_norm,
+    z_delta as _z_delta,
+)
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -439,25 +446,6 @@ def run_pick_demo(panel) -> None:
             }
             demo_follow_confirmed = False
 
-            def _iso_now() -> str:
-                return datetime.now(timezone.utc).astimezone().isoformat(timespec="milliseconds")
-
-            def _json_safe(value):
-                if value is None:
-                    return None
-                if isinstance(value, (str, int, float, bool)):
-                    return value
-                if isinstance(value, Path):
-                    return str(value)
-                if isinstance(value, (list, tuple)):
-                    return [_json_safe(v) for v in value]
-                if isinstance(value, dict):
-                    return {str(k): _json_safe(v) for k, v in value.items()}
-                try:
-                    return float(value)
-                except Exception:
-                    return str(value)
-
             def _append_trace(line: str) -> None:
                 stamped = f"{_iso_now()} {line}"
                 try:
@@ -570,23 +558,6 @@ def run_pick_demo(panel) -> None:
             def _fmt_scalar(value, *, digits: int = 3) -> str:
                 return _pick_demo_fmt_scalar(value, digits=digits)
 
-            def _vector_minus(a, b):
-                av = _tuple3(a)
-                bv = _tuple3(b)
-                if av is None or bv is None:
-                    return None
-                return (
-                    float(av[0]) - float(bv[0]),
-                    float(av[1]) - float(bv[1]),
-                    float(av[2]) - float(bv[2]),
-                )
-
-            def _vec_norm(vec) -> float | None:
-                v = _tuple3(vec)
-                if v is None:
-                    return None
-                return math.sqrt((v[0] * v[0]) + (v[1] * v[1]) + (v[2] * v[2]))
-
             def _object_top_pose(pose):
                 pose3 = _tuple3(pose)
                 if pose3 is None:
@@ -601,13 +572,6 @@ def run_pick_demo(panel) -> None:
                     float(pose3[1]),
                     float(pose3[2]) + (0.5 * object_height_m),
                 )
-
-            def _z_delta(a, b) -> float | None:
-                av = _tuple3(a)
-                bv = _tuple3(b)
-                if av is None or bv is None:
-                    return None
-                return float(av[2]) - float(bv[2])
 
             def _resolved_align_object_base() -> tuple[tuple[float, float, float] | None, str, dict]:
                 obj_base_live = _tuple3(_live_object_base())
