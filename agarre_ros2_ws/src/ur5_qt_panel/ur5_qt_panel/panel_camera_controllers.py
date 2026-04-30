@@ -20,6 +20,7 @@ from .panel_config import (
     TF_INIT_GRACE_SEC,
     UR5_JOINT_NAMES,
 )
+from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 from .panel_utils import (
     list_controllers_state,
     rclpy,
@@ -178,19 +179,10 @@ def _controllers_ready(panel) -> Tuple[bool, str]:
             detail.append(f"unknown: {', '.join(unknown)}")
         panel._last_controller_check = now
         return False, "controllers not active (" + " | ".join(detail) + ")"
-    strict_action = str(os.environ.get("PANEL_STRICT_TRAJ_ACTION", "1")).strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
+    _ros_params = _get_panel_ros_params()
+    strict_action = _ros_params.strict_traj_action
     if strict_action and not panel._follow_joint_traj_ready():
-        expected = str(
-            os.environ.get(
-                "PANEL_EXPECTED_TRAJ_ACTION",
-                "/joint_trajectory_controller/follow_joint_trajectory",
-            )
-        ).strip()
+        expected = _ros_params.expected_traj_action.strip()
         panel._last_controller_check = now
         return False, f"follow_joint_traj_not_ready expected={expected}"
     panel._controllers_last_ok_ts = now

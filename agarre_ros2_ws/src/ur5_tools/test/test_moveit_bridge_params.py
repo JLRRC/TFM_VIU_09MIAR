@@ -37,6 +37,13 @@ def test_known_defaults():
     assert p.approach_internal_replan is True
     assert p.approach_relaxed_constraint_retry is True
     assert p.request_timeout_sec == 60.0
+    # F2 final wave: motion gating extensions
+    assert p.tf_gate_timeout_sec == 1.2
+    assert p.startup_timeout_sec == 40.0
+    assert p.wait_joint_target_max_age_sec == 0.35
+    assert p.wait_joint_target_max_vel_rad_s == 0.05
+    assert p.wait_joint_target_stable_samples == 3
+    assert p.disable_joint_wrap_align is False
 
 
 def test_env_flag_truthy(monkeypatch):

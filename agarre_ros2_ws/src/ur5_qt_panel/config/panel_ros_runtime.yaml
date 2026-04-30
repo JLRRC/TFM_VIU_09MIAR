@@ -37,3 +37,14 @@ remote_select_on_table_wait_sec: 8.0
 
 # -- ROS executor --
 ros_executor_threads: 3
+
+# -- Trajectory action / controller manager --
+expected_traj_action: /joint_trajectory_controller/follow_joint_trajectory
+strict_traj_action: true
+controller_manager: ""
+
+# -- ROS misc --
+remote_select_on_table_poll_sec: 0.25
+
+# -- Attach z-ref mode --
+attach_z_ref_mode: top

@@ -47,6 +47,7 @@ except Exception:  # pragma: no cover
         rclpy,
     )
 
+from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 
 
@@ -111,7 +112,7 @@ def _discover_controller_manager(node) -> str:
 def _controller_manager_path(preferred: str = "") -> str:
     if preferred:
         return preferred
-    env_path = os.environ.get("PANEL_CONTROLLER_MANAGER", "").strip()
+    env_path = _get_panel_ros_params().controller_manager.strip()
     if env_path:
         return env_path
     return "/controller_manager"

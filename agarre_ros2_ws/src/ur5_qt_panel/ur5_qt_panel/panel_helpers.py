@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from .panel_objects import bulk_update_object_positions, get_object_positions, is_on_table, recalc_object_states
 from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_process import ensure_dir
 from .panel_readiness import camera_not_ready_reason, controller_manager_not_ready_reason, controllers_not_ready_reason, list_controllers_not_ready_reason, manual_control_status, moveit_control_status, moveit_not_ready_reason, pick_ui_status, pose_info_not_ready_reason, ros_node_not_ready_reason, set_moveit_wait_status, tf_not_ready_reason
 from .panel_step_ui import build_step_window
@@ -1169,12 +1170,7 @@ def _joint_states_status(panel) -> Tuple[bool, str]:
     names = payload.get("name", []) or []
     if len(names) == 0:
         return False, f"{topic}:empty"
-    strict_identity = str(os.environ.get("PANEL_STRICT_JOINT_IDENTITY", "1")).strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
+    strict_identity = _get_panel_ui_params().strict_joint_identity
     if strict_identity:
         normalized = {_normalize_joint_name(str(n)) for n in names if str(n).strip()}
         missing = [jn for jn in UR5_JOINT_NAMES if jn not in normalized]

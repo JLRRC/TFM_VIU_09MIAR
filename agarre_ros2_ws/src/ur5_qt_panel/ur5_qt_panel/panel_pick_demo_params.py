@@ -240,6 +240,7 @@ class PickDemoParams:
     short_release_only: bool = False  # PANEL_PICK_DEMO_SHORT_RELEASE_ONLY
     skip_align_if_reachable: bool = True  # PANEL_PICK_DEMO_SKIP_ALIGN_IF_REACHABLE
     step_timeout_extra_sec: float = 0.0  # PANEL_PICK_DEMO_STEP_TIMEOUT_EXTRA_SEC
+    object_source_divergence_tol_m: float = 0.150  # PANEL_PICK_DEMO_OBJECT_SOURCE_DIVERGENCE_TOL_M
 
 
 # Mapeo campo dataclass → nombre de env var.
@@ -377,6 +378,7 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "short_release_only": "PANEL_PICK_DEMO_SHORT_RELEASE_ONLY",
     "skip_align_if_reachable": "PANEL_PICK_DEMO_SKIP_ALIGN_IF_REACHABLE",
     "step_timeout_extra_sec": "PANEL_PICK_DEMO_STEP_TIMEOUT_EXTRA_SEC",
+    "object_source_divergence_tol_m": "PANEL_PICK_DEMO_OBJECT_SOURCE_DIVERGENCE_TOL_M",
 }
 
 

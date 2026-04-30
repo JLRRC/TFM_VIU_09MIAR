@@ -11,6 +11,7 @@ import shlex
 import subprocess
 import time
 from typing import List, Optional, Set, Tuple
+from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 from .panel_state import MoveItState, SystemState
 from .panel_moveit_wait import wait_for_moveit_ready
 from .panel_objects import get_object_positions
@@ -585,18 +586,9 @@ def _world_frame_config_first(panel) -> str:
 def _follow_joint_traj_ready(panel) -> bool:
     if not ROS_AVAILABLE or ActionClient is None or FollowJointTrajectory is None:
         return False
-    strict_action = str(os.environ.get("PANEL_STRICT_TRAJ_ACTION", "1")).strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-    expected_action = str(
-        os.environ.get(
-            "PANEL_EXPECTED_TRAJ_ACTION",
-            "/joint_trajectory_controller/follow_joint_trajectory",
-        )
-    ).strip()
+    _ros_params = _get_panel_ros_params()
+    strict_action = _ros_params.strict_traj_action
+    expected_action = _ros_params.expected_traj_action.strip()
     action_names = set(panel._list_action_names())
     action_topics = set(panel._list_topic_names())
 

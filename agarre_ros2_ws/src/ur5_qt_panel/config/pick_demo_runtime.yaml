@@ -272,4 +272,6 @@ short_release_only: false
 skip_align_if_reachable: true
 # Tiempo extra de timeout por step
 step_timeout_extra_sec: 0
+# Tolerancia de divergencia entre fuentes de pose del objeto.
+object_source_divergence_tol_m: 0.150
 

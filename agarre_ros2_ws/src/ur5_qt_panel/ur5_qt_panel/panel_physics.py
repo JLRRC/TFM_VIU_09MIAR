@@ -103,16 +103,8 @@ class PanelPhysics:
             sx, sy, sz = (float(stable_pos[0]), float(stable_pos[1]), float(stable_pos[2]))
         except Exception:
             return raw_pos
-        divergence_tol_m = max(
-            0.05,
-            float(
-                os.environ.get(
-                    "PANEL_PICK_DEMO_OBJECT_SOURCE_DIVERGENCE_TOL_M",
-                    "0.150",
-                )
-                or 0.150
-            ),
-        )
+        from .panel_pick_demo_params import get_pick_demo_params as _gpd
+        divergence_tol_m = max(0.05, _gpd().object_source_divergence_tol_m)
         dx = float(raw_pos[0]) - sx
         dy = float(raw_pos[1]) - sy
         dz = float(raw_pos[2]) - sz

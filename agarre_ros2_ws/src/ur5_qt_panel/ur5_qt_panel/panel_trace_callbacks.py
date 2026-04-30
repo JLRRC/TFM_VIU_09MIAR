@@ -109,16 +109,8 @@ def _refresh_trace_data(panel):
             pose_wall = 0.0
     if object_name and object_name in pose_cache:
         wx, wy, wz = pose_cache[object_name]
-        divergence_tol_m = max(
-            0.05,
-            float(
-                os.environ.get(
-                    "PANEL_PICK_DEMO_OBJECT_SOURCE_DIVERGENCE_TOL_M",
-                    "0.150",
-                )
-                or 0.150
-            ),
-        )
+        from .panel_pick_demo_params import get_pick_demo_params as _gpd
+        divergence_tol_m = max(0.05, _gpd().object_source_divergence_tol_m)
         if stable_world is not None:
             dx = float(wx) - float(stable_world[0])
             dy = float(wy) - float(stable_world[1])

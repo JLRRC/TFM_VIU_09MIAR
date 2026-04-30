@@ -37,6 +37,12 @@ def test_str_default_camera_connect():
     assert p.camera_connect_trigger_service == "/panel/camera_connect"
     assert p.tfm_execute_service_timeout_sec == 480.0
     assert p.ros_executor_threads == 3
+    # F2 final wave: traj action / controller / attach z-ref
+    assert p.expected_traj_action == "/joint_trajectory_controller/follow_joint_trajectory"
+    assert p.strict_traj_action is True
+    assert p.controller_manager == ""
+    assert p.remote_select_on_table_poll_sec == 0.25
+    assert p.attach_z_ref_mode == "top"
 
 
 def test_env_overrides_str(monkeypatch):

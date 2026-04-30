@@ -704,7 +704,8 @@ def run_pick_object(panel) -> None:
         f"pose_source={pose_source}"
     )
     world_frame = WORLD_FRAME or "world"
-    if os.environ.get("DEBUG_PICK_OBJ", "0") == "1":
+    from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
+    if _get_panel_ui_params().debug_pick_obj:
         pose_topic = "/desired_grasp"
         result_topic = "/desired_grasp/result"
         pose_subs = panel.ros_worker.topic_subscriber_count(pose_topic)

@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import time
 from .panel_objects import bulk_update_object_positions, get_object_position, get_object_positions, get_object_state, is_on_table, recalc_object_states, update_object_state
+from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
 from .panel_pick_demo import run_pick_demo
 from .panel_utils import table_xy_to_pixel, world_xyz_to_pixel
@@ -348,11 +349,11 @@ def _on_remote_object_select_request(panel, name: str, source: str) -> None:
             return False
         wait_sec = max(
             2.0,
-            float(os.environ.get("PANEL_REMOTE_SELECT_ON_TABLE_WAIT_SEC", "8.0") or 8.0),
+            _get_panel_ros_params().remote_select_on_table_wait_sec,
         )
         poll_sec = max(
             0.1,
-            float(os.environ.get("PANEL_REMOTE_SELECT_ON_TABLE_POLL_SEC", "0.25") or 0.25),
+            _get_panel_ros_params().remote_select_on_table_poll_sec,
         )
         panel._emit_log(
             "[PICK][REMOTE][ACK] "

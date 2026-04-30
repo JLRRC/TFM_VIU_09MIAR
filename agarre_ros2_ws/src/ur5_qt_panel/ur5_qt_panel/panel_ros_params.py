@@ -92,6 +92,17 @@ class PanelRosParams:
     # -- ROS executor --
     ros_executor_threads: int = 3                                     # PANEL_ROS_EXECUTOR_THREADS
 
+    # -- Trajectory action / controller manager --
+    expected_traj_action: str = "/joint_trajectory_controller/follow_joint_trajectory"  # PANEL_EXPECTED_TRAJ_ACTION
+    strict_traj_action: bool = True                                   # PANEL_STRICT_TRAJ_ACTION
+    controller_manager: str = ""                                      # PANEL_CONTROLLER_MANAGER
+
+    # -- ROS misc --
+    remote_select_on_table_poll_sec: float = 0.25                     # PANEL_REMOTE_SELECT_ON_TABLE_POLL_SEC
+
+    # -- Attach z-ref mode (panel_gz_objects) --
+    attach_z_ref_mode: str = "top"                                    # PANEL_ATTACH_Z_REF_MODE
+
 
 ENV_VAR_BY_FIELD: Dict[str, str] = {
     "camera_connect_trigger_service":      "PANEL_CAMERA_CONNECT_TRIGGER_SERVICE",
@@ -113,6 +124,11 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "select_object_service_timeout_sec":   "PANEL_SELECT_OBJECT_SERVICE_TIMEOUT_SEC",
     "remote_select_on_table_wait_sec":     "PANEL_REMOTE_SELECT_ON_TABLE_WAIT_SEC",
     "ros_executor_threads":                "PANEL_ROS_EXECUTOR_THREADS",
+    "expected_traj_action":                "PANEL_EXPECTED_TRAJ_ACTION",
+    "strict_traj_action":                  "PANEL_STRICT_TRAJ_ACTION",
+    "controller_manager":                  "PANEL_CONTROLLER_MANAGER",
+    "remote_select_on_table_poll_sec":     "PANEL_REMOTE_SELECT_ON_TABLE_POLL_SEC",
+    "attach_z_ref_mode":                   "PANEL_ATTACH_Z_REF_MODE",
 }
 
 

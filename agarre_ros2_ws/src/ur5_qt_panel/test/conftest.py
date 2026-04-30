@@ -59,6 +59,12 @@ def _inject_ur5_tools_stub() -> None:
         approach_skip_constraints: bool = False
         approach_relaxed_constraint_retry: bool = True
         request_timeout_sec: float = 60.0
+        tf_gate_timeout_sec: float = 1.2
+        startup_timeout_sec: float = 40.0
+        wait_joint_target_max_age_sec: float = 0.35
+        wait_joint_target_max_vel_rad_s: float = 0.05
+        wait_joint_target_stable_samples: int = 3
+        disable_joint_wrap_align: bool = False
 
     _stub_mb_params_instance = _StubMoveItBridgeParams()
     mb_params.MoveItBridgeParams = _StubMoveItBridgeParams

@@ -9,6 +9,10 @@ from typing import Iterable
 
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
+from ur5_tools.moveit_bridge.params import (
+    get_moveit_bridge_params as _get_moveit_bridge_params,
+)
+
 
 def build_joint_trajectory(
     positions: Iterable[float],
@@ -254,24 +258,15 @@ def wait_for_joint_target(panel,
     start = time.time()
     stable_hits = 0
     try:
-        required_stable_hits = max(
-            1,
-            int(os.environ.get("PANEL_WAIT_JOINT_TARGET_STABLE_SAMPLES", "3")),
-        )
+        required_stable_hits = max(1, _get_moveit_bridge_params().wait_joint_target_stable_samples)
     except Exception:
         required_stable_hits = 3
     try:
-        max_state_age_sec = max(
-            0.05,
-            float(os.environ.get("PANEL_WAIT_JOINT_TARGET_MAX_AGE_SEC", "0.35")),
-        )
+        max_state_age_sec = max(0.05, _get_moveit_bridge_params().wait_joint_target_max_age_sec)
     except Exception:
         max_state_age_sec = 0.35
     try:
-        max_stable_vel_rad_s = max(
-            0.0,
-            float(os.environ.get("PANEL_WAIT_JOINT_TARGET_MAX_VEL_RAD_S", "0.05")),
-        )
+        max_stable_vel_rad_s = max(0.0, _get_moveit_bridge_params().wait_joint_target_max_vel_rad_s)
     except Exception:
         max_stable_vel_rad_s = 0.05
     while (time.time() - start) < timeout_sec:
@@ -569,9 +564,7 @@ def publish_joint_trajectory(panel,
     # Evita que el controller interpole por el camino largo cuando el robot
     # arranca con wrists enrollados (~±2π tras spawn).
     try:
-        _wrap_disabled = str(
-            os.environ.get("PANEL_DISABLE_JOINT_WRAP_ALIGN", "0") or "0"
-        ).strip().lower() in ("1", "true", "yes", "on")
+        _wrap_disabled = _get_moveit_bridge_params().disable_joint_wrap_align
     except Exception:
         _wrap_disabled = False
     aligned_positions = list(positions)
@@ -662,7 +655,7 @@ def publish_moveit_pose(panel,
         panel._emit_log(f"[MOVEIT] Bloqueado: {label} ({reason})")
         panel._motion_in_progress = False
         return False
-    tf_timeout = max(0.2, float(os.environ.get("PANEL_MOVEIT_TF_GATE_TIMEOUT_SEC", "1.2") or 1.2))
+    tf_timeout = max(0.2, _get_moveit_bridge_params().tf_gate_timeout_sec)
     tf_deadline = time.monotonic() + tf_timeout
     tf_ok = False
     tf_reason = "tf_not_ready"

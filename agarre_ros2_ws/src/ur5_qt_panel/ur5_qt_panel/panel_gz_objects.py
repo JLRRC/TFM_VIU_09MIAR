@@ -41,6 +41,7 @@ from .panel_objects import (
     recalc_object_states,
 )
 from .panel_process import build_gz_env, resolve_gz_partition
+from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 from .panel_utils import read_world_name, world_to_base
 import xml.etree.ElementTree as ET
 from PyQt5.QtCore import QTimer
@@ -918,7 +919,7 @@ def _attempt_attach(panel,
         obj_height = max(0.0, float(object_height or 0.0))
         obj_center_z = float(obj_base_pos[2])
         obj_top_z = obj_center_z + (obj_height * 0.5 if obj_height > 0.0 else 0.0)
-        mode = str(z_ref_mode or os.environ.get("PANEL_ATTACH_Z_REF_MODE", "top")).strip().lower()
+        mode = str(z_ref_mode or _get_panel_ros_params().attach_z_ref_mode).strip().lower()
         if mode not in ("center", "top"):
             mode = "top"
         z_clearance = float(z_clearance_m or 0.0)

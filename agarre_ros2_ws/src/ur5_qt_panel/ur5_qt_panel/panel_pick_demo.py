@@ -415,9 +415,10 @@ def run_pick_demo(panel) -> None:
             home_pose = panel._get_home_joint_pose()
             selected_base_anchor_raw = getattr(panel, "_selected_base", None)
             _ws_root = Path(__file__).resolve().parents[6]  # agarre_ros2_ws/
+            from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params_local
+            _direct_debug_root = _get_panel_ui_params_local().direct_debug_root
             debug_root = Path(
-                os.environ.get("PANEL_DIRECT_DEBUG_ROOT")
-                or (_ws_root.parent / "historico")
+                _direct_debug_root or (_ws_root.parent / "historico")
             )
             debug_root.mkdir(parents=True, exist_ok=True)
             trace_path = debug_root / "DIRECTO_DEBUG_TRACE.log"

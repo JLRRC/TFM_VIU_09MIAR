@@ -69,6 +69,15 @@ class MoveItBridgeParams:
     # -- Request timeout --
     request_timeout_sec: float = 60.0           # PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC
 
+    # -- Motion gating (lecturas en panel_motion_helpers / panel_startup) --
+    # Conceptualmente parte del bridge MoveIt aunque vivan en el panel.
+    tf_gate_timeout_sec: float = 1.2                # PANEL_MOVEIT_TF_GATE_TIMEOUT_SEC
+    startup_timeout_sec: float = 40.0               # PANEL_MOVEIT_STARTUP_TIMEOUT_SEC
+    wait_joint_target_max_age_sec: float = 0.35     # PANEL_WAIT_JOINT_TARGET_MAX_AGE_SEC
+    wait_joint_target_max_vel_rad_s: float = 0.05   # PANEL_WAIT_JOINT_TARGET_MAX_VEL_RAD_S
+    wait_joint_target_stable_samples: int = 3       # PANEL_WAIT_JOINT_TARGET_STABLE_SAMPLES
+    disable_joint_wrap_align: bool = False          # PANEL_DISABLE_JOINT_WRAP_ALIGN
+
 
 ENV_VAR_BY_FIELD: Dict[str, str] = {
     "allow_feedback_early_success":         "PANEL_MOVEIT_BRIDGE_ALLOW_FEEDBACK_EARLY_SUCCESS",
@@ -78,6 +87,12 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "approach_skip_constraints":            "PANEL_MOVEIT_BRIDGE_APPROACH_SKIP_CONSTRAINTS",
     "approach_relaxed_constraint_retry":    "PANEL_MOVEIT_BRIDGE_APPROACH_RELAXED_CONSTRAINT_RETRY",
     "request_timeout_sec":                  "PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC",
+    "tf_gate_timeout_sec":                  "PANEL_MOVEIT_TF_GATE_TIMEOUT_SEC",
+    "startup_timeout_sec":                  "PANEL_MOVEIT_STARTUP_TIMEOUT_SEC",
+    "wait_joint_target_max_age_sec":        "PANEL_WAIT_JOINT_TARGET_MAX_AGE_SEC",
+    "wait_joint_target_max_vel_rad_s":      "PANEL_WAIT_JOINT_TARGET_MAX_VEL_RAD_S",
+    "wait_joint_target_stable_samples":     "PANEL_WAIT_JOINT_TARGET_STABLE_SAMPLES",
+    "disable_joint_wrap_align":             "PANEL_DISABLE_JOINT_WRAP_ALIGN",
 }
 
 

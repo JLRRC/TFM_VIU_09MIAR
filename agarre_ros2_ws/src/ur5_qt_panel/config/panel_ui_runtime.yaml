@@ -39,3 +39,8 @@ tcp_pose_text_overlay: false
 
 # -- TF gating --
 tf_drop_grace_sec: 4.0
+
+# -- Debug extra --
+debug_pick_obj: false
+direct_debug_root: ""
+strict_joint_identity: true

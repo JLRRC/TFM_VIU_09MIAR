@@ -38,6 +38,10 @@ def test_known_defaults():
     assert p.required_ee_frame == "rg2_pinch_center"
     assert p.tf_drop_grace_sec == 4.0
     assert p.auto_run_pick_demo_attempts == 1
+    # F2 final wave: debug extras
+    assert p.debug_pick_obj is False
+    assert p.direct_debug_root == ""
+    assert p.strict_joint_identity is True
 
 
 def test_env_flag_truthy(monkeypatch):

@@ -100,6 +100,11 @@ class PanelUiParams:
     # -- TF gating --
     tf_drop_grace_sec: float = 4.0                  # PANEL_TF_DROP_GRACE_SEC
 
+    # -- Debug extra --
+    debug_pick_obj: bool = False                    # DEBUG_PICK_OBJ
+    direct_debug_root: str = ""                     # PANEL_DIRECT_DEBUG_ROOT (empty = use historical fallback)
+    strict_joint_identity: bool = True              # PANEL_STRICT_JOINT_IDENTITY
+
 
 ENV_VAR_BY_FIELD: Dict[str, str] = {
     "debug_exceptions":                "PANEL_DEBUG_EXCEPTIONS",
@@ -123,6 +128,9 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "tcp_pose_overlay":                "PANEL_TCP_POSE_OVERLAY",
     "tcp_pose_text_overlay":           "PANEL_TCP_POSE_TEXT_OVERLAY",
     "tf_drop_grace_sec":               "PANEL_TF_DROP_GRACE_SEC",
+    "debug_pick_obj":                  "DEBUG_PICK_OBJ",
+    "direct_debug_root":               "PANEL_DIRECT_DEBUG_ROOT",
+    "strict_joint_identity":           "PANEL_STRICT_JOINT_IDENTITY",
 }
 
 
