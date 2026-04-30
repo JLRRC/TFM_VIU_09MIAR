@@ -1,0 +1,27 @@
+<!-- generado-articulo-tfm -->
+{
+  "root": ".",
+  "articulo_dir": "reports/ARTICULO",
+  "n_experimentos_configurados": 8,
+  "n_experimentos_con_metricas": 6,
+  "n_figuras_generadas": 17,
+  "figuras": [
+    "curvas_loss_EXP1.1_SIMPLEGRASP_RGB.png",
+    "curvas_loss_EXP1.2_SIMPLEGRASP_RGBD.png",
+    "curvas_loss_EXP1_SIMPLE_RGB.png",
+    "curvas_loss_EXP2_SIMPLE_RGBD.png",
+    "curvas_loss_EXP3_RESNET18_RGB_AUGMENT.png",
+    "curvas_loss_EXP4_RESNET18_RGBD.png",
+    "evolucion_val_success_todos.png",
+    "evolucion_val_iou_todos.png",
+    "evolucion_val_angle_todos.png",
+    "best_epoch_success_barras.png",
+    "best_epoch_iou_barras.png",
+    "best_epoch_angle_barras.png",
+    "best_epoch_loss_barras.png",
+    "comparacion_modalidad_success.png",
+    "latencia_inferencia_log.png",
+    "tamano_modelo_parametros.png",
+    "delta_pre_post_retrain_success.png"
+  ]
+}

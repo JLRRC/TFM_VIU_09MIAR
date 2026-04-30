@@ -56,6 +56,7 @@ from .panel_config import (
     GRIPPER_JOINT_NAMES,
 )
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
+from .panel_pick_demo_params import load_pick_demo_params
 from .panel_objects import (
     mark_object_grasped,
     mark_object_attached,
@@ -399,12 +400,9 @@ def run_pick_demo(panel) -> None:
                 f"sync_elapsed_ms={(run_context['worker_started_mono'] - sync_start_mono) * 1000.0:.1f}"
             )
             move_sec = float(panel.joint_time.value()) if panel.joint_time else 3.0
-            _move_sec_override = os.environ.get("PANEL_PICK_DEMO_MOVE_SEC")
-            if _move_sec_override:
-                try:
-                    move_sec = max(1.0, float(_move_sec_override))
-                except Exception:
-                    pass
+            pick_params = load_pick_demo_params()
+            if pick_params.move_sec is not None:
+                move_sec = max(1.0, float(pick_params.move_sec))
             home_pose = panel._get_home_joint_pose()
             selected_base_anchor_raw = getattr(panel, "_selected_base", None)
             _ws_root = Path(__file__).resolve().parents[6]  # agarre_ros2_ws/
@@ -536,9 +534,7 @@ def run_pick_demo(panel) -> None:
             # 5 cm sobre las yemas); aplicarlo a rg2_pinch_center eleva el agarre 5 cm
             # por encima del objeto, impidiendo el contacto físico.
             # Para rg2_pinch_center el offset correcto contra el centro del objeto es 0.
-            _DIRECTO_GRASP_Z_RAW = float(
-                os.environ.get("PANEL_PICK_DEMO_GRASP_TCP_Z_OFFSET_M", "0.0") or "0.0"
-            )
+            _DIRECTO_GRASP_Z_RAW = float(pick_params.grasp_tcp_z_offset_m)
             _DIRECTO_GRASP_Z = _effective_direct_grasp_z(
                 DIRECT_SOURCE_FRAME,
                 _DIRECTO_GRASP_Z_RAW,
@@ -1994,11 +1990,11 @@ def run_pick_demo(panel) -> None:
                 tcp_obj_dist = _dist(tcp_base, obj_base)
                 xy_tol = max(
                     0.006,
-                    float(os.environ.get("PANEL_PICK_DEMO_CLOSE_XY_TOL_M", "0.012") or 0.012),
+                    float(pick_params.close_xy_tol_m),
                 )
                 z_tol = max(
                     0.008,
-                    float(os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.012") or 0.012),
+                    float(pick_params.close_z_err_tol_m),
                 )
                 gripper_state = _read_gripper_state(expected_closed=True)
                 gripper_closed_measured = bool(gripper_state.get("measured_target_ok"))
@@ -9044,7 +9040,7 @@ def run_pick_demo(panel) -> None:
                         # divergence at the grasp height leaves the TCP ~13mm above the
                         # target even after a successful descent.  GRASP_ALIGN_IK corrects
                         # residual XY/Z errors, so a 25mm gate here is appropriate.
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M", "0.025") or 0.025),
+                        float(pick_params.grasp_down_util_z_err_tol_m),
                     )
                     _gd_gate = _wait_phase_gate_ready(
                         phase="GRASP_DOWN_JOINT",
