@@ -26,6 +26,11 @@ from .panel_config import (
     CAMERA_COPY_FRAME,
 )
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
+from .panel_ros_emitters import safe_signal_emit as _safe_signal_emit
+from .panel_ros_msg_helpers import (
+    extract_grasp_rect as _extract_grasp_rect,
+    resolve_ros_message_class as _resolve_ros_message_class,
+)
 from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 
 CLOCK_MAX_AGE_SEC = 8.0
@@ -783,72 +788,10 @@ class RosWorker(QObject):
             self._moveit_bridge_hb_event.set()
 
     def _resolve_ros_message_class(self, type_name: str):
-        normalized = (type_name or "").strip()
-        if not normalized or ros_get_message is None:
-            return None
-        candidates = [normalized]
-        if "/msg/" in normalized:
-            candidates.append(normalized.replace("/msg/", ".msg."))
-        elif ".msg." in normalized:
-            candidates.append(normalized.replace(".msg.", "/msg/"))
-        for candidate in candidates:
-            try:
-                return ros_get_message(candidate)
-            except Exception:
-                continue
-        return None
+        return _resolve_ros_message_class(type_name)
 
     def _extract_grasp_rect(self, msg: object) -> Optional[Dict[str, float]]:
-        # vision_msgs/BoundingBox2D contract.
-        try:
-            center = getattr(msg, "center", None)
-            position = getattr(center, "position", None) if center is not None else None
-            if position is not None and hasattr(msg, "size_x") and hasattr(msg, "size_y"):
-                cx = float(getattr(position, "x"))
-                cy = float(getattr(position, "y"))
-                width = float(getattr(msg, "size_x"))
-                height = float(getattr(msg, "size_y"))
-                theta_rad = float(getattr(center, "theta", 0.0))
-                return {
-                    "cx": cx,
-                    "cy": cy,
-                    "w": width,
-                    "h": height,
-                    "theta_rad": theta_rad,
-                    "angle_deg": math.degrees(theta_rad),
-                }
-        except Exception:
-            pass
-        # Generic custom message contract: (c_x, c_y, w, h, theta).
-        try:
-            if all(hasattr(msg, attr) for attr in ("c_x", "c_y", "w", "h", "theta")):
-                theta_rad = float(getattr(msg, "theta", 0.0))
-                return {
-                    "cx": float(getattr(msg, "c_x")),
-                    "cy": float(getattr(msg, "c_y")),
-                    "w": float(getattr(msg, "w")),
-                    "h": float(getattr(msg, "h")),
-                    "theta_rad": theta_rad,
-                    "angle_deg": math.degrees(theta_rad),
-                }
-        except Exception:
-            pass
-        # Fallback: std_msgs/Float32MultiArray style [cx, cy, w, h, theta].
-        try:
-            data = list(getattr(msg, "data", []))
-            if len(data) >= 5:
-                theta_rad = float(data[4])
-                return {
-                    "cx": float(data[0]),
-                    "cy": float(data[1]),
-                    "w": float(data[2]),
-                    "h": float(data[3]),
-                    "theta_rad": theta_rad,
-                    "angle_deg": math.degrees(theta_rad),
-                }
-        except Exception:
-            pass
-        return None
+        return _extract_grasp_rect(msg)
 
     def _on_grasp_rect(self, msg: object) -> None:
         payload = self._extract_grasp_rect(msg)
@@ -867,52 +810,28 @@ class RosWorker(QObject):
             pass
 
     def _emit_camera_disconnect_request(self, source: str) -> None:
-        try:
-            self.camera_disconnect_request.emit(source)
-        except RuntimeError:
-            pass
+        _safe_signal_emit(self.camera_disconnect_request, source)
 
     def _emit_camera_connect_request(self, source: str) -> None:
-        try:
-            self.camera_connect_request.emit(source)
-        except RuntimeError:
-            pass
+        _safe_signal_emit(self.camera_connect_request, source)
 
     def _emit_recover_request(self, source: str) -> None:
-        try:
-            self.recover_request.emit(source)
-        except RuntimeError:
-            pass
+        _safe_signal_emit(self.recover_request, source)
 
     def _emit_tfm_infer_request(self, source: str) -> None:
-        try:
-            self.tfm_infer_request.emit(source)
-        except RuntimeError:
-            pass
+        _safe_signal_emit(self.tfm_infer_request, source)
 
     def _emit_tfm_execute_request(self, source: str) -> None:
-        try:
-            self.tfm_execute_request.emit(source)
-        except RuntimeError:
-            pass
+        _safe_signal_emit(self.tfm_execute_request, source)
 
     def _emit_pick_object_request(self, source: str) -> None:
-        try:
-            self.pick_object_request.emit(source)
-        except RuntimeError:
-            pass
+        _safe_signal_emit(self.pick_object_request, source)
 
     def _emit_pick_demo_request(self, source: str) -> None:
-        try:
-            self.pick_demo_request.emit(source)
-        except RuntimeError:
-            pass
+        _safe_signal_emit(self.pick_demo_request, source)
 
     def _emit_object_select_request(self, name: str, source: str) -> None:
-        try:
-            self.object_select_request.emit(name, source)
-        except RuntimeError:
-            pass
+        _safe_signal_emit(self.object_select_request, name, source)
 
     def _on_camera_disconnect_service(self, _request: object, response: object) -> object:
         self._emit_camera_disconnect_request(f"service:{self._camera_disconnect_service}")
