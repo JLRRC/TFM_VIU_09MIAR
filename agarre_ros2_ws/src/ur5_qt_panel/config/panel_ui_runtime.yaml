@@ -1,0 +1,41 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/config/panel_ui_runtime.yaml
+# Contenido: Flags UI/debug del panel (F2 bucket C).
+
+# -- Debug --
+debug_exceptions: false
+diag_mode: false
+fatal_stops_all: false
+metrics: false
+
+# -- Display / headless --
+force_offscreen: false
+
+# -- Auto-run --
+auto_run_pick_demo: false
+auto_run_pick_demo_attempts: 1
+
+# -- Debug pause --
+debug_pause_alcance: false
+debug_pause_timeout_sec: 0.0
+
+# -- While-motion gating --
+allow_camera_while_motion: true
+allow_gripper_while_motion: true
+allow_close_while_motion: false
+manual_controls_always_enabled: true
+
+# -- Camera config --
+camera_require_depth: false
+
+# -- Required EE frame --
+required_ee_frame: rg2_pinch_center
+
+# -- Overlays --
+grasp_rect_topic: /grasp_rect
+test_corner_overlay: false
+test_corner_inset_m: 0.06
+tcp_pose_overlay: true
+tcp_pose_text_overlay: false
+
+# -- TF gating --
+tf_drop_grace_sec: 4.0

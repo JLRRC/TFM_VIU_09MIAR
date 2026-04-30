@@ -32,10 +32,11 @@ from .panel_config import (
     WORLDS_DIR,
     refresh_object_groups,
 )
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .logging_utils import timestamped_line
 
 OBJECT_POS_LOCK = threading.Lock()
-_DEBUG_EXCEPTIONS = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
+_DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 _LOADED_FROM_DISK = False
 _LOADING_FROM_DISK = False
 _STATE_LOG_LAST: Dict[str, float] = {}

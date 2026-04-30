@@ -26,6 +26,7 @@ from .panel_config import (
     UR5_MODEL_NAME,
     WORLDS_DIR,
 )
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_utils import (
     bash_preamble,
     build_gz_env,
@@ -41,7 +42,7 @@ from .panel_utils import (
 )
 from .logging_utils import timestamped_line
 
-_DEBUG_EXCEPTIONS = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
+_DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 
 
 def _log_exception(context: str, exc: Exception) -> None:

@@ -47,6 +47,8 @@ except Exception:  # pragma: no cover
         rclpy,
     )
 
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
+
 
 def _create_graph_node(name: str):
     """Late-import wrapper para evitar circular import con panel_utils."""
@@ -63,9 +65,7 @@ _CM_CACHE_TTL_SEC = 2.0
 def _log_exception(context: str, exc: Exception) -> None:
     """Inline de panel_utils._log_exception (evita circular import)."""
 
-    debug_enabled = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in (
-        "1", "true", "True"
-    )
+    debug_enabled = _get_panel_ui_params().debug_exceptions
     if debug_enabled:
         import traceback
         traceback.print_exc()

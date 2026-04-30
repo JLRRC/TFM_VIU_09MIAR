@@ -14,6 +14,7 @@ import time
 from typing import List, Optional, Tuple, Union
 
 from .panel_config import FASTRTPS_PROFILES, GZ_PARTITION_FILE
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .logging_utils import timestamped_line
 
 ROS_CMD_TIMEOUT = float(os.environ.get("PANEL_ROS_TIMEOUT", "1.5"))
@@ -23,7 +24,7 @@ GZ_LOG_FILTERS = [
     r"libEGL warning: Not allowed to force software rendering when API explicitly selects a hardware device\\.",
 ]
 
-_DEBUG_EXCEPTIONS = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
+_DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 
 
 def _log_exception(context: str, exc: Exception) -> None:

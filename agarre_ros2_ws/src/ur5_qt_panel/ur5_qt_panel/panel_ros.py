@@ -25,6 +25,7 @@ from .panel_config import (
     CAMERA_USE_BGR,
     CAMERA_COPY_FRAME,
 )
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 
 CLOCK_MAX_AGE_SEC = 8.0
@@ -115,7 +116,7 @@ class RosWorker(QObject):
         super().__init__()
         self._lock = threading.Lock()
         self._running = False
-        self._debug_exceptions = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
+        self._debug_exceptions = _get_panel_ui_params().debug_exceptions
         self._node = None
         self._exec = None
         self._bridge = None

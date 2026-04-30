@@ -13,6 +13,7 @@ from typing import Optional, Set, Tuple
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
 from .logging_utils import timestamped_line
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 
 from .panel_config import ROS_AVAILABLE, USE_SIM_TIME
 
@@ -104,7 +105,7 @@ class TfHelper:
         self._frames_seen_tf: Set[str] = set()
         self._frames_seen_tf_static: Set[str] = set()
         self._tf_listener_logged = False
-        self._debug_exceptions = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
+        self._debug_exceptions = _get_panel_ui_params().debug_exceptions
         if ROS_AVAILABLE and Buffer is not None:
             self._start()
 

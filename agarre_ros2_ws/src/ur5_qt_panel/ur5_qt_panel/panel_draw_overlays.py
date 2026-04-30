@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from .panel_process import ensure_dir
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_utils import base_to_world, table_xy_to_pixel, table_xy_to_pixel_float, transform_point_to_frame, world_to_base
 
 try:
@@ -404,7 +405,7 @@ def _compute_test_corner_base_points(panel,
     table_z = float(z_override) if z_override is not None else float(panel._resolve_table_top_z())
     if inset_m is None:
         try:
-            inset_m = float(os.environ.get("PANEL_TEST_CORNER_INSET_M", "0.06"))
+            inset_m = _get_panel_ui_params().test_corner_inset_m
         except Exception:
             inset_m = 0.06
     inset_m = max(0.0, float(inset_m))

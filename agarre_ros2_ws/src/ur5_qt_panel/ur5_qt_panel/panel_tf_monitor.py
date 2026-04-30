@@ -16,6 +16,7 @@ from .panel_utils import (
     _list_tf_topics,
     get_tf_helper,
 )
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_tf_diagnose import log_missing_ee_frames
 
 if TYPE_CHECKING:
@@ -109,7 +110,7 @@ class TFMonitor:
         required_ee = (
             str(getattr(p, "_required_ee_frame", "") or "")
             or str(
-                os.environ.get("PANEL_REQUIRED_EE_FRAME", "rg2_pinch_center")
+                _get_panel_ui_params().required_ee_frame
                 or "rg2_pinch_center"
             )
         ).strip() or "rg2_pinch_center"

@@ -8,6 +8,7 @@ import os
 import time
 from typing import List, Optional
 from .panel_utils import world_xyz_to_pixel
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 
 try:
     from visualization_msgs.msg import Marker
@@ -201,8 +202,8 @@ def _pick_confirm_dialog(parent, btn_label: str, frame: str, pose_str: str) -> b
     Se ejecuta en el GUI thread antes de que el worker arranque.
     """
     # Auto-accept in offscreen/automated modes — no one can click the dialog.
-    if os.environ.get("PANEL_FORCE_OFFSCREEN", "0") == "1" or \
-            os.environ.get("PANEL_AUTO_RUN_PICK_DEMO", "0") in ("1", "true", "yes", "on"):
+    if _get_panel_ui_params().force_offscreen or \
+            _get_panel_ui_params().auto_run_pick_demo:
         return True
     from PyQt5.QtWidgets import QMessageBox
     dlg = QMessageBox(parent)

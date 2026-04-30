@@ -77,6 +77,8 @@ except Exception:  # pragma: no cover
         rclpy,
     )
 
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
+
 from .logging_utils import timestamped_line
 from .panel_objects import get_object_positions
 from .panel_system_status import _create_graph_node
@@ -85,9 +87,7 @@ from .panel_system_status import _create_graph_node
 def _log_exception(context: str, exc: Exception) -> None:
     """Inline simplificado para evitar circular import."""
 
-    debug_enabled = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in (
-        "1", "true", "True"
-    )
+    debug_enabled = _get_panel_ui_params().debug_exceptions
     if debug_enabled:
         import traceback
         traceback.print_exc()

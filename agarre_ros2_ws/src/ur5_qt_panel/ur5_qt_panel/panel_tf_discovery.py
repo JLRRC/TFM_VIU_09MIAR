@@ -43,6 +43,7 @@ except ImportError:  # pragma: no cover
     yaml = None
 
 from .logging_utils import timestamped_line
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_tf import get_tf_helper  # noqa: F401
 
 if TYPE_CHECKING:
@@ -60,9 +61,7 @@ def _log_exception(context: str, exc: Exception) -> None:
     """Inline simplificado para evitar circular import."""
 
     import os
-    debug_enabled = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in (
-        "1", "true", "True"
-    )
+    debug_enabled = _get_panel_ui_params().debug_exceptions
     if debug_enabled:
         import traceback
         traceback.print_exc()

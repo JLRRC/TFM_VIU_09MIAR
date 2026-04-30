@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple, Set
 from ur5_tools.gripper_geometry import RG2_PINCH_CENTER_FRAME, contact_z_correction_for_frame
 
 from .panel_settings import PanelSettings
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 
 # Disable FastDDS SHM early to avoid noisy startup errors.
 os.environ.setdefault("RMW_FASTRTPS_USE_SHM", "0")
@@ -314,10 +315,10 @@ CAMERA_TOPIC_PREFIX = "/camera"
 MOVEIT_POSE_TOPIC = "/desired_grasp"
 MOVEIT_CARTESIAN_POSE_TOPIC = "/desired_grasp_cartesian"
 GLOBAL_FRAME_EFFECTIVE = "base_link"
-GRASP_RECT_TOPIC = os.environ.get("PANEL_GRASP_RECT_TOPIC", "/grasp_rect").strip() or "/grasp_rect"
-TEST_CORNER_OVERLAY = os.environ.get("PANEL_TEST_CORNER_OVERLAY", "0").strip().lower() not in ("0", "false", "off", "no")
-TCP_POSE_OVERLAY = os.environ.get("PANEL_TCP_POSE_OVERLAY", "1").strip().lower() not in ("0", "false", "off", "no")
-TCP_POSE_TEXT_OVERLAY = os.environ.get("PANEL_TCP_POSE_TEXT_OVERLAY", "0").strip().lower() not in ("0", "false", "off", "no")
+GRASP_RECT_TOPIC = _get_panel_ui_params().grasp_rect_topic
+TEST_CORNER_OVERLAY = _get_panel_ui_params().test_corner_overlay
+TCP_POSE_OVERLAY = _get_panel_ui_params().tcp_pose_overlay
+TCP_POSE_TEXT_OVERLAY = _get_panel_ui_params().tcp_pose_text_overlay
 FAR_FRONT_CAMERA_TOPIC_CANDIDATES = (
     "/camera_west/image",
     "/camera_south/image",

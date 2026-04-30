@@ -48,6 +48,7 @@ except Exception:  # pragma: no cover
         rclpy,
     )
 
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_process import run_cmd
 from .panel_controllers_query import (
     list_active_controllers,
@@ -65,9 +66,7 @@ _GZ_SIM_STATUS_TTL_SEC = 0.5
 def _log_exception(context: str, exc: Exception) -> None:
     """Inline simplificado para evitar circular import con panel_utils."""
 
-    debug_enabled = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in (
-        "1", "true", "True"
-    )
+    debug_enabled = _get_panel_ui_params().debug_exceptions
     if debug_enabled:
         import traceback
         traceback.print_exc()

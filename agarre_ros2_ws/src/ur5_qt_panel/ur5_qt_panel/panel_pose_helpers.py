@@ -36,6 +36,8 @@ except Exception:  # pragma: no cover
         WORLD_FRAME,
     )
 
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
+
 try:
     from geometry_msgs.msg import PoseStamped, TransformStamped
 except Exception:  # pragma: no cover
@@ -60,9 +62,7 @@ def _log_exception(context: str, exc: Exception) -> None:
     """Inline simplificado para evitar circular import."""
 
     import os
-    debug_enabled = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in (
-        "1", "true", "True"
-    )
+    debug_enabled = _get_panel_ui_params().debug_exceptions
     if debug_enabled:
         import traceback
         traceback.print_exc()

@@ -66,6 +66,7 @@ from .panel_config import (
     INFER_CKPT,
     PICK_DEMO_SPAWN_POSE,
 )
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_utils import (
     CmdRunner,
     RosWorker,
@@ -165,10 +166,10 @@ CAMERA_TOPIC_PREFIX = "/camera"
 MOVEIT_POSE_TOPIC = "/desired_grasp"
 MOVEIT_CARTESIAN_POSE_TOPIC = "/desired_grasp_cartesian"
 GLOBAL_FRAME_EFFECTIVE = "base_link"
-GRASP_RECT_TOPIC = os.environ.get("PANEL_GRASP_RECT_TOPIC", "/grasp_rect").strip() or "/grasp_rect"
-TEST_CORNER_OVERLAY = os.environ.get("PANEL_TEST_CORNER_OVERLAY", "0").strip().lower() not in ("0", "false", "off", "no")
-TCP_POSE_OVERLAY = os.environ.get("PANEL_TCP_POSE_OVERLAY", "1").strip().lower() not in ("0", "false", "off", "no")
-TCP_POSE_TEXT_OVERLAY = os.environ.get("PANEL_TCP_POSE_TEXT_OVERLAY", "0").strip().lower() not in ("0", "false", "off", "no")
+GRASP_RECT_TOPIC = _get_panel_ui_params().grasp_rect_topic
+TEST_CORNER_OVERLAY = _get_panel_ui_params().test_corner_overlay
+TCP_POSE_OVERLAY = _get_panel_ui_params().tcp_pose_overlay
+TCP_POSE_TEXT_OVERLAY = _get_panel_ui_params().tcp_pose_text_overlay
 FAR_FRONT_CAMERA_TOPIC_CANDIDATES = (
     "/camera_west/image",
     "/camera_south/image",
@@ -182,7 +183,7 @@ WRIST_CAMERA_TOPIC_CANDIDATES = (
     "/camera_wrist/image",
 )
 
-_DEBUG_EXCEPTIONS = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
+_DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 
 
 def _log_exception(context: str, exc: Exception) -> None:
@@ -470,12 +471,10 @@ class ControlPanelV2(QMainWindow):
         self._step_cart_debug_timer = None
         self._step_cart_debug_move_inflight = False
         self._step_cart_debug_last_sample_wall = 0.0
-        self._debug_motion_pause_alcance_enabled = str(
-            os.environ.get("PANEL_DEBUG_PAUSE_ALCANCE", "0") or "0"
-        ).strip().lower() not in {"0", "false", "no", "off"}
+        self._debug_motion_pause_alcance_enabled = _get_panel_ui_params().debug_pause_alcance
         self._debug_motion_pause_timeout_sec = max(
             0.0,
-            float(os.environ.get("PANEL_DEBUG_PAUSE_TIMEOUT_SEC", "0") or 0.0),
+            _get_panel_ui_params().debug_pause_timeout_sec,
         )
         self.setWindowTitle("Panel V2")
         self.setMinimumWidth(1200)
@@ -541,21 +540,9 @@ class ControlPanelV2(QMainWindow):
         self._trace_debug_logged = False
         self._panel_start_ts = time.time()
         self._perf_start_monotonic = time.monotonic()
-        self._metrics_enabled = os.environ.get("PANEL_METRICS", "").strip().lower() in (
-            "1",
-            "true",
-            "yes",
-        )
-        self._diagnostic_mode = os.environ.get("PANEL_DIAG_MODE", "").strip().lower() in (
-            "1",
-            "true",
-            "yes",
-        )
-        self._fatal_stops_all = os.environ.get("PANEL_FATAL_STOPS_ALL", "0").strip().lower() in (
-            "1",
-            "true",
-            "yes",
-        )
+        self._metrics_enabled = _get_panel_ui_params().metrics
+        self._diagnostic_mode = _get_panel_ui_params().diag_mode
+        self._fatal_stops_all = _get_panel_ui_params().fatal_stops_all
         self._perf_marks: Dict[str, float] = {}
         self._debug_logs_enabled = bool(DEBUG_LOGS_TO_STDOUT)
         self._panel_logger = _PanelLogger(self)
@@ -595,7 +582,7 @@ class ControlPanelV2(QMainWindow):
                 )
         # Override: when running offscreen (no real display), camera frames are
         # structurally impossible — disable the requirement regardless of env var.
-        if self._camera_required and os.environ.get("PANEL_FORCE_OFFSCREEN", "0") == "1":
+        if self._camera_required and _get_panel_ui_params().force_offscreen:
             self._camera_required = False
             self._emit_log(
                 "[STARTUP] camera_required overridden → False (PANEL_FORCE_OFFSCREEN=1)"
@@ -614,7 +601,7 @@ class ControlPanelV2(QMainWindow):
         try:
             self._tf_drop_grace_sec = max(
                 0.0,
-                float(os.environ.get("PANEL_TF_DROP_GRACE_SEC", "4.0") or 4.0),
+                _get_panel_ui_params().tf_drop_grace_sec,
             )
         except Exception:
             self._tf_drop_grace_sec = 4.0
@@ -779,15 +766,9 @@ class ControlPanelV2(QMainWindow):
         self._manual_inflight = False
         self._manual_pending = False
         self._script_motion_active = False
-        self._allow_camera_while_script_motion = str(
-            os.environ.get("PANEL_ALLOW_CAMERA_WHILE_MOTION", "1") or "1"
-        ).strip().lower() not in {"0", "false", "no", "off"}
-        self._allow_gripper_while_script_motion = str(
-            os.environ.get("PANEL_ALLOW_GRIPPER_WHILE_MOTION", "1") or "1"
-        ).strip().lower() not in {"0", "false", "no", "off"}
-        self._manual_controls_always_enabled = str(
-            os.environ.get("PANEL_MANUAL_CONTROLS_ALWAYS_ENABLED", "1") or "1"
-        ).strip().lower() not in {"0", "false", "no", "off"}
+        self._allow_camera_while_script_motion = _get_panel_ui_params().allow_camera_while_motion
+        self._allow_gripper_while_script_motion = _get_panel_ui_params().allow_gripper_while_motion
+        self._manual_controls_always_enabled = _get_panel_ui_params().manual_controls_always_enabled
         self._closing = False
         self._shutdown_complete = False
         self._last_tcp_world = None
@@ -848,9 +829,7 @@ class ControlPanelV2(QMainWindow):
         self._camera_subscribe_ts = 0.0
         self._last_camera_depth_frame_ts = 0.0
         self._camera_depth_topic = ""
-        self._camera_depth_required_env = str(
-            os.environ.get("PANEL_CAMERA_REQUIRE_DEPTH", "0")
-        ).strip().lower() in ("1", "true", "yes", "on")
+        self._camera_depth_required_env = _get_panel_ui_params().camera_require_depth
         self._camera_fault_since = 0.0
         self._camera_fault_active = False
         self._camera_fault_reason = ""
@@ -865,7 +844,7 @@ class ControlPanelV2(QMainWindow):
         self._camera_ready_frames = max(1, CAMERA_READY_FRAMES)
         self._required_ee_frame = (
             str(
-                os.environ.get("PANEL_REQUIRED_EE_FRAME", "rg2_pinch_center")
+                _get_panel_ui_params().required_ee_frame
                 or "rg2_pinch_center"
             ).strip()
             or "rg2_pinch_center"
@@ -875,12 +854,10 @@ class ControlPanelV2(QMainWindow):
         self._calib_points = []  # Lista de (px, py, wx, wy)
         self._calib_grid_until = 0.0
         self._auto_joint2_move_done = False
-        self._auto_pick_demo_enabled = str(
-            os.environ.get("PANEL_AUTO_RUN_PICK_DEMO", "0")
-        ).strip().lower() in ("1", "true", "yes", "on")
+        self._auto_pick_demo_enabled = _get_panel_ui_params().auto_run_pick_demo
         try:
             self._auto_pick_demo_attempts = max(
-                1, int(os.environ.get("PANEL_AUTO_RUN_PICK_DEMO_ATTEMPTS", "1") or 1)
+                1, _get_panel_ui_params().auto_run_pick_demo_attempts
             )
         except Exception:
             self._auto_pick_demo_attempts = 1

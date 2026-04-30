@@ -23,6 +23,7 @@ except Exception:  # pragma: no cover
     psutil = None
 
 from .logging_utils import timestamped_line
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_process import (  # noqa: F401
     GZ_LOG_FILTERS,
     bash_preamble,
@@ -264,7 +265,7 @@ except Exception:
 
 ROS_TOPIC_RE = re.compile(r"^/([A-Za-z0-9_]+/)*[A-Za-z0-9_]+$")
 
-_DEBUG_EXCEPTIONS = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
+_DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 _GRIPPER_CTRL_CACHE: Tuple[Optional[float], Optional[bool]] = (None, None)
 _CM_CACHE: Tuple[float, str] = (0.0, "/controller_manager")
 _CM_CACHE_TTL_SEC = 2.0
