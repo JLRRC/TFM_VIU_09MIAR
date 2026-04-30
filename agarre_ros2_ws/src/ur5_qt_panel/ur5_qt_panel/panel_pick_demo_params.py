@@ -139,6 +139,108 @@ class PickDemoParams:
     grasp_down_segment_xy_step_m: float = 0.020   # PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_XY_STEP_M
     grasp_down_segment_z_step_m: float = 0.005    # PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M
 
+    # -- F2 final batch: 94 tunables estáticos del flujo pick_demo --------
+    # Orden alfabético; defaults coinciden con los fallbacks históricos
+    # de cada env var. Familias: AC_PHASE_CHECK, ALIGN, APPROACH_COARSE,
+    # ATTACH, CARRY, CLOSE, DEBUG, DIRECT_IK, FALLBACK_PRESET,
+    # GRASP_ALIGN, GRASP_DOWN restantes, GRIPPER, HANDOFF,
+    # MANUAL_LIKE_ATTACH, MANUAL_REF_STALE, POST_*, PRE_CLOSE, RELEASE,
+    # ROUTE / state flags.
+    ac_phase_check_settle_sec: float = 3.0  # PANEL_PICK_DEMO_AC_PHASE_CHECK_SETTLE_SEC
+    ac_phase_check_stable_samples: int = 3  # PANEL_PICK_DEMO_AC_PHASE_CHECK_STABLE_SAMPLES
+    ac_phase_check_threshold_m: float = 0.004  # PANEL_PICK_DEMO_AC_PHASE_CHECK_THRESHOLD_M
+    align_exit_xy_tol_m: float = 0.006  # PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M
+    align_exit_z_tol_m: float = 0.01  # PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M
+    align_ik_err_tol: float = 0.08  # PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL
+    align_ik_seed_weight: float = 0.5  # PANEL_PICK_DEMO_ALIGN_IK_SEED_WEIGHT
+    align_no_effect_tol_m: float = 0.002  # PANEL_PICK_DEMO_ALIGN_NO_EFFECT_TOL_M
+    align_rot_weight: float = 0.1  # PANEL_PICK_DEMO_ALIGN_ROT_WEIGHT
+    align_xy_lock_factor: float = 2.0  # PANEL_PICK_DEMO_ALIGN_XY_LOCK_FACTOR
+    align_z_bias_cap_m: float = 0.03  # PANEL_PICK_DEMO_ALIGN_Z_BIAS_CAP_M
+    align_z_bias_gain: float = 0.7  # PANEL_PICK_DEMO_ALIGN_Z_BIAS_GAIN
+    align_z_improve_min_m: float = 0.006  # PANEL_PICK_DEMO_ALIGN_Z_IMPROVE_MIN_M
+    align_z_residual_tol_m: float = 0.015  # PANEL_PICK_DEMO_ALIGN_Z_RESIDUAL_TOL_M
+    approach_coarse_gate_poll_sec: float = 0.1  # PANEL_PICK_DEMO_APPROACH_COARSE_GATE_POLL_SEC
+    approach_coarse_gate_settle_sec: float = 0.8  # PANEL_PICK_DEMO_APPROACH_COARSE_GATE_SETTLE_SEC
+    approach_coarse_gate_stable_samples: int = 2  # PANEL_PICK_DEMO_APPROACH_COARSE_GATE_STABLE_SAMPLES
+    approach_coarse_gate_z_tol_m: float = 0.008  # PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M
+    approach_coarse_handoff_dist_tol_m: float = 0.015  # PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DIST_TOL_M
+    approach_coarse_handoff_dz_tol_m: float = 0.015  # PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DZ_TOL_M
+    approach_coarse_max_skip_m: float = 0.06  # PANEL_PICK_DEMO_APPROACH_COARSE_MAX_SKIP_M
+    approach_coarse_relaxed_handoff_xy_tol_m: float = 0.01  # PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_XY_TOL_M
+    approach_coarse_relaxed_skip_pose_ok: bool = False  # PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_SKIP_POSE_OK
+    approach_coarse_skip_xy_tol_m: float = 0.03  # PANEL_PICK_DEMO_APPROACH_COARSE_SKIP_XY_TOL_M
+    approach_coarse_skip_z_tol_m: float = 0.04  # PANEL_PICK_DEMO_APPROACH_COARSE_SKIP_Z_TOL_M
+    approach_coarse_util_dist_tol_m: float = 0.26  # PANEL_PICK_DEMO_APPROACH_COARSE_UTIL_DIST_TOL_M
+    approach_coarse_util_xy_tol_m: float = 0.18  # PANEL_PICK_DEMO_APPROACH_COARSE_UTIL_XY_TOL_M
+    approach_coarse_util_z_err_tol_m: float = 0.18  # PANEL_PICK_DEMO_APPROACH_COARSE_UTIL_Z_ERR_TOL_M
+    approach_coarse_xy_corr_max_m: float = 0.04  # PANEL_PICK_DEMO_APPROACH_COARSE_XY_CORR_MAX_M
+    approach_coarse_xy_corr_tol_m: float = 0.015  # PANEL_PICK_DEMO_APPROACH_COARSE_XY_CORR_TOL_M
+    approach_coarse_z_corr_tol_m: float = 0.02  # PANEL_PICK_DEMO_APPROACH_COARSE_Z_CORR_TOL_M
+    attach_follow_max_tcp_dist_m: float = 0.04  # PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M
+    attach_max_rel_drift_m: float = 0.012  # PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M
+    attach_max_tf_visual_gap_m: float = 0.02  # PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M
+    attach_min_stable_samples: int = 5  # PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES
+    attach_settle_sec: float = 1.8  # PANEL_PICK_DEMO_ATTACH_SETTLE_SEC
+    attach_stable_window_sec: float = 0.35  # PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC
+    attach_xy_tol_m: float = 0.012  # PANEL_PICK_DEMO_ATTACH_XY_TOL_M
+    attach_z_tol_m: float = 0.015  # PANEL_PICK_DEMO_ATTACH_Z_TOL_M
+    carry_home_max_tcp_dist_m: float = 0.2  # PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M
+    carry_settle_sec: float = 3.0  # PANEL_PICK_DEMO_CARRY_SETTLE_SEC
+    close_confirm_timeout_sec: float = 1.8  # PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC
+    close_fallback_opening_sum: float = 0.4  # PANEL_PICK_DEMO_CLOSE_FALLBACK_OPENING_SUM
+    close_min_delta_sum: float = 0.08  # PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM
+    debug_pause_grasp_align_ik: bool = False  # PANEL_PICK_DEMO_DEBUG_PAUSE_GRASP_ALIGN_IK
+    direct_ik_joint_tol_rad: float = 0.03  # PANEL_PICK_DEMO_DIRECT_IK_JOINT_TOL_RAD
+    direct_ik_runtime_attempts: int = 5  # PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_ATTEMPTS
+    direct_ik_runtime_settle_delta_m: float = 0.003  # PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_DELTA_M
+    direct_ik_runtime_settle_poll_sec: float = 0.1  # PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_POLL_SEC
+    direct_ik_runtime_settle_samples: int = 3  # PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SAMPLES
+    direct_ik_runtime_settle_sec: float = 2.5  # PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SEC
+    direct_ik_seed_weight: float = 0.035  # PANEL_PICK_DEMO_DIRECT_IK_SEED_WEIGHT
+    direct_ik_tcp_timeout_sec: float = 4.0  # PANEL_PICK_DEMO_DIRECT_IK_TCP_TIMEOUT_SEC
+    extra_grasp_down_m: float = 0.0  # PANEL_PICK_DEMO_EXTRA_GRASP_DOWN_M
+    fallback_preset_max_dist_m: float = 0.1  # PANEL_PICK_DEMO_FALLBACK_PRESET_MAX_DIST_M
+    fallback_preset_max_xy_m: float = 0.05  # PANEL_PICK_DEMO_FALLBACK_PRESET_MAX_XY_M
+    grasp_align_joint_tol_rad: float = 0.01  # PANEL_PICK_DEMO_GRASP_ALIGN_JOINT_TOL_RAD
+    grasp_align_max_attempts: int = 3  # PANEL_PICK_DEMO_GRASP_ALIGN_MAX_ATTEMPTS
+    grasp_down_disable_permissive_fallback: bool = False  # PANEL_PICK_DEMO_GRASP_DOWN_DISABLE_PERMISSIVE_FALLBACK
+    grasp_down_extra_z_m: float = 0.0  # PANEL_PICK_DEMO_GRASP_DOWN_EXTRA_Z_M
+    grasp_down_gate_poll_sec: float = 0.1  # PANEL_PICK_DEMO_GRASP_DOWN_GATE_POLL_SEC
+    grasp_down_gate_settle_sec: float = 0.8  # PANEL_PICK_DEMO_GRASP_DOWN_GATE_SETTLE_SEC
+    grasp_down_gate_stable_samples: int = 2  # PANEL_PICK_DEMO_GRASP_DOWN_GATE_STABLE_SAMPLES
+    grasp_down_max_attempts: int = 4  # PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS
+    grasp_down_permissive_ik_err_tol: float = 0.015  # PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_IK_ERR_TOL
+    grasp_down_permissive_rot_weight: float = 0.35  # PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_ROT_WEIGHT
+    grasp_down_permissive_seed_weight: float = 0.65  # PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT
+    grasp_down_use_moveit_cartesian: bool = True  # PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN
+    grasp_down_util_dist_tol_m: float = 0.22  # PANEL_PICK_DEMO_GRASP_DOWN_UTIL_DIST_TOL_M
+    gripper_confirm_max_state_age_sec: float = 0.35  # PANEL_PICK_DEMO_GRIPPER_CONFIRM_MAX_STATE_AGE_SEC
+    gripper_confirm_stable_samples: int = 2  # PANEL_PICK_DEMO_GRIPPER_CONFIRM_STABLE_SAMPLES
+    gripper_target_tol_m: float = 0.035  # PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M
+    handoff_target_jump_tol_m: float = 0.005  # PANEL_PICK_DEMO_HANDOFF_TARGET_JUMP_TOL_M
+    manual_like_attach_max_tcp_dist_m: float = 0.14  # PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_MAX_TCP_DIST_M
+    manual_like_attach_wait_sec: float = 0.9  # PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_WAIT_SEC
+    manual_like_attach_xy_tol_m: float = 0.06  # PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_XY_TOL_M
+    manual_like_attach_z_tol_m: float = 0.06  # PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_Z_TOL_M
+    manual_ref_stale_xy_tol_m: float = 0.08  # PANEL_PICK_DEMO_MANUAL_REF_STALE_XY_TOL_M
+    manual_ref_stale_z_below_tol_m: float = 0.005  # PANEL_PICK_DEMO_MANUAL_REF_STALE_Z_BELOW_TOL_M
+    post_align_settle_sec: float = 0.2  # PANEL_PICK_DEMO_POST_ALIGN_SETTLE_SEC
+    post_attach_hold_sec: float = 0.9  # PANEL_PICK_DEMO_POST_ATTACH_HOLD_SEC
+    post_close_hold_sec: float = 0.45  # PANEL_PICK_DEMO_POST_CLOSE_HOLD_SEC
+    post_close_mode: str = 'basket'  # PANEL_PICK_DEMO_POST_CLOSE_MODE
+    pre_close_consecutive: int = 3  # PANEL_PICK_DEMO_PRE_CLOSE_CONSECUTIVE
+    pre_close_realign_retries: int = 2  # PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES
+    pre_close_wait_sec: float = 1.2  # PANEL_PICK_DEMO_PRE_CLOSE_WAIT_SEC
+    release_open_confirm_timeout_sec: float = 1.8  # PANEL_PICK_DEMO_RELEASE_OPEN_CONFIRM_TIMEOUT_SEC
+    release_wait_sec: float = 1.6  # PANEL_PICK_DEMO_RELEASE_WAIT_SEC
+    route_mode: str = 'direct_ik_hybrid'  # PANEL_PICK_DEMO_ROUTE_MODE
+    selected_base_stale_tol_m: float = 0.08  # PANEL_PICK_DEMO_SELECTED_BASE_STALE_TOL_M
+    short_lift_m: float = 0.12  # PANEL_PICK_DEMO_SHORT_LIFT_M
+    short_release_only: bool = False  # PANEL_PICK_DEMO_SHORT_RELEASE_ONLY
+    skip_align_if_reachable: bool = True  # PANEL_PICK_DEMO_SKIP_ALIGN_IF_REACHABLE
+    step_timeout_extra_sec: float = 0.0  # PANEL_PICK_DEMO_STEP_TIMEOUT_EXTRA_SEC
+
 
 # Mapeo campo dataclass → nombre de env var.
 # Útil para implementar la prioridad env > YAML > default y para auditar
@@ -181,6 +283,100 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "grasp_down_strict_dist_tol_m":               "PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M",
     "grasp_down_segment_xy_step_m":               "PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_XY_STEP_M",
     "grasp_down_segment_z_step_m":                "PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M",
+    "ac_phase_check_settle_sec": "PANEL_PICK_DEMO_AC_PHASE_CHECK_SETTLE_SEC",
+    "ac_phase_check_stable_samples": "PANEL_PICK_DEMO_AC_PHASE_CHECK_STABLE_SAMPLES",
+    "ac_phase_check_threshold_m": "PANEL_PICK_DEMO_AC_PHASE_CHECK_THRESHOLD_M",
+    "align_exit_xy_tol_m": "PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M",
+    "align_exit_z_tol_m": "PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M",
+    "align_ik_err_tol": "PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL",
+    "align_ik_seed_weight": "PANEL_PICK_DEMO_ALIGN_IK_SEED_WEIGHT",
+    "align_no_effect_tol_m": "PANEL_PICK_DEMO_ALIGN_NO_EFFECT_TOL_M",
+    "align_rot_weight": "PANEL_PICK_DEMO_ALIGN_ROT_WEIGHT",
+    "align_xy_lock_factor": "PANEL_PICK_DEMO_ALIGN_XY_LOCK_FACTOR",
+    "align_z_bias_cap_m": "PANEL_PICK_DEMO_ALIGN_Z_BIAS_CAP_M",
+    "align_z_bias_gain": "PANEL_PICK_DEMO_ALIGN_Z_BIAS_GAIN",
+    "align_z_improve_min_m": "PANEL_PICK_DEMO_ALIGN_Z_IMPROVE_MIN_M",
+    "align_z_residual_tol_m": "PANEL_PICK_DEMO_ALIGN_Z_RESIDUAL_TOL_M",
+    "approach_coarse_gate_poll_sec": "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_POLL_SEC",
+    "approach_coarse_gate_settle_sec": "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_SETTLE_SEC",
+    "approach_coarse_gate_stable_samples": "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_STABLE_SAMPLES",
+    "approach_coarse_gate_z_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M",
+    "approach_coarse_handoff_dist_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DIST_TOL_M",
+    "approach_coarse_handoff_dz_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DZ_TOL_M",
+    "approach_coarse_max_skip_m": "PANEL_PICK_DEMO_APPROACH_COARSE_MAX_SKIP_M",
+    "approach_coarse_relaxed_handoff_xy_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_XY_TOL_M",
+    "approach_coarse_relaxed_skip_pose_ok": "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_SKIP_POSE_OK",
+    "approach_coarse_skip_xy_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_SKIP_XY_TOL_M",
+    "approach_coarse_skip_z_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_SKIP_Z_TOL_M",
+    "approach_coarse_util_dist_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_UTIL_DIST_TOL_M",
+    "approach_coarse_util_xy_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_UTIL_XY_TOL_M",
+    "approach_coarse_util_z_err_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_UTIL_Z_ERR_TOL_M",
+    "approach_coarse_xy_corr_max_m": "PANEL_PICK_DEMO_APPROACH_COARSE_XY_CORR_MAX_M",
+    "approach_coarse_xy_corr_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_XY_CORR_TOL_M",
+    "approach_coarse_z_corr_tol_m": "PANEL_PICK_DEMO_APPROACH_COARSE_Z_CORR_TOL_M",
+    "attach_follow_max_tcp_dist_m": "PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M",
+    "attach_max_rel_drift_m": "PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M",
+    "attach_max_tf_visual_gap_m": "PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M",
+    "attach_min_stable_samples": "PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES",
+    "attach_settle_sec": "PANEL_PICK_DEMO_ATTACH_SETTLE_SEC",
+    "attach_stable_window_sec": "PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC",
+    "attach_xy_tol_m": "PANEL_PICK_DEMO_ATTACH_XY_TOL_M",
+    "attach_z_tol_m": "PANEL_PICK_DEMO_ATTACH_Z_TOL_M",
+    "carry_home_max_tcp_dist_m": "PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M",
+    "carry_settle_sec": "PANEL_PICK_DEMO_CARRY_SETTLE_SEC",
+    "close_confirm_timeout_sec": "PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC",
+    "close_fallback_opening_sum": "PANEL_PICK_DEMO_CLOSE_FALLBACK_OPENING_SUM",
+    "close_min_delta_sum": "PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM",
+    "debug_pause_grasp_align_ik": "PANEL_PICK_DEMO_DEBUG_PAUSE_GRASP_ALIGN_IK",
+    "direct_ik_joint_tol_rad": "PANEL_PICK_DEMO_DIRECT_IK_JOINT_TOL_RAD",
+    "direct_ik_runtime_attempts": "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_ATTEMPTS",
+    "direct_ik_runtime_settle_delta_m": "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_DELTA_M",
+    "direct_ik_runtime_settle_poll_sec": "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_POLL_SEC",
+    "direct_ik_runtime_settle_samples": "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SAMPLES",
+    "direct_ik_runtime_settle_sec": "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SEC",
+    "direct_ik_seed_weight": "PANEL_PICK_DEMO_DIRECT_IK_SEED_WEIGHT",
+    "direct_ik_tcp_timeout_sec": "PANEL_PICK_DEMO_DIRECT_IK_TCP_TIMEOUT_SEC",
+    "extra_grasp_down_m": "PANEL_PICK_DEMO_EXTRA_GRASP_DOWN_M",
+    "fallback_preset_max_dist_m": "PANEL_PICK_DEMO_FALLBACK_PRESET_MAX_DIST_M",
+    "fallback_preset_max_xy_m": "PANEL_PICK_DEMO_FALLBACK_PRESET_MAX_XY_M",
+    "grasp_align_joint_tol_rad": "PANEL_PICK_DEMO_GRASP_ALIGN_JOINT_TOL_RAD",
+    "grasp_align_max_attempts": "PANEL_PICK_DEMO_GRASP_ALIGN_MAX_ATTEMPTS",
+    "grasp_down_disable_permissive_fallback": "PANEL_PICK_DEMO_GRASP_DOWN_DISABLE_PERMISSIVE_FALLBACK",
+    "grasp_down_extra_z_m": "PANEL_PICK_DEMO_GRASP_DOWN_EXTRA_Z_M",
+    "grasp_down_gate_poll_sec": "PANEL_PICK_DEMO_GRASP_DOWN_GATE_POLL_SEC",
+    "grasp_down_gate_settle_sec": "PANEL_PICK_DEMO_GRASP_DOWN_GATE_SETTLE_SEC",
+    "grasp_down_gate_stable_samples": "PANEL_PICK_DEMO_GRASP_DOWN_GATE_STABLE_SAMPLES",
+    "grasp_down_max_attempts": "PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS",
+    "grasp_down_permissive_ik_err_tol": "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_IK_ERR_TOL",
+    "grasp_down_permissive_rot_weight": "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_ROT_WEIGHT",
+    "grasp_down_permissive_seed_weight": "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT",
+    "grasp_down_use_moveit_cartesian": "PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN",
+    "grasp_down_util_dist_tol_m": "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_DIST_TOL_M",
+    "gripper_confirm_max_state_age_sec": "PANEL_PICK_DEMO_GRIPPER_CONFIRM_MAX_STATE_AGE_SEC",
+    "gripper_confirm_stable_samples": "PANEL_PICK_DEMO_GRIPPER_CONFIRM_STABLE_SAMPLES",
+    "gripper_target_tol_m": "PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M",
+    "handoff_target_jump_tol_m": "PANEL_PICK_DEMO_HANDOFF_TARGET_JUMP_TOL_M",
+    "manual_like_attach_max_tcp_dist_m": "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_MAX_TCP_DIST_M",
+    "manual_like_attach_wait_sec": "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_WAIT_SEC",
+    "manual_like_attach_xy_tol_m": "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_XY_TOL_M",
+    "manual_like_attach_z_tol_m": "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_Z_TOL_M",
+    "manual_ref_stale_xy_tol_m": "PANEL_PICK_DEMO_MANUAL_REF_STALE_XY_TOL_M",
+    "manual_ref_stale_z_below_tol_m": "PANEL_PICK_DEMO_MANUAL_REF_STALE_Z_BELOW_TOL_M",
+    "post_align_settle_sec": "PANEL_PICK_DEMO_POST_ALIGN_SETTLE_SEC",
+    "post_attach_hold_sec": "PANEL_PICK_DEMO_POST_ATTACH_HOLD_SEC",
+    "post_close_hold_sec": "PANEL_PICK_DEMO_POST_CLOSE_HOLD_SEC",
+    "post_close_mode": "PANEL_PICK_DEMO_POST_CLOSE_MODE",
+    "pre_close_consecutive": "PANEL_PICK_DEMO_PRE_CLOSE_CONSECUTIVE",
+    "pre_close_realign_retries": "PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES",
+    "pre_close_wait_sec": "PANEL_PICK_DEMO_PRE_CLOSE_WAIT_SEC",
+    "release_open_confirm_timeout_sec": "PANEL_PICK_DEMO_RELEASE_OPEN_CONFIRM_TIMEOUT_SEC",
+    "release_wait_sec": "PANEL_PICK_DEMO_RELEASE_WAIT_SEC",
+    "route_mode": "PANEL_PICK_DEMO_ROUTE_MODE",
+    "selected_base_stale_tol_m": "PANEL_PICK_DEMO_SELECTED_BASE_STALE_TOL_M",
+    "short_lift_m": "PANEL_PICK_DEMO_SHORT_LIFT_M",
+    "short_release_only": "PANEL_PICK_DEMO_SHORT_RELEASE_ONLY",
+    "skip_align_if_reachable": "PANEL_PICK_DEMO_SKIP_ALIGN_IF_REACHABLE",
+    "step_timeout_extra_sec": "PANEL_PICK_DEMO_STEP_TIMEOUT_EXTRA_SEC",
 }
 
 

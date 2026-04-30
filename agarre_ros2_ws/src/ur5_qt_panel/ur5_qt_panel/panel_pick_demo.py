@@ -326,9 +326,7 @@ def run_pick_demo(panel) -> None:
         panel._set_status("Controladores no listos; esperando", error=False)
         return
     _sync_gate_emit("controllers", True, reason or "ok")
-    requested_route_mode = str(
-        os.environ.get("PANEL_PICK_DEMO_ROUTE_MODE", "direct_ik_hybrid") or "direct_ik_hybrid"
-    ).strip().lower()
+    requested_route_mode = _get_pick_demo_params().route_mode
     route_candidates = "manual_reference,direct_ik_hybrid,joint_preset_fallback"
     route_gate_manual_reference = True
     route_gate_direct_ik = bool(tf_ok and bool(panel._ee_frame_effective) and ready)
@@ -617,13 +615,7 @@ def run_pick_demo(panel) -> None:
                 anchor_norm = _vec_norm(anchor_delta)
                 stale_tol_m = max(
                     0.01,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_SELECTED_BASE_STALE_TOL_M",
-                            "0.080",
-                        )
-                        or 0.080
-                    ),
+                    _get_pick_demo_params().selected_base_stale_tol_m,
                 )
                 extra = {
                     "selected_base_anchor": selected_base_anchor,
@@ -993,7 +985,7 @@ def run_pick_demo(panel) -> None:
                 if not ok:
                     raise RuntimeError(f"{label} fallo: {info}")
                 try:
-                    _step_extra = float(os.environ.get("PANEL_PICK_DEMO_STEP_TIMEOUT_EXTRA_SEC", "0") or "0")
+                    _step_extra = _get_pick_demo_params().step_timeout_extra_sec
                 except Exception:
                     _step_extra = 0.0
                 is_basket_transport_stage = _is_demo_basket_transport_stage(label_name)
@@ -1706,13 +1698,7 @@ def run_pick_demo(panel) -> None:
                 )
                 tol_m = max(
                     0.005,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M",
-                            "0.035",
-                        )
-                        or 0.035
-                    ),
+                    _get_pick_demo_params().gripper_target_tol_m,
                 )
                 opening_sum = None
                 max_abs_err = None
@@ -1761,43 +1747,19 @@ def run_pick_demo(panel) -> None:
             ):
                 required_hits = max(
                     1,
-                    int(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_GRIPPER_CONFIRM_STABLE_SAMPLES",
-                            "2",
-                        )
-                        or 2
-                    ),
+                    _get_pick_demo_params().gripper_confirm_stable_samples,
                 )
                 max_state_age_sec = max(
                     0.05,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_GRIPPER_CONFIRM_MAX_STATE_AGE_SEC",
-                            "0.35",
-                        )
-                        or 0.35
-                    ),
+                    _get_pick_demo_params().gripper_confirm_max_state_age_sec,
                 )
                 close_min_delta_sum = max(
                     0.005,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM",
-                            "0.08",
-                        )
-                        or 0.08
-                    ),
+                    _get_pick_demo_params().close_min_delta_sum,
                 )
                 close_fallback_opening_sum = max(
                     0.02,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_CLOSE_FALLBACK_OPENING_SUM",
-                            "0.40",
-                        )
-                        or 0.40
-                    ),
+                    _get_pick_demo_params().close_fallback_opening_sum,
                 )
                 start = time.monotonic()
                 stable_hits = 0
@@ -3348,33 +3310,15 @@ def run_pick_demo(panel) -> None:
                 target_tcp_3 = _tuple3(target_tcp_runtime)
                 poll_sec = max(
                     0.05,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_POLL_SEC",
-                            "0.10",
-                        )
-                        or 0.10
-                    ),
+                    _get_pick_demo_params().direct_ik_runtime_settle_poll_sec,
                 )
                 stable_delta_m = max(
                     0.001,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_DELTA_M",
-                            "0.003",
-                        )
-                        or 0.003
-                    ),
+                    _get_pick_demo_params().direct_ik_runtime_settle_delta_m,
                 )
                 stable_samples = max(
                     2,
-                    int(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SAMPLES",
-                            "3",
-                        )
-                        or 3
-                    ),
+                    _get_pick_demo_params().direct_ik_runtime_settle_samples,
                 )
                 start_mono = time.monotonic()
                 deadline = start_mono + max(0.2, float(timeout_sec))
@@ -3761,13 +3705,7 @@ def run_pick_demo(panel) -> None:
                     if float(joint_weight) >= 0.0
                     else max(
                         0.0,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_DIRECT_IK_SEED_WEIGHT",
-                                "0.035",
-                            )
-                            or 0.035
-                        ),
+                        _get_pick_demo_params().direct_ik_seed_weight,
                     )
                 )
                 solved_q, err_norm, ik_ok = ik_ur5(
@@ -4464,24 +4402,12 @@ def run_pick_demo(panel) -> None:
                 if str(label or "").strip().upper() == "GRASP_ALIGN_IK":
                     align_joint_tol_rad = max(
                         0.004,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_GRASP_ALIGN_JOINT_TOL_RAD",
-                                "0.010",
-                            )
-                            or 0.010
-                        ),
+                        _get_pick_demo_params().grasp_align_joint_tol_rad,
                     )
                 else:
                     align_joint_tol_rad = max(
                         0.01,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_DIRECT_IK_JOINT_TOL_RAD",
-                                "0.03",
-                            )
-                            or 0.03
-                        ),
+                        _get_pick_demo_params().direct_ik_joint_tol_rad,
                     )
                 try:
                     _run_joint_step(
@@ -4514,13 +4440,7 @@ def run_pick_demo(panel) -> None:
                 runtime_target_tol_m = _direct_runtime_target_tol_m(label)
                 runtime_target_timeout_sec = max(
                     0.5,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_DIRECT_IK_TCP_TIMEOUT_SEC",
-                            "4.0",
-                        )
-                        or 4.0
-                    ),
+                    _get_pick_demo_params().direct_ik_tcp_timeout_sec,
                 )
                 try:
                     wait_fn = getattr(panel, "_wait_for_tcp_base_target", None)
@@ -4538,13 +4458,7 @@ def run_pick_demo(panel) -> None:
                 runtime_target_dist = runtime_target_wait_dist
                 runtime_settle_timeout_sec = max(
                     0.5,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_SETTLE_SEC",
-                            "2.5",
-                        )
-                        or 2.5
-                    ),
+                    _get_pick_demo_params().direct_ik_runtime_settle_sec,
                 )
                 runtime_settle = _wait_runtime_tcp_stable(
                     label=label,
@@ -4810,11 +4724,11 @@ def run_pick_demo(panel) -> None:
                 dist = math.sqrt(dx * dx + dy * dy + dz * dz)
                 xy_tol = max(
                     0.01,
-                    float(os.environ.get("PANEL_PICK_DEMO_FALLBACK_PRESET_MAX_XY_M", "0.05") or 0.05),
+                    _get_pick_demo_params().fallback_preset_max_xy_m,
                 )
                 dist_tol = max(
                     xy_tol,
-                    float(os.environ.get("PANEL_PICK_DEMO_FALLBACK_PRESET_MAX_DIST_M", "0.10") or 0.10),
+                    _get_pick_demo_params().fallback_preset_max_dist_m,
                 )
                 ok = bool(xy_dist <= xy_tol and dist <= dist_tol)
                 panel._emit_log(
@@ -5117,7 +5031,7 @@ def run_pick_demo(panel) -> None:
                 target_dist_tol = max(strict_xy_tol, _get_pick_demo_params().grasp_down_strict_dist_tol_m)
                 max_attempts = max(
                     1,
-                    int(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS", "4") or 4),
+                    _get_pick_demo_params().grasp_down_max_attempts,
                 )
                 rot_weight = max(0.0, _get_pick_demo_params().grasp_down_rot_weight)
                 ik_err_tol = max(0.035, _get_pick_demo_params().grasp_down_ik_err_tol)
@@ -5126,41 +5040,20 @@ def run_pick_demo(panel) -> None:
                 def _grasp_down_permissive_rot_weight() -> float:
                     return max(
                         rot_weight,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_ROT_WEIGHT",
-                                "0.35",
-                            ) or 0.35
-                        ),
+                        _get_pick_demo_params().grasp_down_permissive_rot_weight,
                     )
 
                 def _grasp_down_permissive_ik_err_tol() -> float:
-                    requested = float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_IK_ERR_TOL",
-                            "0.015",
-                        ) or 0.015
-                    )
+                    requested = _get_pick_demo_params().grasp_down_permissive_ik_err_tol
                     return min(0.025, max(0.010, requested))
 
                 def _grasp_down_permissive_joint_weight() -> float:
                     return max(
                         joint_weight,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT",
-                                "0.65",
-                            ) or 0.65
-                        ),
+                        _get_pick_demo_params().grasp_down_permissive_seed_weight,
                     )
 
-                grasp_down_disable_permissive_fallback = str(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_GRASP_DOWN_DISABLE_PERMISSIVE_FALLBACK",
-                        "0",
-                    )
-                    or "0"
-                ).strip().lower() in {"1", "true", "yes", "on"}
+                grasp_down_disable_permissive_fallback = _get_pick_demo_params().grasp_down_disable_permissive_fallback
 
                 last_debug = None
                 last_metrics = _grasp_down_runtime_metrics(target_base=target_base, obj_base=obj_base)
@@ -5659,54 +5552,24 @@ def run_pick_demo(panel) -> None:
                 max_attempts = max(
                     1,
                     int(
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_DIRECT_IK_RUNTIME_ATTEMPTS",
-                                "5",
-                            )
-                            or 5
-                        )
+                        _get_pick_demo_params().direct_ik_runtime_attempts
                     ),
                 )
                 align_z_residual_tol = max(
                     0.003,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_ALIGN_Z_RESIDUAL_TOL_M",
-                            "0.015",
-                        )
-                        or 0.015
-                    ),
+                    _get_pick_demo_params().align_z_residual_tol_m,
                 )
                 align_z_improve_min = max(
                     0.001,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_ALIGN_Z_IMPROVE_MIN_M",
-                            "0.006",
-                        )
-                        or 0.006
-                    ),
+                    _get_pick_demo_params().align_z_improve_min_m,
                 )
                 align_z_bias_gain = max(
                     0.0,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_ALIGN_Z_BIAS_GAIN",
-                            "0.70",
-                        )
-                        or 0.70
-                    ),
+                    _get_pick_demo_params().align_z_bias_gain,
                 )
                 align_z_bias_cap_m = max(
                     0.0,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_ALIGN_Z_BIAS_CAP_M",
-                            "0.030",
-                        )
-                        or 0.030
-                    ),
+                    _get_pick_demo_params().align_z_bias_cap_m,
                 )
                 last_metrics = None
                 last_debug = None
@@ -5742,33 +5605,15 @@ def run_pick_demo(panel) -> None:
                     pre_metrics = _pre_close_alignment_metrics()
                     xy_lock_factor = max(
                         1.0,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_ALIGN_XY_LOCK_FACTOR",
-                                "2.0",
-                            )
-                            or 2.0
-                        ),
+                        _get_pick_demo_params().align_xy_lock_factor,
                     )
                     align_exit_xy_tol = max(
                         0.004,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_ALIGN_EXIT_XY_TOL_M",
-                                "0.006",
-                            )
-                            or 0.006
-                        ),
+                        _get_pick_demo_params().align_exit_xy_tol_m,
                     )
                     align_exit_z_tol = max(
                         0.006,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_ALIGN_EXIT_Z_TOL_M",
-                                "0.010",
-                            )
-                            or 0.010
-                        ),
+                        _get_pick_demo_params().align_exit_z_tol_m,
                     )
                     xy_tol_pre = float(pre_metrics.get("xy_tol") or 0.035)
                     z_tol_pre = float(pre_metrics.get("z_tol") or 0.030)
@@ -6016,33 +5861,15 @@ def run_pick_demo(panel) -> None:
                             target_frame_original="base_link",
                             rot_weight=max(
                                 0.0,
-                                float(
-                                    os.environ.get(
-                                        "PANEL_PICK_DEMO_ALIGN_ROT_WEIGHT",
-                                        "0.10",
-                                    )
-                                    or 0.10
-                                ),
+                                _get_pick_demo_params().align_rot_weight,
                             ),
                             ik_err_tol=max(
                                 0.035,
-                                float(
-                                    os.environ.get(
-                                        "PANEL_PICK_DEMO_ALIGN_IK_ERR_TOL",
-                                        "0.08",
-                                    )
-                                    or 0.08
-                                ),
+                                _get_pick_demo_params().align_ik_err_tol,
                             ),
                             joint_weight=max(
                                 0.0,
-                                float(
-                                    os.environ.get(
-                                        "PANEL_PICK_DEMO_ALIGN_IK_SEED_WEIGHT",
-                                        "0.50",
-                                    )
-                                    or 0.50
-                                ),
+                                _get_pick_demo_params().align_ik_seed_weight,
                             ),
                             # GRASP_ALIGN_IK is the last geometric refinement before
                             # closing.  If we skip publishing because the joints are
@@ -6152,7 +5979,7 @@ def run_pick_demo(panel) -> None:
                         tcp_motion_delta is not None
                         and float(tcp_motion_delta) <= max(
                             0.0015,
-                            float(os.environ.get("PANEL_PICK_DEMO_ALIGN_NO_EFFECT_TOL_M", "0.002") or 0.002),
+                            _get_pick_demo_params().align_no_effect_tol_m,
                         )
                     )
                     convergence_ok = bool(runtime_ok and xy_after_ok and z_after_ok and pose_sources_ok)
@@ -6510,13 +6337,7 @@ def run_pick_demo(panel) -> None:
 
                 post_close_hold_sec = max(
                     0.0,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_POST_CLOSE_HOLD_SEC",
-                            "0.45",
-                        )
-                        or 0.45
-                    ),
+                    _get_pick_demo_params().post_close_hold_sec,
                 )
                 if post_close_hold_sec > 1e-4:
                     panel._emit_log(
@@ -6539,23 +6360,11 @@ def run_pick_demo(panel) -> None:
                                 base_frame=str(panel._business_base_frame() or BASE_FRAME or "base_link"),
                                 xy_tol_m=max(
                                     0.03,
-                                    float(
-                                        os.environ.get(
-                                            "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_XY_TOL_M",
-                                            "0.060",
-                                        )
-                                        or 0.060
-                                    ),
+                                    _get_pick_demo_params().manual_like_attach_xy_tol_m,
                                 ),
                                 z_tol_m=max(
                                     0.03,
-                                    float(
-                                        os.environ.get(
-                                            "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_Z_TOL_M",
-                                            "0.060",
-                                        )
-                                        or 0.060
-                                    ),
+                                    _get_pick_demo_params().manual_like_attach_z_tol_m,
                                 ),
                                 z_ref_mode="center",
                                 # rg2_pinch_center ya es el frame de contacto
@@ -6578,23 +6387,11 @@ def run_pick_demo(panel) -> None:
                         _wait_demo_attach_follow(
                             timeout_sec=max(
                                 0.6,
-                                float(
-                                    os.environ.get(
-                                        "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_WAIT_SEC",
-                                        "0.9",
-                                    )
-                                    or 0.9
-                                ),
+                                _get_pick_demo_params().manual_like_attach_wait_sec,
                             ),
                             max_tcp_dist_m=max(
                                 0.10,
-                                float(
-                                    os.environ.get(
-                                        "PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_MAX_TCP_DIST_M",
-                                        "0.14",
-                                    )
-                                    or 0.14
-                                ),
+                                _get_pick_demo_params().manual_like_attach_max_tcp_dist_m,
                             ),
                             min_consecutive=2,
                         )
@@ -6730,9 +6527,7 @@ def run_pick_demo(panel) -> None:
             z_alineada_alert_emitted = False
             alcance_pause_done = False
             alcance_monitor_last_log_ts = 0.0
-            debug_pause_grasp_align_enabled = str(
-                os.environ.get("PANEL_PICK_DEMO_DEBUG_PAUSE_GRASP_ALIGN_IK", "0") or "0"
-            ).strip().lower() in {"1", "true", "yes", "on"}
+            debug_pause_grasp_align_enabled = _get_pick_demo_params().debug_pause_grasp_align_ik
             debug_pause_grasp_align_done = False
 
             def _monitor_alcance(*, trigger: str) -> dict:
@@ -6851,33 +6646,15 @@ def run_pick_demo(panel) -> None:
                 if phase == "APPROACH_COARSE":
                     xy_tol = max(
                         0.05,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_APPROACH_COARSE_UTIL_XY_TOL_M",
-                                "0.18",
-                            )
-                            or 0.18
-                        ),
+                        _get_pick_demo_params().approach_coarse_util_xy_tol_m,
                     )
                     z_tol = max(
                         0.05,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_APPROACH_COARSE_UTIL_Z_ERR_TOL_M",
-                                "0.18",
-                            )
-                            or 0.18
-                        ),
+                        _get_pick_demo_params().approach_coarse_util_z_err_tol_m,
                     )
                     dist_tol = max(
                         0.10,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_APPROACH_COARSE_UTIL_DIST_TOL_M",
-                                "0.26",
-                            )
-                            or 0.26
-                        ),
+                        _get_pick_demo_params().approach_coarse_util_dist_tol_m,
                     )
                     util = bool(xy_dist <= xy_tol and z_error <= z_tol and dist <= dist_tol)
                     if util and not approach_coarse_util_alert_emitted:
@@ -6918,13 +6695,7 @@ def run_pick_demo(panel) -> None:
                     )
                     dist_tol = max(
                         0.01,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_DIST_TOL_M",
-                                "0.22",
-                            )
-                            or 0.22
-                        ),
+                        _get_pick_demo_params().grasp_down_util_dist_tol_m,
                     )
                     util = bool(xy_dist <= xy_tol and z_error <= z_tol and dist <= dist_tol)
                     if util and not grasp_down_util_alert_emitted:
@@ -7155,11 +6926,11 @@ def run_pick_demo(panel) -> None:
                     manual_ref_z_gap_vs_obj = float(ref_manual_base[2]) - float(obj_base_reference[2])
                     stale_xy_tol_m = max(
                         0.01,
-                        float(os.environ.get("PANEL_PICK_DEMO_MANUAL_REF_STALE_XY_TOL_M", "0.08") or 0.08),
+                        _get_pick_demo_params().manual_ref_stale_xy_tol_m,
                     )
                     stale_z_below_tol_m = max(
                         0.0,
-                        float(os.environ.get("PANEL_PICK_DEMO_MANUAL_REF_STALE_Z_BELOW_TOL_M", "0.005") or 0.005),
+                        _get_pick_demo_params().manual_ref_stale_z_below_tol_m,
                     )
                     manual_ref_stale = bool(
                         float(manual_ref_xy_dist) > float(stale_xy_tol_m)
@@ -7263,13 +7034,7 @@ def run_pick_demo(panel) -> None:
                 )
                 grasp_down_extra_z_m = max(
                     0.0,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_GRASP_DOWN_EXTRA_Z_M",
-                            "0.00",
-                        )
-                        or 0.00
-                    ),
+                    _get_pick_demo_params().grasp_down_extra_z_m,
                 )
                 preset_approach = "direct_rg2_tcp_dynamic_coarse"
                 preset_grasp_down = "direct_rg2_tcp_dynamic_down"
@@ -7482,11 +7247,11 @@ def run_pick_demo(panel) -> None:
                 if target_base_coarse is not None:
                     coarse_skip_xy_tol = max(
                         0.005,
-                        float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_SKIP_XY_TOL_M", "0.03") or 0.03),
+                        _get_pick_demo_params().approach_coarse_skip_xy_tol_m,
                     )
                     coarse_skip_z_tol = max(
                         0.005,
-                        float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_SKIP_Z_TOL_M", "0.04") or 0.04),
+                        _get_pick_demo_params().approach_coarse_skip_z_tol_m,
                     )
                     if _tcp_canonical is not None:
                         coarse_dx = float(_tcp_canonical[0]) - float(target_base_coarse[0])
@@ -7495,7 +7260,7 @@ def run_pick_demo(panel) -> None:
                         coarse_xy = math.hypot(coarse_dx, coarse_dy)
                         _coarse_max_skip_m = max(
                             coarse_skip_xy_tol,
-                            float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_MAX_SKIP_M", "0.06") or 0.06),
+                            _get_pick_demo_params().approach_coarse_max_skip_m,
                         )
                         _skip_check_msg = (
                             "[PICK][DIRECT][APPROACH_SKIP_CHECK] "
@@ -7648,15 +7413,15 @@ def run_pick_demo(panel) -> None:
                     # ── [FIX] PHASE_CHECK settle wait ────────────────────────────────
                     _ac_settle_max_sec = max(
                         0.5,
-                        float(os.environ.get("PANEL_PICK_DEMO_AC_PHASE_CHECK_SETTLE_SEC", "3.0") or 3.0),
+                        _get_pick_demo_params().ac_phase_check_settle_sec,
                     )
                     _ac_settle_threshold_m = max(
                         0.001,
-                        float(os.environ.get("PANEL_PICK_DEMO_AC_PHASE_CHECK_THRESHOLD_M", "0.004") or 0.004),
+                        _get_pick_demo_params().ac_phase_check_threshold_m,
                     )
                     _ac_settle_samples = max(
                         2,
-                        int(os.environ.get("PANEL_PICK_DEMO_AC_PHASE_CHECK_STABLE_SAMPLES", "3") or 3),
+                        _get_pick_demo_params().ac_phase_check_stable_samples,
                     )
                     _ac_settle_t0 = time.monotonic()
                     _ac_settle_prev = _live_tcp_base()
@@ -7720,7 +7485,7 @@ def run_pick_demo(panel) -> None:
                     )
                     _cg_z_tol = max(
                         0.006,
-                        float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M", "0.008") or 0.008),
+                        _get_pick_demo_params().approach_coarse_gate_z_tol_m,
                     )
                     coarse_gate_xy_err = math.hypot(
                         float(_coarse_check_tcp[0]) - float(_coarse_check_obj[0]),
@@ -7745,12 +7510,7 @@ def run_pick_demo(panel) -> None:
                     #        = Z_target - _cg_z_err  (ya que _cg_z_err = Z_real - Z_target)
                     _ac_z_corr_tol_m = max(
                         0.010,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_APPROACH_COARSE_Z_CORR_TOL_M", "0.020"
-                            )
-                            or 0.020
-                        ),
+                        _get_pick_demo_params().approach_coarse_z_corr_tol_m,
                     )
                     if (
                         approach_decision == "direct_ik_move"
@@ -7810,23 +7570,11 @@ def run_pick_demo(panel) -> None:
                             )
                     _ac_xy_corr_tol_m = max(
                         _cg_xy_tol,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_APPROACH_COARSE_XY_CORR_TOL_M",
-                                "0.015",
-                            )
-                            or 0.015
-                        ),
+                        _get_pick_demo_params().approach_coarse_xy_corr_tol_m,
                     )
                     _ac_xy_corr_max_m = max(
                         _ac_xy_corr_tol_m,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_APPROACH_COARSE_XY_CORR_MAX_M",
-                                "0.040",
-                            )
-                            or 0.040
-                        ),
+                        _get_pick_demo_params().approach_coarse_xy_corr_max_m,
                     )
                     if (
                         approach_decision == "direct_ik_move"
@@ -7894,33 +7642,15 @@ def run_pick_demo(panel) -> None:
                             )
                     _ac_gate_settle_sec = max(
                         0.3,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_SETTLE_SEC",
-                                "0.80",
-                            )
-                            or 0.80
-                        ),
+                        _get_pick_demo_params().approach_coarse_gate_settle_sec,
                     )
                     _ac_gate_poll_sec = max(
                         0.05,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_POLL_SEC",
-                                "0.10",
-                            )
-                            or 0.10
-                        ),
+                        _get_pick_demo_params().approach_coarse_gate_poll_sec,
                     )
                     _ac_gate_stable_samples = max(
                         2,
-                        int(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_STABLE_SAMPLES",
-                                "2",
-                            )
-                            or 2
-                        ),
+                        _get_pick_demo_params().approach_coarse_gate_stable_samples,
                     )
                     _coarse_gate = _wait_phase_gate_ready(
                         phase="APPROACH_COARSE",
@@ -7951,8 +7681,8 @@ def run_pick_demo(panel) -> None:
                     coarse_gate_z_ok = bool(_coarse_gate.get("z_ok"))
                     coarse_gate_pose_ok = bool(_coarse_gate.get("pose_ok"))
                     coarse_pose_metrics = _coarse_gate.get("pose_consistency") or {}
-                    _coarse_handoff_dist_tol = float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DIST_TOL_M", "0.015") or 0.015)
-                    _coarse_handoff_dz_tol = float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DZ_TOL_M", "0.015") or 0.015)
+                    _coarse_handoff_dist_tol = _get_pick_demo_params().approach_coarse_handoff_dist_tol_m
+                    _coarse_handoff_dz_tol = _get_pick_demo_params().approach_coarse_handoff_dz_tol_m
                     _coarse_relaxed_handoff_dist_tol = _pick_demo_env_float(
                         "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_DIST_TOL_M",
                             0.033,
@@ -8005,21 +7735,9 @@ def run_pick_demo(panel) -> None:
                             and abs(float(dz_obj_local)) <= _coarse_handoff_dz_tol
                         )
                         gate_ok_local = bool(gate_metrics_for_check.get("ok"))
-                        _relaxed_xy_cap_m = float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_XY_TOL_M",
-                                "0.010",
-                            )
-                            or 0.010
-                        )
+                        _relaxed_xy_cap_m = _get_pick_demo_params().approach_coarse_relaxed_handoff_xy_tol_m
                         _relaxed_skip_pose_ok = bool(
-                            int(
-                                os.environ.get(
-                                    "PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_SKIP_POSE_OK",
-                                    "0",
-                                )
-                                or 0
-                            )
+                            _get_pick_demo_params().approach_coarse_relaxed_skip_pose_ok
                         )
                         relaxed_handoff_xy_ok_local = bool(
                             coarse_gate_xy_err <= _relaxed_xy_cap_m
@@ -8724,7 +8442,7 @@ def run_pick_demo(panel) -> None:
                     )
                     if (
                         _handoff_target_jump_m is not None
-                        and float(_handoff_target_jump_m) > float(os.environ.get("PANEL_PICK_DEMO_HANDOFF_TARGET_JUMP_TOL_M", "0.005") or 0.005)
+                        and float(_handoff_target_jump_m) > _get_pick_demo_params().handoff_target_jump_tol_m
                     ):
                         _abort_grasp(
                             code="GRASP_DOWN_HANDOFF_TARGET_JUMP",
@@ -8853,16 +8571,7 @@ def run_pick_demo(panel) -> None:
                 )
                 grasp_down_decision = "direct_ik_runtime_refine"
                 if target_base_grasp_down is not None:
-                    _use_moveit_cart = (
-                        str(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN", "1"
-                            ) or "1"
-                        )
-                        .strip()
-                        .lower()
-                        not in ("0", "false", "no", "off")
-                    )
+                    _use_moveit_cart = _get_pick_demo_params().grasp_down_use_moveit_cartesian
                     if _use_moveit_cart:
                         try:
                             grasp_down_debug, grasp_down_decision, grasp_down_metrics = (
@@ -8977,33 +8686,15 @@ def run_pick_demo(panel) -> None:
                         z_tol_m=_gd_z_tol,
                         timeout_sec=max(
                             0.3,
-                            float(
-                                os.environ.get(
-                                    "PANEL_PICK_DEMO_GRASP_DOWN_GATE_SETTLE_SEC",
-                                    "0.80",
-                                )
-                                or 0.80
-                            ),
+                            _get_pick_demo_params().grasp_down_gate_settle_sec,
                         ),
                         poll_sec=max(
                             0.05,
-                            float(
-                                os.environ.get(
-                                    "PANEL_PICK_DEMO_GRASP_DOWN_GATE_POLL_SEC",
-                                    "0.10",
-                                )
-                                or 0.10
-                            ),
+                            _get_pick_demo_params().grasp_down_gate_poll_sec,
                         ),
                         required_samples=max(
                             2,
-                            int(
-                                os.environ.get(
-                                    "PANEL_PICK_DEMO_GRASP_DOWN_GATE_STABLE_SAMPLES",
-                                    "2",
-                                )
-                                or 2
-                            ),
+                            _get_pick_demo_params().grasp_down_gate_stable_samples,
                         ),
                         # GRASP_DOWN still tolerates FK-vs-TF divergence at grasp height;
                         # here we only need to reject teleports/stale geometry, not DH drift.
@@ -9099,10 +8790,7 @@ def run_pick_demo(panel) -> None:
             # eliminado; ahora GRASP_DOWN_JOINT ya centra el XY correctamente.
             # Si el arm entra con pre_close_ok=True, GRASP_ALIGN_IK no aporta nada
             # y su IK falla porque usa seed=PRESET lejano de la pose actual.
-            skip_align_if_reachable = str(
-                os.environ.get("PANEL_PICK_DEMO_SKIP_ALIGN_IF_REACHABLE", "1")
-                or "1"
-            ).strip().lower() in ("1", "true", "yes", "on")
+            skip_align_if_reachable = _get_pick_demo_params().skip_align_if_reachable
             _align_seed_injected = False  # se activa solo en el path que ejecuta GRASP_ALIGN_IK
             pre_align_metrics = _pre_close_alignment_metrics()
             # PHASE_ENTRY: trazar error con el que entra GRASP_ALIGN_IK (pre-align_metrics)
@@ -9262,13 +8950,7 @@ def run_pick_demo(panel) -> None:
                 align_retries = max(
                     1,
                     int(
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_GRASP_ALIGN_MAX_ATTEMPTS",
-                                "3",
-                            )
-                            or 3
-                        )
+                        _get_pick_demo_params().grasp_align_max_attempts
                     ),
                 )
                 align_debug = None
@@ -9362,7 +9044,7 @@ def run_pick_demo(panel) -> None:
             )
             extra_down_m = max(
                 0.0,
-                float(os.environ.get("PANEL_PICK_DEMO_EXTRA_GRASP_DOWN_M", "0.0") or 0.0),
+                _get_pick_demo_params().extra_grasp_down_m,
             )
             if extra_down_m > 1e-4:
                 try:
@@ -9445,13 +9127,7 @@ def run_pick_demo(panel) -> None:
                 )
             post_align_settle_sec = max(
                 0.0,
-                float(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_POST_ALIGN_SETTLE_SEC",
-                        "0.20",
-                    )
-                    or 0.20
-                ),
+                _get_pick_demo_params().post_align_settle_sec,
             )
             panel._emit_log(
                 "[PICK][DIRECT][TRANSITION] "
@@ -9551,36 +9227,18 @@ def run_pick_demo(panel) -> None:
                 panel._emit_log(f"[ALIGN_DEBUG] phase=PRE_CLOSE exception={_adb_exc_pc}")
             pre_close_wait_sec = max(
                 0.4,
-                float(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_PRE_CLOSE_WAIT_SEC",
-                        "1.2",
-                    )
-                    or 1.2
-                ),
+                _get_pick_demo_params().pre_close_wait_sec,
             )
             pre_close_min_consecutive = max(
                 1,
                 int(
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_PRE_CLOSE_CONSECUTIVE",
-                            "3",
-                        )
-                        or 3
-                    )
+                    _get_pick_demo_params().pre_close_consecutive
                 ),
             )
             pre_close_realign_retries = max(
                 0,
                 int(
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES",
-                            "2",
-                        )
-                        or 2
-                    )
+                    _get_pick_demo_params().pre_close_realign_retries
                 ),
             )
             pre_close_ok = False
@@ -9718,13 +9376,7 @@ def run_pick_demo(panel) -> None:
             time.sleep(0.3)
             close_confirm_timeout_sec = max(
                 0.8,
-                float(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC",
-                        "1.8",
-                    )
-                    or 1.8
-                ),
+                _get_pick_demo_params().close_confirm_timeout_sec,
             )
             _final_phase_trace(
                 "CLOSE",
@@ -9767,9 +9419,7 @@ def run_pick_demo(panel) -> None:
             # basket es el camino seguro por defecto para el demo: mantiene el
             # transporte hasta la cesta y evita que la ruta manual_like deje el
             # objeto restaurado en una pose vieja del backend.
-            post_close_mode = str(
-                os.environ.get("PANEL_PICK_DEMO_POST_CLOSE_MODE", "basket") or "basket"
-            ).strip().lower()
+            post_close_mode = _get_pick_demo_params().post_close_mode
             manual_like_mode = post_close_mode in {"manual_like", "manual", "simple"}
             _final_phase_trace(
                 "CLOSE",
@@ -9881,11 +9531,11 @@ def run_pick_demo(panel) -> None:
             target_world_attach = _target_world_from_base(target_base_attach)
             attach_xy_tol_m = max(
                 0.006,
-                float(os.environ.get("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.012") or 0.012),
+                _get_pick_demo_params().attach_xy_tol_m,
             )
             attach_z_tol_m = max(
                 0.008,
-                float(os.environ.get("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.015") or 0.015),
+                _get_pick_demo_params().attach_z_tol_m,
             )
             attach_dx = float(obj_base_grasp[0]) - float(tcp_base_grasp[0])
             attach_dy = float(obj_base_grasp[1]) - float(tcp_base_grasp[1])
@@ -10035,33 +9685,22 @@ def run_pick_demo(panel) -> None:
             # ── ATTACH_GATE: leer parámetros configurables ─────────────────────
             attach_follow_timeout_sec = max(
                 1.2,
-                float(
-                    os.environ.get("PANEL_PICK_DEMO_ATTACH_SETTLE_SEC", "1.8") or 1.8
-                ),
+                _get_pick_demo_params().attach_settle_sec,
             )
             attach_follow_max_tcp_dist_m = max(
                 0.02,
-                float(
-                    os.environ.get("PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M", "0.040")
-                    or 0.040
-                ),
+                _get_pick_demo_params().attach_follow_max_tcp_dist_m,
             )
             try:
-                _ag_max_rel_drift_m = float(
-                    os.environ.get("PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M", "0.012") or 0.012
-                )
+                _ag_max_rel_drift_m = _get_pick_demo_params().attach_max_rel_drift_m
             except Exception:
                 _ag_max_rel_drift_m = 0.012
             try:
-                _ag_stable_window_sec = float(
-                    os.environ.get("PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC", "0.35") or 0.35
-                )
+                _ag_stable_window_sec = _get_pick_demo_params().attach_stable_window_sec
             except Exception:
                 _ag_stable_window_sec = 0.35
             try:
-                _ag_min_stable_samples = int(
-                    os.environ.get("PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES", "5") or 5
-                )
+                _ag_min_stable_samples = _get_pick_demo_params().attach_min_stable_samples
             except Exception:
                 _ag_min_stable_samples = 5
             try:
@@ -10069,9 +9708,7 @@ def run_pick_demo(panel) -> None:
             except Exception:
                 _ag_gripper_closed_thr = 0.020
             try:
-                _ag_max_tf_visual_gap_m = float(
-                    os.environ.get("PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M", "0.020") or 0.020
-                )
+                _ag_max_tf_visual_gap_m = _get_pick_demo_params().attach_max_tf_visual_gap_m
             except Exception:
                 _ag_max_tf_visual_gap_m = 0.020
 
@@ -10243,13 +9880,7 @@ def run_pick_demo(panel) -> None:
             )
             post_attach_hold_sec = max(
                 0.0,
-                float(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_POST_ATTACH_HOLD_SEC",
-                        "0.90",
-                    )
-                    or 0.90
-                ),
+                _get_pick_demo_params().post_attach_hold_sec,
             )
             if post_attach_hold_sec > 1e-4:
                 panel._emit_log(
@@ -10286,13 +9917,7 @@ def run_pick_demo(panel) -> None:
                 offsets={
                     "lift_m": max(
                         0.04,
-                        float(
-                            os.environ.get(
-                                "PANEL_PICK_DEMO_SHORT_LIFT_M",
-                                "0.120",
-                            )
-                            or 0.120
-                        ),
+                        _get_pick_demo_params().short_lift_m,
                     )
                 },
                 note="post-grasp short lift",
@@ -10335,13 +9960,7 @@ def run_pick_demo(panel) -> None:
             lift_debug = _lift_demo_object_direct(
                 max(
                     0.04,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_SHORT_LIFT_M",
-                            "0.120",
-                        )
-                        or 0.120
-                    ),
+                    _get_pick_demo_params().short_lift_m,
                 )
             )
             if _lift_seed_injected:
@@ -10407,9 +10026,7 @@ def run_pick_demo(panel) -> None:
             # position. 3s matches the observed backend TCP-staleness lag.
             _carry_settle_sec = max(
                 0.0,
-                float(
-                    os.environ.get("PANEL_PICK_DEMO_CARRY_SETTLE_SEC", "3.0") or "3.0"
-                ),
+                _get_pick_demo_params().carry_settle_sec,
             )
             if _carry_settle_sec > 0:
                 panel._emit_log(
@@ -10526,9 +10143,7 @@ def run_pick_demo(panel) -> None:
                 if not mark_object_attached(PICK_DEMO_OBJECT_NAME, reason="demo_physical_lift_ok"):
                     raise RuntimeError("demo_mark_attached_failed")
                 demo_logical_attached = True
-            short_release_mode = str(
-                os.environ.get("PANEL_PICK_DEMO_SHORT_RELEASE_ONLY", "0") or "0"
-            ).strip().lower() not in {"0", "false", "no", "off"}
+            short_release_mode = _get_pick_demo_params().short_release_only
             if short_release_mode:
                 panel._emit_log("[PICK][DEMO] short_release_mode=true")
 
@@ -10565,13 +10180,7 @@ def run_pick_demo(panel) -> None:
                 demo_logical_attached = False
                 release_wait_timeout = max(
                     0.8,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_RELEASE_WAIT_SEC",
-                            "1.6",
-                        )
-                        or 1.6
-                    ),
+                    _get_pick_demo_params().release_wait_sec,
                 )
                 _final_phase_trace(
                     "RELEASE",
@@ -10716,11 +10325,7 @@ def run_pick_demo(panel) -> None:
                 timeout_sec=1.2,
                 min_obj_move_m=0.080,
                 min_lift_delta_m=0.060,
-                max_tcp_dist_m=float(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M", "0.200"
-                    )
-                ),
+                max_tcp_dist_m=_get_pick_demo_params().carry_home_max_tcp_dist_m,
                 live_world_fn=_fresh_gazebo_object_world,
             )
             transport_min_world_z_m = _pick_demo_env_float(
@@ -10892,13 +10497,7 @@ def run_pick_demo(panel) -> None:
             time.sleep(0.1)
             release_open_timeout_sec = max(
                 0.8,
-                float(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_RELEASE_OPEN_CONFIRM_TIMEOUT_SEC",
-                        "1.8",
-                    )
-                    or 1.8
-                ),
+                _get_pick_demo_params().release_open_confirm_timeout_sec,
             )
             release_open_confirmed, release_open_wait_state = _wait_for_gripper_target(
                 False,
