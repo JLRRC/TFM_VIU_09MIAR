@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from .panel_config import INFER_CKPT, INFER_SCRIPT, LOG_DIR, VISION_DIR
+from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
 from .panel_utils import ensure_dir, run_cmd
 from .panel_objects import get_object_position, get_object_state, get_object_states, is_on_table, update_object_state
 from .panel_pick_object import run_pick_object
@@ -793,22 +794,12 @@ def wait_tfm_moveit_result(panel,
     result_topic = "/desired_grasp/result"
     grace_applied = False
     try:
-        active_request_grace_sec = float(
-            os.environ.get(
-                "PANEL_TFM_MOVEIT_ACTIVE_REQUEST_GRACE_SEC",
-                "90.0",
-            )
-        )
+        active_request_grace_sec = _get_panel_tfm_params().moveit_active_request_grace_sec
     except Exception:
         active_request_grace_sec = 90.0
     active_request_grace_sec = max(10.0, active_request_grace_sec)
     try:
-        hb_recent_window_sec = float(
-            os.environ.get(
-                "PANEL_TFM_MOVEIT_ACTIVE_REQUEST_HB_SEC",
-                "2.5",
-            )
-        )
+        hb_recent_window_sec = _get_panel_tfm_params().moveit_active_request_hb_sec
     except Exception:
         hb_recent_window_sec = 2.5
     hb_recent_window_sec = max(1.2, hb_recent_window_sec)
@@ -1071,9 +1062,7 @@ def execute_tfm_world_grasp(panel) -> bool:
             grasp_semantics = str(
                 grasp_base.get("grasp_semantics", "projection_surface") or "projection_surface"
             )
-            pretable_enabled = str(
-                os.environ.get("PANEL_TFM_EXECUTE_PRETABLE", "1")
-            ).strip().lower() not in ("0", "false", "no", "off")
+            pretable_enabled = _get_panel_tfm_params().execute_pretable
             if pretable_enabled:
                 move_sec = float(panel.joint_time.value()) if panel.joint_time else 3.0
                 panel._emit_log(
@@ -1131,9 +1120,7 @@ def execute_tfm_world_grasp(panel) -> bool:
             yaw_rad = math.radians(yaw_deg)
             orientation = (0.0, 0.0, math.sin(yaw_rad / 2.0), math.cos(yaw_rad / 2.0))
             frame = panel._business_base_frame()
-            tfm_grasp_cartesian = str(
-                os.environ.get("PANEL_TFM_GRASP_CARTESIAN", "0")
-            ).strip().lower() not in ("0", "false", "no", "off")
+            tfm_grasp_cartesian = _get_panel_tfm_params().grasp_cartesian
             grasp_mode = "cartesian" if tfm_grasp_cartesian else "pose"
             pre_pose = _make_pose_data((x, y, z_pre), orientation=orientation, frame=frame)
             grasp_pose = _make_pose_data((x, y, z_grasp), orientation=orientation, frame=frame)

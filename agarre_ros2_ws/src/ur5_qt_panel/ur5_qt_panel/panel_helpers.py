@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from .panel_objects import bulk_update_object_positions, get_object_positions, is_on_table, recalc_object_states
+from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
 from .panel_process import ensure_dir
 from .panel_readiness import camera_not_ready_reason, controller_manager_not_ready_reason, controllers_not_ready_reason, list_controllers_not_ready_reason, manual_control_status, moveit_control_status, moveit_not_ready_reason, pick_ui_status, pose_info_not_ready_reason, ros_node_not_ready_reason, set_moveit_wait_status, tf_not_ready_reason
 from .panel_step_ui import build_step_window
@@ -148,7 +149,7 @@ def _tfm_infer_ready_status(panel) -> Tuple[bool, str]:
         frame_age = max(0.0, now - float(frame_ts))
         infer_frame_max_age_sec = max(
             max(0.2, float(CAMERA_READY_MAX_AGE_SEC)),
-            float(os.environ.get("PANEL_TFM_INFER_FRAME_MAX_AGE_SEC", "4.0") or 4.0),
+            _get_panel_tfm_params().infer_frame_max_age_sec,
         )
         if frame_age >= infer_frame_max_age_sec:
             return False, f"frame stale age={frame_age:.2f}s"
@@ -238,7 +239,7 @@ def _current_grasp_status(panel) -> Tuple[bool, str]:
     grasp_ts = float(getattr(panel, "_last_grasp_update_ts", 0.0) or 0.0)
     max_age_sec = max(
         5.0,
-        float(os.environ.get("PANEL_TFM_GRASP_MAX_AGE_SEC", "60.0") or 60.0),
+        _get_panel_tfm_params().grasp_max_age_sec,
     )
     if grasp_ts > 0.0:
         age = max(0.0, _runtime_time() - grasp_ts)

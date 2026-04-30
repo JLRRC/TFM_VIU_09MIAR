@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from .panel_objects import get_object_position
+from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
 from .panel_utils import base_to_world, pixel_to_table_xy, table_xy_to_pixel, table_xy_to_pixel_float
 try:
     import yaml
@@ -810,7 +811,7 @@ def _refresh_cornell_metrics(panel, frame_w: int, frame_h: int) -> None:
 
 # --- TFM mode selector methods (extracted from panel_v2.py) ---
 def _tfm_repro_profile_env(panel) -> str:
-    raw = str(os.environ.get("PANEL_TFM_REPRO_MODE", "") or "").strip().lower()
+    raw = _get_panel_tfm_params().repro_mode
     if raw in ("1", "true", "yes", "on", "exp3_seed0", "pdf_main_case", "tfm_pdf_main_case"):
         return "exp3_seed0"
     return ""
@@ -826,7 +827,7 @@ def _tfm_repro_profile(panel) -> str:
     return panel._tfm_repro_profile_env()
 
 def _tfm_raw_output_env_enabled(panel) -> bool:
-    raw = str(os.environ.get("PANEL_TFM_RAW_OUTPUT", "") or "").strip().lower()
+    raw = _get_panel_tfm_params().raw_output
     return raw in ("1", "true", "yes", "on", "raw", "disable_postprocess")
 
 def _tfm_postprocess_enabled(panel) -> bool:

@@ -23,6 +23,7 @@ import os
 from typing import Optional
 
 from .panel_config import INFER_ROI_SIZE
+from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
 
 
 def _clip_roi(
@@ -45,7 +46,7 @@ def _resolve_infer_roi(panel) -> Optional[tuple[int, int, int]]:
     selected_px = getattr(panel, "_selected_px", None)
     if not selected_px or int(INFER_ROI_SIZE or 0) <= 0:
         return None
-    roi_mode = str(os.environ.get("PANEL_TFM_INFER_USE_ROI", "auto") or "auto").strip().lower()
+    roi_mode = _get_panel_tfm_params().infer_use_roi
     if roi_mode in ("0", "false", "off", "no", "full", "disabled"):
         return None
     if roi_mode not in ("1", "true", "on", "yes", "auto", ""):

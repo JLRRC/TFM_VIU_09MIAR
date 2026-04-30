@@ -48,6 +48,7 @@ from .panel_config import (
     WORLD_FRAME,
 )
 from .panel_pick_geometry import compute_pick_height_profile
+from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
 from .panel_pick_object_params import (
     get_pick_object_params as _get_pick_object_params,
 )
@@ -153,9 +154,7 @@ def run_pick_object(panel) -> None:
             base_q = (0.70710678, 0.0, 0.70710678, 0.0)
         else:
             base_q = tuple(v / norm for v in parts)
-        use_yaw = str(
-            os.environ.get("PANEL_TFM_CANONICAL_USE_GRASP_YAW", "1") or "1"
-        ).strip().lower() not in ("0", "false", "no", "off")
+        use_yaw = _get_panel_tfm_params().canonical_use_grasp_yaw
         if yaw_deg is None or not use_yaw or not math.isfinite(float(yaw_deg)):
             return base_q
         yaw_rad = math.radians(float(yaw_deg))
@@ -801,14 +800,10 @@ def run_pick_object(panel) -> None:
             _canonical_finish(False, "canonical_frame_mismatch", "FAIL_TERMINAL")
             return
         try:
-            max_override_delta = float(
-                os.environ.get("PANEL_TFM_CANONICAL_GRASP_XY_MAX_DELTA_M", "0.080")
-            )
+            max_override_delta = _get_panel_tfm_params().canonical_grasp_xy_max_delta_m
         except Exception:
             max_override_delta = 0.080
-        snap_selected_xy = str(
-            os.environ.get("PANEL_TFM_CANONICAL_SNAP_SELECTED_XY", "1")
-        ).strip().lower() not in ("0", "false", "no", "off")
+        snap_selected_xy = _get_panel_tfm_params().canonical_snap_selected_xy
         override_x_raw = float(canonical_override.get("x", bx) or bx)
         override_y_raw = float(canonical_override.get("y", by) or by)
         override_x = float(override_x_raw)

@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import time
 from .panel_objects import bulk_update_object_positions, get_object_position, get_object_positions, get_object_state, is_on_table, recalc_object_states, update_object_state
+from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
 from .panel_pick_demo import run_pick_demo
 from .panel_utils import table_xy_to_pixel, world_xyz_to_pixel
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
@@ -61,11 +62,11 @@ def _on_remote_tfm_infer_request(panel, source: str) -> None:
     if request_id and not infer_ready and panel._tfm_infer_waitable_reason(infer_reason):
         wait_sec = max(
             2.0,
-            float(os.environ.get("PANEL_TFM_REMOTE_INFER_READY_WAIT_SEC", "20.0") or 20.0),
+            _get_panel_tfm_params().remote_infer_ready_wait_sec,
         )
         poll_sec = max(
             0.1,
-            float(os.environ.get("PANEL_TFM_REMOTE_INFER_READY_POLL_SEC", "0.25") or 0.25),
+            _get_panel_tfm_params().remote_infer_ready_poll_sec,
         )
         panel._tfm_infer_pending_request_id = request_id
         panel._emit_log(
@@ -140,11 +141,11 @@ def _on_remote_tfm_execute_request(panel, source: str) -> None:
     if request_id and not basic_ok:
         wait_sec = max(
             2.0,
-            float(os.environ.get("PANEL_TFM_REMOTE_EXECUTE_READY_WAIT_SEC", "90.0") or 90.0),
+            _get_panel_tfm_params().remote_execute_ready_wait_sec,
         )
         poll_sec = max(
             0.5,
-            float(os.environ.get("PANEL_TFM_REMOTE_EXECUTE_READY_POLL_SEC", "1.0") or 1.0),
+            _get_panel_tfm_params().remote_execute_ready_poll_sec,
         )
         panel._emit_log(
             "[TFM][REMOTE][EXEC_ACK] "
@@ -223,11 +224,11 @@ def _on_remote_pick_demo_request(panel, source: str) -> None:
     if request_id and not ready and waitable:
         wait_sec = max(
             2.0,
-            float(os.environ.get("PANEL_PICK_DEMO_REMOTE_READY_WAIT_SEC", "90.0") or 90.0),
+            _get_panel_tfm_params().pick_demo_remote_ready_wait_sec,
         )
         poll_sec = max(
             0.1,
-            float(os.environ.get("PANEL_PICK_DEMO_REMOTE_READY_POLL_SEC", "0.5") or 0.5),
+            _get_panel_tfm_params().pick_demo_remote_ready_poll_sec,
         )
         panel._pick_demo_pending_request_id = request_id
         panel._emit_log(

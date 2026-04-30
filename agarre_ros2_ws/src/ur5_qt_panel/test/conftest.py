@@ -73,6 +73,51 @@ def _inject_ur5_tools_stub() -> None:
 _inject_ur5_tools_stub()
 
 
+import pytest as _pytest
+
+
+@_pytest.fixture(autouse=True)
+def _reset_param_caches():
+    """Invalida los singletons de los módulos *_params antes y después de cada test.
+
+    Previene contaminación entre tests que mutan env vars con
+    monkeypatch — sin esto, un test que setea PANEL_X="..." después de
+    que otro test ya invocó get_*_params() vería el valor cacheado del
+    primero, no el suyo.
+    """
+    _reset_all()
+    yield
+    _reset_all()
+
+
+def _reset_all() -> None:
+    for mod_name in (
+        "ur5_qt_panel.panel_pick_demo_params",
+        "ur5_qt_panel.panel_pick_object_params",
+        "ur5_qt_panel.panel_ros_params",
+        "ur5_qt_panel.panel_ui_params",
+        "ur5_qt_panel.panel_tfm_params",
+    ):
+        mod = sys.modules.get(mod_name)
+        if mod is None:
+            continue
+        reset = getattr(mod, "reset_" + mod_name.rsplit(".", 1)[-1].replace("panel_", "panel_") + "_cache", None)
+        # Above is brittle; use the well-known names directly:
+    # Direct invocation (avoids fragile name juggling).
+    for func_name in (
+        ("ur5_qt_panel.panel_pick_demo_params", "reset_pick_demo_params_cache"),
+        ("ur5_qt_panel.panel_pick_object_params", "reset_pick_object_params_cache"),
+        ("ur5_qt_panel.panel_ros_params", "reset_panel_ros_params_cache"),
+        ("ur5_qt_panel.panel_ui_params", "reset_panel_ui_params_cache"),
+        ("ur5_qt_panel.panel_tfm_params", "reset_panel_tfm_params_cache"),
+    ):
+        mod = sys.modules.get(func_name[0])
+        if mod is not None:
+            fn = getattr(mod, func_name[1], None)
+            if callable(fn):
+                fn()
+
+
 def pytest_sessionfinish(session, exitstatus):
     """Forzar salida limpia tras pytest.
 

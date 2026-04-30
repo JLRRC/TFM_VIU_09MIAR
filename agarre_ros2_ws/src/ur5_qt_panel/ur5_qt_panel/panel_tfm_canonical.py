@@ -21,13 +21,13 @@ from __future__ import annotations
 import os
 import time
 from datetime import datetime
+
+from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
 from typing import Dict
 
 
 def tfm_canonical_use_pick_object(panel) -> bool:
-    return str(
-        os.environ.get("PANEL_TFM_CANONICAL_USE_PICK_OBJECT", "1") or "1"
-    ).strip().lower() not in ("0", "false", "no", "off")
+    return _get_panel_tfm_params().canonical_use_pick_object
 
 
 def complete_pending_tfm_infer_request(panel, success: bool, message: str) -> None:
