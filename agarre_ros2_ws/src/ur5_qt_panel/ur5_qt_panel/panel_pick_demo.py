@@ -56,7 +56,7 @@ from .panel_config import (
     GRIPPER_JOINT_NAMES,
 )
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
-from .panel_pick_demo_params import load_pick_demo_params
+from .panel_pick_demo_params import load_pick_demo_params, PickDemoParams
 from .panel_objects import (
     mark_object_grasped,
     mark_object_attached,
@@ -118,6 +118,21 @@ from .pick_demo.internal_helpers import (
     _validate_demo_transport_follow,
     _wait_for_demo_runtime_target_progress,
 )
+
+_PICK_DEMO_PARAMS_CACHE: PickDemoParams | None = None
+
+
+def _get_pick_demo_params() -> PickDemoParams:
+    """Lazy singleton de PickDemoParams (env > YAML > default).
+
+    F2: las lecturas migradas usan este helper en lugar de os.environ.get.
+    Para invalidar (tests), reset _PICK_DEMO_PARAMS_CACHE = None.
+    """
+    global _PICK_DEMO_PARAMS_CACHE
+    if _PICK_DEMO_PARAMS_CACHE is None:
+        _PICK_DEMO_PARAMS_CACHE = load_pick_demo_params()
+    return _PICK_DEMO_PARAMS_CACHE
+
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -2055,21 +2070,15 @@ def run_pick_demo(panel) -> None:
                 xy_tol = max(
                     0.004,
                     float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M",
-                            os.environ.get("PANEL_PICK_DEMO_CLOSE_XY_TOL_M", "0.012"),
-                        )
-                        or 0.012
+                        os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "")
+                        or _get_pick_demo_params().close_xy_tol_m
                     ),
                 )
                 z_tol = max(
                     0.006,
                     float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M",
-                            os.environ.get("PANEL_PICK_DEMO_CLOSE_Z_ERR_TOL_M", "0.012"),
-                        )
-                        or 0.012
+                        os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M", "")
+                        or _get_pick_demo_params().close_z_err_tol_m
                     ),
                 )
                 pose_consistency = _pose_consistency_metrics(tcp_base=tcp_base)
@@ -5177,18 +5186,9 @@ def run_pick_demo(panel) -> None:
                     1,
                     int(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS", "4") or 4),
                 )
-                rot_weight = max(
-                    0.0,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_ROT_WEIGHT", "0.10") or 0.10),
-                )
-                ik_err_tol = max(
-                    0.035,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL", "0.080") or 0.080),
-                )
-                joint_weight = max(
-                    0.0,
-                    float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT", "0.65") or 0.65),
-                )
+                rot_weight = max(0.0, _get_pick_demo_params().grasp_down_rot_weight)
+                ik_err_tol = max(0.035, _get_pick_demo_params().grasp_down_ik_err_tol)
+                joint_weight = max(0.0, _get_pick_demo_params().grasp_down_ik_seed_weight)
 
                 def _grasp_down_permissive_rot_weight() -> float:
                     return max(
@@ -5310,10 +5310,7 @@ def run_pick_demo(panel) -> None:
                 if last_route == "permissive_direct_descent" and last_debug is not None:
                     _pf_util_z_tol = max(
                         0.008,
-                        float(
-                            os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M", "0.025")
-                            or "0.025"
-                        ),
+                        _get_pick_demo_params().grasp_down_util_z_err_tol_m,
                     )
                     _pf_actual = _tuple3(
                         (last_debug or {}).get("runtime_target_stable_pos")
@@ -7375,7 +7372,7 @@ def run_pick_demo(panel) -> None:
                     if tcp_world_before_coarse is not None and tcp_before_coarse is not None and obj_base_before_coarse is not None:
                         keep_xy_tol = max(
                             0.01,
-                            float(os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_KEEP_XY_TOL_M", "0.020") or 0.020),
+                            _get_pick_demo_params().approach_coarse_keep_xy_tol_m,
                         )
                         tcp_obj_xy = math.hypot(
                             float(tcp_before_coarse[0]) - float(obj_base_before_coarse[0]),
@@ -10137,9 +10134,7 @@ def run_pick_demo(panel) -> None:
             except Exception:
                 _ag_min_stable_samples = 5
             try:
-                _ag_gripper_closed_thr = float(
-                    os.environ.get("PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M", "0.020") or 0.020
-                )
+                _ag_gripper_closed_thr = _get_pick_demo_params().gripper_closed_opening_thr_m
             except Exception:
                 _ag_gripper_closed_thr = 0.020
             try:
