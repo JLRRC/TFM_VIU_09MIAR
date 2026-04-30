@@ -628,70 +628,17 @@ def _read_gripper_feedback_state(panel) -> Dict[str, object]:
         "command_closed": bool(getattr(panel, "_gripper_is_closed", getattr(panel, "_gripper_closed", False))),
     }
 
-def _step_format_xyz(panel, position: Optional[Tuple[float, float, float]]) -> Tuple[str, str, str]:
-    if position is None:
-        return ("--", "--", "--")
-    return (f"{float(position[0]):.3f}", f"{float(position[1]):.3f}", f"{float(position[2]):.3f}")
-
-def _step_display_position(panel, position: Optional[Tuple[float, float, float]]) -> Optional[Tuple[float, float, float]]:
-    if position is None:
-        return None
-    try:
-        pos3 = (float(position[0]), float(position[1]), float(position[2]))
-    except Exception:
-        return None
-    try:
-        wx, wy, wz = base_to_world(pos3[0], pos3[1], pos3[2])
-        return (float(wx), float(wy), float(wz))
-    except Exception:
-        return pos3
-
-def _step_format_inline_xyz(panel, position: Optional[Tuple[float, float, float]]) -> str:
-    x, y, z = panel._step_format_xyz(position)
-    if x == "--":
-        return "--"
-    return f"({x}, {y}, {z})"
-
-def _step_format_inline_rpy(panel, rpy_deg: Optional[Tuple[float, float, float]]) -> str:
-    if rpy_deg is None:
-        return "--"
-    try:
-        return f"({float(rpy_deg[0]):.1f}, {float(rpy_deg[1]):.1f}, {float(rpy_deg[2]):.1f})"
-    except Exception:
-        return "--"
-
-def _step_fetch_live_pose(panel, ee_frame: str) -> Optional[Tuple[float, float, float]]:
-    """Consulta TF en tiempo real. Devuelve None si TF no disponible; nunca usa caché stale."""
-    frame_name = str(ee_frame or "").strip()
-    if not frame_name:
-        return None
-    base_frame = panel._business_base_frame()
-    tcp_pose_base, _tcp_rpy_deg, _tcp_reason = tf_get_tcp_in_base(
-        base_frame=base_frame,
-        ee_frame=frame_name,
-        timeout=0.20,
-        logger=None,
-    )
-    if tcp_pose_base is None:
-        return None
-    return (
-        float(tcp_pose_base.pose.position.x),
-        float(tcp_pose_base.pose.position.y),
-        float(tcp_pose_base.pose.position.z),
-    )
-
-def _step_operational_frame_name(panel) -> str:
-    return str(
-        getattr(panel, "_step_target_frame", "")
-        or getattr(panel, "_ee_frame_effective", "")
-        or panel._required_ee_frame
-        or "rg2_pinch_center"
-    ).strip() or "rg2_pinch_center"
-
-def _step_live_pose_text(panel, label: str, ee_frame: str, position: Optional[Tuple[float, float, float]]) -> str:
-    frame_name = str(ee_frame or "").strip() or "--"
-    xyz_txt = panel._step_format_inline_xyz(position)
-    return f"{label}: {xyz_txt} | frame: {frame_name}"
+# F3: pose formatters y fetch helpers extraídos a step_pose_format.py.
+# Re-exportados aquí para preservar la API pública.
+from .step_pose_format import (  # noqa: F401
+    _step_display_position,
+    _step_fetch_live_pose,
+    _step_format_inline_rpy,
+    _step_format_inline_xyz,
+    _step_format_xyz,
+    _step_live_pose_text,
+    _step_operational_frame_name,
+)
 
 def _step_assess_target_reached(panel,
     target: Optional[Tuple[float, float, float]],
