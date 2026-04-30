@@ -48,6 +48,9 @@ from .panel_config import (
     WORLD_FRAME,
 )
 from .panel_pick_geometry import compute_pick_height_profile
+from .panel_pick_object_params import (
+    get_pick_object_params as _get_pick_object_params,
+)
 from .panel_robot_presets import (
     JOINT_BASKET_POSE_RAD,
     JOINT_GRASP_DOWN_POSE_RAD,
@@ -135,13 +138,7 @@ def run_pick_object(panel) -> None:
         )
 
     def _pick_orientation(yaw_deg: Optional[float] = None) -> tuple[float, float, float, float]:
-        raw = str(
-            os.environ.get(
-                "PANEL_PICK_OBJECT_ORIENTATION_XYZW",
-                "0.70710678,0.0,0.70710678,0.0",
-            )
-            or ""
-        ).strip()
+        raw = str(_get_pick_object_params().orientation_xyzw or "").strip()
         try:
             parts = [float(part.strip()) for part in raw.split(",")]
         except Exception:
@@ -316,7 +313,7 @@ def run_pick_object(panel) -> None:
     # -- FIN BLOQUE TF EXPLÍCITO --
 
     def _world_ready_scope() -> str:
-        raw = str(os.environ.get("PANEL_PICK_OBJECT_WORLD_READY_SCOPE", "target") or "target").strip().lower()
+        raw = _get_pick_object_params().world_ready_scope
         if raw in ("all", "strict"):
             return "all"
         return "target"
@@ -359,15 +356,11 @@ def run_pick_object(panel) -> None:
 
     def _wait_for_world_ready() -> bool:
         try:
-            wait_sec = float(
-                os.environ.get("PANEL_PICK_OBJECT_WORLD_READY_WAIT_SEC", "20.0")
-            )
+            wait_sec = _get_pick_object_params().world_ready_wait_sec
         except Exception:
             wait_sec = 20.0
         try:
-            poll_sec = float(
-                os.environ.get("PANEL_PICK_OBJECT_WORLD_READY_POLL_SEC", "0.25")
-            )
+            poll_sec = _get_pick_object_params().world_ready_poll_sec
         except Exception:
             poll_sec = 0.25
         wait_sec = max(1.0, wait_sec)
@@ -480,7 +473,7 @@ def run_pick_object(panel) -> None:
             return
     selection_max_age_sec = max(
         5.0,
-        float(os.environ.get("PANEL_PICK_OBJECT_SELECTION_MAX_AGE_SEC", "600.0") or 600.0),
+        _get_pick_object_params().selection_max_age_sec,
     )
     if (not user_selected or user_selected_ts <= 0.0) and ui_selected and latest_store_name:
         if ui_selected == latest_store_name:
@@ -897,30 +890,26 @@ def run_pick_object(panel) -> None:
     else:
         table_top_base = bz - (obj_height * 0.5 if obj_height > 0.0 else 0.0)
     try:
-        z_clear = float(os.environ.get("PANEL_PICK_OBJECT_APPROACH_CLEARANCE_M", "0.20"))
+        z_clear = _get_pick_object_params().approach_clearance_m
     except Exception:
         z_clear = 0.20
     try:
-        z_min_approach_clearance = float(
-            os.environ.get("PANEL_PICK_OBJECT_MIN_APPROACH_CLEARANCE_M", "0.30")
-        )
+        z_min_approach_clearance = _get_pick_object_params().min_approach_clearance_m
     except Exception:
         z_min_approach_clearance = 0.30
     z_min_approach_clearance = max(0.0, z_min_approach_clearance)
     try:
-        z_pre_margin = float(os.environ.get("PANEL_PICK_OBJECT_PRE_MARGIN_M", "0.04"))
+        z_pre_margin = _get_pick_object_params().pre_margin_m
     except Exception:
         z_pre_margin = 0.04
     try:
-        z_min_pre_clearance = float(
-            os.environ.get("PANEL_PICK_OBJECT_MIN_PRE_CLEARANCE_M", "0.15")
-        )
+        z_min_pre_clearance = _get_pick_object_params().min_pre_clearance_m
     except Exception:
         z_min_pre_clearance = 0.15
     z_min_pre_clearance = max(0.0, z_min_pre_clearance)
     # Legacy offset kept for compatibility; new contact target uses contact_down_z.
     try:
-        z_insert = float(os.environ.get("PANEL_PICK_OBJECT_INSERT_M", "0.015"))
+        z_insert = _get_pick_object_params().insert_m
     except Exception:
         z_insert = 0.015
     try:
@@ -938,17 +927,15 @@ def run_pick_object(panel) -> None:
     if contact_down_z < 0.0:
         contact_down_z = 0.0
     try:
-        z_table_margin = float(os.environ.get("PANEL_PICK_OBJECT_TABLE_MARGIN_M", "0.015"))
+        z_table_margin = _get_pick_object_params().table_margin_m
     except Exception:
         z_table_margin = 0.015
     try:
-        z_lift_clearance = float(os.environ.get("PANEL_PICK_OBJECT_LIFT_CLEARANCE_M", "0.20"))
+        z_lift_clearance = _get_pick_object_params().lift_clearance_m
     except Exception:
         z_lift_clearance = 0.20
     try:
-        z_transport_clearance = float(
-            os.environ.get("PANEL_PICK_OBJECT_TRANSPORT_CLEARANCE_M", "0.20")
-        )
+        z_transport_clearance = _get_pick_object_params().transport_clearance_m
     except Exception:
         z_transport_clearance = 0.20
     pick_contact_z_offset = contact_z_correction_for_frame(
@@ -992,9 +979,7 @@ def run_pick_object(panel) -> None:
     transport_pose = (basket_x, basket_y, z_transport)
     drop_pose = (basket_x, basket_y, z_drop)
     try:
-        transport_split_stages = int(
-            os.environ.get("PANEL_PICK_OBJECT_TRANSPORT_SPLIT_STAGES", "3")
-        )
+        transport_split_stages = _get_pick_object_params().transport_split_stages
     except Exception:
         transport_split_stages = 3
     transport_split_stages = max(2, min(transport_split_stages, 6))
@@ -1032,11 +1017,11 @@ def run_pick_object(panel) -> None:
 
     # Optional micro-descent sequence before GRASP_DOWN final.
     try:
-        grasp_micro_step_m = float(os.environ.get("PANEL_PICK_OBJECT_GRASP_MICRO_STEP_M", "0.012"))
+        grasp_micro_step_m = _get_pick_object_params().grasp_micro_step_m
     except Exception:
         grasp_micro_step_m = 0.012
     try:
-        grasp_micro_steps_max = int(os.environ.get("PANEL_PICK_OBJECT_GRASP_MICRO_STEPS_MAX", "0"))
+        grasp_micro_steps_max = _get_pick_object_params().grasp_micro_steps_max
     except Exception:
         grasp_micro_steps_max = 0
     grasp_micro_steps_max = max(0, min(grasp_micro_steps_max, 12))
@@ -1273,9 +1258,7 @@ def run_pick_object(panel) -> None:
                 pass
             # Disabled by default: fallback helper can return stale/mismatched TF
             # during high-load phases and trigger false mismatch aborts.
-            allow_helper_fallback = str(
-                os.environ.get("PANEL_PICK_OBJECT_ALLOW_TF_HELPER_FALLBACK", "0")
-            ).strip().lower() in ("1", "true", "yes", "on")
+            allow_helper_fallback = _get_pick_object_params().allow_tf_helper_fallback
             if not allow_helper_fallback:
                 return None, None
             return transform_point_to_frame(
@@ -1462,12 +1445,7 @@ def run_pick_object(panel) -> None:
                     time.sleep(0.2)
                 _run_ui_sync(lambda: panel._start_moveit_bridge(), timeout_sec=3.0)
                 try:
-                    recover_timeout_sec = float(
-                        os.environ.get(
-                            "PANEL_PICK_OBJECT_MOVEIT_BRIDGE_RECOVER_TIMEOUT_SEC",
-                            "10.0",
-                        )
-                    )
+                    recover_timeout_sec = _get_pick_object_params().moveit_bridge_recover_timeout_sec
                 except Exception:
                     recover_timeout_sec = 10.0
                 matched, *_diag = _wait_bridge_match(
@@ -1596,22 +1574,12 @@ def run_pick_object(panel) -> None:
             last_seen_request_id = -1
             last_seen_request_uuid = ""
             try:
-                active_request_grace_sec = float(
-                    os.environ.get(
-                        "PANEL_PICK_OBJECT_MOVEIT_ACTIVE_REQUEST_GRACE_SEC",
-                        "90.0",
-                    )
-                )
+                active_request_grace_sec = _get_pick_object_params().moveit_active_request_grace_sec
             except Exception:
                 active_request_grace_sec = 90.0
             active_request_grace_sec = max(10.0, active_request_grace_sec)
             try:
-                hb_recent_window_sec = float(
-                    os.environ.get(
-                        "PANEL_PICK_OBJECT_MOVEIT_ACTIVE_REQUEST_HB_SEC",
-                        "2.5",
-                    )
-                )
+                hb_recent_window_sec = _get_pick_object_params().moveit_active_request_hb_sec
             except Exception:
                 hb_recent_window_sec = 2.5
             hb_recent_window_sec = max(1.2, hb_recent_window_sec)
@@ -1966,18 +1934,9 @@ def run_pick_object(panel) -> None:
             move_sec = float(panel.joint_time.value()) if panel.joint_time else 3.0
             home_pose = panel._get_home_joint_pose()
             _dbg(f"[PICK_OBJ] HOME pose: {[f'{math.degrees(j):.1f}°' for j in home_pose]}")
-            moveit_exclusive = str(
-                os.environ.get("PANEL_PICK_OBJECT_MOVEIT_EXCLUSIVE", "1")
-            ).strip().lower() not in ("0", "false", "no", "off")
-            allow_joint_recovery_in_moveit = str(
-                os.environ.get(
-                    "PANEL_PICK_OBJECT_ALLOW_JOINT_RECOVERY_IN_MOVEIT",
-                    "1",
-                )
-            ).strip().lower() not in ("0", "false", "no", "off")
-            allow_joint_preflight_in_moveit = str(
-                os.environ.get("PANEL_PICK_OBJECT_ALLOW_JOINT_PREFLIGHT_IN_MOVEIT", "1")
-            ).strip().lower() not in ("0", "false", "no", "off")
+            moveit_exclusive = _get_pick_object_params().moveit_exclusive
+            allow_joint_recovery_in_moveit = _get_pick_object_params().allow_joint_recovery_in_moveit
+            allow_joint_preflight_in_moveit = _get_pick_object_params().allow_joint_preflight_in_moveit
             panel._emit_log(
                 f"[PICK_OBJ][MODE] moveit_exclusive={str(moveit_exclusive).lower()}"
             )
@@ -1995,9 +1954,7 @@ def run_pick_object(panel) -> None:
                     "0" if moveit_exclusive else "1",
                 )
             ).strip().lower() not in ("0", "false", "no", "off")
-            transport_split_moveit = str(
-                os.environ.get("PANEL_PICK_OBJECT_TRANSPORT_SPLIT_MOVEIT", "1")
-            ).strip().lower() not in ("0", "false", "no", "off")
+            transport_split_moveit = _get_pick_object_params().transport_split_moveit
             approach_fallback_enabled = str(
                 os.environ.get(
                     "PANEL_PICK_OBJECT_APPROACH_JOINT_FALLBACK",
@@ -2027,22 +1984,13 @@ def run_pick_object(panel) -> None:
                     f"approach={str(bool(approach_fallback_enabled)).lower()} "
                     f"pre_grasp={str(bool(pre_grasp_fallback_enabled)).lower()}"
                 )
-            deterministic_joint_after_approach = str(
-                os.environ.get(
-                    "PANEL_PICK_OBJECT_DETERMINISTIC_JOINT_AFTER_APPROACH",
-                    "0",
-                )
-            ).strip().lower() not in ("0", "false", "no", "off")
+            deterministic_joint_after_approach = _get_pick_object_params().deterministic_joint_after_approach
             try:
-                deterministic_carry_gate_max_m = float(
-                    os.environ.get("PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MAX_M", "0.80")
-                )
+                deterministic_carry_gate_max_m = _get_pick_object_params().deterministic_carry_gate_max_m
             except Exception:
                 deterministic_carry_gate_max_m = 0.80
             try:
-                deterministic_carry_gate_min_consecutive = int(
-                    os.environ.get("PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MIN_CONSECUTIVE", "1")
-                )
+                deterministic_carry_gate_min_consecutive = _get_pick_object_params().deterministic_carry_gate_min_consecutive
             except Exception:
                 deterministic_carry_gate_min_consecutive = 1
             panel._emit_log(
@@ -2053,9 +2001,7 @@ def run_pick_object(panel) -> None:
                 os.environ.get("PANEL_STRICT_PHYSICS_MODE", "0")
             ).strip().lower() not in ("0", "false", "no", "off")
             try:
-                carry_joint_move_sec = float(
-                    os.environ.get("PANEL_PICK_OBJECT_CARRY_JOINT_TIME_SEC", "8.0")
-                )
+                carry_joint_move_sec = _get_pick_object_params().carry_joint_time_sec
             except Exception:
                 carry_joint_move_sec = 8.0
             carry_joint_move_sec = max(move_sec, carry_joint_move_sec)
@@ -2107,12 +2053,7 @@ def run_pick_object(panel) -> None:
                             reached = True
                     if not reached:
                         try:
-                            settle_extra_sec = float(
-                                os.environ.get(
-                                    "PANEL_PICK_OBJECT_JOINT_SETTLE_EXTRA_SEC",
-                                    "2.5",
-                                )
-                            )
+                            settle_extra_sec = _get_pick_object_params().joint_settle_extra_sec
                         except Exception:
                             settle_extra_sec = 2.5
                         settle_extra_sec = max(0.0, settle_extra_sec)
@@ -2188,11 +2129,9 @@ def run_pick_object(panel) -> None:
                 )
 
             def _ensure_home_start() -> None:
-                force_home_start = str(
-                    os.environ.get("PANEL_PICK_OBJECT_FORCE_HOME_START", "1")
-                ).strip().lower() not in ("0", "false", "no", "off")
+                force_home_start = _get_pick_object_params().force_home_start
                 preflight_mode_now = str(
-                    os.environ.get("PANEL_PICK_OBJECT_PREFLIGHT_MODE", "mesa")
+                    _get_pick_object_params().preflight_mode
                 ).strip().lower()
                 home_like_preflight = preflight_mode_now in (
                     "home",
@@ -2204,27 +2143,18 @@ def run_pick_object(panel) -> None:
                     "0",
                     "false",
                 )
-                conditional_home_if_far = str(
-                    os.environ.get("PANEL_PICK_OBJECT_HOME_START_IF_FAR", "1")
-                ).strip().lower() not in ("0", "false", "no", "off")
+                conditional_home_if_far = _get_pick_object_params().home_start_if_far
                 if not force_home_start:
                     panel._emit_log(
                         "[PICK_OBJ] FASE 1: HOME inicial desactivado por entorno "
                         "(PANEL_PICK_OBJECT_FORCE_HOME_START=0)"
                     )
                 try:
-                    home_tol_rad = float(
-                        os.environ.get("PANEL_PICK_OBJECT_HOME_TOL_RAD", "0.08")
-                    )
+                    home_tol_rad = _get_pick_object_params().home_tol_rad
                 except Exception:
                     home_tol_rad = 0.08
                 try:
-                    force_if_far_max_err_rad = float(
-                        os.environ.get(
-                            "PANEL_PICK_OBJECT_HOME_START_IF_FAR_MAX_ERR_RAD",
-                            "2.0",
-                        )
-                    )
+                    force_if_far_max_err_rad = _get_pick_object_params().home_start_if_far_max_err_rad
                 except Exception:
                     force_if_far_max_err_rad = 2.0
                 current_joints = _read_current_arm_joint_positions()
@@ -2272,12 +2202,7 @@ def run_pick_object(panel) -> None:
                         "(joint_state actual no disponible)"
                     )
                 try:
-                    home_ready_wait_sec = float(
-                        os.environ.get(
-                            "PANEL_PICK_OBJECT_HOME_START_READY_WAIT_SEC",
-                            "45.0",
-                        )
-                    )
+                    home_ready_wait_sec = _get_pick_object_params().home_start_ready_wait_sec
                 except Exception:
                     home_ready_wait_sec = 45.0
                 home_ready_wait_sec = max(5.0, home_ready_wait_sec)
@@ -2292,15 +2217,11 @@ def run_pick_object(panel) -> None:
                         f"{reason}"
                     )
                 try:
-                    home_start_dur_sec = float(
-                        os.environ.get("PANEL_PICK_OBJECT_HOME_START_DUR_SEC", "8.0")
-                    )
+                    home_start_dur_sec = _get_pick_object_params().home_start_dur_sec
                 except Exception:
                     home_start_dur_sec = 8.0
                 home_start_dur_sec = max(move_sec, home_start_dur_sec)
-                home_start_require_reached = str(
-                    os.environ.get("PANEL_PICK_OBJECT_HOME_START_REQUIRE_REACHED", "0")
-                ).strip().lower() not in ("0", "false", "no", "off")
+                home_start_require_reached = _get_pick_object_params().home_start_require_reached
                 _run_joint_step(
                     "HOME_START",
                     home_pose,
@@ -2317,38 +2238,26 @@ def run_pick_object(panel) -> None:
                 min_consecutive_override: Optional[int] = None,
                 gate_label: str = "after_lift",
             ) -> None:
-                enabled = str(
-                    os.environ.get("PANEL_PICK_OBJECT_CARRY_GATE_ENABLE", "1")
-                ).strip().lower() not in ("0", "false", "no", "off")
+                enabled = _get_pick_object_params().carry_gate_enable
                 if not enabled:
                     return
                 try:
-                    timeout_sec = float(
-                        os.environ.get("PANEL_PICK_OBJECT_CARRY_GATE_TIMEOUT_SEC", "1.4")
-                    )
+                    timeout_sec = _get_pick_object_params().carry_gate_timeout_sec
                 except Exception:
                     timeout_sec = 1.4
                 try:
-                    sample_dt = float(
-                        os.environ.get("PANEL_PICK_OBJECT_CARRY_GATE_SAMPLE_DT_SEC", "0.08")
-                    )
+                    sample_dt = _get_pick_object_params().carry_gate_sample_dt_sec
                 except Exception:
                     sample_dt = 0.08
                 try:
-                    max_dist_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_CARRY_GATE_MAX_DIST_M", "0.18")
-                    )
+                    max_dist_m = _get_pick_object_params().carry_gate_max_dist_m
                 except Exception:
                     max_dist_m = 0.18
                 try:
-                    min_consecutive = int(
-                        os.environ.get("PANEL_PICK_OBJECT_CARRY_GATE_MIN_CONSECUTIVE", "2")
-                    )
+                    min_consecutive = _get_pick_object_params().carry_gate_min_consecutive
                 except Exception:
                     min_consecutive = 2
-                require_state = str(
-                    os.environ.get("PANEL_PICK_OBJECT_CARRY_GATE_REQUIRE_STATE", "1")
-                ).strip().lower() not in ("0", "false", "no", "off")
+                require_state = _get_pick_object_params().carry_gate_require_state
                 if require_state_override is not None:
                     require_state = bool(require_state_override)
                 if timeout_override is not None:
@@ -2472,34 +2381,24 @@ def run_pick_object(panel) -> None:
 
             def _ensure_gripper_open_for_moveit(*, reason: str = "MOVEIT") -> None:
                 try:
-                    min_opening_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_MIN_OPENING_M", "0.020")
-                    )
+                    min_opening_m = _get_pick_object_params().min_opening_m
                 except Exception:
                     min_opening_m = 0.020
                 reason_upper = str(reason or "").strip().upper()
                 if reason_upper in ("PRE_GRASP", "GRASP_DOWN"):
                     try:
-                        min_opening_before_descent_m = float(
-                            os.environ.get(
-                                "PANEL_PICK_OBJECT_MIN_OPENING_BEFORE_DESCENT_M", "0.030"
-                            )
-                        )
+                        min_opening_before_descent_m = _get_pick_object_params().min_opening_before_descent_m
                     except Exception:
                         min_opening_before_descent_m = 0.030
                     min_opening_m = max(min_opening_m, min_opening_before_descent_m)
                 min_opening_m = max(0.0, min_opening_m)
                 try:
-                    open_wait_sec = float(
-                        os.environ.get("PANEL_PICK_OBJECT_OPEN_WAIT_SEC", "2.2")
-                    )
+                    open_wait_sec = _get_pick_object_params().open_wait_sec
                 except Exception:
                     open_wait_sec = 2.2
                 open_wait_sec = max(0.1, open_wait_sec)
                 try:
-                    open_cmd_ack_sec = float(
-                        os.environ.get("PANEL_PICK_OBJECT_OPEN_CMD_ACK_SEC", "3.0")
-                    )
+                    open_cmd_ack_sec = _get_pick_object_params().open_cmd_ack_sec
                 except Exception:
                     open_cmd_ack_sec = 3.0
                 open_cmd_ack_sec = max(0.3, open_cmd_ack_sec)
@@ -2612,9 +2511,7 @@ def run_pick_object(panel) -> None:
                         )
 
                 if saw_joint_state and not opening_ok:
-                    allow_degraded_guard = str(
-                        os.environ.get("PANEL_PICK_OBJECT_ALLOW_DEGRADED_OPEN_GUARD", "1")
-                    ).strip().lower() not in ("0", "false", "no", "off")
+                    allow_degraded_guard = _get_pick_object_params().allow_degraded_open_guard
                     if allow_degraded_guard and not bool(getattr(panel, "_gripper_closed", False)):
                         panel._emit_log(
                             "[PICK_OBJ][GRIPPER] apertura no confirmada por joint_state; "
@@ -2712,51 +2609,35 @@ def run_pick_object(panel) -> None:
             def _ensure_strict_pre_lift_contact(grasp_pose_live: dict, grasp_delay_live: float) -> None:
                 if not strict_physics_mode:
                     return
-                enabled = str(
-                    os.environ.get("PANEL_PICK_OBJECT_STRICT_CONTACT_GATE_ENABLE", "1")
-                ).strip().lower() not in ("0", "false", "no", "off")
+                enabled = _get_pick_object_params().strict_contact_gate_enable
                 if not enabled:
                     return
                 try:
-                    settle_sec = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_CONTACT_SETTLE_SEC", "0.7")
-                    )
+                    settle_sec = _get_pick_object_params().strict_contact_settle_sec
                 except Exception:
                     settle_sec = 0.7
                 try:
-                    min_blocked_opening_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_MIN_BLOCKED_OPENING_M", "0.050")
-                    )
+                    min_blocked_opening_m = _get_pick_object_params().strict_min_blocked_opening_m
                 except Exception:
                     min_blocked_opening_m = 0.050
                 try:
-                    max_blocked_opening_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_MAX_BLOCKED_OPENING_M", "0.850")
-                    )
+                    max_blocked_opening_m = _get_pick_object_params().strict_max_blocked_opening_m
                 except Exception:
                     max_blocked_opening_m = 0.850
                 try:
-                    min_effort_abs = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_MIN_EFFORT_ABS", "0.0")
-                    )
+                    min_effort_abs = _get_pick_object_params().strict_min_effort_abs
                 except Exception:
                     min_effort_abs = 0.0
                 try:
-                    max_regrasp = int(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_REGRASP_MAX", "1")
-                    )
+                    max_regrasp = _get_pick_object_params().strict_regrasp_max
                 except Exception:
                     max_regrasp = 1
                 try:
-                    regrasp_step_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_REGRASP_STEP_M", "0.004")
-                    )
+                    regrasp_step_m = _get_pick_object_params().strict_regrasp_step_m
                 except Exception:
                     regrasp_step_m = 0.004
                 try:
-                    regrasp_floor_margin_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_REGRASP_FLOOR_MARGIN_M", "0.008")
-                    )
+                    regrasp_floor_margin_m = _get_pick_object_params().strict_regrasp_floor_margin_m
                 except Exception:
                     regrasp_floor_margin_m = 0.008
 
@@ -2867,39 +2748,27 @@ def run_pick_object(panel) -> None:
                 if not strict_physics_mode:
                     return
                 try:
-                    probe_lift_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_PROBE_LIFT_M", "0.050")
-                    )
+                    probe_lift_m = _get_pick_object_params().strict_probe_lift_m
                 except Exception:
                     probe_lift_m = 0.050
                 try:
-                    probe_retries = int(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_PROBE_RETRIES", "2")
-                    )
+                    probe_retries = _get_pick_object_params().strict_probe_retries
                 except Exception:
                     probe_retries = 2
                 try:
-                    probe_timeout_sec = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_PROBE_TIMEOUT_SEC", "0.90")
-                    )
+                    probe_timeout_sec = _get_pick_object_params().strict_probe_timeout_sec
                 except Exception:
                     probe_timeout_sec = 0.90
                 try:
-                    probe_max_dist_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_PROBE_MAX_DIST_M", "0.160")
-                    )
+                    probe_max_dist_m = _get_pick_object_params().strict_probe_max_dist_m
                 except Exception:
                     probe_max_dist_m = 0.160
                 try:
-                    probe_regrasp_step_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_PROBE_REGRASP_STEP_M", "0.006")
-                    )
+                    probe_regrasp_step_m = _get_pick_object_params().strict_probe_regrasp_step_m
                 except Exception:
                     probe_regrasp_step_m = 0.006
                 try:
-                    regrasp_floor_margin_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_REGRASP_FLOOR_MARGIN_M", "0.008")
-                    )
+                    regrasp_floor_margin_m = _get_pick_object_params().strict_regrasp_floor_margin_m
                 except Exception:
                     regrasp_floor_margin_m = 0.008
 
@@ -2960,41 +2829,29 @@ def run_pick_object(panel) -> None:
                 raise RuntimeError("strict_probe_unreachable")
 
             def _run_strict_staged_lift(grasp_pose_live: dict) -> None:
-                staged_lift_force = str(
-                    os.environ.get("PANEL_PICK_OBJECT_STAGED_LIFT_ALWAYS", "0")
-                ).strip().lower() not in ("0", "false", "no", "off")
+                staged_lift_force = _get_pick_object_params().staged_lift_always
                 if not (strict_physics_mode or staged_lift_force):
                     _run_moveit_step(*sequence[3])
                     _assert_carry_coherence_after_lift()
                     return
                 try:
-                    stage_step_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_LIFT_STAGE_STEP_M", "0.050")
-                    )
+                    stage_step_m = _get_pick_object_params().strict_lift_stage_step_m
                 except Exception:
                     stage_step_m = 0.050
                 try:
-                    stage_timeout_sec = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_LIFT_STAGE_TIMEOUT_SEC", "0.90")
-                    )
+                    stage_timeout_sec = _get_pick_object_params().strict_lift_stage_timeout_sec
                 except Exception:
                     stage_timeout_sec = 0.90
                 try:
-                    stage_max_dist_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_LIFT_STAGE_MAX_DIST_M", "0.245")
-                    )
+                    stage_max_dist_m = _get_pick_object_params().strict_lift_stage_max_dist_m
                 except Exception:
                     stage_max_dist_m = 0.245
                 try:
-                    stage_min_consecutive = int(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_LIFT_STAGE_MIN_CONSECUTIVE", "1")
-                    )
+                    stage_min_consecutive = _get_pick_object_params().strict_lift_stage_min_consecutive
                 except Exception:
                     stage_min_consecutive = 1
                 try:
-                    stage_settle_sec = float(
-                        os.environ.get("PANEL_PICK_OBJECT_STRICT_LIFT_SETTLE_SEC", "0.20")
-                    )
+                    stage_settle_sec = _get_pick_object_params().strict_lift_settle_sec
                 except Exception:
                     stage_settle_sec = 0.20
 
@@ -3061,9 +2918,7 @@ def run_pick_object(panel) -> None:
                     cur_z = next_z
                     stage_idx += 1
                 try:
-                    gripper_settle_sec = float(
-                        os.environ.get("PANEL_PICK_OBJECT_GRIPPER_OPEN_SETTLE_SEC", "0.70")
-                    )
+                    gripper_settle_sec = _get_pick_object_params().gripper_open_settle_sec
                 except Exception:
                     gripper_settle_sec = 0.70
                 if gripper_settle_sec > 0.0:
@@ -3145,12 +3000,7 @@ def run_pick_object(panel) -> None:
                     )
                     if label_up.startswith("TRANSPORT"):
                         try:
-                            transport_wait_sec = float(
-                                os.environ.get(
-                                    "PANEL_PICK_OBJECT_TRANSPORT_MOVEIT_WAIT_SEC",
-                                    "460.0",
-                                )
-                            )
+                            transport_wait_sec = _get_pick_object_params().transport_moveit_wait_sec
                         except Exception:
                             transport_wait_sec = 460.0
                         transport_wait_sec = max(
@@ -3184,29 +3034,21 @@ def run_pick_object(panel) -> None:
                         base_uuid = uuid.uuid4().hex
                         label_norm = str(label_key or "").strip().upper()
                         if label_norm.startswith("TRANSPORT"):
-                            skip_constraints_raw = str(
-                                os.environ.get(
-                                    "PANEL_PICK_OBJECT_TRANSPORT_SKIP_CONSTRAINTS",
-                                    "1",
-                                )
-                            ).strip().lower()
-                            if skip_constraints_raw not in ("0", "false", "no", "off"):
+                            if _get_pick_object_params().transport_skip_constraints:
                                 return f"skip_constraints:{base_uuid}"
                         return base_uuid
 
                     def _phase_tf_tol_m(label_key: str) -> float:
                         if label_key == "PRE_GRASP":
                             try:
-                                return float(os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_TOL_M", "0.10"))
+                                return _get_pick_object_params().pre_grasp_tol_m
                             except Exception:
                                 return 0.10
                         if label_key == "PRE_GRASP_RECENTER":
                             try:
                                 return float(
-                                    os.environ.get(
-                                        "PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_TOL_M",
-                                        os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_TOL_M", "0.10"),
-                                    )
+                                    os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_TOL_M", "")
+                                    or _get_pick_object_params().pre_grasp_tol_m
                                 )
                             except Exception:
                                 return 0.10
@@ -3217,21 +3059,16 @@ def run_pick_object(panel) -> None:
                                 return 0.04
                         if label_key in ("LIFT", "DROP") or str(label_key).startswith("TRANSPORT"):
                             try:
-                                return float(os.environ.get("PANEL_PICK_OBJECT_PATH_TOL_M", "0.03"))
+                                return _get_pick_object_params().path_tol_m
                             except Exception:
                                 return 0.03
                         if label_key == "APPROACH":
                             try:
-                                return float(
-                                    os.environ.get(
-                                        "PANEL_PICK_OBJECT_APPROACH_TOL_M",
-                                        "0.10",
-                                    )
-                                )
+                                return _get_pick_object_params().approach_tol_m
                             except Exception:
                                 return 0.10
                         try:
-                            return float(os.environ.get("PANEL_PICK_OBJECT_STEP_TOL_M", "0.02"))
+                            return _get_pick_object_params().step_tol_m
                         except Exception:
                             return 0.02
 
@@ -3509,10 +3346,8 @@ def run_pick_object(panel) -> None:
                             if pre_grasp_abort and path_tol_abort:
                                 try:
                                     recover_tol = float(
-                                        os.environ.get(
-                                            "PANEL_PICK_OBJECT_PRE_GRASP_ABORT_RECOVERY_TOL_M",
-                                            os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_TOL_M", "0.10"),
-                                        )
+                                        os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_ABORT_RECOVERY_TOL_M", "")
+                                        or _get_pick_object_params().pre_grasp_tol_m
                                     )
                                 except Exception:
                                     recover_tol = 0.10
@@ -3627,20 +3462,14 @@ def run_pick_object(panel) -> None:
 
             def _ensure_pre_grasp_alignment(pre_grasp_data: dict, pre_grasp_delay: float) -> None:
                 try:
-                    xy_tol = float(
-                        os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_ALIGN_XY_TOL_M", "0.045")
-                    )
+                    xy_tol = _get_pick_object_params().pre_grasp_align_xy_tol_m
                 except Exception:
                     xy_tol = 0.045
                 try:
-                    z_tol = float(
-                        os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_ALIGN_Z_TOL_M", "0.050")
-                    )
+                    z_tol = _get_pick_object_params().pre_grasp_align_z_tol_m
                 except Exception:
                     z_tol = 0.050
-                recenter_enabled = str(
-                    os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_ENABLE", "0")
-                ).strip().lower() not in ("0", "false", "no", "off")
+                recenter_enabled = _get_pick_object_params().pre_grasp_recenter_enable
 
                 tcp_pre, _tcp_tf = _read_tcp_in_frame(base_frame, measured_ee_frame, timeout_sec=0.30)
                 if tcp_pre is None:
@@ -3742,7 +3571,7 @@ def run_pick_object(panel) -> None:
             # Start from MESA by default so the approach always begins from
             # a known, repeatable posture close to the work area.
             preflight_mode = str(
-                os.environ.get("PANEL_PICK_OBJECT_PREFLIGHT_MODE", "mesa")
+                _get_pick_object_params().preflight_mode
             ).strip().lower()
             pick_image_preflight_modes = (
                 "home_pick_image",
@@ -3782,20 +3611,10 @@ def run_pick_object(panel) -> None:
                     preflight_mode = "home"
             if preflight_mode in pick_image_preflight_modes:
                 try:
-                    pick_image_pregrasp_tol_rad = float(
-                        os.environ.get(
-                            "PANEL_PICK_OBJECT_PICK_IMAGE_PREFLIGHT_TOL_RAD",
-                            "0.05",
-                        )
-                    )
+                    pick_image_pregrasp_tol_rad = _get_pick_object_params().pick_image_preflight_tol_rad
                 except Exception:
                     pick_image_pregrasp_tol_rad = 0.05
-                pick_image_pregrasp_require_reached = str(
-                    os.environ.get(
-                        "PANEL_PICK_OBJECT_PICK_IMAGE_PREFLIGHT_REQUIRE_REACHED",
-                        "1",
-                    )
-                ).strip().lower() not in ("0", "false", "no", "off")
+                pick_image_pregrasp_require_reached = _get_pick_object_params().pick_image_preflight_require_reached
                 panel._emit_log(
                     "[PICK_OBJ] FASE 1B: Ir a PICK_IMAGE desde HOME "
                     f"(preflight={preflight_mode})"
@@ -3851,9 +3670,7 @@ def run_pick_object(panel) -> None:
                 approach_exec_failed = _is_step_exec_failed(msg, "APPROACH")
                 if not (approach_fallback_enabled and (approach_tf_mismatch or approach_exec_failed)):
                     raise
-                skip_retry_after_fallback = str(
-                    os.environ.get("PANEL_PICK_OBJECT_APPROACH_SKIP_RETRY_ON_FALLBACK", "1")
-                ).strip().lower() not in ("0", "false", "no", "off")
+                skip_retry_after_fallback = _get_pick_object_params().approach_skip_retry_on_fallback
                 reason = "tf_mismatch" if approach_tf_mismatch else "exec_failed"
                 panel._emit_log(
                     f"[PICK_OBJ][RECOVERY] APPROACH {reason} detectado; "
@@ -3942,17 +3759,13 @@ def run_pick_object(panel) -> None:
                 f"table_top_base={table_top_base:.3f} table_margin={z_table_margin:.3f}"
             )
             grasp_pose_adapted = False
-            adapt_grasp_xy = str(
-                os.environ.get("PANEL_PICK_OBJECT_ADAPT_GRASP_XY", "1")
-            ).strip().lower() not in ("0", "false", "no", "off")
+            adapt_grasp_xy = _get_pick_object_params().adapt_grasp_xy
             if adapt_grasp_xy:
                 try:
                     tcp_pre, _ = _read_tcp_in_frame(base_frame, measured_ee_frame, timeout_sec=0.25)
                     if tcp_pre is not None:
                         try:
-                            adapt_max = float(
-                                os.environ.get("PANEL_PICK_OBJECT_ADAPT_GRASP_XY_MAX_DELTA_M", "0.015")
-                            )
+                            adapt_max = _get_pick_object_params().adapt_grasp_xy_max_delta_m
                         except Exception:
                             adapt_max = 0.015
                         dx_pre = float(tcp_pre[0]) - float(bx)
@@ -3979,13 +3792,9 @@ def run_pick_object(panel) -> None:
                             )
                 except Exception as exc:
                     panel._emit_log(f"[PICK_OBJ][ADAPT] GRASP_DOWN xy adapt error: {exc}")
-            grasp_joint_fallback_enabled = str(
-                os.environ.get("PANEL_PICK_OBJECT_GRASP_JOINT_FALLBACK", "0")
-            ).strip().lower() not in ("0", "false", "no", "off")
+            grasp_joint_fallback_enabled = _get_pick_object_params().grasp_joint_fallback
             grasp_joint_fallback_applied = False
-            grasp_moveit_retry_enabled = str(
-                os.environ.get("PANEL_PICK_OBJECT_GRASP_MOVEIT_RETRY", "1")
-            ).strip().lower() not in ("0", "false", "no", "off")
+            grasp_moveit_retry_enabled = _get_pick_object_params().grasp_moveit_retry
             if grasp_micro_poses:
                 gx, gy, _ = grasp_pose_send.get("position", (bx, by, bz))
                 panel._emit_log(
@@ -4073,9 +3882,7 @@ def run_pick_object(panel) -> None:
                             raise
                 if grasp_tf_mismatch and grasp_moveit_retry_enabled:
                     try:
-                        retry_count = int(
-                            os.environ.get("PANEL_PICK_OBJECT_GRASP_MOVEIT_RETRY_COUNT", "2")
-                        )
+                        retry_count = _get_pick_object_params().grasp_moveit_retry_count
                     except Exception:
                         retry_count = 2
                     retry_count = max(1, min(retry_count, 5))
@@ -4148,16 +3955,12 @@ def run_pick_object(panel) -> None:
             except Exception:
                 _grasp_stable_tol = 0.045
             try:
-                _grasp_stable_n = int(
-                    os.environ.get("PANEL_PICK_OBJECT_GRASP_TF_STABLE_SAMPLES", "5")
-                )
+                _grasp_stable_n = _get_pick_object_params().grasp_tf_stable_samples
                 _grasp_stable_n = max(2, min(_grasp_stable_n, 10))
             except Exception:
                 _grasp_stable_n = 5
             try:
-                _grasp_stable_min_ok = int(
-                    os.environ.get("PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK", "4")
-                )
+                _grasp_stable_min_ok = _get_pick_object_params().grasp_tf_stable_min_ok
                 _grasp_stable_min_ok = max(1, min(_grasp_stable_min_ok, _grasp_stable_n))
             except Exception:
                 _grasp_stable_min_ok = 4
@@ -4239,13 +4042,13 @@ def run_pick_object(panel) -> None:
                     f"err={z_reach_err:.3f} tol={grasp_z_reach_tol:.3f}"
                 )
             try:
-                attach_z_ref_mode = str(os.environ.get("PANEL_PICK_OBJECT_ATTACH_Z_REF_MODE", "top")).strip().lower()
+                attach_z_ref_mode = str(_get_pick_object_params().attach_z_ref_mode).strip().lower()
             except Exception:
                 attach_z_ref_mode = "top"
             if attach_z_ref_mode not in ("center", "top"):
                 attach_z_ref_mode = "top"
             try:
-                attach_z_clearance = float(os.environ.get("PANEL_PICK_OBJECT_ATTACH_Z_CLEARANCE_M", "0.0"))
+                attach_z_clearance = _get_pick_object_params().attach_z_clearance_m
             except Exception:
                 attach_z_clearance = 0.0
             obj_center_z = float(bz)
@@ -4261,15 +4064,15 @@ def run_pick_object(panel) -> None:
             dy_obj = by - tcp_base[1]
             dz_obj = tcp_contact_z - obj_ref_z
             try:
-                max_tcp_above_obj_z = float(os.environ.get("PANEL_PICK_OBJECT_MAX_TCP_ABOVE_OBJ_Z", "0.045"))
+                max_tcp_above_obj_z = _get_pick_object_params().max_tcp_above_obj_z
             except Exception:
                 max_tcp_above_obj_z = 0.045
             try:
-                object_xy_gate_tol = float(os.environ.get("PANEL_PICK_OBJECT_OBJECT_XY_GATE_TOL_M", "0.030"))
+                object_xy_gate_tol = _get_pick_object_params().object_xy_gate_tol_m
             except Exception:
                 object_xy_gate_tol = 0.030
             try:
-                tcp_obj_dist_max = float(os.environ.get("PANEL_PICK_OBJECT_TCP_OBJ_DIST_MAX_M", "0.055"))
+                tcp_obj_dist_max = _get_pick_object_params().tcp_obj_dist_max_m
             except Exception:
                 tcp_obj_dist_max = 0.055
             tcp_obj_dist = math.sqrt((dx_obj * dx_obj) + (dy_obj * dy_obj) + (dz_obj * dz_obj))
@@ -4315,9 +4118,7 @@ def run_pick_object(panel) -> None:
 
             # Anti-empuje: si el objeto se desplazo antes de cerrar, abortar.
             try:
-                max_obj_move_before_close = float(
-                    os.environ.get("PANEL_PICK_OBJECT_MAX_OBJ_MOVE_BEFORE_CLOSE_M", "0.025")
-                )
+                max_obj_move_before_close = _get_pick_object_params().max_obj_move_before_close_m
             except Exception:
                 max_obj_move_before_close = 0.025
             current_positions = get_object_positions() or {}
@@ -4475,9 +4276,7 @@ def run_pick_object(panel) -> None:
                 )
                 panel._emit_log("[PICK_OBJ] FASE 6 COMPLETADA: Objeto agarrado")
             else:
-                staged_lift_force = str(
-                    os.environ.get("PANEL_PICK_OBJECT_STAGED_LIFT_ALWAYS", "0")
-                ).strip().lower() not in ("0", "false", "no", "off")
+                staged_lift_force = _get_pick_object_params().staged_lift_always
                 if deterministic_joint_after_approach:
                     panel._emit_log(
                         "[PICK_OBJ][MODE] deterministic_joint_path active; LIFT por ruta articular"
@@ -4497,17 +4296,13 @@ def run_pick_object(panel) -> None:
                 else:
                     _run_moveit_step(*sequence[3])  # LIFT
                 try:
-                    post_lift_max_dist_m = float(
-                        os.environ.get("PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M", "0.18")
-                    )
+                    post_lift_max_dist_m = _get_pick_object_params().post_lift_max_dist_m
                 except Exception:
                     post_lift_max_dist_m = 0.18
                 if deterministic_joint_after_approach:
                     post_lift_max_dist_m = max(post_lift_max_dist_m, 0.22)
                 try:
-                    post_lift_min_consecutive = int(
-                        os.environ.get("PANEL_PICK_OBJECT_POST_LIFT_MIN_CONSECUTIVE", "2")
-                    )
+                    post_lift_min_consecutive = _get_pick_object_params().post_lift_min_consecutive
                 except Exception:
                     post_lift_min_consecutive = 2
                 _assert_carry_coherence_after_lift(

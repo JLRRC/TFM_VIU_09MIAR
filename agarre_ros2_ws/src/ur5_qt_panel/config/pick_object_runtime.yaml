@@ -1,0 +1,106 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/config/pick_object_runtime.yaml
+# Contenido: Parámetros runtime del flujo pick_object (botón "Agarre objeto").
+# Uso breve: editar valores y relanzar el panel; los env vars siguen
+# teniendo prioridad si quieres override puntual sin tocar este fichero.
+#
+# Prioridad de resolución en panel_pick_object_params.load_pick_object_params():
+#   env var (PANEL_PICK_OBJECT_*)  >  esta clave YAML  >  default del dataclass
+#
+# Para conocer la env var equivalente de cada clave consulta el comentario
+# de cada campo en panel_pick_object_params.py:PickObjectParams.
+
+adapt_grasp_xy: true
+adapt_grasp_xy_max_delta_m: 0.015
+allow_degraded_open_guard: true
+allow_joint_preflight_in_moveit: true
+allow_joint_recovery_in_moveit: true
+allow_tf_helper_fallback: false
+approach_clearance_m: 0.20
+approach_skip_retry_on_fallback: true
+approach_tol_m: 0.10
+attach_z_clearance_m: 0.0
+attach_z_ref_mode: top
+carry_gate_enable: true
+carry_gate_max_dist_m: 0.18
+carry_gate_min_consecutive: 2
+carry_gate_require_state: true
+carry_gate_sample_dt_sec: 0.08
+carry_gate_timeout_sec: 1.4
+carry_joint_time_sec: 8.0
+deterministic_carry_gate_max_m: 0.80
+deterministic_carry_gate_min_consecutive: 1
+deterministic_joint_after_approach: false
+force_home_start: true
+grasp_joint_fallback: false
+grasp_micro_steps_max: 0
+grasp_micro_step_m: 0.012
+grasp_moveit_retry: true
+grasp_moveit_retry_count: 2
+grasp_tf_stable_min_ok: 4
+grasp_tf_stable_samples: 5
+gripper_open_settle_sec: 0.70
+home_start_dur_sec: 8.0
+home_start_if_far: true
+home_start_if_far_max_err_rad: 2.0
+home_start_ready_wait_sec: 45.0
+home_start_require_reached: false
+home_tol_rad: 0.08
+insert_m: 0.015
+joint_settle_extra_sec: 2.5
+lift_clearance_m: 0.20
+max_obj_move_before_close_m: 0.025
+max_tcp_above_obj_z: 0.045
+min_approach_clearance_m: 0.30
+min_opening_before_descent_m: 0.030
+min_opening_m: 0.020
+min_pre_clearance_m: 0.15
+moveit_active_request_grace_sec: 90.0
+moveit_active_request_hb_sec: 2.5
+moveit_bridge_recover_timeout_sec: 10.0
+moveit_exclusive: true
+object_xy_gate_tol_m: 0.030
+open_cmd_ack_sec: 3.0
+open_wait_sec: 2.2
+orientation_xyzw: 0.70710678,0.0,0.70710678,0.0
+path_tol_m: 0.03
+pick_image_preflight_require_reached: true
+pick_image_preflight_tol_rad: 0.05
+post_lift_max_dist_m: 0.18
+post_lift_min_consecutive: 2
+preflight_mode: mesa
+pre_grasp_align_xy_tol_m: 0.045
+pre_grasp_align_z_tol_m: 0.050
+pre_grasp_recenter_enable: false
+pre_grasp_tol_m: 0.10
+pre_margin_m: 0.04
+selection_max_age_sec: 600.0
+staged_lift_always: false
+step_tol_m: 0.02
+strict_contact_gate_enable: true
+strict_contact_settle_sec: 0.7
+strict_lift_settle_sec: 0.20
+strict_lift_stage_max_dist_m: 0.245
+strict_lift_stage_min_consecutive: 1
+strict_lift_stage_step_m: 0.050
+strict_lift_stage_timeout_sec: 0.90
+strict_max_blocked_opening_m: 0.850
+strict_min_blocked_opening_m: 0.050
+strict_min_effort_abs: 0.0
+strict_probe_lift_m: 0.050
+strict_probe_max_dist_m: 0.160
+strict_probe_regrasp_step_m: 0.006
+strict_probe_retries: 2
+strict_probe_timeout_sec: 0.90
+strict_regrasp_floor_margin_m: 0.008
+strict_regrasp_max: 1
+strict_regrasp_step_m: 0.004
+table_margin_m: 0.015
+tcp_obj_dist_max_m: 0.055
+transport_clearance_m: 0.20
+transport_moveit_wait_sec: 460.0
+transport_skip_constraints: true
+transport_split_moveit: true
+transport_split_stages: 3
+world_ready_poll_sec: 0.25
+world_ready_scope: target
+world_ready_wait_sec: 20.0
