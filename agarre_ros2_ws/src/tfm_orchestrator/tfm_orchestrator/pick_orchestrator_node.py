@@ -45,6 +45,7 @@ from ur5_panel_interfaces.srv import (
 )
 
 from .pick_fsm import PickContext, PickPhase
+from .phase_timings import PhaseTimings
 from .service_clients import (
     ActionCallResult,
     PhaseServiceMap,
@@ -127,6 +128,8 @@ class PickOrchestratorNode(Node):
         )
         self._cancel_requested = False
         start_mono = time.monotonic()
+        timings = PhaseTimings()
+        timings.mark_session_start(clock_now=start_mono)
         result = PickPlace.Result()
 
         # Happy path completo. Cada paso es un stub F5 — F6 substituirá
@@ -150,6 +153,8 @@ class PickOrchestratorNode(Node):
                 result.reason = "canceled"
                 result.duration_sec = time.monotonic() - start_mono
                 result.cycles_completed = 0
+                timings.mark_session_end(clock_now=time.monotonic())
+                self._log_timings(timings, outcome="canceled")
                 return result
 
             try:
@@ -162,6 +167,8 @@ class PickOrchestratorNode(Node):
                 result.reason = f"invalid_transition: {exc}"
                 result.duration_sec = time.monotonic() - start_mono
                 result.cycles_completed = 0
+                timings.mark_session_end(clock_now=time.monotonic())
+                self._log_timings(timings, outcome="invalid_transition")
                 return result
 
             self._publish_feedback(goal_handle, ctx)
@@ -170,7 +177,14 @@ class PickOrchestratorNode(Node):
             # mantiene comportamiento F5 (sleep). Si no, llama a los
             # services apropiados; ante fallo, marca FAILED y aborta.
             if dst != PickPhase.DONE:
+                timings.mark_start(dst.value, clock_now=time.monotonic(), detail=detail)
                 phase_ok, phase_reason = self._execute_phase(dst, ctx)
+                timings.mark_end(
+                    dst.value,
+                    clock_now=time.monotonic(),
+                    success=phase_ok,
+                    detail=phase_reason,
+                )
                 if not phase_ok:
                     ctx.fail(phase_reason)
                     self._publish_feedback(goal_handle, ctx)
@@ -179,6 +193,8 @@ class PickOrchestratorNode(Node):
                     result.reason = phase_reason
                     result.duration_sec = time.monotonic() - start_mono
                     result.cycles_completed = 0
+                    timings.mark_session_end(clock_now=time.monotonic())
+                    self._log_timings(timings, outcome="failed")
                     return result
 
         goal_handle.succeed()
@@ -186,10 +202,31 @@ class PickOrchestratorNode(Node):
         result.reason = "ok"
         result.duration_sec = time.monotonic() - start_mono
         result.cycles_completed = 1
+        timings.mark_session_end(clock_now=time.monotonic())
+        self._log_timings(timings, outcome="ok")
         self.get_logger().info(
             f"[ORCHESTRATOR] result success=True duration={result.duration_sec:.2f}s"
         )
         return result
+
+    def _log_timings(self, timings: PhaseTimings, *, outcome: str) -> None:
+        """Loguea el snapshot de PhaseTimings con prefijo [PERF]."""
+        import json
+        snap = timings.snapshot()
+        self.get_logger().info(
+            f"[PERF][PICK_PLACE] outcome={outcome} "
+            f"total_duration_sec={snap.get('total_duration_sec')} "
+            f"phases_completed={snap.get('phases_completed')} "
+            f"phases_failed={snap.get('phases_failed')}"
+        )
+        try:
+            self.get_logger().info(
+                f"[PERF][PICK_PLACE][SNAPSHOT] {json.dumps(snap)}"
+            )
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[PERF][PICK_PLACE] snapshot serialize failed: {exc}"
+            )
 
     # ------------------------------------------------------------------
     # Helpers

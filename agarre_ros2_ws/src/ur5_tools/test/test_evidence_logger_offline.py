@@ -235,3 +235,131 @@ def test_metrics_duration_requires_two_monos(metrics_fn):
     events = [{"kind": "x", "ts_mono": 100.0}]
     m = metrics_fn(events)
     assert m["duration_sec"] is None
+
+
+# ---------------------------------------------------------------------------
+# F8: aggregate_phase_timings
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def aggregate_fn():
+    from ur5_tools.evidence_helpers import aggregate_phase_timings
+    return aggregate_phase_timings
+
+
+def _make_snapshot(phases_dict, *, total_duration=None, failed=0):
+    """Helper para construir snapshots compatibles con PhaseTimings.snapshot()."""
+    return {
+        "phases": phases_dict,
+        "phase_order": list(phases_dict.keys()),
+        "session_start_mono": 0.0,
+        "session_end_mono": total_duration,
+        "total_duration_sec": total_duration,
+        "phases_completed": sum(
+            1 for v in phases_dict.values() if v.get("success") is True
+        ),
+        "phases_failed": failed,
+    }
+
+
+def test_aggregate_empty(aggregate_fn):
+    out = aggregate_fn([])
+    assert out["per_phase"] == {}
+    assert out["total_sessions"] == 0
+    assert out["successful_sessions"] == 0
+    assert out["avg_total_duration_sec"] is None
+
+
+def test_aggregate_single_session_all_ok(aggregate_fn):
+    snap = _make_snapshot(
+        {
+            "APPROACH": {"duration_sec": 2.0, "success": True},
+            "GRASP": {"duration_sec": 0.5, "success": True},
+        },
+        total_duration=3.0,
+    )
+    out = aggregate_fn([snap])
+    assert out["total_sessions"] == 1
+    assert out["successful_sessions"] == 1
+    assert out["avg_total_duration_sec"] == pytest.approx(3.0)
+    assert out["per_phase"]["APPROACH"]["mean_sec"] == pytest.approx(2.0)
+    assert out["per_phase"]["APPROACH"]["success_rate"] == 1.0
+
+
+def test_aggregate_multiple_sessions_mean_min_max(aggregate_fn):
+    snaps = [
+        _make_snapshot(
+            {"APPROACH": {"duration_sec": 1.0, "success": True}},
+            total_duration=1.5,
+        ),
+        _make_snapshot(
+            {"APPROACH": {"duration_sec": 3.0, "success": True}},
+            total_duration=3.5,
+        ),
+        _make_snapshot(
+            {"APPROACH": {"duration_sec": 2.0, "success": True}},
+            total_duration=2.5,
+        ),
+    ]
+    out = aggregate_fn(snaps)
+    assert out["per_phase"]["APPROACH"]["samples"] == 3
+    assert out["per_phase"]["APPROACH"]["mean_sec"] == pytest.approx(2.0)
+    assert out["per_phase"]["APPROACH"]["min_sec"] == pytest.approx(1.0)
+    assert out["per_phase"]["APPROACH"]["max_sec"] == pytest.approx(3.0)
+    assert out["avg_total_duration_sec"] == pytest.approx(2.5)
+
+
+def test_aggregate_success_rate_per_phase(aggregate_fn):
+    snaps = [
+        _make_snapshot(
+            {"GRASP": {"duration_sec": 0.5, "success": True}},
+        ),
+        _make_snapshot(
+            {"GRASP": {"duration_sec": 0.5, "success": False}},
+            failed=1,
+        ),
+        _make_snapshot(
+            {"GRASP": {"duration_sec": 0.5, "success": True}},
+        ),
+    ]
+    out = aggregate_fn(snaps)
+    assert out["per_phase"]["GRASP"]["successes"] == 2
+    assert out["per_phase"]["GRASP"]["failures"] == 1
+    assert out["per_phase"]["GRASP"]["success_rate"] == pytest.approx(2 / 3)
+    assert out["successful_sessions"] == 2
+    assert out["total_sessions"] == 3
+
+
+def test_aggregate_handles_missing_duration(aggregate_fn):
+    """Phase con duration_sec None NO se cuenta para mean/min/max."""
+    snaps = [
+        _make_snapshot(
+            {"X": {"duration_sec": None, "success": True}},
+        ),
+        _make_snapshot(
+            {"X": {"duration_sec": 2.0, "success": True}},
+        ),
+    ]
+    out = aggregate_fn(snaps)
+    assert out["per_phase"]["X"]["samples"] == 2
+    assert out["per_phase"]["X"]["mean_sec"] == pytest.approx(2.0)
+
+
+def test_aggregate_skips_invalid_snapshots(aggregate_fn):
+    snaps = ["not a dict", None, {"phases": {"A": {"duration_sec": 1.0, "success": True}}}]
+    out = aggregate_fn(snaps)
+    assert out["total_sessions"] == 1
+    assert out["per_phase"]["A"]["samples"] == 1
+
+
+def test_aggregate_unknown_success_does_not_count(aggregate_fn):
+    snaps = [
+        _make_snapshot(
+            {"X": {"duration_sec": 1.0, "success": None}},
+        ),
+    ]
+    out = aggregate_fn(snaps)
+    assert out["per_phase"]["X"]["successes"] == 0
+    assert out["per_phase"]["X"]["failures"] == 0
+    assert out["per_phase"]["X"]["success_rate"] is None

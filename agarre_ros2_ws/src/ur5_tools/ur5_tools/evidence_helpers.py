@@ -171,3 +171,97 @@ def compute_session_metrics(events: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         "session_finished_iso": session_finished_iso,
         "duration_sec": duration_sec,
     }
+
+
+# ---------------------------------------------------------------------------
+# F8 — Phase timing aggregation
+# ---------------------------------------------------------------------------
+
+
+def aggregate_phase_timings(
+    snapshots: Iterable[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Agrega múltiples snapshots de ``PhaseTimings`` para reporte.
+
+    Recibe una iterable de dicts con la estructura producida por
+    ``PhaseTimings.snapshot()`` (puede venir de un evento JSONL del
+    evidence_logger con ``kind=phase_timings``).
+
+    Devuelve un dict con métricas agregadas por fase:
+      * ``per_phase``: dict {phase_name → {samples, mean_sec, min_sec,
+        max_sec, success_rate}}
+      * ``total_sessions``: número de snapshots procesados
+      * ``successful_sessions``: snapshots sin fases fallidas
+      * ``avg_total_duration_sec``: media de total_duration_sec en
+        snapshots con valor.
+    """
+    per_phase: Dict[str, Dict[str, Any]] = {}
+    total_sessions = 0
+    successful_sessions = 0
+    total_durations: List[float] = []
+
+    for snap in snapshots:
+        if not isinstance(snap, dict):
+            continue
+        total_sessions += 1
+        if int(snap.get("phases_failed") or 0) == 0:
+            successful_sessions += 1
+        td = snap.get("total_duration_sec")
+        if isinstance(td, (int, float)):
+            total_durations.append(float(td))
+
+        phases = snap.get("phases") or {}
+        if not isinstance(phases, dict):
+            continue
+        for name, entry in phases.items():
+            if not isinstance(entry, dict):
+                continue
+            duration = entry.get("duration_sec")
+            success = entry.get("success")
+            stats = per_phase.setdefault(
+                str(name),
+                {
+                    "samples": 0,
+                    "successes": 0,
+                    "failures": 0,
+                    "_durations": [],
+                },
+            )
+            stats["samples"] += 1
+            if success is True:
+                stats["successes"] += 1
+            elif success is False:
+                stats["failures"] += 1
+            if isinstance(duration, (int, float)):
+                stats["_durations"].append(float(duration))
+
+    # Finalizar agregaciones por fase
+    finalized_per_phase: Dict[str, Dict[str, Any]] = {}
+    for name, stats in per_phase.items():
+        durations = stats.pop("_durations")
+        classified = stats["successes"] + stats["failures"]
+        success_rate = (
+            stats["successes"] / classified if classified > 0 else None
+        )
+        finalized_per_phase[name] = {
+            "samples": stats["samples"],
+            "successes": stats["successes"],
+            "failures": stats["failures"],
+            "success_rate": success_rate,
+            "mean_sec": (
+                sum(durations) / len(durations) if durations else None
+            ),
+            "min_sec": min(durations) if durations else None,
+            "max_sec": max(durations) if durations else None,
+        }
+
+    avg_total_duration_sec: Optional[float] = (
+        sum(total_durations) / len(total_durations) if total_durations else None
+    )
+
+    return {
+        "per_phase": finalized_per_phase,
+        "total_sessions": total_sessions,
+        "successful_sessions": successful_sessions,
+        "avg_total_duration_sec": avg_total_duration_sec,
+    }
