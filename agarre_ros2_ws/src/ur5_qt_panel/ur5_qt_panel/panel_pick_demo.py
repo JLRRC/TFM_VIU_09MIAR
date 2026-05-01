@@ -133,6 +133,12 @@ from .pick_demo.marker_helpers import (
     make_sphere_marker as _make_sphere_marker_pure,
     make_arrow_marker as _make_arrow_marker_pure,
 )
+from .pick_demo.metrics import (
+    alignment_metrics_base as _alignment_metrics_base,
+    grasp_down_runtime_metrics as _grasp_down_runtime_metrics_pure,
+    joint_delta_metrics as _joint_delta_metrics_pure,
+    joint_error_metrics as _joint_error_metrics_pure,
+)
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -643,46 +649,16 @@ def run_pick_demo(panel) -> None:
                 return " ".join(parts)
 
             def _joint_error_metrics(joints):
-                names = list(getattr(panel, "UR5_JOINT_NAMES", []) or [])
-                if not names:
-                    names = [
-                        "shoulder_pan_joint",
-                        "shoulder_lift_joint",
-                        "elbow_joint",
-                        "wrist_1_joint",
-                        "wrist_2_joint",
-                        "wrist_3_joint",
-                    ]
+                names = list(getattr(panel, "UR5_JOINT_NAMES", []) or []) or [
+                    "shoulder_pan_joint",
+                    "shoulder_lift_joint",
+                    "elbow_joint",
+                    "wrist_1_joint",
+                    "wrist_2_joint",
+                    "wrist_3_joint",
+                ]
                 snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
-                diffs = []
-                shoulder_diffs = []
-                for idx, name in enumerate(names):
-                    if idx >= len(joints):
-                        break
-                    curr = snapshot.get(name)
-                    if curr is None:
-                        continue
-                    diff = abs(angle_shortest_diff_rad(float(curr), float(joints[idx])))
-                    diffs.append(float(diff))
-                    if idx in (0, 1):
-                        shoulder_diffs.append(float(diff))
-                if not diffs:
-                    return {
-                        "available": False,
-                        "max_diff_rad": None,
-                        "sum_diff_rad": None,
-                        "shoulder_max_diff_rad": None,
-                    }
-                return {
-                    "available": True,
-                    "max_diff_rad": float(max(diffs)),
-                    "sum_diff_rad": float(sum(diffs)),
-                    "shoulder_max_diff_rad": (
-                        float(max(shoulder_diffs))
-                        if shoulder_diffs
-                        else 0.0
-                    ),
-                }
+                return _joint_error_metrics_pure(joints, names, snapshot)
 
             def _current_arm_joint_snapshot() -> list[float | None]:
                 snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
@@ -1901,133 +1877,49 @@ def run_pick_demo(panel) -> None:
                 }
 
             def _close_alignment_metrics():
-                obj_base = _live_object_base()
                 tcp_base = _live_tcp_base()
-                if obj_base is None or tcp_base is None:
-                    return {
-                        "ok": False,
-                        "reason": "pose_unavailable",
-                        "xy_dist": None,
-                        "z_gap": None,
-                        "z_error": None,
-                        "tcp_obj_dist": None,
-                        "tcp_base": _tuple3(tcp_base),
-                        "object_base": _tuple3(obj_base),
-                        "pose_consistency": _json_safe(_pose_consistency_metrics(tcp_base=tcp_base)),
-                        "pose_source_ok": False,
-                    }
-                xy_dist = math.hypot(
-                    float(tcp_base[0]) - float(obj_base[0]),
-                    float(tcp_base[1]) - float(obj_base[1]),
-                )
-                z_gap = float(tcp_base[2]) - float(obj_base[2])
-                z_error = abs(z_gap - (_DIRECTO_GRASP_Z + grasp_contact_z_offset_m))
-                tcp_obj_dist = _dist(tcp_base, obj_base)
-                xy_tol = max(
-                    0.006,
-                    float(pick_params.close_xy_tol_m),
-                )
-                z_tol = max(
-                    0.008,
-                    float(pick_params.close_z_err_tol_m),
+                pose_consistency = _pose_consistency_metrics(tcp_base=tcp_base)
+                metrics = _alignment_metrics_base(
+                    obj_base=_tuple3(_live_object_base()),
+                    tcp_base=_tuple3(tcp_base),
+                    grasp_z_target=_DIRECTO_GRASP_Z + grasp_contact_z_offset_m,
+                    xy_tol=max(0.006, float(pick_params.close_xy_tol_m)),
+                    z_tol=max(0.008, float(pick_params.close_z_err_tol_m)),
+                    pose_consistency=_json_safe(pose_consistency),
                 )
                 gripper_state = _read_gripper_state(expected_closed=True)
-                gripper_closed_measured = bool(gripper_state.get("measured_target_ok"))
-                pose_consistency = _pose_consistency_metrics(tcp_base=tcp_base)
-                geometry_ok = bool(
-                    xy_dist <= xy_tol
-                    and z_error <= z_tol
-                    and bool(pose_consistency.get("sources_ok"))
+                metrics["gripper_closed_measured"] = bool(
+                    gripper_state.get("measured_target_ok")
                 )
-                return {
-                    "ok": geometry_ok,
-                    "geometry_ok": geometry_ok,
-                    "reason": (
-                        "ok"
-                        if geometry_ok
-                        else "pose_source_mismatch"
-                        if not bool(pose_consistency.get("sources_ok"))
-                        else "alignment_out_of_tolerance"
-                    ),
-                    "xy_dist": float(xy_dist),
-                    "z_gap": float(z_gap),
-                    "z_error": float(z_error),
-                    "tcp_obj_dist": float(tcp_obj_dist),
-                    "xy_tol": float(xy_tol),
-                    "z_tol": float(z_tol),
-                    "pose_consistency": _json_safe(pose_consistency),
-                    "pose_source_ok": bool(pose_consistency.get("sources_ok")),
-                    "gripper_closed_measured": gripper_closed_measured,
-                    "gripper_opening_sum": gripper_state.get("opening_sum"),
-                    "gripper_max_abs_err": gripper_state.get("max_abs_err"),
-                    "tcp_base": _tuple3(tcp_base),
-                    "object_base": _tuple3(obj_base),
-                }
+                metrics["gripper_opening_sum"] = gripper_state.get("opening_sum")
+                metrics["gripper_max_abs_err"] = gripper_state.get("max_abs_err")
+                return metrics
 
             def _pre_close_alignment_metrics():
-                obj_base = _live_object_base()
                 tcp_base = _live_tcp_base()
-                if obj_base is None or tcp_base is None:
-                    return {
-                        "ok": False,
-                        "reason": "pose_unavailable",
-                        "xy_dist": None,
-                        "z_gap": None,
-                        "z_error": None,
-                        "tcp_obj_dist": None,
-                        "tcp_base": _tuple3(tcp_base),
-                        "object_base": _tuple3(obj_base),
-                        "pose_consistency": _json_safe(_pose_consistency_metrics(tcp_base=tcp_base)),
-                        "pose_source_ok": False,
-                    }
-                xy_dist = math.hypot(
-                    float(tcp_base[0]) - float(obj_base[0]),
-                    float(tcp_base[1]) - float(obj_base[1]),
-                )
-                z_gap = float(tcp_base[2]) - float(obj_base[2])
-                z_error = abs(z_gap - (_DIRECTO_GRASP_Z + grasp_contact_z_offset_m))
-                tcp_obj_dist = _dist(tcp_base, obj_base)
-                xy_tol = max(
-                    0.004,
-                    float(
-                        os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "")
-                        or _get_pick_demo_params().close_xy_tol_m
-                    ),
-                )
-                z_tol = max(
-                    0.006,
-                    float(
-                        os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M", "")
-                        or _get_pick_demo_params().close_z_err_tol_m
-                    ),
-                )
                 pose_consistency = _pose_consistency_metrics(tcp_base=tcp_base)
-                ok = bool(
-                    xy_dist <= xy_tol
-                    and z_error <= z_tol
-                    and bool(pose_consistency.get("sources_ok"))
-                )
-                return {
-                    "ok": ok,
-                    "reason": (
-                        "ok"
-                        if ok
-                        else "pose_source_mismatch"
-                        if not bool(pose_consistency.get("sources_ok"))
-                        else "alignment_out_of_tolerance"
+                metrics = _alignment_metrics_base(
+                    obj_base=_tuple3(_live_object_base()),
+                    tcp_base=_tuple3(tcp_base),
+                    grasp_z_target=_DIRECTO_GRASP_Z + grasp_contact_z_offset_m,
+                    xy_tol=max(
+                        0.004,
+                        float(
+                            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "")
+                            or _get_pick_demo_params().close_xy_tol_m
+                        ),
                     ),
-                    "xy_dist": float(xy_dist),
-                    "z_gap": float(z_gap),
-                    "z_error": float(z_error),
-                    "tcp_obj_dist": float(tcp_obj_dist),
-                    "xy_tol": float(xy_tol),
-                    "z_tol": float(z_tol),
-                    "pose_consistency": _json_safe(pose_consistency),
-                    "pose_source_ok": bool(pose_consistency.get("sources_ok")),
-                    "tcp_base": _tuple3(tcp_base),
-                    "object_base": _tuple3(obj_base),
-                    "gripper_state": _json_safe(_read_gripper_state()),
-                }
+                    z_tol=max(
+                        0.006,
+                        float(
+                            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M", "")
+                            or _get_pick_demo_params().close_z_err_tol_m
+                        ),
+                    ),
+                    pose_consistency=_json_safe(pose_consistency),
+                )
+                metrics["gripper_state"] = _json_safe(_read_gripper_state())
+                return metrics
 
             def _wait_pre_close_alignment(*, timeout_sec: float, min_consecutive: int = 3):
                 deadline = time.time() + max(0.3, float(timeout_sec))
@@ -4673,67 +4565,18 @@ def run_pick_demo(panel) -> None:
                 return ok
 
             def _grasp_down_runtime_metrics(*, target_base, tcp_base=None, obj_base=None) -> dict:
-                target_base_3 = _tuple3(target_base)
-                tcp_base_3 = _tuple3(tcp_base) or _tuple3(_live_tcp_base())
-                obj_base_3 = _tuple3(obj_base) or _tuple3(_live_object_base())
-                xy_err_target = None
-                z_err_target = None
-                target_dist = None
-                xy_err_object = None
-                z_gap_object = None
-                if tcp_base_3 is not None and target_base_3 is not None:
-                    xy_err_target = math.hypot(
-                        float(tcp_base_3[0]) - float(target_base_3[0]),
-                        float(tcp_base_3[1]) - float(target_base_3[1]),
-                    )
-                    z_err_target = float(tcp_base_3[2]) - float(target_base_3[2])
-                    target_dist = _dist(tcp_base_3, target_base_3)
-                if tcp_base_3 is not None and obj_base_3 is not None:
-                    xy_err_object = math.hypot(
-                        float(tcp_base_3[0]) - float(obj_base_3[0]),
-                        float(tcp_base_3[1]) - float(obj_base_3[1]),
-                    )
-                    z_gap_object = float(tcp_base_3[2]) - float(obj_base_3[2])
-                return {
-                    "target_base": target_base_3,
-                    "tcp_base": tcp_base_3,
-                    "object_base": obj_base_3,
-                    "xy_err_target": xy_err_target,
-                    "z_err_target": z_err_target,
-                    "target_dist": target_dist,
-                    "xy_err_object": xy_err_object,
-                    "z_gap_object": z_gap_object,
-                }
+                tcp_resolved = _tuple3(tcp_base) or _tuple3(_live_tcp_base())
+                obj_resolved = _tuple3(obj_base) or _tuple3(_live_object_base())
+                return _grasp_down_runtime_metrics_pure(
+                    target_base=_tuple3(target_base),
+                    tcp_base=tcp_resolved,
+                    obj_base=obj_resolved,
+                )
 
             def _joint_delta_metrics(reference_joints, final_joints) -> dict:
-                if not reference_joints or not final_joints:
-                    return {
-                        "joint_delta_abs": {},
-                        "max_joint_delta": None,
-                        "sum_joint_delta": None,
-                        "critical_joints_delta": {},
-                    }
-                deltas = {}
-                for joint_name, ref_q, final_q in zip(UR5_JOINT_NAMES, reference_joints, final_joints):
-                    deltas[str(joint_name)] = abs(
-                        float(angle_shortest_diff_rad(float(ref_q), float(final_q)))
-                    )
-                critical_joint_names = (
-                    "shoulder_lift_joint",
-                    "elbow_joint",
-                    "wrist_1_joint",
+                return _joint_delta_metrics_pure(
+                    reference_joints, final_joints, UR5_JOINT_NAMES
                 )
-                delta_values = list(deltas.values())
-                return {
-                    "joint_delta_abs": deltas,
-                    "max_joint_delta": max(delta_values) if delta_values else None,
-                    "sum_joint_delta": sum(delta_values) if delta_values else None,
-                    "critical_joints_delta": {
-                        joint_name: deltas.get(joint_name)
-                        for joint_name in critical_joint_names
-                        if joint_name in deltas
-                    },
-                }
 
             def _grasp_down_joint_quality(
                 *,
