@@ -50,7 +50,8 @@ jobs:
             test/test_panel_tfm_params.py \
             test/test_pick_demo_pure_helpers.py \
             test/test_panel_ros_msg_helpers.py \
-            test/test_directo_geometry.py
+            test/test_directo_geometry.py \
+            test/test_pick_place_client_logic.py
 
       - name: pytest offline subset ur5_tools (F4/F10/F6.5 helpers puros)
         working-directory: agarre_ros2_ws/src/ur5_tools

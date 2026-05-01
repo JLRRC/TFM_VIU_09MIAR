@@ -132,9 +132,18 @@ monotónica, estados terminales no transicionan.
   ``encode_request_frame``/``parse_bridge_result``/
   ``result_matches_request`` testables sin ROS (15 tests offline
   adicionales).
-* 🔴 F6.4 pendiente: reescribir `panel_v2.run_pick_demo` (10.7k LOC)
-  como cliente de `/pick_place` — panel queda thin. Cierra el ciclo
-  de la migración arquitectónica (F5/F6 entera).
+* 🟡 F6.4 PARCIAL: cliente thin del orchestrator añadido al panel
+  como **opt-in** (sin tocar el legacy `run_pick_demo` 10.7k LOC):
+  - `ur5_qt_panel/pick_place_client_logic.py` — lógica pura
+    (validation, conversion, feature flag) con 30 tests offline.
+  - `ur5_qt_panel/pick_place_client.py` — `PickPlaceClient` class
+    wrapping ActionClient + callbacks panel-friendly.
+  - Activación: env var `PANEL_PICK_DEMO_USE_ORCHESTRATOR=1`. Por
+    defecto el panel sigue usando el legacy run_pick_demo.
+  - Pendiente: cablear el flag en `panel_v2` para que el botón
+    "Pick Demo" envíe el goal vía cliente cuando esté activo. Es
+    una integración de pocas líneas — queda para F6.4 final cuando
+    el orchestrator esté validado E2E con servers reales.
 
 ## Parámetros runtime
 
