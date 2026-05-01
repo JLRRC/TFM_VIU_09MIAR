@@ -129,6 +129,10 @@ from .pick_demo.pure_helpers import (
     vec_norm as _vec_norm,
     z_delta as _z_delta,
 )
+from .pick_demo.marker_helpers import (
+    make_sphere_marker as _make_sphere_marker_pure,
+    make_arrow_marker as _make_arrow_marker_pure,
+)
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -2131,30 +2135,12 @@ def run_pick_demo(panel) -> None:
                 return None
 
             def _direct_make_sphere_marker(*, ns: str, marker_id: int, frame_id: str, xyz, rgba) -> Marker | None:
-                xyz3 = _tuple3(xyz)
-                if Marker is None or xyz3 is None:
-                    return None
-                marker = Marker()
-                marker.header.frame_id = str(frame_id or WORLD_FRAME or "world")
-                stamp = _direct_debug_stamp()
-                if stamp is not None:
-                    marker.header.stamp = stamp
-                marker.ns = ns
-                marker.id = int(marker_id)
-                marker.type = Marker.SPHERE
-                marker.action = Marker.ADD
-                marker.pose.position.x = float(xyz3[0])
-                marker.pose.position.y = float(xyz3[1])
-                marker.pose.position.z = float(xyz3[2])
-                marker.pose.orientation.w = 1.0
-                marker.scale.x = 0.018
-                marker.scale.y = 0.018
-                marker.scale.z = 0.018
-                marker.color.r = float(rgba[0])
-                marker.color.g = float(rgba[1])
-                marker.color.b = float(rgba[2])
-                marker.color.a = float(rgba[3])
-                return marker
+                return _make_sphere_marker_pure(
+                    ns=ns, marker_id=marker_id,
+                    frame_id=str(frame_id or WORLD_FRAME or "world"),
+                    xyz=_tuple3(xyz), rgba=rgba,
+                    stamp=_direct_debug_stamp(),
+                )
 
             def _direct_make_arrow_marker(
                 *,
@@ -2165,31 +2151,13 @@ def run_pick_demo(panel) -> None:
                 end_xyz,
                 rgba,
             ) -> Marker | None:
-                start3 = _tuple3(start_xyz)
-                end3 = _tuple3(end_xyz)
-                if Marker is None or Point is None or start3 is None or end3 is None:
-                    return None
-                marker = Marker()
-                marker.header.frame_id = str(frame_id or WORLD_FRAME or "world")
-                stamp = _direct_debug_stamp()
-                if stamp is not None:
-                    marker.header.stamp = stamp
-                marker.ns = ns
-                marker.id = int(marker_id)
-                marker.type = Marker.ARROW
-                marker.action = Marker.ADD
-                marker.scale.x = 0.004
-                marker.scale.y = 0.008
-                marker.scale.z = 0.012
-                marker.color.r = float(rgba[0])
-                marker.color.g = float(rgba[1])
-                marker.color.b = float(rgba[2])
-                marker.color.a = float(rgba[3])
-                marker.points = [
-                    Point(x=float(start3[0]), y=float(start3[1]), z=float(start3[2])),
-                    Point(x=float(end3[0]), y=float(end3[1]), z=float(end3[2])),
-                ]
-                return marker
+                return _make_arrow_marker_pure(
+                    ns=ns, marker_id=marker_id,
+                    frame_id=str(frame_id or WORLD_FRAME or "world"),
+                    start_xyz=_tuple3(start_xyz), end_xyz=_tuple3(end_xyz),
+                    rgba=rgba,
+                    stamp=_direct_debug_stamp(),
+                )
 
             def _publish_direct_debug_markers(
                 *,

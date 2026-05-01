@@ -128,42 +128,15 @@ def run_pick_object(panel) -> None:
             object_position=object_position,
         )
 
-    def _quat_multiply(
-        q1: tuple[float, float, float, float],
-        q2: tuple[float, float, float, float],
-    ) -> tuple[float, float, float, float]:
-        x1, y1, z1, w1 = q1
-        x2, y2, z2, w2 = q2
-        return (
-            (w1 * x2) + (x1 * w2) + (y1 * z2) - (z1 * y2),
-            (w1 * y2) - (x1 * z2) + (y1 * w2) + (z1 * x2),
-            (w1 * z2) + (x1 * y2) - (y1 * x2) + (z1 * w2),
-            (w1 * w2) - (x1 * x2) - (y1 * y2) - (z1 * z2),
-        )
-
     def _pick_orientation(yaw_deg: Optional[float] = None) -> tuple[float, float, float, float]:
-        raw = str(_get_pick_object_params().orientation_xyzw or "").strip()
-        try:
-            parts = [float(part.strip()) for part in raw.split(",")]
-        except Exception:
-            parts = []
-        if len(parts) != 4 or not all(math.isfinite(v) for v in parts):
-            parts = [0.70710678, 0.0, 0.70710678, 0.0]
-        norm = math.sqrt(sum(v * v for v in parts))
-        if norm <= 1e-6:
-            base_q = (0.70710678, 0.0, 0.70710678, 0.0)
-        else:
-            base_q = tuple(v / norm for v in parts)
+        # F3: usa pick_object/orientation_helpers para la lógica pura.
+        from .pick_object.orientation_helpers import (
+            compose_grasp_orientation,
+            parse_orientation_xyzw,
+        )
+        base_q = parse_orientation_xyzw(_get_pick_object_params().orientation_xyzw)
         use_yaw = _get_panel_tfm_params().canonical_use_grasp_yaw
-        if yaw_deg is None or not use_yaw or not math.isfinite(float(yaw_deg)):
-            return base_q
-        yaw_rad = math.radians(float(yaw_deg))
-        yaw_q = (0.0, 0.0, math.sin(yaw_rad / 2.0), math.cos(yaw_rad / 2.0))
-        out_q = _quat_multiply(yaw_q, base_q)
-        out_norm = math.sqrt(sum(v * v for v in out_q))
-        if out_norm <= 1e-6:
-            return base_q
-        return tuple(v / out_norm for v in out_q)
+        return compose_grasp_orientation(base_q, yaw_deg, use_yaw=use_yaw)
 
     def _block(reason: str, *, status_text: Optional[str] = None, error: bool = False) -> None:
         state = getattr(getattr(panel, "_system_state", None), "value", "n/a")
