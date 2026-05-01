@@ -3,19 +3,25 @@
 # Contenido: F6.4 final — dispatcher que elige entre run_pick_demo legacy y orchestrator client.
 """Dispatcher del flujo Pick Demo del panel.
 
-F6.4 final — el botón "Agarre Objeto (Directo)" del panel siempre
-llamaba al ``run_pick_demo`` legacy (10.7k LOC closure embebida).
-Este dispatcher añade un switch:
+F12 (2026-05-01) — desde esta fase el **orchestrator es el camino
+canónico** del botón "Agarre Objeto (Directo)". El legacy
+``run_pick_demo`` (10.7k LOC closure embebida) queda en deprecación
+y emite ``DeprecationWarning`` al ser llamado.
 
-* Si ``PANEL_PICK_DEMO_USE_ORCHESTRATOR=1|true|yes|on``: envía un
-  goal al action server ``/pick_place`` (orchestrator) usando
+Reglas de selección (default = orchestrator):
+
+* Si ``USE_LEGACY_PICK_DEMO=1|true|yes|on``: fuerza el legacy
+  ``run_pick_demo(panel)`` (rollback rápido si hay regresión).
+* Si ``PANEL_PICK_DEMO_USE_ORCHESTRATOR=0|false|no|off``: fuerza el
+  legacy explícitamente.
+* En cualquier otro caso (incluido sin env var): envía un goal al
+  action server ``/pick_place`` (orchestrator) usando
   ``PickPlaceClient`` y propaga feedback al panel.
-* Si no (default): llama al legacy ``run_pick_demo(panel)``.
 
 El dispatch se hace **best-effort**: si el orchestrator no responde
 o rclpy no está disponible, hace fallback al legacy con un log claro.
-Esto preserva la demo actual operativa al 100% mientras permite
-migración progresiva sin romper nada.
+Esto preserva la demo operativa al 100% mientras drena gradualmente
+el legacy hacia el orchestrator (F12).
 
 La lógica del flag está en ``pick_place_client_logic.should_use_orchestrator``
 y la wrapping del ActionClient en ``pick_place_client.PickPlaceClient``,
@@ -70,6 +76,7 @@ def dispatch_pick_demo(
     panel: Any,
     *,
     env_value: Optional[str] = None,
+    legacy_env_value: Optional[str] = None,
     legacy: Callable[[Any], None] = _legacy_dispatch,
 ) -> str:
     """Decide y ejecuta el modo Pick Demo apropiado.
@@ -94,7 +101,9 @@ def dispatch_pick_demo(
 
     if env_value is None:
         env_value = os.environ.get("PANEL_PICK_DEMO_USE_ORCHESTRATOR")
-    if not should_use_orchestrator(env_value):
+    if legacy_env_value is None:
+        legacy_env_value = os.environ.get("USE_LEGACY_PICK_DEMO")
+    if not should_use_orchestrator(env_value, legacy_env_value=legacy_env_value):
         legacy(panel)
         return "legacy"
 

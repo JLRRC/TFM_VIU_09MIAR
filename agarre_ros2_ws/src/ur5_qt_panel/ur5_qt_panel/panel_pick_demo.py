@@ -175,7 +175,26 @@ DIRECT_GRASP_AUDIT_PREFIX = "[PICK][DIRECT_GRASP_AUDIT]"
 # _coerce_ur5_joint_vector → moved to directo_gate_evaluator.py
 
 
+_RUN_PICK_DEMO_DEPRECATION_EMITTED = False
+
+
 def run_pick_demo(panel) -> None:
+    # F12 (2026-05-01): este flujo legacy queda en deprecación. El path
+    # canónico es ``pick_demo_dispatcher.dispatch_pick_demo`` →
+    # PickPlaceClient → /pick_place (tfm_orchestrator). El legacy se
+    # mantiene como rollback (USE_LEGACY_PICK_DEMO=1) hasta que el
+    # orchestrator drene 100% del comportamiento aquí embebido.
+    global _RUN_PICK_DEMO_DEPRECATION_EMITTED
+    if not _RUN_PICK_DEMO_DEPRECATION_EMITTED:
+        _RUN_PICK_DEMO_DEPRECATION_EMITTED = True
+        try:
+            panel._emit_log(
+                "[PICK_DEMO][DEPRECATED] run_pick_demo legacy en uso. Path "
+                "canónico desde F12 (2026-05-01): orchestrator vía "
+                "/pick_place. Para forzar este legacy: USE_LEGACY_PICK_DEMO=1."
+            )
+        except Exception:
+            pass
     sync_start_mono = time.monotonic()
     run_context = {
         "last_sync_gate": "entry",

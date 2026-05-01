@@ -112,12 +112,39 @@ def result_to_panel_event(result: Any) -> Dict[str, Any]:
     }
 
 
-def should_use_orchestrator(env_value: Optional[str]) -> bool:
+def should_use_orchestrator(
+    env_value: Optional[str],
+    *,
+    legacy_env_value: Optional[str] = None,
+) -> bool:
     """True si el panel debe usar el cliente del orchestrator.
 
-    Activado por ``PANEL_PICK_DEMO_USE_ORCHESTRATOR=1|true|yes|on``.
-    Default: False (sigue el legacy run_pick_demo).
+    F12 (2026-05-01): el default cambió a **orchestrator** (True). El
+    legacy ``run_pick_demo`` queda en deprecación; usa
+    ``USE_LEGACY_PICK_DEMO=1`` para forzar el path legacy si el
+    orchestrator falla en producción (rollback rápido).
+
+    Reglas:
+      - Si ``legacy_env_value`` (USE_LEGACY_PICK_DEMO) es truthy → False (legacy).
+      - Si ``env_value`` (PANEL_PICK_DEMO_USE_ORCHESTRATOR) es falsy explícito → False.
+      - En cualquier otro caso (incluido None) → True (orchestrator).
+
+    Esto invierte el comportamiento previo a F12 (donde el default era legacy).
+    El dispatcher mantiene fallback automático a legacy si el orchestrator no
+    está disponible (no rclpy, no node, no server) — ver
+    ``pick_demo_dispatcher.dispatch_pick_demo``.
     """
+    truthy = ("1", "true", "yes", "on")
+    falsy = ("0", "false", "no", "off")
+    if legacy_env_value is not None:
+        legacy_norm = str(legacy_env_value).strip().lower()
+        if legacy_norm in truthy:
+            return False
     if env_value is None:
+        return True
+    norm = str(env_value).strip().lower()
+    if norm in falsy:
         return False
-    return str(env_value).strip().lower() in ("1", "true", "yes", "on")
+    if norm in truthy:
+        return True
+    return True

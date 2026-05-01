@@ -57,18 +57,38 @@ def _make_panel(*, with_node: bool = True, selected: str = "box_red",
 # --------------------------------------------------------------------------
 
 
-def test_flag_off_calls_legacy(monkeypatch):
+def test_no_env_default_is_orchestrator_f12(monkeypatch):
+    """F12: sin env vars el default es orchestrator (fallback a legacy si no hay rclpy)."""
     monkeypatch.delenv("PANEL_PICK_DEMO_USE_ORCHESTRATOR", raising=False)
+    monkeypatch.delenv("USE_LEGACY_PICK_DEMO", raising=False)
+    # Forzar rclpy no disponible para que el path orch caiga al fallback
+    fake_client = types.ModuleType("ur5_qt_panel.pick_place_client")
+    fake_client.rclpy_available = lambda: False
+    fake_client.PickPlaceClient = MagicMock()
+    monkeypatch.setitem(sys.modules, "ur5_qt_panel.pick_place_client", fake_client)
+
     from ur5_qt_panel.pick_demo_dispatcher import dispatch_pick_demo
 
     legacy = _make_legacy_stub()
     panel = _make_panel()
     mode = dispatch_pick_demo(panel, legacy=legacy)
+    # F12: ya no es "legacy" puro — entra a orch y cae a fallback.
+    assert mode == "orchestrator_fallback_no_rclpy"
+    legacy.assert_called_once_with(panel)
+
+
+def test_legacy_env_forces_legacy_f12():
+    """F12: USE_LEGACY_PICK_DEMO=1 fuerza legacy pese al default orchestrator."""
+    from ur5_qt_panel.pick_demo_dispatcher import dispatch_pick_demo
+    legacy = _make_legacy_stub()
+    panel = _make_panel()
+    mode = dispatch_pick_demo(panel, legacy_env_value="1", legacy=legacy)
     assert mode == "legacy"
     legacy.assert_called_once_with(panel)
 
 
 def test_flag_explicit_off_calls_legacy():
+    """PANEL_PICK_DEMO_USE_ORCHESTRATOR=0 fuerza legacy."""
     from ur5_qt_panel.pick_demo_dispatcher import dispatch_pick_demo
     legacy = _make_legacy_stub()
     panel = _make_panel()

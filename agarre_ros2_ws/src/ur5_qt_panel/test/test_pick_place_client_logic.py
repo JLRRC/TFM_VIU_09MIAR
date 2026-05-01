@@ -187,10 +187,31 @@ def test_should_use_orchestrator_truthy(v):
     assert should_use_orchestrator(v) is True
 
 
-@pytest.mark.parametrize("v", ["0", "false", "no", "off", "", "FOO"])
-def test_should_use_orchestrator_falsy(v):
+@pytest.mark.parametrize("v", ["0", "false", "no", "off"])
+def test_should_use_orchestrator_falsy_explicit(v):
+    """Falsy explícito desactiva orchestrator (F12: solo strings reservadas)."""
     assert should_use_orchestrator(v) is False
 
 
-def test_should_use_orchestrator_none_default_false():
-    assert should_use_orchestrator(None) is False
+def test_should_use_orchestrator_none_default_true_f12():
+    """F12: el default cambió a orchestrator (True)."""
+    assert should_use_orchestrator(None) is True
+
+
+@pytest.mark.parametrize("v", ["", "FOO", "weird"])
+def test_should_use_orchestrator_unknown_defaults_to_true_f12(v):
+    """F12: valores no reconocidos no son falsy explícito → orchestrator."""
+    assert should_use_orchestrator(v) is True
+
+
+@pytest.mark.parametrize("v", ["1", "true", "yes", "on"])
+def test_should_use_orchestrator_legacy_override_forces_legacy(v):
+    """USE_LEGACY_PICK_DEMO=1 fuerza legacy pese al default orchestrator."""
+    assert should_use_orchestrator(None, legacy_env_value=v) is False
+    assert should_use_orchestrator("1", legacy_env_value=v) is False
+
+
+@pytest.mark.parametrize("v", ["0", "false", "no", "off", None, ""])
+def test_should_use_orchestrator_legacy_override_inactive(v):
+    """USE_LEGACY_PICK_DEMO falsy o ausente: respeta el default orchestrator."""
+    assert should_use_orchestrator(None, legacy_env_value=v) is True
