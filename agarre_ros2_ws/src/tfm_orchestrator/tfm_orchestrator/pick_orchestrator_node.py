@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 # Ruta/archivo: agarre_ros2_ws/src/tfm_orchestrator/tfm_orchestrator/pick_orchestrator_node.py
 # Contenido: F5/F6 — nodo ROS 2 que aloja PickPlace.action y orquesta el flujo.
-"""Pick orchestrator node — hosts PickPlace.action.
+"""Pick orchestrator node (LEGACY F5/F6) — hosts PickPlace.action.
 
-Este nodo es el **punto de entrada canónico** del flujo pick & place
-en el sistema ROS 2. Cliente externo (panel Qt o cualquier otro)
-envía un goal ``PickPlace.action`` con ``object_name`` + ``drop_xyz_world``
+.. deprecated:: F11 (2026-05-01)
+    Este nodo se mantiene como compatibilidad F5/F6 con clientes y tests
+    existentes. **El punto de entrada canónico desde F9 es**
+    ``pick_orchestrator_lifecycle`` (LifecycleNode con configure/activate/
+    deactivate/cleanup/shutdown). Migra los clientes nuevos a la versión
+    lifecycle. Ver ``docs/architecture.md`` §3.2 y ``docs/LIFECYCLE.md``.
+
+Este nodo aloja la action ``PickPlace.action``. Cliente externo (panel
+Qt o cualquier otro) envía un goal con ``object_name`` + ``drop_xyz_world``
 y recibe feedback estructurado por fase.
 
 El FSM puro (``pick_fsm.PickContext``) vive separado para ser
@@ -63,6 +69,11 @@ class PickOrchestratorNode(Node):
 
     def __init__(self) -> None:
         super().__init__("pick_orchestrator")
+        self.get_logger().warning(
+            "[ORCHESTRATOR][DEPRECATED] pick_orchestrator (F5/F6 Node legacy) está "
+            "deprecado desde F11. Usa 'ros2 run tfm_orchestrator pick_orchestrator_lifecycle' "
+            "(LifecycleNode F9). Ver docs/LIFECYCLE.md."
+        )
         self._cb_group = ReentrantCallbackGroup()
         self._action_server = ActionServer(
             self,

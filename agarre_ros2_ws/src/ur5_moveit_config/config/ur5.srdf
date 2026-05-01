@@ -1,6 +1,10 @@
 <!-- Ruta/archivo: agarre_ros2_ws/src/ur5_moveit_config/config/ur5.srdf -->
-<!-- Contenido: Configuracion MoveIt del UR5 para planificacion y ejecucion. -->
-<!-- Uso breve: MoveIt y ros2 launch lo usan durante el bringup del robot. -->
+<!-- Contenido: SRDF DEFAULT — colisiones permisivas para pick & place. -->
+<!-- Uso breve: Cargado por defecto en ur5_moveit_bringup.launch.py:41. -->
+<!-- Variante estricta: ur5_strict.srdf, activada por STRICT_SELF_COLLISION=1 -->
+<!-- o el launch arg strict_physics_mode:=true. NO es duplicación, son dos -->
+<!-- perfiles intencionales — si modificas uno, sincroniza el otro. -->
+<!-- Ver docs/architecture.md §3.3 para la decisión canónica F11. -->
 <robot name="ur5_rg2">
   <virtual_joint name="world_joint" parent_frame="world" child_link="base_link" type="fixed" />
 

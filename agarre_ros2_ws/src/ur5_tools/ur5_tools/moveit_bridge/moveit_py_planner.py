@@ -606,11 +606,17 @@ class MoveItPyPlannerMixin:
         try:
             moveit_share = get_package_share_directory(self._moveit_config_pkg)
             ur5_description_share = get_package_share_directory(self._description_pkg)
-            srdf_path = (
-                Path(self._srdf_path)
-                if self._srdf_path
-                else (Path(moveit_share) / "config" / "ur5.srdf")
-            )
+            # F11 fix coherencia: si no se pasa srdf_path explícito, respetar
+            # el toggle STRICT_SELF_COLLISION para no divergir del move_group.
+            # Ver docs/architecture.md §3.3 y ur5_moveit_bringup.launch.py:41.
+            if self._srdf_path:
+                srdf_path = Path(self._srdf_path)
+            else:
+                _strict = os.environ.get("STRICT_SELF_COLLISION", "0").strip() in (
+                    "1", "true", "True", "yes",
+                )
+                _srdf_file = "ur5_strict.srdf" if _strict else "ur5.srdf"
+                srdf_path = Path(moveit_share) / "config" / _srdf_file
             urdf_path = (
                 Path(self._urdf_xacro_path)
                 if self._urdf_xacro_path

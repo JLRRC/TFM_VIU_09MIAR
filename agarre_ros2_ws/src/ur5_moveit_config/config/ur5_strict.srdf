@@ -1,6 +1,9 @@
 <!-- Ruta/archivo: agarre_ros2_ws/src/ur5_moveit_config/config/ur5_strict.srdf -->
-<!-- Contenido: Variante estricta de self-collision para MoveIt del UR5. -->
-<!-- Uso breve: Se carga cuando STRICT_SELF_COLLISION=1 o strict_physics_mode:=true. -->
+<!-- Contenido: SRDF ESTRICTO — solo desactiva colisiones adyacentes/fijas. -->
+<!-- Uso breve: Activado por STRICT_SELF_COLLISION=1 o strict_physics_mode:=true. -->
+<!-- Variante por defecto: ur5.srdf (permisiva para pick & place). NO es -->
+<!-- duplicación, son dos perfiles intencionales — si modificas uno, -->
+<!-- sincroniza el otro. Ver docs/architecture.md §3.3 (decisión F11). -->
 <robot name="ur5_rg2">
   <virtual_joint name="world_joint" parent_frame="world" child_link="base_link" type="fixed" />
 

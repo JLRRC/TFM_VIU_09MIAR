@@ -1,13 +1,14 @@
 # Arquitectura del sistema TFM — UR5 + RG2
 
-> Generado el 2026-04-27 tras el refactor estructural de la rama `ENTREGA.V3`.
+> Última actualización: 2026-05-01 (post F0–F10, F11 decisiones canónicas).
 > Snapshot vivo del estado de los paquetes ROS 2 y los nodos del proyecto.
 
 ## 1. Visión general
 
 Sistema simulado de **pick & place** con un brazo UR5 + gripper OnRobot RG2
 sobre **ROS 2 Jazzy**, **Gazebo Sim moderno** (Harmonic) y **MoveIt 2**.
-La interfaz operativa es un **panel Qt5** con pipeline de demo guiado.
+La interfaz operativa es un **panel Qt5** con pipeline de demo guiado y un
+**orchestrator ROS 2** (`tfm_orchestrator`) que aloja `PickPlace.action`.
 
 ### 1.1 Stack tecnológico
 
@@ -28,12 +29,12 @@ world ──▶ base_link ──▶ shoulder_link ──▶ ... ──▶ tool0 
 
 - `base_link` es la base estática del UR5 en el mundo.
 - `tool0` es el flange estándar UR5.
-- `rg2_tcp` es el TCP semántico del gripper (offset Z = 0.18 m desde tool0 — TCP "limpio").
-- `rg2_pinch_center` es el punto de contacto de las pinzas; coincide con `rg2_tcp` tras la migración limpia (commit `503aa4a`).
+- `rg2_tcp` es el TCP semántico del gripper.
+- `rg2_pinch_center` es el punto de contacto de las pinzas; coincide con `rg2_tcp` tras la migración limpia.
 
 Todas las llamadas MoveIt usan `tip_link = rg2_tcp` (consistente entre URDF, SRDF y kinematics.yaml).
 
-## 2. Paquetes ROS 2
+## 2. Paquetes ROS 2 (8 paquetes)
 
 ```
 agarre_ros2_ws/src/
@@ -41,143 +42,172 @@ agarre_ros2_ws/src/
 ├── ur5_description        # ament_cmake — URDF/Xacro + meshes + SDF
 ├── ur5_moveit_config      # ament_cmake — SRDF + kinematics + planning pipelines
 ├── ur5_qt_panel           # ament_python — panel Qt5 + lógica del pick demo
-├── ur5_tools              # ament_python — bridges + nodos auxiliares (12 entry points)
+├── ur5_tools              # ament_python — bridges + nodos auxiliares (14 entry points)
 ├── tfm_grasping           # ament_python — modelo de inferencia de grasps (TFM)
-└── ur5_panel_interfaces   # ament_cmake (rosidl) — .srv compartidos del panel
+├── tfm_orchestrator       # ament_python — PickPlace.action + FSM puro + LifecycleNode
+└── ur5_panel_interfaces   # ament_cmake (rosidl) — 8 .srv + 2 .action compartidos
 ```
 
 ### 2.1 Responsabilidades
 
-| Paquete | Función | Líneas Python |
+| Paquete | Función | LOC Python |
 |---|---|---|
-| `ur5_bringup` | Launch (`ur5_stack.launch.py`) + `runtime_defaults.yaml` (81 tunables) | 870 |
+| `ur5_bringup` | Launch (`ur5_stack.launch.py`) + `runtime_defaults.yaml` | ~870 |
 | `ur5_description` | URDF/Xacro UR5+RG2 + SDF runtime + meshes | (cmake/xml) |
 | `ur5_moveit_config` | SRDF, kinematics.yaml, OMPL, joint_limits.yaml, controllers | (yaml/srdf) |
-| `ur5_qt_panel` | Panel UI + pick demo + state machine + camera + grasp inference UI | ~38.000 |
-| `ur5_tools` | `ur5_moveit_bridge`, `gripper_attach_backend`, `system_state_manager`, `world_tf_publisher`, `release_objects_service`, `gz_pose_bridge`, `controller_bootstrap`, `planning_scene_sync`, +más | ~9.000 |
+| `ur5_qt_panel` | Panel UI + pick demo + state machine + camera + grasp inference UI | ~46.000 |
+| `ur5_tools` | `ur5_moveit_bridge`, `gripper_attach_backend`, `system_state_manager`, `world_tf_publisher`, `release_objects_service`, `gz_pose_bridge`, `controller_bootstrap`, `planning_scene_sync`, `evidence_logger`, `plan_to_pose_server`, +más | ~9.000 |
 | `tfm_grasping` | Inferencia de pose de agarre desde imagen RGB | ~1.000 |
-| `ur5_panel_interfaces` | `SelectObject.srv` | (.srv) |
+| `tfm_orchestrator` | `pick_fsm` puro + `pick_orchestrator_lifecycle` (LifecycleNode) | ~1.700 |
+| `ur5_panel_interfaces` | 8 .srv (Select/Open/Close/SetWidth/Attach/Detach/WorldToBase/ComputeApproachPose) + 2 .action (PickPlace, PlanToPose) | (.srv/.action) |
 
-## 3. Nodos ROS 2 principales
+### 2.2 Métricas globales (post F0–F10)
 
-```
-┌─────────────────────────────┐    ┌────────────────────────────┐
-│  panel_v2 (ur5_qt_panel)    │    │ system_state_manager       │
-│  - UI Qt5                   │◀──▶│  - /system_state           │
-│  - Pick demo state machine  │    │  - /system_diag            │
-│  - Camera + grasp UI        │    └────────────────────────────┘
-└──────────┬──────────────────┘
-           │ topics + services
-           ▼
-┌─────────────────────────────┐    ┌────────────────────────────┐
-│ ur5_moveit_bridge           │◀──▶│ MoveItPy + move_group      │
-│  - 8 mixins:                │    │  - planning_pipelines      │
-│    GoalValidation           │    │  - OMPL                    │
-│    ControllerManagement     │    │  - kinematics (KDL)        │
-│    JointStateHelpers        │    └────────────────────────────┘
-│    Geometry (FK/IK)         │
-│    TrajectoryPrep           │
-│    MoveItCommander          │
-│    MoveItPyPlanner          │
-│    Executor (FJT)           │
-└──────────┬──────────────────┘
-           │ FollowJointTrajectory action
-           ▼
-┌─────────────────────────────┐
-│ joint_trajectory_controller │ (ros2_control + gz_ros2_control)
-│  - 6 UR5 joints             │
-│  - 2 RG2 prismatic          │
-└─────────────────────────────┘
-
-┌─────────────────────────────┐    ┌────────────────────────────┐
-│ gripper_attach_backend      │    │ gz_pose_bridge             │
-│  - 7 mixins:                │    │  - /world/.../pose/info    │
-│    AnchorMixin              │    └────────────────────────────┘
-│    DemoTransportMixin       │
-│    GzCliMixin               │    ┌────────────────────────────┐
-│    PoseLookupMixin          │    │ release_objects_service    │
-│    PoseSubscriberMixin      │    │  - /panel/release          │
-│    SetPoseMixin             │    └────────────────────────────┘
-│    + attach_math (helpers)  │
-└─────────────────────────────┘    ┌────────────────────────────┐
-                                   │ world_tf_publisher         │
-                                   │  - TF estática del mundo   │
-                                   └────────────────────────────┘
-```
-
-## 4. Refactor estructural (sesión 2026-04-27)
-
-### 4.1 Métricas globales
-
-29 commits + 1 tag (`pre-refactor-2026-04-27`) en una sesión.
-**603 tests** verdes tras cada commit (red de seguridad).
-
-| Archivo | Inicio | Final | Δ | Mecanismo |
-|---|---|---|---|---|
-| `ur5_moveit_bridge.py` | 5.654 L | **1.706 L** | **−69.8%** | 8 mixins en `moveit_bridge/` |
-| `gripper_attach_backend.py` | 2.152 L | **950 L** | **−56%** | 7 mixins en módulos `attach_*.py` |
-| `panel_utils.py` | 2.328 L | **1.010 L** | **−57%** | 6 sub-paquetes |
-| `panel_pick_demo.py` | 12.249 L | **11.144 L** | −9% | 1 sub-paquete |
-| `panel_v2.py` | 312 wrappers rotos | 320 fixes (audit AST) | red restaurada | F1 |
-
-**Total**: ~9.000 líneas reorganizadas en **22 módulos nuevos**.
-
-### 4.2 Mixins extraídos (`ur5_moveit_bridge`)
-
-```
-UR5MoveItBridge
-  ├── MoveItPyPlannerMixin    — _plan_with_moveit_py + _init_moveit_py
-  ├── MoveItCommanderMixin    — moveit_commander + cartesian path
-  ├── GeometryMixin           — pose_to_matrix + IK seeded para APPROACH
-  ├── TrajectoryPrepMixin     — preparación JT para FJT controller
-  ├── ExecutorMixin           — FollowJointTrajectory action loop (~1.350 L)
-  ├── JointStateHelpersMixin  — cache + start state + 4 constantes joints
-  ├── ControllerManagementMixin — FJT client + ListControllers query
-  ├── GoalValidationMixin     — joint/EE goal reached + planned consistency
-  └── Node (rclpy)
-```
-
-### 4.3 Mixins extraídos (`gripper_attach_backend`)
-
-```
-GripperAttachBackend
-  ├── AnchorMixin            — drop/tool anchor relay + startup detach
-  ├── DemoTransportMixin     — SDFs dinámicos + spawn/delete kinematic
-  ├── GzCliMixin             — gz service exists/resolve/delete/spawn
-  ├── PoseLookupMixin        — TF lookups + composition + fallback chain
-  ├── PoseSubscriberMixin    — /pose/info + /joint_states + FK manual
-  ├── SetPoseMixin           — SetEntityPose service + gz CLI fallback
-  └── Node (rclpy)
-+ attach_math.py (helpers puros: quaternion, matriz, DH transform)
-```
-
-### 4.4 Sub-paquetes extraídos (`panel_utils`)
-
-| Módulo | Responsabilidad |
+| Métrica | Valor |
 |---|---|
-| `panel_pixel_geometry` | Mapeo pixel ↔ world ↔ table (homography) |
-| `panel_controllers_query` | gripper_controller_defined, resolve_controller_manager, list_*_controllers |
-| `panel_system_status` | gz_sim_status, bridge_status, clock_status |
-| `panel_tf_discovery` | discover_robot_base_frame, discover_world_frame, debug_dump_tf |
-| `panel_table_objects` | nearest_table_object, get_object_pose_gz, load_home_pose |
-| `panel_pose_helpers` | _select_base_frame, _select_ee_frame, get_pose, effective_*_frame |
+| LOC Python totales | 91 692 |
+| Tests | 1077 funciones / 65 archivos |
+| Commits sobre `main` | 338 |
+| Action / Service interfaces | 2 / 8 |
+| LifecycleNodes | 1 (`pick_orchestrator_lifecycle`, F9) |
+| Dataclasses frozen para parámetros | 6 |
 
-## 5. Configuración centralizada
+## 3. Decisiones canónicas (F11, 2026-05-01)
 
-### 5.1 `runtime_defaults.yaml`
+### 3.1 Entry-point del panel: **`panel_v2`** canónico
 
-81 tunables centralizados en `ur5_bringup/config/runtime_defaults.yaml`. Dominios:
+| Entry-point | Estado | Uso |
+|---|---|---|
+| `ros2 run ur5_qt_panel panel_v2` | ✅ **Canónico** | Implementación operativa completa |
+| `ros2 run ur5_qt_panel main_panel` | Alias TFM | Wrapper de 38 LOC sobre `panel_v2` (reexporta `ControlPanelV2` y `main`) — alineado con la nomenclatura usada en la memoria del TFM |
 
-- Sistema y paths (WS_DIR, GZ_RENDER_ENGINE, PANEL_PYTHON).
-- Panel (CAMERA_REQUIRED, KEEP_CAMERAS).
-- system_state_manager (3 tolerancias geométricas).
-- attach_backend (7 timeouts y modo follow).
-- moveit_bridge (16 timeouts + scales + flags).
-- pick_demo (50 tolerancias por fase: GRASP_DOWN, ATTACH gate, gripper close, PRE_CLOSE, CLOSE, GRASP_ALIGN, etc.).
+`main_panel.py` es un wrapper trivial — se mantiene por nomenclatura académica, **no es una implementación alternativa**.
 
-**Prioridad de resolución**: env var → YAML → literal default.
+### 3.2 Orchestrator: **`pick_orchestrator_lifecycle`** canónico
 
-## 6. Convenciones de logging
+| Entry-point | Estado | Uso |
+|---|---|---|
+| `ros2 run tfm_orchestrator pick_orchestrator_lifecycle` | ✅ **Canónico** (F9) | LifecycleNode con `configure/activate/deactivate/cleanup/shutdown`. Acepta goals solo en `ACTIVE`. |
+| `ros2 run tfm_orchestrator pick_orchestrator` | ⚠️ Legacy F5/F6 | `Node` plano. Se mantiene para retrocompatibilidad y tests; emite `DeprecationWarning` al arrancar. Migrar clientes al lifecycle. |
+
+Ambos comparten la misma lógica de FSM puro (`pick_fsm.py`) — solo cambia el ciclo de vida del nodo.
+
+### 3.3 SRDF: **dos variantes intencionales**
+
+| Archivo | Uso | Activación |
+|---|---|---|
+| `ur5.srdf` | ✅ **Default** — colisiones permisivas para planificar pick & place sin choques internos espurios | Por defecto (`strict_self_collision=false`) |
+| `ur5_strict.srdf` | Estricto — solo desactiva colisiones adyacentes/fijas inevitables | `STRICT_SELF_COLLISION=1` o `strict_physics_mode:=true` |
+
+**No es duplicación**: la lógica de selección está en `ur5_moveit_bringup.launch.py:41`. Si se modifica un SRDF debe aplicarse el cambio paralelo al otro.
+
+### 3.4 Jerarquía de configuración: **env > YAML > defaults**
+
+Ver [`docs/CONFIG_HIERARCHY.md`](CONFIG_HIERARCHY.md) para el detalle.
+
+Resumen:
+1. **Variable de entorno** (`os.environ`) — mayor precedencia, para overrides ad-hoc o debug.
+2. **YAML** (`runtime_defaults.yaml`, `panel_*_runtime.yaml`) — fuente de verdad para despliegue.
+3. **Default literal en código** — solo si las dos anteriores faltan.
+
+Total env vars en panel: **133** (reducido desde ~600 en F2).
+
+## 4. Arquitectura actual (post F0–F10)
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  ur5_qt_panel (panel_v2 entrypoint, 102 módulos, ~46 kLOC)         │
+│  ─ UI Qt + nodo ROS embebido + FSM legacy + ROS pubs/subs          │
+│  ─ panel_pick_demo (10.4k) + panel_pick_object (4.6k) + panel_v2…  │
+└──────────┬──────────────────────────────────────────┬──────────────┘
+           │ opt-in PickPlaceClient                   │ ROS topics directos
+           │  (F6.4 dispatch_pick_demo)               │ (legacy run_pick_demo)
+           ▼                                          ▼
+┌────────────────────────┐    ┌──────────────────────────────────────┐
+│ tfm_orchestrator       │───▶│ ur5_tools (microservicios ROS 2)     │
+│  pick_fsm.py (puro)    │ srv│  ─ ur5_moveit_bridge (1.7k)          │
+│  PickPlace.action      │    │  ─ system_state_manager (849)        │
+│  Lifecycle node (F9)   │    │  ─ gripper_attach_backend (959)      │
+│  PlanToPose.action     │    │  ─ release_objects_service (1.1k)    │
+└────────────────────────┘    │  ─ world_tf_publisher                │
+                              │  ─ planning_scene_sync, evidence…    │
+                              │  ─ plan_to_pose_server (F6.5)        │
+                              └──────────────────────────────────────┘
+                                          │
+                                          ▼
+                              ┌──────────────────────────────────────┐
+                              │ ur5_moveit_config + ur5_description  │
+                              │ Gazebo Harmonic + gz_ros2_control    │
+                              └──────────────────────────────────────┘
+                              ┌──────────────────────────────────────┐
+                              │ tfm_grasping (perception/inference)  │
+                              └──────────────────────────────────────┘
+```
+
+## 5. Arquitectura objetivo (microservicios maduros)
+
+```
+                           ┌──────────────────────────────┐
+                           │  panel_ui_node (Qt thin)     │ ← solo UI
+                           │   - publica intents          │
+                           │   - consume feedback action  │
+                           └──────────────┬───────────────┘
+                                          │ /pick_place (action)
+                                          │ /plan_to_pose (action)
+                                          ▼
+                           ┌──────────────────────────────┐
+                           │  pick_sequence_orchestrator  │ ← LifecycleNode ✓
+                           │   pick_fsm puro              │
+                           │   service_clients            │
+                           └─┬───┬──┬──┬──┬──┬──┬─────────┘
+                             │   │  │  │  │  │  │
+       ┌─────────────────────┘   │  │  │  │  │  └─────────────────┐
+       ▼                         ▼  ▼  ▼  ▼  ▼                    ▼
+┌──────────────┐    ┌──────────────┐ ┌──────────────┐  ┌──────────────────┐
+│ object_      │    │ tf_geometry_ │ │ motion_      │  │ gripper_         │
+│ detection    │    │ service      │ │ planner_node │  │ controller_node  │
+│ (Lifecycle)  │    │ (Lifecycle)  │ │ (Lifecycle)  │  │ (Lifecycle)      │
+└──────────────┘    └──────────────┘ └──────────────┘  └──────────────────┘
+       │                   │                │                  │
+       ▼                   ▼                ▼                  ▼
+┌──────────────┐    ┌──────────────┐ ┌──────────────┐  ┌──────────────────┐
+│ grasp_       │    │ trajectory_  │ │ attach_      │  │ evidence_logger  │
+│ inference    │    │ executor     │ │ backend      │  │ (CSV/JSON)       │
+│ (Lifecycle)  │    │              │ │ (Lifecycle)  │  │                  │
+└──────────────┘    └──────────────┘ └──────────────┘  └──────────────────┘
+
+         ┌─── system_state_manager (Lifecycle, GLOBAL coordinator) ───┐
+         │  arbitra qué nodos están activos según fase del pipeline   │
+         └────────────────────────────────────────────────────────────┘
+```
+
+Reglas de comunicación:
+- **Topics**: telemetría continua (poses, estado de objetos, joints).
+- **Services**: queries síncronos puros (`WorldToBase`, `ComputeApproachPose`, `SelectObject`, `Attach/Detach`, `Open/Close`).
+- **Actions**: tareas con feedback y cancel (`PickPlace`, `PlanToPose`, `ExecuteTrajectory`).
+- **Parameters**: tunings del nodo concreto, declarados en `__init__`, no por env var.
+- **Lifecycle**: todo nodo crítico al pipeline. Ver [`LIFECYCLE.md`](LIFECYCLE.md).
+
+## 6. Interfaces (`ur5_panel_interfaces`)
+
+### 6.1 Services (8)
+
+| Service | Server | Cliente | Propósito |
+|---|---|---|---|
+| `SelectObject.srv` | system_state_manager | orchestrator | Marcar objeto target |
+| `Open.srv` / `Close.srv` / `SetWidth.srv` | gripper_attach_backend | orchestrator | Comando gripper |
+| `Attach.srv` / `Detach.srv` | gripper_attach_backend | orchestrator | Attach lógico/físico |
+| `WorldToBase.srv` | (pendiente tf_geometry_service) | orchestrator | Conversión TF |
+| `ComputeApproachPose.srv` | (pendiente tf_geometry_service) | orchestrator | Pose pre-grasp |
+
+### 6.2 Actions (2)
+
+| Action | Server | Cliente | Propósito |
+|---|---|---|---|
+| `PickPlace.action` | `tfm_orchestrator/pick_orchestrator_lifecycle` | panel | Pick & place E2E con feedback por fase |
+| `PlanToPose.action` | `ur5_tools/plan_to_pose_server` | orchestrator | Planificar+ejecutar pose objetivo (F6.3-F6.5) |
+
+## 7. Convenciones de logging
 
 Cada fase del pick demo emite logs con prefijo etiquetado:
 
@@ -193,7 +223,7 @@ Cada fase del pick demo emite logs con prefijo etiquetado:
 - `[PHYSICS][DROP]` — release/detach de objetos.
 - `[APPROACH_IK_SEED]` — diagnóstico de seed selection en IK.
 
-## 7. Pipeline del pick demo
+## 8. Pipeline del pick demo
 
 ```
 INITIAL_SNAPSHOT → HOME_INITIAL → MESA → APPROACH_COARSE
@@ -206,22 +236,29 @@ INITIAL_SNAPSHOT → HOME_INITIAL → MESA → APPROACH_COARSE
 Cada fase tiene su tolerancia configurable en YAML y produce un log
 estructurado en `[PICK][MOVEIT][...]` o `[PICK][DIRECT][...]`.
 
-## 8. Testing
+El FSM puro vive en `tfm_orchestrator/pick_fsm.py` y es 100% testeable sin ROS.
 
-### 8.1 Suite actual
+## 9. Testing
 
-**603 tests automatizados** distribuidos:
+### 9.1 Suite actual
 
-| Paquete | Tests | Categoría |
-|---|---|---|
-| `ur5_qt_panel` | 400 | unitarios + smoke |
-| `ur5_tools` | 196 | unitarios |
-| `ur5_bringup` | resto | launch helpers |
-| `tfm_grasping` | resto | model load + scaling |
+**1077 tests automatizados** distribuidos:
+
+| Paquete | Categoría |
+|---|---|
+| `ur5_qt_panel` | unitarios + smoke |
+| `ur5_tools` | unitarios |
+| `ur5_bringup` | launch helpers, urdf_frames, interfaces_contracts |
+| `tfm_grasping` | model load + scaling |
+| `tfm_orchestrator` | FSM puro + lifecycle |
+
+CI partido en:
+- **`offline-tests`** — sin colcon build, ejecutado en cada push, debe estar verde.
+- **`colcon-full`** — build completo + integración, manual.
 
 Lint: `flake8` + `pep257` con config local en cada paquete (`ament_flake8.ini`).
 
-### 8.2 Smoke E2E
+### 9.2 Smoke E2E
 
 ```bash
 bash agarre_ros2_ws/scripts/validate_pick_3_cycles.sh 3
@@ -229,21 +266,29 @@ bash agarre_ros2_ws/scripts/validate_pick_3_cycles.sh 3
 
 Lanza el stack 3 veces, ejecuta un ciclo de pick por iteración, valida sentinel `READY` final.
 
-## 9. Tag de rollback
+## 10. Tags de rollback
 
-```bash
-git checkout pre-refactor-2026-04-27
-```
-
-Restaura el estado funcional pre-refactor para comparar regresiones.
-
-## 10. Archivos pendientes (futuro)
-
-| Archivo | Estado |
+| Tag | Estado |
 |---|---|
-| `panel_pick_demo.run_pick_demo` | ~11.000 L con closures anidadas — sesión dedicada |
-| `panel_v2.__init__` | 700 L sin estructura modular — 2–3 sesiones |
-| `ur5_stack.launch.py` | 868 L — split en 5 launches modulares |
-| `panel_pick_object.py` | 4.868 L — fusionar con orquestador en F5 |
-| `panel_step_callbacks.py` | 2.227 L — closures interdependientes |
-| `panel_ros.py` / `panel_tfm.py` | ~2.000 L cada uno |
+| `pre-refactor-2026-04-27` | Pre-refactor estructural inicial |
+| `audit-pre-fase1-20260428` | Pre-F1 limpieza |
+| `audit-pre-fase2-continue-20260430` | Pre-F2 dataclasses |
+| `audit-pre-f8-20260501` | Pre-F8 instrumentación latencias |
+| `audit-pre-f9-20260501` | Pre-F9 lifecycle node |
+| `audit-pre-f3-extended-20260501` | Pre-F3 extended (módulos puros) |
+| `audit-pre-f3-full-20260501` | Pre-F3 full attempt |
+| **`audit-pre-f11-20260501`** | **Pre-F11 decisiones canónicas (este commit)** |
+
+## 11. Deuda pendiente (Ruta B, F11–F19)
+
+| Fase | Acción | Esfuerzo |
+|---|---|---|
+| **F11 ✓** | Decisiones canónicas + docs | 4-6 h |
+| **F12** | Drenar `panel_pick_demo.py` (orchestrator default) | 12-20 h |
+| **F13** | Lifecycle en moveit_bridge + state_manager + attach + tf_pub | 8-12 h |
+| **F14** | Romper `panel_v2.py` en 4 ficheros <800 LOC | 6-10 h |
+| **F15** | Romper `panel_pick_object.py` + `panel_ros.py` | 8-12 h |
+| **F17** | Launch modular (`ur5_stack.launch.py`) | 4-6 h |
+| **F16** | `tf_geometry_service` como microservicio dedicado | 10-15 h |
+| **F18** | Telemetría/observabilidad extendida | 6-10 h |
+| **F19** | Optimización rendimiento | 8-12 h |
