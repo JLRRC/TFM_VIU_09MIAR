@@ -1,36 +1,27 @@
 # Ruta/archivo: .github/workflows/colcon.yml
-# Contenido: CI para colcon build + tests en GitHub Actions sobre Ubuntu + ROS 2 Jazzy.
-# Uso breve: Se dispara en push y PR a cualquier rama; ejecuta ament_flake8,
-# ament_pep257 y los tests unitarios de ur5_tools, ur5_bringup, tfm_grasping
-# y un subset offline de ur5_qt_panel.
+# Contenido: CI rápido — pytest del subset offline (sin ROS, sin Qt).
+# Uso breve: dispara en push y PR a cualquier rama. Tiempo < 1 min.
 #
 # Notas:
-#   * El subset ur5_qt_panel-offline cubre los 6 *_params.py + helpers
-#     puros (pure_helpers, ros_msg_helpers, directo_geometry,
-#     pick_demo_basket_confirmation, etc.) — NO requieren PyQt display
-#     ni ROS spin. Los tests del panel completo (que sí cargan Qt) se
-#     mantienen fuera de CI: requieren Xvfb + bridge Qt.
-#   * No corre E2E (validate_pick_3_cycles.sh) porque requiere Gazebo
-#     Sim moderno que no esta disponible en el runner Ubuntu por defecto.
+#   * Cubre los 6 dataclasses *_params.py (PickDemo, PickObject, PanelRos,
+#     PanelUi, MoveItBridge, PanelTfm) + helpers puros (pure_helpers,
+#     ros_msg_helpers, directo_geometry). ~198 tests.
+#   * NO requiere PyQt5, ROS, Gazebo ni rclpy.
+#   * Para el build colcon completo (con container ROS 2 Jazzy), ver
+#     colcon-full.yml (manual / push a main).
 
 name: colcon
 
 on:
   push:
     branches:
-      - '**'  # cualquier rama
+      - '**'
   pull_request:
     branches:
       - '**'
   workflow_dispatch:
 
 jobs:
-  # ---------------------------------------------------------------------
-  # Job rápido y robusto: pytest sobre el subset offline (sin ROS, sin
-  # Gazebo, sin Qt). Cubre los 6 dataclasses *_params.py + helpers
-  # puros. Pasa siempre que las dataclasses estén coherentes; útil para
-  # detectar regresiones triviales sin esperar al build colcon completo.
-  # ---------------------------------------------------------------------
   offline-tests:
     runs-on: ubuntu-22.04
     timeout-minutes: 5
@@ -60,97 +51,3 @@ jobs:
             test/test_pick_demo_pure_helpers.py \
             test/test_panel_ros_msg_helpers.py \
             test/test_directo_geometry.py
-
-  build-test:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 25
-    container:
-      image: ros:jazzy-ros-base
-      options: --user root
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install rosdep deps
-        shell: bash
-        working-directory: agarre_ros2_ws
-        run: |
-          set -euo pipefail
-          apt-get update
-          rosdep update --rosdistro=jazzy || true
-          rosdep install --from-paths src --ignore-src \
-            --rosdistro=jazzy -y \
-            --skip-keys "PyQt5 python3-pyqt5 python3-pyqt5.qtwebengine xvfb gazebo_ros gz_ros2_control" \
-            || true
-
-      - name: colcon build (ur5_tools + ur5_bringup + tfm_grasping + interfaces)
-        shell: bash
-        working-directory: agarre_ros2_ws
-        run: |
-          set -euo pipefail
-          source /opt/ros/jazzy/setup.bash
-          colcon build --symlink-install \
-            --packages-select \
-              ur5_panel_interfaces \
-              ur5_description \
-              ur5_moveit_config \
-              ur5_bringup \
-              ur5_tools \
-              tfm_grasping
-
-      - name: colcon test (excluye ur5_qt_panel; necesita Qt display)
-        shell: bash
-        working-directory: agarre_ros2_ws
-        run: |
-          set -euo pipefail
-          source /opt/ros/jazzy/setup.bash
-          source install/setup.bash
-          colcon test \
-            --packages-select \
-              ur5_tools \
-              ur5_bringup \
-              tfm_grasping \
-            --pytest-args -q
-          colcon test-result --verbose
-
-      # ---------------------------------------------------------------
-      # Subset offline de ur5_qt_panel: los 6 dataclasses *_params + los
-      # helpers puros extraídos en F3. Estos tests NO necesitan PyQt5
-      # display ni rclpy ni Qt — son aserts puros sobre dataclasses
-      # frozen y funciones libres. Se ejecutan vía pytest directo (no
-      # colcon test) para evitar depender de la build artifact de
-      # ur5_qt_panel (que requeriría PyQt5).
-      # ---------------------------------------------------------------
-      - name: pytest offline subset (ur5_qt_panel sin Qt)
-        shell: bash
-        working-directory: agarre_ros2_ws/src/ur5_qt_panel
-        env:
-          PYTHONPATH: .
-        run: |
-          set -euo pipefail
-          source /opt/ros/jazzy/setup.bash
-          # Instalar PyYAML mínimo para que los loaders funcionen.
-          apt-get install -y python3-yaml || true
-          # Lista explícita de tests que sabemos no dependen de Qt /
-          # rclpy / Gazebo. Listado mantenido manualmente: cualquier
-          # test nuevo offline del panel debe añadirse aquí.
-          pytest -q \
-            test/test_panel_pick_demo_params.py \
-            test/test_panel_pick_object_params.py \
-            test/test_panel_ros_params.py \
-            test/test_panel_ui_params.py \
-            test/test_panel_tfm_params.py \
-            test/test_pick_demo_pure_helpers.py \
-            test/test_panel_ros_msg_helpers.py \
-            test/test_directo_geometry.py
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-results
-          path: agarre_ros2_ws/build/*/pytest.xml
-          retention-days: 14

@@ -1,0 +1,85 @@
+# Ruta/archivo: .github/workflows/colcon-full.yml
+# Contenido: Build + test colcon completo (requiere ROS 2 Jazzy + deps).
+# Uso breve: trigger manual (workflow_dispatch) o push a main/ENTREGA.V3.
+#
+# Notas:
+#   * Este workflow usa el container ros:jazzy-ros-base, que NO incluye
+#     moveit_py, ros_gz_*, ur_description ni otras deps de MoveIt 2 +
+#     Gazebo. El step rosdep intenta instalar lo que pueda con --skip-keys
+#     pero con frecuencia falla: puede dejarse rojo hasta migrar a una
+#     imagen con ros:jazzy-desktop o instalar manualmente las deps.
+#   * Para CI verde rápido del subset offline de ur5_qt_panel ver el
+#     workflow colcon.yml (job offline-tests).
+
+name: colcon-full
+
+on:
+  push:
+    branches:
+      - main
+      - ENTREGA.V3
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    container:
+      image: ros:jazzy-ros-base
+      options: --user root
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install rosdep deps
+        shell: bash
+        working-directory: agarre_ros2_ws
+        run: |
+          set -euo pipefail
+          apt-get update
+          rosdep update --rosdistro=jazzy || true
+          rosdep install --from-paths src --ignore-src \
+            --rosdistro=jazzy -y \
+            --skip-keys "PyQt5 python3-pyqt5 python3-pyqt5.qtwebengine xvfb gazebo_ros gz_ros2_control" \
+            || true
+
+      - name: colcon build (ur5_tools + ur5_bringup + tfm_grasping + interfaces)
+        shell: bash
+        working-directory: agarre_ros2_ws
+        run: |
+          set -euo pipefail
+          source /opt/ros/jazzy/setup.bash
+          colcon build --symlink-install \
+            --packages-select \
+              ur5_panel_interfaces \
+              ur5_description \
+              ur5_moveit_config \
+              ur5_bringup \
+              ur5_tools \
+              tfm_grasping
+
+      - name: colcon test (excluye ur5_qt_panel; necesita Qt display)
+        shell: bash
+        working-directory: agarre_ros2_ws
+        run: |
+          set -euo pipefail
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          colcon test \
+            --packages-select \
+              ur5_tools \
+              ur5_bringup \
+              tfm_grasping \
+            --pytest-args -q
+          colcon test-result --verbose
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: agarre_ros2_ws/build/*/pytest.xml
+          retention-days: 14
