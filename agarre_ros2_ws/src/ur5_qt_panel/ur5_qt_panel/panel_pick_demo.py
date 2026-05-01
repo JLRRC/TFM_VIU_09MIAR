@@ -144,6 +144,9 @@ from .pick_demo.geometry import (
     dynamic_pre_close_reference as _dynamic_pre_close_reference_pure,
     object_top_pose as _object_top_pose_pure,
 )
+from .pick_demo.phase_checks import (
+    build_approach_coarse_phase_check as _build_approach_coarse_phase_check_pure,
+)
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -7450,93 +7453,21 @@ def run_pick_demo(panel) -> None:
                     _phase_check_target_base = _tuple3(target_base_coarse)
 
                     def _build_approach_coarse_phase_check(target_base_for_check, gate_metrics_for_check):
-                        target_base_local = _tuple3(target_base_for_check)
-                        tcp_base_local = _tuple3(gate_metrics_for_check.get("tcp_base")) or _tuple3(_coarse_check_tcp)
-                        obj_base_local = _tuple3(gate_metrics_for_check.get("object_base")) or _tuple3(_coarse_check_obj)
-                        target_z_local = (
-                            float(target_base_local[2])
-                            if target_base_local is not None
-                            else None
+                        _params = _get_pick_demo_params()
+                        return _build_approach_coarse_phase_check_pure(
+                            target_base=_tuple3(target_base_for_check),
+                            gate_metrics=gate_metrics_for_check,
+                            fallback_tcp=_tuple3(_coarse_check_tcp),
+                            fallback_obj=_tuple3(_coarse_check_obj),
+                            handoff_dist_tol=_coarse_handoff_dist_tol,
+                            handoff_dz_tol=_coarse_handoff_dz_tol,
+                            relaxed_handoff_dist_tol=_coarse_relaxed_handoff_dist_tol,
+                            relaxed_handoff_dz_tol=_coarse_relaxed_handoff_dz_tol,
+                            gate_xy_err=coarse_gate_xy_err,
+                            gate_pose_ok=coarse_gate_pose_ok,
+                            relaxed_xy_cap_m=_params.approach_coarse_relaxed_handoff_xy_tol_m,
+                            relaxed_skip_pose_ok=bool(_params.approach_coarse_relaxed_skip_pose_ok),
                         )
-                        object_z_local = (
-                            float(obj_base_local[2])
-                            if obj_base_local is not None
-                            else None
-                        )
-                        actual_z_local = (
-                            float(tcp_base_local[2])
-                            if tcp_base_local is not None
-                            else None
-                        )
-                        tcp_obj_dist_local = (
-                            _dist(tcp_base_local, obj_base_local)
-                            if tcp_base_local is not None and obj_base_local is not None
-                            else None
-                        )
-                        dz_obj_local = (
-                            float(actual_z_local) - float(object_z_local)
-                            if actual_z_local is not None and object_z_local is not None
-                            else None
-                        )
-                        handoff_dist_ok_local = bool(
-                            tcp_obj_dist_local is not None
-                            and float(tcp_obj_dist_local) <= _coarse_handoff_dist_tol
-                        )
-                        handoff_dz_ok_local = bool(
-                            dz_obj_local is not None
-                            and abs(float(dz_obj_local)) <= _coarse_handoff_dz_tol
-                        )
-                        gate_ok_local = bool(gate_metrics_for_check.get("ok"))
-                        _relaxed_xy_cap_m = _get_pick_demo_params().approach_coarse_relaxed_handoff_xy_tol_m
-                        _relaxed_skip_pose_ok = bool(
-                            _get_pick_demo_params().approach_coarse_relaxed_skip_pose_ok
-                        )
-                        relaxed_handoff_xy_ok_local = bool(
-                            coarse_gate_xy_err <= _relaxed_xy_cap_m
-                        )
-                        relaxed_handoff_ok_local = bool(
-                            relaxed_handoff_xy_ok_local
-                            and (coarse_gate_pose_ok or _relaxed_skip_pose_ok)
-                            and tcp_obj_dist_local is not None
-                            and float(tcp_obj_dist_local) <= float(_coarse_relaxed_handoff_dist_tol)
-                            and dz_obj_local is not None
-                            and float(dz_obj_local) >= 0.0
-                            and float(dz_obj_local) <= float(_coarse_relaxed_handoff_dz_tol)
-                        )
-                        strict_handoff_ok_local = bool(
-                            gate_ok_local and handoff_dist_ok_local and handoff_dz_ok_local
-                        )
-                        result_local = "OK" if bool(strict_handoff_ok_local or relaxed_handoff_ok_local) else "NO"
-                        block_reasons_local = []
-                        if not gate_ok_local and not relaxed_handoff_ok_local:
-                            block_reasons_local.append("phase_gate_not_ready")
-                        if not handoff_dist_ok_local and not relaxed_handoff_ok_local:
-                            block_reasons_local.append("tcp_obj_dist_exceeded")
-                        if not handoff_dz_ok_local and not relaxed_handoff_ok_local:
-                            block_reasons_local.append("dz_obj_exceeded")
-                        return {
-                            "gate_ok": gate_ok_local,
-                            "tcp_base": tcp_base_local,
-                            "object_base": obj_base_local,
-                            "target_base": target_base_local,
-                            "target_z": target_z_local,
-                            "object_z": object_z_local,
-                            "actual_z": actual_z_local,
-                            "tcp_obj_dist": tcp_obj_dist_local,
-                            "dz_obj": dz_obj_local,
-                            "handoff_dist_ok": handoff_dist_ok_local,
-                            "handoff_dz_ok": handoff_dz_ok_local,
-                            "relaxed_handoff_ok": relaxed_handoff_ok_local,
-                            "result": result_local,
-                            "gate_decision": (
-                                "handoff_ready"
-                                if strict_handoff_ok_local
-                                else "handoff_ready_relaxed_corridor"
-                                if relaxed_handoff_ok_local
-                                else "not_ready"
-                            ),
-                            "block_reasons": block_reasons_local,
-                        }
 
                     def _emit_approach_coarse_phase_check(check_info, *, refine_attempted: bool = False):
                         _msg = (
