@@ -1,5 +1,3 @@
-<!-- generado-articulo-tfm -->
-
 # Resumen de congreso - CII 2026 UNET
 
 ## Datos para formulario
@@ -9,24 +7,24 @@
 - Modalidad: ponencia virtual asincrona en video si el resumen/articulo es aceptado.
 - Area tematica recomendada: Ciencias Exactas. Alternativa secundaria: Industria y Economia, por aplicacion a automatizacion.
 - Autor 1: Jesus Lozano Rodriguez.
-- Autor 2: tutor del TFM, pendiente de nombre completo normalizado y afiliacion exacta.
+- Autor 2: tutor/director academico, pendiente de nombre completo normalizado y afiliacion exacta.
 - Advertencia: la convocatoria indica doble ciego y exige que el PDF del resumen sea anonimo. Los autores deben ir en el formulario, no en el documento PDF, salvo que la organizacion indique lo contrario.
 
 ## Titulo propuesto
 
-COMPARACION REPRODUCIBLE DE REDES CONVOLUCIONALES PARA PREDICCION DE AGARRES ROBOTICOS EN ROS 2
+COMPARACIÓN REPRODUCIBLE DE ARQUITECTURAS CNN PARA DETECCIÓN DE AGARRES 2D/2.5D EN ENTORNOS NO ESTRUCTURADOS
 
 ## Titulo corto
 
-CNN PARA AGARRE ROBOTICO
+CNN PARA AGARRES 2D
 
 ## Palabras clave
 
-robotica; vision artificial; aprendizaje profundo; inteligencia artificial; automatizacion
+deteccion de agarres; redes convolucionales; vision artificial; reproducibilidad; RGB-D
 
 ## Resumen anonimo para PDF
 
-La prediccion visual de agarres constituye un problema relevante en robotica de manipulacion, especialmente cuando se requiere transformar informacion sensorial en acciones ejecutables de forma trazable. La problematica abordada es la seleccion y validacion de modelos de aprendizaje profundo capaces de estimar rectangulos de agarre 2D/2.5D a partir de imagenes RGB y RGB-D, manteniendo un flujo reproducible desde el entrenamiento hasta la integracion robotica, con evaluacion automatizada y auditoria de artefactos. El objetivo del trabajo es comparar arquitecturas convolucionales para regresion de parametros de agarre y determinar una configuracion adecuada para su uso en un pipeline funcional con ROS 2, Gazebo, MoveIt 2 y un manipulador UR5 con pinza RG2. El marco conceptual combina deteccion de agarres basada en la representacion tipo Cornell, vision artificial, aprendizaje profundo e integracion robotica simulada. Metodologicamente, se definieron experimentos configurados mediante archivos YAML, con particion object-wise del dataset Cornell, tres semillas por configuracion, entrenamiento con PyTorch y evaluacion mediante `grasp success`, IoU, error angular y perdida de validacion. Se comparo una CNN ligera configurada como `SimpleGraspCNN` e implementada como `SimpleCNN`, frente a una arquitectura `ResNet18Grasp` implementada sobre ResNet-18, considerando modalidades RGB y RGB-D y el efecto de augmentation. Los resultados consolidados muestran que `ResNet18Grasp` en RGB con augmentation obtiene el mejor rendimiento oficial, con `val_success` medio de 0,6801 +/- 0,0245, IoU medio de 0,4010 +/- 0,0046 y error angular medio de 10,6071 +/- 1,1800 grados. En la discusion, estos resultados sugieren que la arquitectura profunda con transferencia ofrece una mejora clara frente a la CNN ligera, mientras que la modalidad RGB-D no garantiza una mejora uniforme en todas las configuraciones. Como conclusion, el trabajo aporta una comparacion experimental reproducible y una integracion funcional del modelo seleccionado en un entorno robotico simulado, estableciendo una base verificable para futuras extensiones con metricas orientadas, nuevos datasets y validacion fisica.
+La deteccion visual de agarres en entornos no estructurados requiere modelos capaces de transformar informacion RGB o RGB-D en representaciones geometricas accionables, manteniendo al mismo tiempo criterios de evaluacion reproducibles. El problema abordado es la comparacion metodica de arquitecturas convolucionales para estimar rectangulos de agarre 2D/2.5D bajo un protocolo comun, con trazabilidad entre configuraciones, codigo, metricas y artefactos experimentales. El objetivo es determinar que familia de modelos ofrece mejor rendimiento relativo en la regresion de parametros de agarre cuando se controlan la modalidad de entrada, la particion de datos, las semillas de entrenamiento y las metricas de validacion. El marco conceptual se apoya en la representacion tipo Cornell, el aprendizaje profundo supervisado y la evaluacion cuantitativa mediante exito de agarre, IoU, error angular y perdida de validacion. Metodologicamente, se definieron experimentos versionados mediante archivos YAML, se uso una particion object-wise del dataset Cornell, se entrenaron tres semillas por configuracion con PyTorch y se preservaron los resultados por epoca, la mejor epoca y los resumenes agregados. Esta cadena conserva evidencia suficiente para replicar y auditar cada comparacion. Se comparo una CNN ligera configurada como `SimpleGraspCNN` e implementada como `SimpleCNN` frente a una arquitectura `ResNet18Grasp` basada en ResNet-18, considerando entradas RGB y RGB-D y el efecto de augmentation. Los resultados oficiales muestran que `ResNet18Grasp` en RGB con augmentation obtuvo el mejor rendimiento medio, con `val_success` de 0,6801 +/- 0,0245, IoU de 0,4010 +/- 0,0046 y error angular de 10,6071 +/- 1,1800 grados. La discusion indica que la arquitectura profunda con transferencia mejora de forma consistente a la CNN ligera, mientras que la incorporacion de profundidad no garantiza una mejora uniforme bajo todas las configuraciones. Como conclusion, el trabajo aporta una comparacion reproducible de arquitecturas CNN para deteccion de agarres 2D/2.5D y una base metodologica verificable para ampliar la evaluacion con metricas orientadas, nuevos datasets y estudios de generalizacion.
 
 ## Pendiente antes de enviar
 

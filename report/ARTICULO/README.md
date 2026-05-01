@@ -1,22 +1,22 @@
-<!-- generado-articulo-tfm -->
+# Workspace editorial del articulo
 
-# Articulo cientifico derivado del TFM
+Este directorio organiza los materiales necesarios para preparar un articulo cientifico centrado en la comparacion reproducible de arquitecturas CNN para deteccion de agarres 2D/2.5D en entornos no estructurados. El contenido procede de artefactos internos ya disponibles: codigo, configuraciones, metricas, tablas, figuras y evidencias experimentales.
 
-Este directorio es el espacio de trabajo para convertir el proyecto de master en un articulo cientifico. Todo el contenido generado aqui procede de fuentes internas del workspace: codigo, configuraciones, metricas, tablas, figuras y evidencias ya existentes.
+## Enfoque actual
 
-## Estado actual
-
-- Modelos inventariados: `SimpleGraspCNN`/`SimpleCNN`, `ResNet18Grasp`/`ResNetGrasp`, `SimpleGrasp` y referencias legacy no materializadas.
-- Experimentos ejecutados con metricas: `EXP1_SIMPLE_RGB`, `EXP2_SIMPLE_RGBD`, `EXP3_RESNET18_RGB_AUGMENT`, `EXP4_RESNET18_RGBD`, `EXP1.1_SIMPLEGRASP_RGB`, `EXP1.2_SIMPLEGRASP_RGBD`.
-- Configuraciones adicionales localizadas: `EXP_METHOD_V2_RGB` y `EXP_TEMPLATE`.
-- Modelo final documentado para inferencia reproducible: `EXP3_RESNET18_RGB_AUGMENT` con `ResNet18Grasp`, seed 0 en el preset de memoria.
-- Figuras generadas para el articulo: 17 PNG en `recursos/figuras/`.
-- Destino inicial actualizado: II Congreso Internacional de Investigacion 2026, UNET. El primer entregable es un resumen anonimo en PDF; las normas verificadas estan en `recursos/referencias/normas_cii2026_unet.md`.
+- Titulo rector: **COMPARACIÓN REPRODUCIBLE DE ARQUITECTURAS CNN PARA DETECCIÓN DE AGARRES 2D/2.5D EN ENTORNOS NO ESTRUCTURADOS**.
+- Aportacion principal: protocolo reproducible de comparacion experimental, no propuesta de una arquitectura nueva.
+- Nucleo experimental del articulo: `EXP1_SIMPLE_RGB`, `EXP2_SIMPLE_RGBD`, `EXP3_RESNET18_RGB_AUGMENT` y `EXP4_RESNET18_RGBD`.
+- Experimentos auxiliares: `EXP1.1_SIMPLEGRASP_RGB` y `EXP1.2_SIMPLEGRASP_RGBD`, utiles como material complementario pero no como base del argumento principal.
+- Resultado central: `EXP3_RESNET18_RGB_AUGMENT` obtiene el mejor `val_success` medio entre los experimentos oficiales.
+- Integracion robotica: contexto de aplicacion secundario, no eje del articulo.
+- Figuras generadas: 17 PNG en `recursos/figuras/`.
+- Destino inicial: II Congreso Internacional de Investigacion 2026, UNET. El primer entregable es un resumen anonimo en PDF; las normas verificadas estan en `recursos/referencias/normas_cii2026_unet.md`.
 
 ## Proximos pasos
 
-1. Cerrar y exportar el resumen de `01_resumen_congreso.md` en formato PDF anonimo.
-2. Confirmar datos del tutor, afiliacion y CRediT para el formulario.
-3. Enviar antes de la fecha limite indicada por la web del congreso.
-4. Si se acepta el resumen, convertir `02_articulo_borrador.md` a la plantilla editorial asignada.
-5. Seleccionar 4-6 figuras finales desde `05_figuras_y_tablas.md`.
+1. Exportar `01_resumen_congreso.md` como PDF anonimo con el formato exigido por la convocatoria.
+2. Confirmar datos de autores, afiliacion y declaracion CRediT para el formulario.
+3. Enviar antes de la fecha limite indicada por el congreso.
+4. Si el resumen es aceptado, adaptar `02_articulo_borrador.md` a la plantilla editorial asignada.
+5. Seleccionar figuras centradas en metodologia y resultados; dejar latencia e integracion como material secundario si hay limite de paginas.

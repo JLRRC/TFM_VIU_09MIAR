@@ -1,20 +1,23 @@
-<!-- generado-articulo-tfm -->
 # Titulos posibles
 
-1. Comparacion reproducible de CNN para deteccion de agarres 2D/2.5D en un pipeline ROS 2
-2. Evaluacion trazable de Simple CNN y ResNet-18 para prediccion de rectangulos de agarre
-3. De Cornell a ROS 2: comparacion experimental de modelos CNN para agarre robotico
+## Titulo rector
+
+1. COMPARACIÓN REPRODUCIBLE DE ARQUITECTURAS CNN PARA DETECCIÓN DE AGARRES 2D/2.5D EN ENTORNOS NO ESTRUCTURADOS
+
+## Variantes si el venue pide ajuste
+
+2. Comparacion reproducible de arquitecturas CNN para agarres 2D/2.5D con imagenes RGB y RGB-D
+3. Evaluacion trazable de CNN ligeras y ResNet-18 para deteccion de agarres 2D/2.5D
 4. Analisis reproducible de arquitecturas RGB y RGB-D para grasping basado en rectangulos
-5. ResNet-18 frente a CNN ligeras para prediccion de agarres: resultados y despliegue en simulacion
-6. Benchmark reproducible de modelos de grasping 2D con integracion Gazebo/MoveIt 2
-7. Pipeline verificable para entrenamiento e inferencia de agarres roboticos con CNN
-8. Comparacion de modalidades RGB y RGB-D en regresion de rectangulos de agarre
-9. Lecciones de reproducibilidad en grasping visual: modelos, metricas e integracion robotica
-10. Evaluacion multisemilla de CNN para grasping 2D/2.5D sobre Cornell
-11. Integracion funcional de ResNet-18 para inferencia de agarres en UR5 simulado
-12. Arquitecturas convolucionales para agarre robotico: comparacion, latencia y trazabilidad
-13. Un estudio reproducible de SimpleGraspCNN y ResNet18Grasp para manipulacion robotica
-14. Prediccion de agarres con aprendizaje profundo: comparacion experimental e integracion ROS 2
-15. Del prototipo de TFM al articulo: evidencia reproducible en grasping visual con CNN
-16. Evaluacion de augmentation y profundidad para modelos de grasping 2D
-17. Grasping visual con UR5 simulado: comparacion de modelos y seleccion de checkpoint final
+5. Evaluacion multisemilla de redes convolucionales para agarres 2D/2.5D sobre Cornell
+6. Comparacion metodologica de CNN para regresion de rectangulos de agarre en escenas no estructuradas
+7. Arquitecturas convolucionales para deteccion de agarres: comparacion, trazabilidad y metricas
+8. Efecto de arquitectura, modalidad y augmentation en deteccion visual de agarres 2D/2.5D
+9. ResNet-18 frente a CNN ligeras para prediccion reproducible de agarres 2D/2.5D
+10. Protocolo reproducible para evaluar arquitecturas CNN en deteccion de agarres roboticos
+
+## Titulos descartados por enfoque
+
+- Titulos centrados en integracion o plataforma de ejecucion desplazan el articulo hacia ingenieria aplicada.
+- Titulos que mencionan despliegue o seleccion de checkpoint sugieren un trabajo de ingenieria mas que una contribucion metodologica.
+- Titulos que prometen superioridad general deben evitarse porque el estudio esta acotado a Cornell y a tres semillas por configuracion.

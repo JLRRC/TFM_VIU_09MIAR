@@ -1,5 +1,3 @@
-<!-- generado-articulo-tfm -->
-
 # Checklist final de envio
 
 ## Resumen CII 2026
@@ -12,9 +10,18 @@
 - [ ] 3-5 palabras clave.
 - [ ] Documento PDF anonimo, sin datos de autores.
 - [ ] Formato carta, Times New Roman 12, interlineado 1.5, margenes 3 cm.
-- [ ] Autores cargados en el formulario: estudiante primer autor, tutor segundo autor.
+- [ ] Autores cargados en el formulario.
 - [ ] CRediT de autores preparado.
 - [ ] Envio antes del viernes 8 de mayo de 2026.
+
+## Revision editorial
+
+- [ ] El titulo rector coincide con el enfoque del resumen y del borrador.
+- [ ] El discurso se centra en comparacion reproducible de arquitecturas CNN.
+- [ ] La integracion robotica aparece solo como contexto secundario.
+- [ ] No quedan referencias visibles a documentacion interna o desarrollo de software como eje narrativo.
+- [ ] La aportacion metodologica esta formulada de manera explicita.
+- [ ] Las cifras principales usan una fuente numerica consistente.
 
 ## Articulo completo posterior
 
@@ -27,6 +34,6 @@
 - [ ] Referencias en formato del venue.
 - [ ] Limitaciones redactadas sin promesas excesivas.
 - [ ] Repositorio/codigo citado segun politica del venue.
-- [ ] Revision final del tutor incorporada.
+- [ ] Revision final incorporada.
 - [ ] PDF compilado sin errores.
 - [ ] Material suplementario preparado si se usa.

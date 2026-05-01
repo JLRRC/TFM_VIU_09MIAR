@@ -1,7 +1,6 @@
-<!-- generado-articulo-tfm -->
 {
   "root": ".",
-  "articulo_dir": "reports/ARTICULO",
+  "articulo_dir": "report/ARTICULO",
   "n_experimentos_configurados": 8,
   "n_experimentos_con_metricas": 6,
   "n_figuras_generadas": 17,

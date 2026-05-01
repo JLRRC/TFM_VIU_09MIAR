@@ -1,6 +1,4 @@
-<!-- generado-articulo-tfm -->
-
-# Revision tutor
+# Revision tutor/director
 
 ## Comentarios pendientes
 
@@ -8,10 +6,11 @@
 |---|---|---|---|---|
 | pendiente | pendiente | pendiente | pendiente | abierto |
 
-## Puntos que conviene validar con el tutor
+## Puntos que conviene validar
 
-- Mensaje central del articulo.
-- Inclusión o exclusion de `EXP1.1/EXP1.2`.
-- Nivel de detalle sobre ROS 2/Gazebo/MoveIt 2.
-- Venue objetivo y extension.
-- Tratamiento de discrepancias entre memoria y codigo.
+- Titulo rector y ajuste al limite de palabras del congreso.
+- Enfoque metodologico como contribucion principal.
+- Uso de `EXP1..EXP4` como nucleo experimental.
+- Tratamiento de `EXP1.1/EXP1.2` como material auxiliar.
+- Nivel minimo de detalle sobre integracion robotica.
+- Criterio para reportar desviaciones entre semillas.
