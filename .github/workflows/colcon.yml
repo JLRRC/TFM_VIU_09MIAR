@@ -78,4 +78,4 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          pytest -q test/test_pick_fsm.py test/test_service_clients.py test/test_phase_timings.py
+          pytest -q test/test_pick_fsm.py test/test_service_clients.py test/test_phase_timings.py test/test_lifecycle_helpers.py

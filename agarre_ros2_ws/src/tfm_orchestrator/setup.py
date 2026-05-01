@@ -24,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "pick_orchestrator = tfm_orchestrator.pick_orchestrator_node:main",
+            "pick_orchestrator_lifecycle = tfm_orchestrator.pick_orchestrator_lifecycle_node:main",
         ],
     },
 )
