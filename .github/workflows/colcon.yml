@@ -61,3 +61,10 @@ jobs:
             test/test_evidence_logger_offline.py \
             test/test_gripper_geometry_contract.py \
             test/test_attach_backend_imports.py
+
+      - name: pytest tfm_orchestrator FSM (F5)
+        working-directory: agarre_ros2_ws/src/tfm_orchestrator
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_pick_fsm.py

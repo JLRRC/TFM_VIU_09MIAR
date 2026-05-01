@@ -1,0 +1,123 @@
+# tfm_orchestrator — F5/F6
+
+Nodo ROS 2 que aloja `PickPlace.action` y orquesta el flujo pick &
+place mediante una **state machine pura** (`pick_fsm.PickContext`)
+testeable sin ROS.
+
+## Por qué este paquete
+
+Antes de F5/F6 toda la lógica del state machine vivía dentro de
+`panel_pick_demo.run_pick_demo` (10.7 kLOC) — una closure gigante
+embedida en el proceso del panel Qt. Cualquier cambio del flujo
+requería tocar el panel; el flujo no era testeable sin Qt + ROS +
+Gazebo.
+
+`tfm_orchestrator` separa el flujo en:
+
+* **`pick_fsm.py`** — FSM puro, sin imports de ROS. 100% testeable
+  en pytest sin entorno. Define los estados (`PickPhase`),
+  transiciones permitidas y `PickContext` con el snapshot dict
+  mapeable directamente al feedback de la action.
+
+* **`pick_orchestrator_node.py`** — nodo ROS 2 que aloja el action
+  server `/pick_place`. Instancia `PickContext`, lo avanza por las
+  fases y publica feedback al cliente.
+
+## Arquitectura objetivo
+
+```
+                 ┌────────────────────┐
+                 │  panel_v2 (Qt)     │  ← cliente thin
+                 │  ActionClient      │
+                 └─────────┬──────────┘
+                           │ /pick_place (PickPlace.action)
+                           ▼
+                 ┌────────────────────┐
+                 │ tfm_orchestrator   │  ← este paquete
+                 │ ActionServer +     │
+                 │ PickFSM            │
+                 └─┬────┬────┬────┬───┘
+                   │    │    │    │
+       ┌───────────┘    │    │    └────────────┐
+       ▼                ▼    ▼                 ▼
+   Open/Close/      Attach/Detach     ComputeApproachPose
+   SetWidth.srv     (gripper          + WorldToBase.srv
+   (gripper          attach            (tf_geometry)
+    ctrl)            backend)
+```
+
+Las service clients son F6 (siguiente paso). F5 implementa el FSM
+y el action server con stubs.
+
+## Estados del FSM
+
+```
+IDLE → SELECT_OBJECT → APPROACH → GRASP → LIFT → TRANSPORT → RELEASE → DONE
+```
+
+Estados terminales: `DONE`, `FAILED`, `ABORTED`. Cualquier fase
+no-terminal puede transicionar a `FAILED` (excepción interna) o
+`ABORTED` (cancelación del cliente). No se puede saltar fases ni
+retroceder.
+
+## Action contract — `PickPlace.action`
+
+Definida en `ur5_panel_interfaces/action/PickPlace.action`.
+
+```
+# Goal
+string object_name
+geometry_msgs/Point drop_xyz_world
+---
+# Result
+bool success
+string reason
+float64 duration_sec
+int32 cycles_completed
+---
+# Feedback (publicado en cada transición de fase)
+string current_phase   # PickPhase enum value (str)
+float32 progress       # [0.0, 1.0] del happy path
+int32 phase_index      # 0..N en happy path; -1 si FAILED/ABORTED
+string detail          # detalle libre del orchestrator
+```
+
+## Lanzar
+
+```bash
+ros2 run tfm_orchestrator pick_orchestrator
+```
+
+Probar desde otra terminal:
+
+```bash
+ros2 action send_goal --feedback /pick_place \
+  ur5_panel_interfaces/action/PickPlace \
+  "{object_name: box_red, drop_xyz_world: {x: 0.5, y: 0.0, z: 0.05}}"
+```
+
+## Tests
+
+```bash
+cd agarre_ros2_ws/src/tfm_orchestrator
+PYTHONPATH=. pytest -q test/test_pick_fsm.py   # 23 tests, ~30ms
+```
+
+Cubren: happy path completo, transiciones permitidas/denegadas, fail
+desde cualquier fase, abort, snapshot de feedback, progresión
+monotónica, estados terminales no transicionan.
+
+## Estado F5/F6
+
+* ✅ F5: paquete + FSM + action server con stubs por fase + 23
+  tests + integración CI.
+* 🔴 F6 pendiente: substituir cada `time.sleep(0.2)` del nodo por la
+  llamada al service correspondiente:
+  - `SELECT_OBJECT` → `SelectObject.srv`
+  - `APPROACH` → `ComputeApproachPose.srv` + `PlanToPose.action`
+  - `GRASP` → `Open/Close.srv` + `Attach.srv`
+  - `LIFT` → `PlanToPose.action`
+  - `TRANSPORT` → `WorldToBase.srv` + `PlanToPose.action`
+  - `RELEASE` → `Open.srv` + `Detach.srv`
+* 🔴 F6 pendiente: panel Qt convertir su `run_pick_demo` actual en
+  un cliente de `/pick_place`.
