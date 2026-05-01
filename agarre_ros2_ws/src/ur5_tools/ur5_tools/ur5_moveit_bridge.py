@@ -63,6 +63,20 @@ from trajectory_msgs.msg import JointTrajectory
 from controller_manager_msgs.srv import ListControllers
 
 from .moveit_bridge.controller_management import ControllerManagementMixin
+from .moveit_bridge.log_formatters import (
+    format_busy_message as _fmt_busy_message,
+    format_exec_start_log as _fmt_exec_start_log,
+    format_pick_request_log as _fmt_pick_request_log,
+    format_recv_log as _fmt_recv_log,
+    format_rx_log as _fmt_rx_log,
+    format_target_log as _fmt_target_log,
+)
+from .moveit_bridge.queue_helpers import (
+    compute_request_stamp_ns as _compute_request_stamp_ns,
+    compute_settle_params as _compute_settle_params,
+    is_invalid_business_frame as _is_invalid_business_frame,
+    is_stale_request as _is_stale_request,
+)
 from .moveit_bridge.executor import ExecutorMixin
 from .moveit_bridge.geometry import GeometryMixin
 from .moveit_bridge.goal_validation import GoalValidationMixin
@@ -826,20 +840,21 @@ class UR5MoveItBridge(
             if not frame_clean:
                 frame_clean = self._base_frame
             msg.header.frame_id = frame_clean
-            req_stamp_ns = (
-                int(getattr(msg.header.stamp, "sec", 0) or 0) * 1_000_000_000
-                + int(getattr(msg.header.stamp, "nanosec", 0) or 0)
-            )
-            if frame_clean in ("base", "/base") and self._base_frame == "base_link":
+            req_stamp_ns = _compute_request_stamp_ns(msg.header.stamp)
+            if _is_invalid_business_frame(frame_clean, self._base_frame):
                 self._command_seq += 1
                 rejected_request_id = int(self._command_seq)
                 rx_ts_us = int(time.time() * 1_000_000)
                 self.get_logger().warning(
-                    "[MOVEIT_BRIDGE][RX] "
-                    f"ts_us={rx_ts_us} req_id={req_from_msg if req_from_msg is not None else rejected_request_id} "
-                    f"req_uuid={req_uuid or 'n/a'} frame={frame_clean or 'n/a'} "
-                    f"pose=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f}) "
-                    "accepted=false reason=invalid_business_frame"
+                    _fmt_rx_log(
+                        ts_us=rx_ts_us,
+                        request_id=req_from_msg if req_from_msg is not None else rejected_request_id,
+                        request_uuid=req_uuid,
+                        frame_id=frame_clean,
+                        pose=msg.pose.position,
+                        accepted=False,
+                        reason="invalid_business_frame",
+                    )
                 )
                 self._publish_result(
                     request_id=rejected_request_id,
@@ -870,11 +885,15 @@ class UR5MoveItBridge(
                 rejected_request_id = int(self._command_seq)
                 rx_ts_us = int(time.time() * 1_000_000)
                 self.get_logger().warning(
-                    "[MOVEIT_BRIDGE][RX] "
-                    f"ts_us={rx_ts_us} req_id={rejected_request_id} req_uuid={req_uuid or 'n/a'} "
-                    f"frame={frame_clean or 'n/a'} "
-                    f"pose=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f}) "
-                    "accepted=false reason=missing_request_id"
+                    _fmt_rx_log(
+                        ts_us=rx_ts_us,
+                        request_id=rejected_request_id,
+                        request_uuid=req_uuid,
+                        frame_id=frame_clean,
+                        pose=msg.pose.position,
+                        accepted=False,
+                        reason="missing_request_id",
+                    )
                 )
                 self._publish_result(
                     request_id=rejected_request_id,
@@ -906,11 +925,10 @@ class UR5MoveItBridge(
                 active_started = float(getattr(self, "_active_request_started_mono", 0.0) or 0.0)
                 if req_from_msg is not None and active_request_id > 0 and active_request_id != request_id:
                     busy_age = max(0.0, time.monotonic() - active_started) if active_started > 0.0 else 0.0
-                    busy_message = (
-                        "bridge_busy:"
-                        f"active_request_id={active_request_id};"
-                        f"active_request_uuid={active_request_uuid or 'n/a'};"
-                        f"active_age={busy_age:.2f}s"
+                    busy_message = _fmt_busy_message(
+                        active_request_id=active_request_id,
+                        active_request_uuid=active_request_uuid,
+                        active_age_sec=busy_age,
                     )
                     self.get_logger().warning(
                         "[BRIDGE][QUEUE] reject_overlapping_request "
@@ -919,11 +937,15 @@ class UR5MoveItBridge(
                     )
                     rx_ts_us = int(time.time() * 1_000_000)
                     self.get_logger().warning(
-                        "[MOVEIT_BRIDGE][RX] "
-                        f"ts_us={rx_ts_us} req_id={request_id} req_uuid={req_uuid or 'n/a'} "
-                        f"frame={frame_clean or 'n/a'} "
-                        f"pose=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f}) "
-                        "accepted=false reason=bridge_busy"
+                        _fmt_rx_log(
+                            ts_us=rx_ts_us,
+                            request_id=request_id,
+                            request_uuid=req_uuid,
+                            frame_id=frame_clean,
+                            pose=msg.pose.position,
+                            accepted=False,
+                            reason="bridge_busy",
+                        )
                     )
                     self._publish_result(
                         request_id=request_id,
@@ -957,20 +979,27 @@ class UR5MoveItBridge(
                 )
             rx_ts_us = int(time.time() * 1_000_000)
             self.get_logger().info(
-                "[MOVEIT_BRIDGE][RX] "
-                f"ts_us={rx_ts_us} req_id={request_id} req_uuid={req_uuid or 'n/a'} "
-                f"frame={msg.header.frame_id or 'n/a'} "
-                f"pose=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f}) "
-                "accepted=true"
+                _fmt_rx_log(
+                    ts_us=rx_ts_us,
+                    request_id=request_id,
+                    request_uuid=req_uuid,
+                    frame_id=msg.header.frame_id,
+                    pose=msg.pose.position,
+                    accepted=True,
+                )
             )
             self.get_logger().info(
-                "[PICK][MOVEIT][REQUEST] "
-                f"ts_us={rx_ts_us} request_id={request_id} request_uuid={req_uuid or 'n/a'} "
-                f"frame={msg.header.frame_id or 'n/a'} "
-                f"pose=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f}) "
-                f"cartesian={str(bool(cartesian)).lower()} phase={phase_label or 'n/a'} "
-                f"ee_target_tol_m={ee_target_tol_m if ee_target_tol_m is not None else 'n/a'} "
-                "accepted=true"
+                _fmt_pick_request_log(
+                    ts_us=rx_ts_us,
+                    request_id=request_id,
+                    request_uuid=req_uuid,
+                    frame_id=msg.header.frame_id,
+                    pose=msg.pose.position,
+                    cartesian=cartesian,
+                    phase_label=phase_label,
+                    ee_target_tol_m=ee_target_tol_m,
+                    accepted=True,
+                )
             )
             self._plan_event.set()
             pos = msg.pose.position
@@ -980,14 +1009,19 @@ class UR5MoveItBridge(
                     f"count={dropped_pending} reason=tagged_request request_id={request_id}"
                 )
             self.get_logger().info(
-                "[BRIDGE][RECV] "
-                f"label={'CARTESIAN' if cartesian else 'POSE'} "
-                f"topic={topic_name or 'n/a'} request_id={request_id} frame={msg.header.frame_id} "
-                f"pos=({pos.x:.3f},{pos.y:.3f},{pos.z:.3f}) "
-                f"stamp={msg.header.stamp.sec}.{msg.header.stamp.nanosec:09d} "
-                f"frame_raw={frame_raw or 'n/a'} request_uuid={req_uuid or 'n/a'} "
-                f"ee_target_tol_m={ee_target_tol_m if ee_target_tol_m is not None else 'n/a'} "
-                f"phase={phase_label or 'n/a'}"
+                _fmt_recv_log(
+                    label="CARTESIAN" if cartesian else "POSE",
+                    topic_name=topic_name,
+                    request_id=request_id,
+                    frame_id=msg.header.frame_id,
+                    pose=pos,
+                    stamp_sec=msg.header.stamp.sec,
+                    stamp_nanosec=msg.header.stamp.nanosec,
+                    frame_raw=frame_raw,
+                    request_uuid=req_uuid,
+                    ee_target_tol_m=ee_target_tol_m,
+                    phase_label=phase_label,
+                )
             )
             if now - self._last_pose_log > 2.0:
                 needs_tf = msg.header.frame_id != self._base_frame
@@ -1226,28 +1260,29 @@ class UR5MoveItBridge(
                             request_stamp_ns,
                             queued_mono,
                         ) = self._pose_queue.popleft()
-                    if self._stale_request_ttl_sec > 0.0:
-                        queued_age = max(0.0, time.monotonic() - float(queued_mono))
-                        if queued_age > float(self._stale_request_ttl_sec):
-                            self._publish_result(
-                                request_id=request_id,
-                                request_uuid=request_uuid,
-                                target=target,
-                                request_stamp_ns=request_stamp_ns,
-                                cartesian=cartesian,
-                                success=False,
-                                plan_ok=False,
-                                exec_ok=False,
-                                message=(
-                                    f"stale_request_dropped:age={queued_age:.2f}s"
-                                ),
-                            )
-                            self.get_logger().warning(
-                                "[BRIDGE][QUEUE] stale_request_dropped "
-                                f"request_id={request_id} request_uuid={request_uuid or 'n/a'} "
-                                f"age={queued_age:.2f}s"
-                            )
-                            continue
+                    is_stale, queued_age = _is_stale_request(
+                        float(queued_mono),
+                        time.monotonic(),
+                        float(self._stale_request_ttl_sec),
+                    )
+                    if is_stale:
+                        self._publish_result(
+                            request_id=request_id,
+                            request_uuid=request_uuid,
+                            target=target,
+                            request_stamp_ns=request_stamp_ns,
+                            cartesian=cartesian,
+                            success=False,
+                            plan_ok=False,
+                            exec_ok=False,
+                            message=f"stale_request_dropped:age={queued_age:.2f}s",
+                        )
+                        self.get_logger().warning(
+                            "[BRIDGE][QUEUE] stale_request_dropped "
+                            f"request_id={request_id} request_uuid={request_uuid or 'n/a'} "
+                            f"age={queued_age:.2f}s"
+                        )
+                        continue
                     with self._pose_lock:
                         self._active_request_id = int(request_id)
                         self._active_request_uuid = str(request_uuid or "")
@@ -1289,20 +1324,9 @@ class UR5MoveItBridge(
                             level="warn",
                         )
                         continue
-                    settle_timeout_sec = max(
-                        0.4,
-                        self._env_float(
-                            "PANEL_MOVEIT_BRIDGE_JOINT_SETTLE_TIMEOUT_SEC",
-                            min(1.5, max(0.4, float(self._joint_state_valid_timeout_sec))),
-                        ),
-                    )
-                    settle_stable_sec = max(
-                        0.05,
-                        self._env_float("PANEL_MOVEIT_BRIDGE_JOINT_SETTLE_STABLE_SEC", 0.25),
-                    )
-                    settle_tol_rad = max(
-                        0.005,
-                        self._env_float("PANEL_MOVEIT_BRIDGE_JOINT_SETTLE_TOL_RAD", 0.02),
+                    settle_timeout_sec, settle_stable_sec, settle_tol_rad = _compute_settle_params(
+                        self._env_float,
+                        float(self._joint_state_valid_timeout_sec),
                     )
                     settled_ok, settled_reason = self._wait_for_joint_state_settled(
                         timeout_sec=settle_timeout_sec,
@@ -1325,23 +1349,29 @@ class UR5MoveItBridge(
                     if self._min_plan_interval > 0.0 and elapsed < self._min_plan_interval:
                         time.sleep(self._min_plan_interval - elapsed)
                     self.get_logger().info(
-                        "[BRIDGE][EXEC_START] "
-                        f"request_id={request_id} "
-                        f"label={'CARTESIAN' if cartesian else 'POSE'} "
-                        f"frame={target.header.frame_id} ee_link={self._ee_frame} "
-                        f"base_frame={self._base_frame} "
-                        f"pos=({target.pose.position.x:.3f},{target.pose.position.y:.3f},{target.pose.position.z:.3f})"
+                        _fmt_exec_start_log(
+                            request_id=request_id,
+                            cartesian=cartesian,
+                            frame_id=target.header.frame_id,
+                            ee_frame=self._ee_frame,
+                            base_frame=self._base_frame,
+                            pose=target.pose.position,
+                        )
                     )
                     self.get_logger().info(
                         f"Planificando id={request_id} frame={target.header.frame_id} "
                         f"(cartesian={cartesian}, ee_link={self._ee_frame})"
                     )
                     self.get_logger().info(
-                        "[PICK][MOVEIT][TARGET] "
-                        f"request_id={request_id} request_uuid={request_uuid or 'n/a'} "
-                        f"phase={phase_label or 'n/a'} frame={target.header.frame_id or 'n/a'} "
-                        f"pose=({target.pose.position.x:.3f},{target.pose.position.y:.3f},{target.pose.position.z:.3f}) "
-                        f"cartesian={str(bool(cartesian)).lower()} ee_frame={self._ee_frame or 'n/a'}"
+                        _fmt_target_log(
+                            request_id=request_id,
+                            request_uuid=request_uuid,
+                            phase_label=phase_label,
+                            frame_id=target.header.frame_id,
+                            pose=target.pose.position,
+                            cartesian=cartesian,
+                            ee_frame=self._ee_frame,
+                        )
                     )
                     success = False
                     plan_ok = False

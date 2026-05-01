@@ -68,7 +68,8 @@ jobs:
             test/test_evidence_logger_offline.py \
             test/test_gripper_geometry_contract.py \
             test/test_attach_backend_imports.py \
-            test/test_plan_to_pose_logic.py
+            test/test_plan_to_pose_logic.py \
+            test/test_moveit_bridge_log_formatters.py
 
       - name: pytest tfm_orchestrator (F5 FSM + F6 service clients + F8 timings)
         working-directory: agarre_ros2_ws/src/tfm_orchestrator
