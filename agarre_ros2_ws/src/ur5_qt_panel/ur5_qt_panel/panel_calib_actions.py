@@ -261,7 +261,12 @@ def _run_pick_demo(panel):
             panel._step_reset_sequence_view(clear_history=True)
             panel._step_window_refresh()
         return
-    run_pick_demo(panel)
+    # F6.4 final: el dispatcher elige entre run_pick_demo legacy
+    # (default) y el cliente del orchestrator si
+    # PANEL_PICK_DEMO_USE_ORCHESTRATOR está activo. Cualquier fallo
+    # del orchestrator hace fallback al legacy con log claro.
+    from .pick_demo_dispatcher import dispatch_pick_demo
+    dispatch_pick_demo(panel)
 
 
 def _run_pick_object(panel):
