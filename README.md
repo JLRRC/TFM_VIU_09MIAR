@@ -1,5 +1,7 @@
 # TFM
 
+[![colcon CI](https://github.com/JLRRC/TFM_VIU_09MIAR/actions/workflows/colcon.yml/badge.svg)](https://github.com/JLRRC/TFM_VIU_09MIAR/actions/workflows/colcon.yml)
+
 Workspace principal del TFM de percepcion e inferencia de agarre para UR5 con ROS 2, Gazebo y MoveIt 2.
 
 ## Mapa rapido
