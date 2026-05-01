@@ -35,11 +35,24 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from ur5_panel_interfaces.action import PickPlace
+from ur5_panel_interfaces.srv import (
+    Attach as AttachSrv,
+    Close as CloseSrv,
+    Detach as DetachSrv,
+    Open as OpenSrv,
+    SelectObject as SelectObjectSrv,
+    WorldToBase as WorldToBaseSrv,
+)
 
 from .pick_fsm import PickContext, PickPhase
+from .service_clients import (
+    PhaseServiceMap,
+    ServiceCallResult,
+    call_service_with_timeout,
+)
 
 
-_PHASE_DELAY_SEC = 0.2  # F5 stub — F6 reemplazará por service calls reales.
+_PHASE_DELAY_SEC = 0.2  # F5 stub — usado solo si use_stubs=True.
 
 
 class PickOrchestratorNode(Node):
@@ -57,9 +70,23 @@ class PickOrchestratorNode(Node):
             cancel_callback=self._cancel_callback,
             callback_group=self._cb_group,
         )
+        # F6: parámetros runtime.
+        self.declare_parameter("use_stubs", True)
+        self.declare_parameter("service_discovery_timeout_sec", 2.0)
+        self.declare_parameter("service_call_timeout_sec", 10.0)
+        self._use_stubs = bool(self.get_parameter("use_stubs").value)
+        self._discovery_timeout = float(
+            self.get_parameter("service_discovery_timeout_sec").value
+        )
+        self._call_timeout = float(
+            self.get_parameter("service_call_timeout_sec").value
+        )
         self._cancel_requested: bool = False
+        self._service_map = PhaseServiceMap()
+        self._client_cache: dict = {}
         self.get_logger().info(
             "[ORCHESTRATOR] ready, action=/pick_place "
+            f"use_stubs={self._use_stubs} "
             f"phases={[p.value for p in [PickPhase.SELECT_OBJECT, PickPhase.APPROACH, PickPhase.GRASP, PickPhase.LIFT, PickPhase.TRANSPORT, PickPhase.RELEASE]]}"
         )
 
@@ -137,8 +164,20 @@ class PickOrchestratorNode(Node):
 
             self._publish_feedback(goal_handle, ctx)
 
-            # F5 stub: pausa entre fases. F6 reemplazará por service calls.
-            time.sleep(_PHASE_DELAY_SEC)
+            # F6: ejecutar la acción real de la fase. Si use_stubs,
+            # mantiene comportamiento F5 (sleep). Si no, llama a los
+            # services apropiados; ante fallo, marca FAILED y aborta.
+            if dst != PickPhase.DONE:
+                phase_ok, phase_reason = self._execute_phase(dst, ctx)
+                if not phase_ok:
+                    ctx.fail(phase_reason)
+                    self._publish_feedback(goal_handle, ctx)
+                    goal_handle.abort()
+                    result.success = False
+                    result.reason = phase_reason
+                    result.duration_sec = time.monotonic() - start_mono
+                    result.cycles_completed = 0
+                    return result
 
         goal_handle.succeed()
         result.success = True
@@ -153,6 +192,99 @@ class PickOrchestratorNode(Node):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _execute_phase(self, phase: PickPhase, ctx: PickContext) -> tuple[bool, str]:
+        """F6: ejecuta la lógica real de la fase via service calls.
+
+        Si use_stubs=True (default), mantiene el sleep stub de F5.
+
+        Devuelve ``(success, reason)``. reason describe el resultado
+        para logging y feedback. Si no es success, el caller fallará
+        el FSM con esa reason.
+        """
+        if self._use_stubs:
+            time.sleep(_PHASE_DELAY_SEC)
+            return True, f"{phase.value}_stub_ok"
+
+        # F6 real: cada fase tiene su service call.
+        try:
+            return self._dispatch_phase_service(phase, ctx)
+        except Exception as exc:
+            return False, f"phase_dispatch_exception:{type(exc).__name__}:{exc}"
+
+    def _dispatch_phase_service(
+        self, phase: PickPhase, ctx: PickContext
+    ) -> tuple[bool, str]:
+        """Mapea fase → service call. Devuelve ``(ok, reason)``."""
+        common_kwargs = dict(
+            discovery_timeout_sec=self._discovery_timeout,
+            call_timeout_sec=self._call_timeout,
+            client_cache=self._client_cache,
+        )
+
+        if phase == PickPhase.SELECT_OBJECT:
+            req = SelectObjectSrv.Request()
+            req.name = ctx.object_name
+            r = call_service_with_timeout(
+                self, SelectObjectSrv,
+                self._service_map.select_object, req, **common_kwargs,
+            )
+            return r.success, f"select_object:{r.reason}"
+
+        if phase == PickPhase.APPROACH:
+            # Sin un service real para "approach exec"; F6.2 añadirá
+            # PlanToPose.action. Por ahora devolvemos ok para no
+            # bloquear (es un placeholder honesto: el orchestrator
+            # NO puede ejecutar approach todavía sin planner).
+            return True, "approach_placeholder_no_planner_yet"
+
+        if phase == PickPhase.GRASP:
+            # 1) Cerrar gripper.
+            req_close = CloseSrv.Request()
+            r_close = call_service_with_timeout(
+                self, CloseSrv,
+                self._service_map.gripper_close, req_close, **common_kwargs,
+            )
+            if not r_close.success:
+                return False, f"grasp_close:{r_close.reason}"
+            # 2) Attach lógico al objeto seleccionado.
+            req_attach = AttachSrv.Request()
+            req_attach.object_name = ctx.object_name
+            r_att = call_service_with_timeout(
+                self, AttachSrv,
+                self._service_map.attach, req_attach, **common_kwargs,
+            )
+            return r_att.success, f"grasp_attach:{r_att.reason}"
+
+        if phase == PickPhase.LIFT:
+            # Placeholder: futuro PlanToPose.action.
+            return True, "lift_placeholder_no_planner_yet"
+
+        if phase == PickPhase.TRANSPORT:
+            # Placeholder: requiere WorldToBase + PlanToPose.action.
+            return True, "transport_placeholder_no_planner_yet"
+
+        if phase == PickPhase.RELEASE:
+            # 1) Detach.
+            req_det = DetachSrv.Request()
+            req_det.object_name = ctx.object_name
+            r_det = call_service_with_timeout(
+                self, DetachSrv,
+                self._service_map.detach, req_det, **common_kwargs,
+            )
+            if not r_det.success:
+                return False, f"release_detach:{r_det.reason}"
+            # 2) Abrir gripper.
+            req_open = OpenSrv.Request()
+            r_open = call_service_with_timeout(
+                self, OpenSrv,
+                self._service_map.gripper_open, req_open, **common_kwargs,
+            )
+            return r_open.success, f"release_open:{r_open.reason}"
+
+        # Cualquier otra fase no debería entrar aquí (filtramos DONE
+        # en el caller). Si entra, no fallamos — devolvemos ok inerte.
+        return True, f"{phase.value}_no_op"
 
     def _publish_feedback(self, goal_handle, ctx: PickContext) -> None:
         snap = ctx.feedback_snapshot()

@@ -109,15 +109,34 @@ monotónica, estados terminales no transicionan.
 
 ## Estado F5/F6
 
-* ✅ F5: paquete + FSM + action server con stubs por fase + 23
-  tests + integración CI.
-* 🔴 F6 pendiente: substituir cada `time.sleep(0.2)` del nodo por la
-  llamada al service correspondiente:
-  - `SELECT_OBJECT` → `SelectObject.srv`
-  - `APPROACH` → `ComputeApproachPose.srv` + `PlanToPose.action`
-  - `GRASP` → `Open/Close.srv` + `Attach.srv`
-  - `LIFT` → `PlanToPose.action`
-  - `TRANSPORT` → `WorldToBase.srv` + `PlanToPose.action`
-  - `RELEASE` → `Open.srv` + `Detach.srv`
-* 🔴 F6 pendiente: panel Qt convertir su `run_pick_demo` actual en
-  un cliente de `/pick_place`.
+* ✅ F5: paquete + FSM + action server + 23 tests.
+* ✅ F6.1: helpers de service call con timeout
+  (`service_clients.call_service_with_timeout`) +
+  `PhaseServiceMap` configurable + 15 tests offline (mockable).
+* ✅ F6.2: nodo cablea fase → service real (cuando
+  ``use_stubs:=false``):
+  - `SELECT_OBJECT` → `SelectObject.srv` (`/panel/select_object`)
+  - `GRASP` → `Close.srv` + `Attach.srv`
+  - `RELEASE` → `Detach.srv` + `Open.srv`
+  - `APPROACH` / `LIFT` / `TRANSPORT` → placeholder (requieren
+    `PlanToPose.action`, F6.3).
+* 🔴 F6.3 pendiente: añadir `PlanToPose.action` en
+  `ur5_panel_interfaces` y consumirla para approach/lift/transport.
+* 🔴 F6.4 pendiente: reescribir `panel_v2.run_pick_demo` (10.7k LOC)
+  como cliente de `/pick_place` — panel queda thin.
+
+## Parámetros runtime
+
+| Parámetro | Default | Descripción |
+|---|---|---|
+| `use_stubs` | `true` | Si false, el orchestrator llama a los services reales en cada fase. |
+| `service_discovery_timeout_sec` | `2.0` | Cuánto esperar a que aparezca cada service. |
+| `service_call_timeout_sec` | `10.0` | Cuánto esperar a la respuesta tras enviar la request. |
+
+```bash
+# Modo real (requiere todos los services levantados):
+ros2 run tfm_orchestrator pick_orchestrator --ros-args -p use_stubs:=false
+
+# Modo stub (default, para CI / smoke / dev sin Gazebo):
+ros2 run tfm_orchestrator pick_orchestrator
+```
