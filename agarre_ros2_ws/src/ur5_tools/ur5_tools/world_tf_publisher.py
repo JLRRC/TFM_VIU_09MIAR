@@ -4,7 +4,15 @@
 # Uso breve: Se usa en build con colcon y como nodos/servicios ROS 2 del sistema.
 # URL: /home/laboratorio/TFM/agarre_ros2_ws/src/ur5_tools/ur5_tools/world_tf_publisher.py
 # Summary: Publishes world->base_link TF from Gazebo pose/info.
-"""Publish world->base_link using Gazebo model pose bridged to ROS."""
+"""Publish world->base_link using Gazebo model pose bridged to ROS.
+
+F13 (2026-05-01): este nodo migró a ``LifecycleNode``. Para preservar
+el comportamiento de los launch existentes, el constructor declara
+parámetros y el parámetro ``auto_activate`` (default True) hace que
+``main()`` dispare ``configure → activate`` automáticamente. Si se
+pasa ``auto_activate:=false`` el nodo queda en ``UNCONFIGURED``
+esperando control externo (``ros2 lifecycle set ...``).
+"""
 
 from __future__ import annotations
 
@@ -18,14 +26,22 @@ import xml.etree.ElementTree as ET
 from geometry_msgs.msg import TransformStamped
 import rclpy
 from rclpy.executors import ExternalShutdownException
-from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from rclpy.qos import qos_profile_sensor_data
 from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
 
 
-class WorldTfPublisher(Node):
-    """Publish world->base_link from /world/<world>/pose/info."""
+class WorldTfPublisher(LifecycleNode):
+    """Publish world->base_link from /world/<world>/pose/info.
+
+    LifecycleNode con auto-activate (F13). Recursos:
+      - ``on_configure``: lee parámetros, crea broadcasters, carga
+        pose estática del world file si aplica.
+      - ``on_activate``: crea suscripción al topic Gazebo y timer.
+      - ``on_deactivate``: cancela timer y suscripción.
+      - ``on_cleanup``: libera broadcasters y resetea estado.
+    """
 
     def __init__(self) -> None:
         super().__init__("world_tf_publisher")
@@ -39,7 +55,48 @@ class WorldTfPublisher(Node):
         self.declare_parameter("clock_ready_min_sec", 0.1)
         self.declare_parameter("pose_timeout_sec", 5.0)
         self.declare_parameter("clock_timeout_sec", 5.0)
+        # F13 lifecycle: auto-activate por defecto preserva
+        # backward-compat con los launch que no transicionan el nodo.
+        self.declare_parameter("auto_activate", True)
 
+        self._tf_pub: Optional[TransformBroadcaster] = None
+        self._static_tf_pub: Optional[StaticTransformBroadcaster] = None
+        self._sub = None
+        self._timer = None
+        self._topic = ""
+        self._world_name = ""
+        self._model_name = ""
+        self._base_frame = ""
+        self._world_frame = ""
+        self._world_file = ""
+        self._static_grace = 0.0
+        self._wait_for_clock = True
+        self._clock_ready_min_ns = 0
+        self._pose_timeout = 0.0
+        self._clock_timeout = 0.0
+
+        self._last_stamp = None
+        self._last_warn = 0.0
+        self._last_source = ""
+        self._last_pose = None
+        self._last_pose_time = 0.0
+        self._start_time = 0.0
+        self._pose_deadline = 0.0
+        self._clock_deadline = 0.0
+        self._clock_ready = False
+        self._clock_last_ns = 0
+        self._clock_last_log = 0.0
+        self._static_pose = None
+        self._static_ready_at = 0.0
+        self._static_used = False
+        self._fatal = False
+        self._fatal_reason = ""
+
+    # ------------------------------------------------------------------
+    # Lifecycle transitions (F13)
+    # ------------------------------------------------------------------
+
+    def on_configure(self, _state) -> TransitionCallbackReturn:
         self._world_name = str(self.get_parameter("world_name").value)
         self._model_name = str(self.get_parameter("model_name").value)
         self._base_frame = str(self.get_parameter("base_frame").value)
@@ -64,22 +121,34 @@ class WorldTfPublisher(Node):
         # before Gazebo and /clock are ready.  Overridden by dynamic TF once Gazebo is live.
         self._static_tf_pub = StaticTransformBroadcaster(self)
 
-        self._last_stamp = None
-        self._last_warn = 0.0
-        self._last_source = ""
-        self._last_pose = None
-        self._last_pose_time = 0.0
         self._start_time = self.get_clock().now().nanoseconds * 1e-9
         self._pose_deadline = time.monotonic() + max(0.0, self._pose_timeout)
         self._clock_deadline = time.monotonic() + max(0.0, self._clock_timeout)
         self._clock_ready = not self._wait_for_clock
         self._clock_last_ns = 0
         self._clock_last_log = 0.0
-        self._static_pose = None
         self._static_ready_at = time.monotonic() + max(0.0, self._static_grace)
         self._static_used = False
         self._fatal = False
         self._fatal_reason = ""
+
+        if self._static_grace >= 0.0:
+            self._static_pose = self._load_static_pose()
+        else:
+            # static_grace_sec < 0: publish world->base_link immediately on /tf_static
+            # without waiting for /clock or Gazebo. Eliminates TF-null window at startup.
+            self._static_pose = self._load_static_pose()
+            self._publish_static_prewarm()
+
+        self.get_logger().info(
+            f"[LIFECYCLE] WorldTfPublisher configured (topic={self._topic}, "
+            f"model={self._model_name}, base={self._base_frame})"
+        )
+        if self._wait_for_clock:
+            self.get_logger().info("Waiting for /clock before publishing TF.")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, _state) -> TransitionCallbackReturn:
         self._sub = self.create_subscription(
             TFMessage,
             self._topic,
@@ -87,20 +156,52 @@ class WorldTfPublisher(Node):
             qos_profile_sensor_data,
         )
         self._timer = self.create_timer(0.1, self._publish_timer)
-
         self.get_logger().info(
-            f"WorldTfPublisher listening on {self._topic} "
-            f"(model={self._model_name}, base={self._base_frame})"
+            f"[LIFECYCLE] WorldTfPublisher activated; listening on {self._topic}"
         )
-        if self._wait_for_clock:
-            self.get_logger().info("Waiting for /clock before publishing TF.")
-        if self._static_grace >= 0.0:
-            self._static_pose = self._load_static_pose()
-        elif self._static_grace < 0.0:
-            # static_grace_sec < 0: publish world->base_link immediately on /tf_static
-            # without waiting for /clock or Gazebo.  Eliminates TF-null window at startup.
-            self._static_pose = self._load_static_pose()
-            self._publish_static_prewarm()
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_deactivate(self, _state) -> TransitionCallbackReturn:
+        if self._timer is not None:
+            try:
+                self._timer.cancel()
+                self.destroy_timer(self._timer)
+            except Exception:
+                pass
+            self._timer = None
+        if self._sub is not None:
+            try:
+                self.destroy_subscription(self._sub)
+            except Exception:
+                pass
+            self._sub = None
+        self.get_logger().info("[LIFECYCLE] WorldTfPublisher deactivated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, _state) -> TransitionCallbackReturn:
+        # Por si on_deactivate no se llamó por alguna razón.
+        if self._timer is not None:
+            try:
+                self.destroy_timer(self._timer)
+            except Exception:
+                pass
+            self._timer = None
+        if self._sub is not None:
+            try:
+                self.destroy_subscription(self._sub)
+            except Exception:
+                pass
+            self._sub = None
+        self._tf_pub = None
+        self._static_tf_pub = None
+        self._last_pose = None
+        self._last_stamp = None
+        self._static_pose = None
+        self.get_logger().info("[LIFECYCLE] WorldTfPublisher cleaned up")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, _state) -> TransitionCallbackReturn:
+        return self.on_cleanup(_state)
 
     def _publish_static_prewarm(self) -> None:
         """Publish world->base_link on /tf_static immediately, before clock/Gazebo are ready.
@@ -384,12 +485,11 @@ class WorldTfPublisher(Node):
         self._fatal_reason = reason
         ctx = f"(world={self._world_name} model={self._model_name} base={self._base_frame})"
         self.get_logger().error(f"{reason} {ctx}")
+        # En LifecycleNode preferimos no hacer destroy_node aquí: deactivate
+        # libera timer/subscription. El proceso queda vivo para diagnóstico
+        # externo. Si se quiere terminar, hacer trigger_shutdown desde fuera.
         try:
-            self.destroy_node()
-        except Exception:
-            pass
-        try:
-            rclpy.try_shutdown()
+            self.trigger_deactivate()
         except Exception:
             pass
 
@@ -473,6 +573,15 @@ class WorldTfPublisher(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = WorldTfPublisher()
+    # F13: auto-activate por defecto preserva el comportamiento previo
+    # (los launch existentes no transicionan el nodo). Si auto_activate=false,
+    # queda en UNCONFIGURED y se controla externamente vía ros2 lifecycle.
+    if bool(node.get_parameter("auto_activate").value):
+        try:
+            node.trigger_configure()
+            node.trigger_activate()
+        except Exception as exc:
+            node.get_logger().error(f"[LIFECYCLE] auto_activate failed: {exc}")
     try:
         rclpy.spin(node)
     except ExternalShutdownException:

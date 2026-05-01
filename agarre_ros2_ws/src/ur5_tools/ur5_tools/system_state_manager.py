@@ -20,7 +20,7 @@ from geometry_msgs.msg import TransformStamped
 import rclpy
 from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
-from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from rclpy.qos import qos_profile_sensor_data
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Image
@@ -175,11 +175,25 @@ class StateDecision:
     fatal_reason: Optional[str] = None
 
 
-class SystemStateManager(Node):
-    """Sigue el estado global del sistema y publica /system_state + /system_diag."""
+class SystemStateManager(LifecycleNode):
+    """Sigue el estado global del sistema y publica /system_state + /system_diag.
+
+    F13 (2026-05-01): migrado a ``LifecycleNode``. Recursos:
+      - ``on_configure``: lee parámetros, crea publishers, TF
+        buffer/listener, ListControllers client, carga geometría.
+      - ``on_activate``: crea subscriptions (clock/pose/camera) y timer.
+      - ``on_deactivate``: cancela timer y subscriptions.
+      - ``on_cleanup``: libera publishers y reset de estado.
+
+    El parámetro ``auto_activate`` (default True) preserva el
+    comportamiento de los launch existentes haciendo que ``main()``
+    dispare ``configure → activate`` automáticamente.
+    """
 
     def __init__(self) -> None:
         super().__init__("system_state_manager")
+        # F13 lifecycle: auto-activate por defecto preserva backward-compat.
+        self.declare_parameter("auto_activate", True)
         self.declare_parameter("world_name", "ur5_mesa_objetos")
         self.declare_parameter("model_name", "ur5_rg2")
         self.declare_parameter("base_frame", "base_link")
@@ -220,6 +234,22 @@ class SystemStateManager(Node):
         self.declare_parameter("state_publish_hz", 2.0)
         self.declare_parameter("startup_timeout_sec", 0.0)
 
+        # Recursos creados en on_configure / on_activate.
+        self._tf_buffer: Optional[Buffer] = None
+        self._tf_listener: Optional[TransformListener] = None
+        self._state_pub = None
+        self._diag_pub = None
+        self._clock_sub = None
+        self._pose_sub = None
+        self._camera_sub = None
+        self._controller_client = None
+        self._tick_timer = None
+
+    # ------------------------------------------------------------------
+    # Lifecycle transitions (F13)
+    # ------------------------------------------------------------------
+
+    def on_configure(self, _state) -> TransitionCallbackReturn:
         self._world_name = read_str_param(self, "world_name", "ur5_mesa_objetos")
         self._model_name = read_str_param(self, "model_name", "ur5_rg2")
         self._base_frame = read_str_param(self, "base_frame", "base_link")
@@ -338,45 +368,109 @@ class SystemStateManager(Node):
         self._state_pub = self.create_publisher(String, "/system_state", 10)
         self._diag_pub = self.create_publisher(String, "/system_diag", 10)
 
-        self.create_subscription(
+        self._controller_client = self.create_client(
+            ListControllers,
+            f"{self._controller_manager}/list_controllers",
+        )
+        if not self._camera_topic and self._camera_required:
+            self._fatal("camera_topic vacío; cámaras obligatorias")
+            return TransitionCallbackReturn.FAILURE
+        if not self._camera_topic:
+            self.get_logger().warn(
+                "camera_topic vacío; cámaras deshabilitadas por configuración"
+            )
+        self.get_logger().info(
+            f"[LIFECYCLE] SystemStateManager configured: pose={self._pose_topic} "
+            f"camera={self._camera_topic} ee={self._ee_frame} "
+            f"controllers={len(self._required_controllers)} moveit={self._moveit_required}"
+        )
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, _state) -> TransitionCallbackReturn:
+        self._clock_sub = self.create_subscription(
             Clock,
             "/clock",
             self._on_clock,
             qos_profile_sensor_data,
         )
-        self.create_subscription(
+        self._pose_sub = self.create_subscription(
             TFMessage,
             self._pose_topic,
             self._on_pose_info,
             qos_profile_sensor_data,
         )
         if self._camera_topic:
-            self.create_subscription(
+            self._camera_sub = self.create_subscription(
                 Image,
                 self._camera_topic,
                 self._on_camera_image,
                 qos_profile_sensor_data,
             )
-        else:
-            if self._camera_required:
-                self._fatal("camera_topic vacío; cámaras obligatorias")
-                return
-            self.get_logger().warn(
-                "camera_topic vacío; cámaras deshabilitadas por configuración"
-            )
-
-        self._controller_client = self.create_client(
-            ListControllers,
-            f"{self._controller_manager}/list_controllers",
-        )
-
         period = 1.0 / self._state_hz
-        self.create_timer(period, self._tick)
+        self._tick_timer = self.create_timer(period, self._tick)
         self.get_logger().info(
-            f"SystemStateManager listo: pose={self._pose_topic} camera={self._camera_topic} "
-            f"ee={self._ee_frame} controllers={len(self._required_controllers)} "
-            f"moveit={self._moveit_required}"
+            "[LIFECYCLE] SystemStateManager activated; ticking at "
+            f"{self._state_hz:.1f} Hz"
         )
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_deactivate(self, _state) -> TransitionCallbackReturn:
+        for attr in ("_tick_timer",):
+            t = getattr(self, attr, None)
+            if t is not None:
+                try:
+                    t.cancel()
+                    self.destroy_timer(t)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        for attr in ("_clock_sub", "_pose_sub", "_camera_sub"):
+            s = getattr(self, attr, None)
+            if s is not None:
+                try:
+                    self.destroy_subscription(s)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        self.get_logger().info("[LIFECYCLE] SystemStateManager deactivated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, _state) -> TransitionCallbackReturn:
+        # Por si on_deactivate no se ejecutó
+        for attr in ("_tick_timer",):
+            t = getattr(self, attr, None)
+            if t is not None:
+                try:
+                    self.destroy_timer(t)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        for attr in ("_clock_sub", "_pose_sub", "_camera_sub"):
+            s = getattr(self, attr, None)
+            if s is not None:
+                try:
+                    self.destroy_subscription(s)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        for attr in ("_state_pub", "_diag_pub", "_controller_client"):
+            v = getattr(self, attr, None)
+            if v is not None:
+                try:
+                    if attr == "_controller_client":
+                        self.destroy_client(v)
+                    else:
+                        self.destroy_publisher(v)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        self._tf_buffer = None
+        self._tf_listener = None
+        self.get_logger().info("[LIFECYCLE] SystemStateManager cleaned up")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, _state) -> TransitionCallbackReturn:
+        return self.on_cleanup(_state)
 
     @staticmethod
     def _now() -> float:
@@ -705,14 +799,16 @@ class SystemStateManager(Node):
             return
         self._fatal_latched = True
         self._set_state(SystemState.ERROR_FATAL, reason)
-        self._publish_state()
-        self.get_logger().error(f"ERROR_FATAL: {reason}")
         try:
-            self.destroy_node()
+            self._publish_state()
         except Exception:
             pass
+        self.get_logger().error(f"ERROR_FATAL: {reason}")
+        # F13 LifecycleNode: deactivate libera timer/subs y deja el nodo
+        # vivo en INACTIVE para diagnóstico externo. No hacemos
+        # destroy_node aquí; el supervisor decide shutdown.
         try:
-            rclpy.try_shutdown()
+            self.trigger_deactivate()
         except Exception:
             pass
 
@@ -832,6 +928,13 @@ class SystemStateManager(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = SystemStateManager()
+    # F13 lifecycle: auto-activate por defecto preserva backward-compat.
+    if bool(node.get_parameter("auto_activate").value):
+        try:
+            node.trigger_configure()
+            node.trigger_activate()
+        except Exception as exc:
+            node.get_logger().error(f"[LIFECYCLE] auto_activate failed: {exc}")
     try:
         rclpy.spin(node)
     except ExternalShutdownException:

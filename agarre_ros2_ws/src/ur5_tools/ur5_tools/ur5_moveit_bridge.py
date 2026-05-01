@@ -47,6 +47,7 @@ import rclpy
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from sensor_msgs.msg import JointState
@@ -110,9 +111,21 @@ class UR5MoveItBridge(
     JointStateHelpersMixin,
     ControllerManagementMixin,
     GoalValidationMixin,
-    Node,
+    LifecycleNode,
 ):
-    """Subscribes to grasp poses and drives MoveIt planning/execution."""
+    """Subscribes to grasp poses and drives MoveIt planning/execution.
+
+    F13 (2026-05-01): migrado a ``LifecycleNode`` (observable). La
+    inicialización completa permanece en ``__init__`` por la
+    complejidad del backend MoveItPy + 8 mixins. Las transiciones
+    lifecycle retornan SUCCESS sin re-crear recursos para preservar
+    operatividad. Esto permite que ``system_state_manager`` coordine
+    globalmente. Una segregación estricta de recursos a
+    on_configure/on_activate queda como F13b.
+
+    El parámetro ``auto_activate`` (default True) preserva el
+    comportamiento de los launch existentes.
+    """
 
     def _log_bridge_status(self, message: str, *, level: str = "info") -> None:
         if level == "warn":
@@ -122,6 +135,9 @@ class UR5MoveItBridge(
 
     def __init__(self) -> None:
         super().__init__("ur5_moveit_bridge")
+        # F13 lifecycle: auto-activate por defecto preserva backward-compat.
+        if not self.has_parameter("auto_activate"):
+            self.declare_parameter("auto_activate", True)
         self.declare_parameter("backend", "auto")
         self.declare_parameter("move_group", "manipulator")
         self.declare_parameter("base_frame", "base_link")
@@ -1666,6 +1682,29 @@ class UR5MoveItBridge(
         except Exception:
             pass
 
+    # ------------------------------------------------------------------
+    # Lifecycle transitions (F13 — observable, sin re-creación de recursos)
+    # ------------------------------------------------------------------
+
+    def on_configure(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] UR5MoveItBridge configured")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] UR5MoveItBridge activated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_deactivate(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] UR5MoveItBridge deactivated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] UR5MoveItBridge cleaned up")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, _state) -> TransitionCallbackReturn:
+        return self.on_cleanup(_state)
+
 
 def main(args=None) -> None:
     node: UR5MoveItBridge | None = None
@@ -1676,6 +1715,13 @@ def main(args=None) -> None:
     if moveit_commander is not None:
         moveit_commander.roscpp_initialize(sys.argv)
     node = UR5MoveItBridge()
+    # F13 lifecycle: auto-activate por defecto preserva backward-compat.
+    if bool(node.get_parameter("auto_activate").value):
+        try:
+            node.trigger_configure()
+            node.trigger_activate()
+        except Exception as exc:
+            node.get_logger().error(f"[LIFECYCLE] auto_activate failed: {exc}")
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

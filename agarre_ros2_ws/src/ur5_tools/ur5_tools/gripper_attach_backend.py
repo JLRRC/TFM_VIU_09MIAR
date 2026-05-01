@@ -17,7 +17,7 @@ import rclpy
 from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
-from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Empty
@@ -156,12 +156,29 @@ class GripperAttachBackend(
     PoseLookupMixin,
     PoseSubscriberMixin,
     SetPoseMixin,
-    Node,
+    LifecycleNode,
 ):
-    """Backend que mantiene los objetos adheridos siguiendo fisicamente el TCP."""
+    """Backend que mantiene los objetos adheridos siguiendo fisicamente el TCP.
+
+    F13 (2026-05-01): migrado a ``LifecycleNode``. La inicialización
+    completa permanece en ``__init__`` (subscriptions, timers, clients
+    creados al constructor, igual que antes) para preservar el
+    comportamiento operativo. Las transiciones lifecycle se exponen
+    como ``observable`` (configure/activate retornan SUCCESS sin
+    re-crear recursos). Esto permite a ``system_state_manager``
+    coordinar globalmente sin reescribir el backend. Una segregación
+    estricta de recursos a on_configure/on_activate queda como F13b si
+    se necesita destrucción granular de timers/subs.
+
+    El parámetro ``auto_activate`` (default True) preserva el
+    comportamiento de los launch existentes.
+    """
 
     def __init__(self) -> None:
         super().__init__("gripper_attach_backend")
+        # F13 lifecycle: auto-activate por defecto preserva backward-compat.
+        if not self.has_parameter("auto_activate"):
+            self.declare_parameter("auto_activate", True)
         if not self.has_parameter("use_sim_time"):
             self.declare_parameter("use_sim_time", True)
         self.declare_parameter("gripper_prefix", "/gripper")
@@ -936,10 +953,40 @@ class GripperAttachBackend(
             f"[ATTACH_BACKEND] gazebo_detach_applied=true object={name} method=follow_tcp"
         )
 
+    # ------------------------------------------------------------------
+    # Lifecycle transitions (F13 — observable, sin re-creación de recursos)
+    # ------------------------------------------------------------------
+
+    def on_configure(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] GripperAttachBackend configured")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] GripperAttachBackend activated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_deactivate(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] GripperAttachBackend deactivated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] GripperAttachBackend cleaned up")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, _state) -> TransitionCallbackReturn:
+        return self.on_cleanup(_state)
+
 
 def main(args: List[str] | None = None) -> None:
     rclpy.init(args=args)
     node = GripperAttachBackend()
+    # F13 lifecycle: auto-activate por defecto preserva backward-compat.
+    if bool(node.get_parameter("auto_activate").value):
+        try:
+            node.trigger_configure()
+            node.trigger_activate()
+        except Exception as exc:
+            node.get_logger().error(f"[LIFECYCLE] auto_activate failed: {exc}")
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):

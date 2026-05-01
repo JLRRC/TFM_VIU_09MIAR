@@ -35,18 +35,24 @@ unconfigured → configure → inactive → activate → ACTIVE
 
 ## 3. Estado de los nodos críticos (2026-05-01)
 
-| Nodo | Tipo actual | Lifecycle objetivo | Fase planificada |
-|---|---|---|---|
-| `pick_orchestrator_lifecycle` | ✅ LifecycleNode | ✅ Implementado | F9 (cerrada) |
-| `pick_orchestrator` (legacy F5) | Node | — (deprecated) | F11: añadir DeprecationWarning |
-| `ur5_moveit_bridge` | Node | LifecycleNode | F13 |
-| `system_state_manager` | Node | LifecycleNode | F13 |
-| `gripper_attach_backend` | Node | LifecycleNode | F13 |
-| `world_tf_publisher` | Node | LifecycleNode | F13 |
-| `release_objects_service` | Node | LifecycleNode | F13 (opcional) |
-| `evidence_logger` | Node | — (no necesario, solo escribe) | — |
-| `gz_pose_bridge` | Node | LifecycleNode | F19 (parte de optimización) |
-| `panel_ui_node` (objetivo) | — | LifecycleNode | F14/F15 |
+| Nodo | Tipo actual | Lifecycle | Fase | Notas |
+|---|---|---|---|---|
+| `pick_orchestrator_lifecycle` | ✅ LifecycleNode | ✅ Pleno | F9 (cerrada) | Goals rechazados fuera de ACTIVE |
+| `pick_orchestrator` (legacy F5) | Node | — (deprecated) | F11 | DeprecationWarning al arrancar |
+| `world_tf_publisher` | ✅ LifecycleNode | ✅ Pleno | **F13** ✓ | Recursos segregados: subs/timer en `on_activate`, broadcasters en `on_configure` |
+| `system_state_manager` | ✅ LifecycleNode | ✅ Pleno | **F13** ✓ | Recursos segregados: subs/timer en `on_activate`, publishers en `on_configure` |
+| `gripper_attach_backend` | ✅ LifecycleNode | ⚠ Observable | **F13** ✓ | Callbacks expuestos; segregación de recursos en F13b si necesaria |
+| `ur5_moveit_bridge` | ✅ LifecycleNode | ⚠ Observable | **F13** ✓ | Callbacks expuestos; segregación profunda en F13b (8 mixins) |
+| `release_objects_service` | Node | — | F13b | Pendiente |
+| `evidence_logger` | Node | — (no necesario, solo escribe) | — | — |
+| `gz_pose_bridge` | Node | LifecycleNode | F19 | Parte de optimización |
+| `panel_ui_node` (objetivo) | — | LifecycleNode | F14/F15 | Cuando se extraiga del panel |
+
+**Distinción "Pleno" vs "Observable"**:
+- **Pleno**: `on_activate` crea timers/subscriptions y `on_deactivate` los destruye → permite suspensión real del nodo.
+- **Observable**: el nodo expone los 5 callbacks lifecycle pero la inicialización completa permanece en `__init__` por complejidad/riesgo. Permite a `system_state_manager` coordinar y enviar señales de estado, sin re-creación granular de recursos.
+
+**Rollback**: tag `audit-pre-f13-20260501`.
 
 ## 4. `system_state_manager` como coordinador global
 
