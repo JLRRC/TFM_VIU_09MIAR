@@ -36,6 +36,7 @@ setup(
             "gripper_attach_backend = ur5_tools.gripper_attach_backend:main",
             "planning_scene_sync = ur5_tools.planning_scene_sync:main",
             "ur5_moveit_bridge = ur5_tools.ur5_moveit_bridge:main",
+            "plan_to_pose_server = ur5_tools.plan_to_pose_server:main",
             "release_objects_service = ur5_tools.release_objects_service:main",
             "system_state_manager = ur5_tools.system_state_manager:main",
             "world_tf_publisher = ur5_tools.world_tf_publisher:main",

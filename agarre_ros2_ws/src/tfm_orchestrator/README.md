@@ -118,12 +118,17 @@ monotónica, estados terminales no transicionan.
   - `SELECT_OBJECT` → `SelectObject.srv` (`/panel/select_object`)
   - `GRASP` → `Close.srv` + `Attach.srv`
   - `RELEASE` → `Detach.srv` + `Open.srv`
-  - `APPROACH` / `LIFT` / `TRANSPORT` → placeholder (requieren
-    `PlanToPose.action`, F6.3).
-* 🔴 F6.3 pendiente: añadir `PlanToPose.action` en
-  `ur5_panel_interfaces` y consumirla para approach/lift/transport.
+* ✅ F6.3: `PlanToPose.action` definida + APPROACH/LIFT/TRANSPORT
+  cableados al action client.
+* ✅ F6.5: stub action server PlanToPose en
+  ``ur5_tools/plan_to_pose_server.py`` (lógica pura testeable en
+  ``plan_to_pose_logic.py``, 24 tests offline). Cierra la cadena
+  end-to-end: orchestrator → /orchestrator/plan_to_pose stub → ok.
 * 🔴 F6.4 pendiente: reescribir `panel_v2.run_pick_demo` (10.7k LOC)
   como cliente de `/pick_place` — panel queda thin.
+* 🔴 F6.6 pendiente: substituir el stub server PlanToPose por
+  wiring real al bridge MoveIt (publish a `/desired_grasp` +
+  consume `/desired_grasp/result`).
 
 ## Parámetros runtime
 
