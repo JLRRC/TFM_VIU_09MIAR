@@ -139,6 +139,11 @@ from .pick_demo.metrics import (
     joint_delta_metrics as _joint_delta_metrics_pure,
     joint_error_metrics as _joint_error_metrics_pure,
 )
+from .pick_demo.geometry import (
+    apply_local_offset_to_fk as _apply_local_offset_to_fk,
+    dynamic_pre_close_reference as _dynamic_pre_close_reference_pure,
+    object_top_pose as _object_top_pose_pure,
+)
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -570,19 +575,12 @@ def run_pick_demo(panel) -> None:
                 return _pick_demo_fmt_scalar(value, digits=digits)
 
             def _object_top_pose(pose):
-                pose3 = _tuple3(pose)
-                if pose3 is None:
-                    return None
                 object_height_m = _pick_demo_env_float(
                     "PANEL_PICK_DEMO_OBJECT_HEIGHT_M",
                     0.05,
                     minimum=0.001,
                 )
-                return (
-                    float(pose3[0]),
-                    float(pose3[1]),
-                    float(pose3[2]) + (0.5 * object_height_m),
-                )
+                return _object_top_pose_pure(_tuple3(pose), object_height_m)
 
             def _resolved_align_object_base() -> tuple[tuple[float, float, float] | None, str, dict]:
                 obj_base_live = _tuple3(_live_object_base())
@@ -6631,46 +6629,24 @@ def run_pick_demo(panel) -> None:
                             local_offset = None
                     if local_offset is None:
                         local_offset = tuple(_DIRECT_TOOL0_TO_SOURCE_OFFSET)
-                    source_model = (
-                        float(fk_pos_model[0])
-                        + float(fk_rot[0, 0]) * float(local_offset[0])
-                        + float(fk_rot[0, 1]) * float(local_offset[1])
-                        + float(fk_rot[0, 2]) * float(local_offset[2]),
-                        float(fk_pos_model[1])
-                        + float(fk_rot[1, 0]) * float(local_offset[0])
-                        + float(fk_rot[1, 1]) * float(local_offset[1])
-                        + float(fk_rot[1, 2]) * float(local_offset[2]),
-                        float(fk_pos_model[2])
-                        + float(fk_rot[2, 0]) * float(local_offset[0])
-                        + float(fk_rot[2, 1]) * float(local_offset[1])
-                        + float(fk_rot[2, 2]) * float(local_offset[2]),
-                    )
-                    return (
-                        -float(source_model[0]),
-                        -float(source_model[1]),
-                        float(source_model[2]),
+                    return _apply_local_offset_to_fk(
+                        fk_pos_model, fk_rot, local_offset, flip_xy=True
                     )
                 except Exception:
                     return None
 
             def _dynamic_pre_close_reference_base(obj_base_reference) -> tuple[float, float, float] | None:
-                obj_base_3 = _tuple3(obj_base_reference)
-                if obj_base_3 is None:
-                    return None
-                dynamic_extra_z_m = max(
-                    0.0,
-                    float(
-                        os.environ.get(
-                            "PANEL_PICK_DEMO_MANUAL_REF_EXTRA_Z_M",
-                            os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.10"),
-                        )
-                        or 0.10
-                    ),
+                dynamic_extra_z_m = float(
+                    os.environ.get(
+                        "PANEL_PICK_DEMO_MANUAL_REF_EXTRA_Z_M",
+                        os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.10"),
+                    )
+                    or 0.10
                 )
-                return (
-                    float(obj_base_3[0]),
-                    float(obj_base_3[1]),
-                    float(obj_base_3[2]) + float(_DIRECTO_GRASP_Z) + float(dynamic_extra_z_m),
+                return _dynamic_pre_close_reference_pure(
+                    _tuple3(obj_base_reference),
+                    grasp_z=float(_DIRECTO_GRASP_Z),
+                    extra_z_m=dynamic_extra_z_m,
                 )
 
             manual_reference_ok = False
