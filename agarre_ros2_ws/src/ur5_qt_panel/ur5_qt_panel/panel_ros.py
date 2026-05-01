@@ -32,6 +32,10 @@ from .panel_ros_msg_helpers import (
     resolve_ros_message_class as _resolve_ros_message_class,
 )
 from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
+from .panel_ros_handlers import (
+    format_rx_result_log as _fmt_rx_result_log,
+    parse_moveit_result_payload as _parse_moveit_result_payload,
+)
 
 CLOCK_MAX_AGE_SEC = 8.0
 
@@ -755,18 +759,7 @@ class RosWorker(QObject):
             data = getattr(msg, "data", "") or ""
         except Exception:
             data = ""
-        req_id = -1
-        req_uuid = ""
-        success = "n/a"
-        parse_status = "raw"
-        try:
-            payload = json.loads(str(data or ""))
-            req_id = int(payload.get("request_id", -1) or -1)
-            req_uuid = str(payload.get("request_uuid", "") or "")
-            success = str(bool(payload.get("success", False))).lower()
-            parse_status = "json"
-        except Exception:
-            pass
+        req_id, req_uuid, success, parse_status = _parse_moveit_result_payload(data)
         with self._lock:
             self._moveit_result_last = str(data)
             self._moveit_result_wall = _steady_time()
@@ -776,10 +769,15 @@ class RosWorker(QObject):
             topic = str(self._moveit_result_topic or "/desired_grasp/result")
             wall_ts = float(self._moveit_result_wall)
         self.log.emit(
-            "[PICK_OBJ][RX_RESULT] "
-            f"ts={wall_ts:.6f} req_id={req_id} req_uuid={req_uuid or 'n/a'} "
-            f"success={success} match=unknown accepted=queued reason={parse_status} "
-            f"topic={topic} seq={seq}"
+            _fmt_rx_result_log(
+                ts_wall=wall_ts,
+                req_id=req_id,
+                req_uuid=req_uuid,
+                success_str=success,
+                parse_status=parse_status,
+                topic=topic,
+                seq=seq,
+            )
         )
 
     def _on_moveit_bridge_heartbeat(self, _msg: "Bool") -> None:

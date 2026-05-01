@@ -57,7 +57,8 @@ jobs:
             test/test_pick_demo_metrics.py \
             test/test_pick_demo_geometry.py \
             test/test_pick_demo_phase_checks.py \
-            test/test_pick_object_parsing.py
+            test/test_pick_object_parsing.py \
+            test/test_panel_ros_handlers.py
 
       - name: pytest offline subset ur5_tools (F4/F10/F6.5 helpers puros)
         working-directory: agarre_ros2_ws/src/ur5_tools
