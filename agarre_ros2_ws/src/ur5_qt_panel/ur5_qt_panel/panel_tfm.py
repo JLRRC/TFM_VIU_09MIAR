@@ -51,6 +51,20 @@ from .panel_tfm_execute import (  # noqa: F401
     wait_tfm_moveit_result,
 )
 
+# F3: canonical state helpers extraídos a panel_tfm_canonical.py.
+# Re-exportados aquí para preservar API pública (panel_v2 los importa
+# desde panel_tfm).
+from .panel_tfm_canonical import (  # noqa: F401
+    build_tfm_pick_object_override,
+    complete_pending_pick_demo_request,
+    complete_pending_tfm_execute_request,
+    complete_pending_tfm_infer_request,
+    tfm_canonical_finish,
+    tfm_canonical_phase_update,
+    tfm_canonical_state_reset,
+    tfm_canonical_use_pick_object,
+)
+
 def on_tfm_grasp_object_clicked(panel) -> None:
     """Botón 'Agarre objeto': ejecuta agarre MoveIt usando inferencia del rectángulo rojo.
 
