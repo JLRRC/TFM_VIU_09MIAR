@@ -31,12 +31,23 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
+import threading
+import uuid
+from typing import Optional
+
+from std_msgs.msg import String
+from geometry_msgs.msg import PoseStamped
+
 from ur5_panel_interfaces.action import PlanToPose
 
 from .plan_to_pose_logic import (
     PlanToPoseGoal,
+    PlanToPoseResult,
+    encode_request_frame,
     execute_stub,
     feedback_sequence,
+    parse_bridge_result,
+    result_matches_request,
     validate_goal,
 )
 
@@ -50,6 +61,12 @@ class PlanToPoseServer(Node):
         self.declare_parameter("step_delay_sec", 0.10)
         self.declare_parameter("planning_steps", 3)
         self.declare_parameter("executing_steps", 4)
+        # F6.6: opt-in real bridge wiring.
+        self.declare_parameter("use_real_bridge", False)
+        self.declare_parameter("bridge_pose_topic", "/desired_grasp")
+        self.declare_parameter("bridge_result_topic", "/desired_grasp/result")
+        self.declare_parameter("bridge_base_frame", "base_link")
+        self.declare_parameter("bridge_result_timeout_sec", 60.0)
 
         self._action_name = str(
             self.get_parameter("action_name").value or "/orchestrator/plan_to_pose"
@@ -57,6 +74,20 @@ class PlanToPoseServer(Node):
         self._step_delay = float(self.get_parameter("step_delay_sec").value)
         self._planning_steps = int(self.get_parameter("planning_steps").value)
         self._executing_steps = int(self.get_parameter("executing_steps").value)
+
+        self._use_real_bridge = bool(self.get_parameter("use_real_bridge").value)
+        self._bridge_pose_topic = str(
+            self.get_parameter("bridge_pose_topic").value or "/desired_grasp"
+        ).strip()
+        self._bridge_result_topic = str(
+            self.get_parameter("bridge_result_topic").value or "/desired_grasp/result"
+        ).strip()
+        self._bridge_base_frame = str(
+            self.get_parameter("bridge_base_frame").value or "base_link"
+        ).strip() or "base_link"
+        self._bridge_result_timeout = float(
+            self.get_parameter("bridge_result_timeout_sec").value
+        )
 
         self._cb_group = ReentrantCallbackGroup()
         self._action_server = ActionServer(
@@ -68,11 +99,43 @@ class PlanToPoseServer(Node):
             cancel_callback=self._cancel_callback,
             callback_group=self._cb_group,
         )
+
+        # F6.6: bridge wiring (publisher + subscription + correlation).
+        # Sólo se inicializa si use_real_bridge=true (evita topics extra
+        # innecesarios en modo stub).
+        self._bridge_pose_pub = None
+        self._bridge_result_sub = None
+        self._bridge_result_lock = threading.Lock()
+        self._bridge_pending_uuid: Optional[str] = None
+        self._bridge_pending_event = threading.Event()
+        self._bridge_pending_text: Optional[str] = None
+        self._next_request_id = 0
+
+        if self._use_real_bridge:
+            self._bridge_pose_pub = self.create_publisher(
+                PoseStamped, self._bridge_pose_topic, 10
+            )
+            self._bridge_result_sub = self.create_subscription(
+                String,
+                self._bridge_result_topic,
+                self._on_bridge_result,
+                10,
+                callback_group=self._cb_group,
+            )
+
+        mode = "REAL_BRIDGE" if self._use_real_bridge else "STUB"
         self.get_logger().info(
-            f"[PLAN_TO_POSE] ready, action={self._action_name} "
+            f"[PLAN_TO_POSE] ready, action={self._action_name} mode={mode} "
             f"planning={self._planning_steps} executing={self._executing_steps} "
-            f"step_delay={self._step_delay}s [STUB — no real planner yet]"
+            f"step_delay={self._step_delay}s"
         )
+        if self._use_real_bridge:
+            self.get_logger().info(
+                f"[PLAN_TO_POSE] bridge pose_topic={self._bridge_pose_topic} "
+                f"result_topic={self._bridge_result_topic} "
+                f"base_frame={self._bridge_base_frame} "
+                f"result_timeout={self._bridge_result_timeout:.1f}s"
+            )
 
     # ------------------------------------------------------------------
     # Callbacks
@@ -118,9 +181,15 @@ class PlanToPoseServer(Node):
             self._publish_feedback(goal_handle, fb)
             time.sleep(max(0.0, self._step_delay))
 
-        # Ejecutar (stub).
+        # Ejecutar:
+        # - Si use_real_bridge=true: publica PoseStamped a /desired_grasp
+        #   con frame_id codificado y espera result correlando UUID.
+        # - Si false: stub de la lógica pura.
         duration = time.monotonic() - start_mono
-        outcome = execute_stub(parsed, duration_sec=duration)
+        if self._use_real_bridge:
+            outcome = self._execute_real_bridge(parsed, start_mono)
+        else:
+            outcome = execute_stub(parsed, duration_sec=duration)
 
         result = PlanToPose.Result()
         result.success = bool(outcome.success)
@@ -180,6 +249,120 @@ class PlanToPoseServer(Node):
                 w=float(outcome.final_quat_xyzw[3]),
             ),
         )
+
+    # ------------------------------------------------------------------
+    # F6.6 — wiring real con el bridge MoveIt
+    # ------------------------------------------------------------------
+
+    def _execute_real_bridge(
+        self, goal: PlanToPoseGoal, start_mono: float
+    ) -> PlanToPoseResult:
+        """Publica el goal al bridge y espera el result correlado por UUID."""
+        from .plan_to_pose_logic import normalize_quat
+        if self._bridge_pose_pub is None:
+            return PlanToPoseResult(
+                success=False,
+                reason="bridge_publisher_not_initialized",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=0,
+            )
+
+        # Generar UUID único para correlación + frame_id codificado.
+        request_uuid = uuid.uuid4().hex
+        self._next_request_id += 1
+        request_id = int(self._next_request_id)
+        frame_id = encode_request_frame(
+            self._bridge_base_frame,
+            request_id,
+            request_uuid,
+            phase_label="PLAN_TO_POSE",
+        )
+
+        # Construir PoseStamped y publicar.
+        msg = PoseStamped()
+        msg.header.frame_id = frame_id
+        try:
+            msg.header.stamp = self.get_clock().now().to_msg()
+        except Exception:
+            pass
+        msg.pose.position.x = float(goal.target_xyz[0])
+        msg.pose.position.y = float(goal.target_xyz[1])
+        msg.pose.position.z = float(goal.target_xyz[2])
+        msg.pose.orientation.x = float(goal.target_quat_xyzw[0])
+        msg.pose.orientation.y = float(goal.target_quat_xyzw[1])
+        msg.pose.orientation.z = float(goal.target_quat_xyzw[2])
+        msg.pose.orientation.w = float(goal.target_quat_xyzw[3])
+
+        # Armar pending antes de publicar (evita race con result que llega rápido).
+        with self._bridge_result_lock:
+            self._bridge_pending_uuid = request_uuid
+            self._bridge_pending_text = None
+            self._bridge_pending_event.clear()
+
+        try:
+            self._bridge_pose_pub.publish(msg)
+        except Exception as exc:
+            return PlanToPoseResult(
+                success=False,
+                reason=f"bridge_publish_exception:{type(exc).__name__}:{exc}",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=1,
+            )
+
+        self.get_logger().info(
+            f"[PLAN_TO_POSE][BRIDGE] published rid={request_id} uid={request_uuid} "
+            f"target=({goal.target_xyz[0]:.3f},{goal.target_xyz[1]:.3f},{goal.target_xyz[2]:.3f})"
+        )
+
+        # Esperar result. El callback _on_bridge_result setea
+        # _bridge_pending_event cuando el UUID coincida.
+        timeout = float(max(1.0, self._bridge_result_timeout))
+        ok_wait = self._bridge_pending_event.wait(timeout=timeout)
+        with self._bridge_result_lock:
+            text = self._bridge_pending_text
+            self._bridge_pending_uuid = None  # release slot
+
+        if not ok_wait or text is None:
+            return PlanToPoseResult(
+                success=False,
+                reason=f"bridge_result_timeout:{timeout:.1f}s",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=1,
+            )
+
+        success, reason, _uid = parse_bridge_result(text)
+        ok = bool(success) if success is not None else False
+        return PlanToPoseResult(
+            success=ok,
+            reason=reason or ("ok" if ok else "bridge_unknown"),
+            final_xyz=goal.target_xyz,
+            final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+            duration_sec=time.monotonic() - start_mono,
+            attempts=1,
+        )
+
+    def _on_bridge_result(self, msg) -> None:
+        """Callback de /desired_grasp/result. Despierta el ejecutor si UUID OK."""
+        text = str(getattr(msg, "data", "") or "")
+        if not text:
+            return
+        with self._bridge_result_lock:
+            expected = self._bridge_pending_uuid
+            if expected is None:
+                return  # no hay request pendiente
+            if not result_matches_request(text, expected):
+                # Result de otra request (concurrencia). Ignorar.
+                return
+            self._bridge_pending_text = text
+        self._bridge_pending_event.set()
+
+    # ------------------------------------------------------------------
 
     def _publish_feedback(self, goal_handle, fb):
         msg = PlanToPose.Feedback()

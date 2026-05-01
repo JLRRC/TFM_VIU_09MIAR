@@ -124,11 +124,17 @@ monotónica, estados terminales no transicionan.
   ``ur5_tools/plan_to_pose_server.py`` (lógica pura testeable en
   ``plan_to_pose_logic.py``, 24 tests offline). Cierra la cadena
   end-to-end: orchestrator → /orchestrator/plan_to_pose stub → ok.
+* ✅ F6.6: server PlanToPose con wiring real al bridge MoveIt
+  opt-in via param ``use_real_bridge:=true``. Publica PoseStamped
+  a ``/desired_grasp`` con frame_id codificado (``base_link|rid=N|
+  uid=UUID|phase=PLAN_TO_POSE``) y espera el result en
+  ``/desired_grasp/result`` correlando por UUID. Helpers
+  ``encode_request_frame``/``parse_bridge_result``/
+  ``result_matches_request`` testables sin ROS (15 tests offline
+  adicionales).
 * 🔴 F6.4 pendiente: reescribir `panel_v2.run_pick_demo` (10.7k LOC)
-  como cliente de `/pick_place` — panel queda thin.
-* 🔴 F6.6 pendiente: substituir el stub server PlanToPose por
-  wiring real al bridge MoveIt (publish a `/desired_grasp` +
-  consume `/desired_grasp/result`).
+  como cliente de `/pick_place` — panel queda thin. Cierra el ciclo
+  de la migración arquitectónica (F5/F6 entera).
 
 ## Parámetros runtime
 

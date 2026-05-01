@@ -151,7 +151,9 @@ def feedback_sequence(
 def execute_stub(goal: PlanToPoseGoal, *, duration_sec: float = 0.0) -> PlanToPoseResult:
     """Stub de ejecución — siempre éxito si el goal es válido.
 
-    F6.6 reemplazará por wiring real con el bridge MoveIt.
+    F6.6: el server real puede saltar este stub via param
+    ``use_real_bridge:=true`` y delegar al bridge MoveIt usando los
+    helpers ``encode_request_frame`` + ``parse_bridge_result``.
     """
     ok, reason = validate_goal(goal)
     if not ok:
@@ -171,3 +173,108 @@ def execute_stub(goal: PlanToPoseGoal, *, duration_sec: float = 0.0) -> PlanToPo
         duration_sec=duration_sec,
         attempts=1,
     )
+
+
+# ---------------------------------------------------------------------------
+# F6.6 — helpers para wiring real con el bridge MoveIt
+# (publish a /desired_grasp con frame_id codificado + match de result UUID).
+#
+# Patrón heredado de panel_pick_object._encode_request_frame:
+#   "base_link|rid=42|uid=abc123|tol=0.020|phase=PLAN_TO_POSE"
+# El bridge parsea base_link como frame, rid/uid para correlación,
+# tol/phase como hints. El result llega en /desired_grasp/result como
+# String:
+#   "success=true reason=exec_ok request_uuid=abc123 ..."
+# ---------------------------------------------------------------------------
+
+
+def encode_request_frame(
+    base_frame: str,
+    request_id: int,
+    request_uuid: str,
+    *,
+    tol_m: Optional[float] = None,
+    phase_label: Optional[str] = None,
+) -> str:
+    """Codifica el ``frame_id`` con metadata para el bridge MoveIt.
+
+    El bridge deserializa ``rid`` (correlación numérica), ``uid``
+    (correlación string), opcionalmente ``tol`` (target tol metros)
+    y ``phase`` (label de la fase del orchestrator).
+
+    El primer token siempre es el frame ROS válido; el bridge debe
+    interpretar el primer ``|``-separated token como el frame real.
+    """
+    base = str(base_frame or "base_link").strip() or "base_link"
+    rid = int(request_id)
+    uid = str(request_uuid or "").strip()
+    parts: List[str] = [base, f"rid={rid}"]
+    if uid:
+        parts.append(f"uid={uid}")
+    if tol_m is not None:
+        try:
+            parts.append(f"tol={float(tol_m):.3f}")
+        except Exception:
+            pass
+    phase = str(phase_label or "").strip()
+    if phase:
+        phase = phase.replace("|", "_")
+        parts.append(f"phase={phase}")
+    return "|".join(parts)
+
+
+def parse_bridge_result(text: str) -> Tuple[Optional[bool], str, str]:
+    """Parsea ``/desired_grasp/result`` String del bridge.
+
+    Devuelve ``(success, reason, request_uuid)``.
+
+    Formato esperado del bridge:
+      ``success=true|false reason=<text> request_uuid=<UUID> ...``
+
+    Si ``success`` no aparece, devuelve ``(None, text, "")``.
+
+    >>> parse_bridge_result("success=true reason=exec_ok request_uuid=abc")
+    (True, 'exec_ok', 'abc')
+    >>> parse_bridge_result("success=false reason=plan_failed request_uuid=xyz")
+    (False, 'plan_failed', 'xyz')
+    >>> parse_bridge_result("garbage payload")
+    (None, 'garbage payload', '')
+    """
+    if not text:
+        return None, "", ""
+    success: Optional[bool] = None
+    reason = text
+    uid = ""
+    try:
+        kv = {}
+        for tok in text.split():
+            if "=" in tok:
+                k, v = tok.split("=", 1)
+                kv[k] = v
+        if "success" in kv:
+            s = kv["success"].strip().lower()
+            if s in ("true", "1", "yes"):
+                success = True
+            elif s in ("false", "0", "no"):
+                success = False
+        if "reason" in kv:
+            reason = kv["reason"]
+        if "request_uuid" in kv:
+            uid = kv["request_uuid"]
+    except Exception:
+        pass
+    return success, reason, uid
+
+
+def result_matches_request(
+    result_text: str, expected_uuid: str
+) -> bool:
+    """True si el ``request_uuid=`` del result text coincide con el esperado.
+
+    Si ``expected_uuid`` es vacío, acepta cualquier result (modo
+    correlación-libre, no recomendado para concurrency).
+    """
+    if not expected_uuid:
+        return True
+    _, _, got = parse_bridge_result(result_text)
+    return got == expected_uuid

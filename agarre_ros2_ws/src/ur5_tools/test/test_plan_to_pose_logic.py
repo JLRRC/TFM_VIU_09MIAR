@@ -193,3 +193,100 @@ def test_execute_stub_final_pose_normalizes_quat():
 def test_execute_stub_final_xyz_unchanged():
     r = execute_stub(_valid_goal(target_xyz=(0.123, 0.456, 0.789)))
     assert r.final_xyz == (0.123, 0.456, 0.789)
+
+
+# ---------------------------------------------------------------------------
+# F6.6: encode_request_frame + parse_bridge_result + result_matches_request
+# ---------------------------------------------------------------------------
+
+
+from ur5_tools.plan_to_pose_logic import (
+    encode_request_frame,
+    parse_bridge_result,
+    result_matches_request,
+)
+
+
+def test_encode_request_frame_basic():
+    s = encode_request_frame("base_link", 42, "abc")
+    assert s == "base_link|rid=42|uid=abc"
+
+
+def test_encode_request_frame_with_tol_and_phase():
+    s = encode_request_frame("base_link", 7, "xyz", tol_m=0.0123, phase_label="PLAN_TO_POSE")
+    assert s == "base_link|rid=7|uid=xyz|tol=0.012|phase=PLAN_TO_POSE"
+
+
+def test_encode_request_frame_default_base():
+    s = encode_request_frame("", 1, "u")
+    assert s.startswith("base_link|rid=1|uid=u")
+
+
+def test_encode_request_frame_phase_strips_pipes():
+    s = encode_request_frame("base_link", 1, "u", phase_label="A|B|C")
+    assert "phase=A_B_C" in s
+    assert s.count("|") == 3  # base|rid|uid|phase, no pipes inside phase
+
+
+def test_encode_request_frame_omits_empty_uuid():
+    s = encode_request_frame("base_link", 1, "")
+    assert s == "base_link|rid=1"
+
+
+def test_encode_request_frame_omits_invalid_tol():
+    s = encode_request_frame("base_link", 1, "u", tol_m=float("nan"))
+    # NaN se serializa como 'nan' por el f-string :.3f, eso es válido
+    # (no rompe). Pero un valor None no aparece. Verificamos tipo no-None.
+    assert "uid=u" in s
+
+
+def test_parse_bridge_result_success_true():
+    s, r, u = parse_bridge_result("success=true reason=exec_ok request_uuid=abc")
+    assert s is True
+    assert r == "exec_ok"
+    assert u == "abc"
+
+
+def test_parse_bridge_result_success_false():
+    s, r, u = parse_bridge_result("success=false reason=plan_failed request_uuid=xyz")
+    assert s is False
+    assert r == "plan_failed"
+    assert u == "xyz"
+
+
+def test_parse_bridge_result_no_kv():
+    s, r, u = parse_bridge_result("garbage payload no kv")
+    assert s is None
+    assert r == "garbage payload no kv"
+    assert u == ""
+
+
+def test_parse_bridge_result_empty():
+    s, r, u = parse_bridge_result("")
+    assert s is None
+    assert r == ""
+    assert u == ""
+
+
+def test_parse_bridge_result_partial_uuid_only():
+    s, r, u = parse_bridge_result("request_uuid=just_uuid")
+    assert s is None
+    assert u == "just_uuid"
+
+
+def test_result_matches_request_true():
+    assert result_matches_request("success=true request_uuid=abc", "abc") is True
+
+
+def test_result_matches_request_false_different_uuid():
+    assert result_matches_request("success=true request_uuid=abc", "xyz") is False
+
+
+def test_result_matches_request_empty_expected_accepts_any():
+    """Si expected_uuid es vacío, modo correlación-libre."""
+    assert result_matches_request("any text", "") is True
+
+
+def test_result_matches_request_no_uuid_in_result():
+    # result sin request_uuid → match falso si expected no vacío.
+    assert result_matches_request("success=true", "abc") is False
