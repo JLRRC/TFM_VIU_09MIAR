@@ -63,7 +63,12 @@ _DEFAULT_GRIPPER_OBJECTS = (
 
 # Helpers puros (re-exportados desde evidence_helpers para que sean
 # testables sin rclpy).
-from .evidence_helpers import now_iso as _now_iso, safe_unique_dir as _safe_unique_dir
+from .evidence_helpers import (
+    compute_session_metrics as _compute_session_metrics,
+    now_iso as _now_iso,
+    parse_grasp_result as _parse_grasp_result_pure,
+    safe_unique_dir as _safe_unique_dir,
+)
 
 
 class EvidenceLogger(Node):
@@ -232,35 +237,8 @@ class EvidenceLogger(Node):
 
     @staticmethod
     def _parse_grasp_result(text: str) -> tuple[Optional[bool], str]:
-        """Extract (success, reason) from the bridge result payload.
-
-        Bridge emits patterns like ``success=true reason=exec_ok ...`` or
-        ``success=false reason=plan_failed:... request_uuid=...``. Falls back
-        to ``(None, text)`` if parsing fails.
-        """
-
-        if not text:
-            return None, ""
-        success: Optional[bool] = None
-        reason = text
-        try:
-            tokens = text.split()
-            kv: Dict[str, str] = {}
-            for tok in tokens:
-                if "=" in tok:
-                    k, v = tok.split("=", 1)
-                    kv[k] = v
-            if "success" in kv:
-                success_raw = kv["success"].strip().lower()
-                if success_raw in ("true", "1", "yes"):
-                    success = True
-                elif success_raw in ("false", "0", "no"):
-                    success = False
-            if "reason" in kv:
-                reason = kv["reason"]
-        except Exception:
-            pass
-        return success, reason
+        """Wrapper retro-compatible. La impl pura está en evidence_helpers."""
+        return _parse_grasp_result_pure(text)
 
     def _record(self, *, kind: str, data: Dict[str, Any]) -> None:
         try:
@@ -296,6 +274,42 @@ class EvidenceLogger(Node):
                 fp.close()
             except Exception:
                 pass
+        # F10: escribir metrics.json con agregados de la sesión leyendo
+        # el JSONL recién cerrado. Si algo falla, se ignora — el JSONL
+        # sigue siendo la fuente canónica.
+        try:
+            self._write_session_metrics()
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[EVIDENCE] metrics_write_failed err={type(exc).__name__}:{exc}"
+            )
+
+    def _write_session_metrics(self) -> None:
+        """Lee events.jsonl y escribe metrics.json con agregados (F10)."""
+        if not self._events_path.is_file():
+            return
+        events: List[Dict[str, Any]] = []
+        with self._events_path.open("r", encoding="utf-8") as fp:
+            for line in fp:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    events.append(json.loads(line))
+                except Exception:
+                    continue
+        metrics = _compute_session_metrics(events)
+        metrics["session_dir"] = str(self._session_dir)
+        metrics_path = self._session_dir / "metrics.json"
+        with metrics_path.open("w", encoding="utf-8") as fp:
+            json.dump(metrics, fp, indent=2, ensure_ascii=True)
+        self.get_logger().info(
+            f"[EVIDENCE] metrics_written path={metrics_path} "
+            f"events={metrics['total_events']} "
+            f"grasp_success={metrics['grasp_success']} "
+            f"grasp_failure={metrics['grasp_failure']} "
+            f"success_rate={metrics['grasp_success_rate']}"
+        )
 
 
 def main(args=None) -> None:

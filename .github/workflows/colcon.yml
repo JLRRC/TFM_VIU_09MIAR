@@ -37,7 +37,7 @@ jobs:
       - name: Install pytest + PyYAML
         run: pip install pytest pyyaml
 
-      - name: pytest offline subset (sin ROS, sin Qt)
+      - name: pytest offline subset ur5_qt_panel
         working-directory: agarre_ros2_ws/src/ur5_qt_panel
         env:
           PYTHONPATH: .
@@ -51,3 +51,13 @@ jobs:
             test/test_pick_demo_pure_helpers.py \
             test/test_panel_ros_msg_helpers.py \
             test/test_directo_geometry.py
+
+      - name: pytest offline subset ur5_tools (F4/F10 helpers puros)
+        working-directory: agarre_ros2_ws/src/ur5_tools
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q \
+            test/test_evidence_logger_offline.py \
+            test/test_gripper_geometry_contract.py \
+            test/test_attach_backend_imports.py
