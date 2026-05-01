@@ -4,7 +4,7 @@ Este directorio organiza los materiales necesarios para preparar un articulo cie
 
 ## Enfoque actual
 
-- Titulo rector: **COMPARACIÓN REPRODUCIBLE DE ARQUITECTURAS CNN PARA DETECCIÓN DE AGARRES 2D/2.5D EN ENTORNOS NO ESTRUCTURADOS**.
+- Titulo rector: **HACIA UN GRASPING 2D/2.5D REPRODUCIBLE: COMPARACIÓN DE ARQUITECTURAS CNN EN ENTORNOS NO ESTRUCTURADOS**.
 - Aportacion principal: protocolo reproducible de comparacion experimental, no propuesta de una arquitectura nueva.
 - Nucleo experimental del articulo: `EXP1_SIMPLE_RGB`, `EXP2_SIMPLE_RGBD`, `EXP3_RESNET18_RGB_AUGMENT` y `EXP4_RESNET18_RGBD`.
 - Experimentos auxiliares: `EXP1.1_SIMPLEGRASP_RGB` y `EXP1.2_SIMPLEGRASP_RGBD`, utiles como material complementario pero no como base del argumento principal.
