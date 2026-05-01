@@ -84,6 +84,11 @@ from .pick_object.parsing_helpers import (
     sanitize_ros_ns as _sanitize_ros_ns_pure,
     tf_stamp_ns as _tf_stamp_ns_pure,
 )
+from .pick_object.wait_helpers import (
+    clamp_grace_window as _clamp_grace_window,
+    compute_wait_chunk_sec as _compute_wait_chunk_sec,
+    format_wait_state_log as _fmt_wait_state_log,
+)
 
 
 _PICK_OBJECT_GRIPPER_GEOMETRY = load_gripper_geometry()
@@ -1540,27 +1545,33 @@ def run_pick_object(panel) -> None:
             last_seen_request_id = -1
             last_seen_request_uuid = ""
             try:
-                active_request_grace_sec = _get_pick_object_params().moveit_active_request_grace_sec
+                _grace_raw = _get_pick_object_params().moveit_active_request_grace_sec
             except Exception:
-                active_request_grace_sec = 90.0
-            active_request_grace_sec = max(10.0, active_request_grace_sec)
+                _grace_raw = None
+            active_request_grace_sec = _clamp_grace_window(_grace_raw, floor=10.0, default=90.0)
             try:
-                hb_recent_window_sec = _get_pick_object_params().moveit_active_request_hb_sec
+                _hb_raw = _get_pick_object_params().moveit_active_request_hb_sec
             except Exception:
-                hb_recent_window_sec = 2.5
-            hb_recent_window_sec = max(1.2, hb_recent_window_sec)
+                _hb_raw = None
+            hb_recent_window_sec = _clamp_grace_window(_hb_raw, floor=1.2, default=2.5)
             # Contract matching: accept ONLY the expected request_id for this publish.
             expected_request_id = int(getattr(_wait_moveit_result, "_expected_request_id", -1) or -1)
             expected_stamp_ns = int(getattr(_wait_moveit_result, "_expected_stamp_ns", 0) or 0)
             expected_request_uuid = str(getattr(_wait_moveit_result, "_expected_request_uuid", "") or "")
             panel_request_id = int(getattr(_wait_moveit_result, "_panel_request_id", -1) or -1)
             panel._emit_log(
-                f"[PICK_OBJ][WAIT_RESULT] state=enter label={label} elapsed=0.0s "
-                f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
-                f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
+                _fmt_wait_state_log(
+                    state="enter",
+                    label=label,
+                    elapsed_sec=0.0,
+                    expected_id=expected_request_id,
+                    expected_uuid=expected_request_uuid,
+                    last_seen_id=last_seen_request_id,
+                    last_seen_uuid=last_seen_request_uuid,
+                )
             )
             while time.time() < deadline:
-                wait_chunk = min(1.0, max(0.2, deadline - time.time()))
+                wait_chunk = _compute_wait_chunk_sec(deadline, time.time())
                 ok, raw, _wall, _seq = panel.ros_worker.wait_for_moveit_result(
                     since_wall=cursor_wall,
                     since_seq=cursor_seq,
