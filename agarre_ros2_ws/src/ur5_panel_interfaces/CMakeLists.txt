@@ -15,6 +15,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/WorldToBase.srv"
   "srv/ComputeApproachPose.srv"
   "action/PickPlace.action"
+  "action/PlanToPose.action"
   DEPENDENCIES geometry_msgs
 )
 

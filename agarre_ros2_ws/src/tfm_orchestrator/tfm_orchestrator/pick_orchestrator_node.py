@@ -34,7 +34,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
-from ur5_panel_interfaces.action import PickPlace
+from ur5_panel_interfaces.action import PickPlace, PlanToPose
 from ur5_panel_interfaces.srv import (
     Attach as AttachSrv,
     Close as CloseSrv,
@@ -46,8 +46,10 @@ from ur5_panel_interfaces.srv import (
 
 from .pick_fsm import PickContext, PickPhase
 from .service_clients import (
+    ActionCallResult,
     PhaseServiceMap,
     ServiceCallResult,
+    call_action_with_timeout,
     call_service_with_timeout,
 )
 
@@ -232,11 +234,13 @@ class PickOrchestratorNode(Node):
             return r.success, f"select_object:{r.reason}"
 
         if phase == PickPhase.APPROACH:
-            # Sin un service real para "approach exec"; F6.2 añadirá
-            # PlanToPose.action. Por ahora devolvemos ok para no
-            # bloquear (es un placeholder honesto: el orchestrator
-            # NO puede ejecutar approach todavía sin planner).
-            return True, "approach_placeholder_no_planner_yet"
+            # F6.3: usar PlanToPose.action con clearance Z sobre el
+            # objeto. Sin acceso al ComputeApproachPose service todavía,
+            # construimos un goal con un offset Z fijo (el server real
+            # ya hará el computo de pose en su lado).
+            goal = self._build_plan_to_pose_goal_for_approach(ctx)
+            r = self._call_plan_to_pose(goal)
+            return r.success, f"approach:{r.reason}"
 
         if phase == PickPhase.GRASP:
             # 1) Cerrar gripper.
@@ -257,12 +261,17 @@ class PickOrchestratorNode(Node):
             return r_att.success, f"grasp_attach:{r_att.reason}"
 
         if phase == PickPhase.LIFT:
-            # Placeholder: futuro PlanToPose.action.
-            return True, "lift_placeholder_no_planner_yet"
+            # F6.3: Z+ relativo desde el frame actual.
+            goal = self._build_plan_to_pose_goal_for_lift(ctx)
+            r = self._call_plan_to_pose(goal)
+            return r.success, f"lift:{r.reason}"
 
         if phase == PickPhase.TRANSPORT:
-            # Placeholder: requiere WorldToBase + PlanToPose.action.
-            return True, "transport_placeholder_no_planner_yet"
+            # F6.3: planning a drop_xyz_world (en world). El planner del
+            # action server se encargará de world→base si lo necesita.
+            goal = self._build_plan_to_pose_goal_for_transport(ctx)
+            r = self._call_plan_to_pose(goal)
+            return r.success, f"transport:{r.reason}"
 
         if phase == PickPhase.RELEASE:
             # 1) Detach.
@@ -285,6 +294,71 @@ class PickOrchestratorNode(Node):
         # Cualquier otra fase no debería entrar aquí (filtramos DONE
         # en el caller). Si entra, no fallamos — devolvemos ok inerte.
         return True, f"{phase.value}_no_op"
+
+    # ------------------------------------------------------------------
+    # F6.3 — PlanToPose action goal builders + caller
+    # ------------------------------------------------------------------
+
+    def _call_plan_to_pose(self, goal: PlanToPose.Goal) -> ActionCallResult:
+        """Wrapper común para invocar el PlanToPose action server."""
+        return call_action_with_timeout(
+            self,
+            PlanToPose,
+            self._service_map.plan_to_pose_action,
+            goal,
+            discovery_timeout_sec=self._discovery_timeout,
+            accept_timeout_sec=max(self._discovery_timeout, 3.0),
+            result_timeout_sec=max(self._call_timeout, 30.0),
+            client_cache=self._client_cache,
+        )
+
+    def _build_plan_to_pose_goal_for_approach(self, ctx: PickContext) -> PlanToPose.Goal:
+        """Goal placeholder — el server real hará computo de pose.
+
+        Por ahora envía pose neutra (origen) como target; el server real
+        debería resolver la pose de aproach del objeto desde su nombre.
+        F6.4 (panel cliente) o F6.5 (server real) refinarán esto.
+        """
+        from geometry_msgs.msg import Pose, Point, Quaternion
+        goal = PlanToPose.Goal()
+        goal.target_pose_base = Pose(
+            position=Point(x=0.0, y=0.0, z=0.0),
+            orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
+        )
+        goal.ee_frame = "rg2_pinch_center"
+        goal.cartesian = False
+        goal.timeout_sec = 0.0
+        return goal
+
+    def _build_plan_to_pose_goal_for_lift(self, ctx: PickContext) -> PlanToPose.Goal:
+        """Goal de lift: Z+ relativo (placeholder)."""
+        from geometry_msgs.msg import Pose, Point, Quaternion
+        goal = PlanToPose.Goal()
+        goal.target_pose_base = Pose(
+            position=Point(x=0.0, y=0.0, z=0.20),  # 20cm arriba (placeholder)
+            orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
+        )
+        goal.ee_frame = "rg2_pinch_center"
+        goal.cartesian = True  # lift suele ser cartesiano lineal
+        goal.timeout_sec = 0.0
+        return goal
+
+    def _build_plan_to_pose_goal_for_transport(self, ctx: PickContext) -> PlanToPose.Goal:
+        """Goal de transport: drop_xyz_world del request original."""
+        from geometry_msgs.msg import Pose, Point, Quaternion
+        goal = PlanToPose.Goal()
+        goal.target_pose_base = Pose(
+            position=Point(
+                x=float(ctx.drop_xyz_world[0]),
+                y=float(ctx.drop_xyz_world[1]),
+                z=float(ctx.drop_xyz_world[2]),
+            ),
+            orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
+        )
+        goal.ee_frame = "rg2_pinch_center"
+        goal.cartesian = False
+        goal.timeout_sec = 0.0
+        return goal
 
     def _publish_feedback(self, goal_handle, ctx: PickContext) -> None:
         snap = ctx.feedback_snapshot()

@@ -172,6 +172,7 @@ class PhaseServiceMap:
     attach: str = "/orchestrator/attach"
     detach: str = "/orchestrator/detach"
     world_to_base: str = "/orchestrator/world_to_base"
+    plan_to_pose_action: str = "/orchestrator/plan_to_pose"
 
     @classmethod
     def from_dict(cls, overrides: Dict[str, str]) -> "PhaseServiceMap":
@@ -179,3 +180,144 @@ class PhaseServiceMap:
         valid_keys = {f.name for f in cls.__dataclass_fields__.values()}
         kwargs = {k: v for k, v in overrides.items() if k in valid_keys}
         return cls(**kwargs)
+
+
+# ---------------------------------------------------------------------------
+# F6.3: Action client helper (similar pattern al de service_clients)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ActionCallResult:
+    """Resultado de una action call.
+
+    Atributos:
+        success: True si el action server respondió y la respuesta tiene
+            success=True (o no expone success). False si el server no
+            apareció, el goal fue rechazado, hubo timeout o el result
+            llegó con success=False.
+        reason: cadena descriptiva del estado.
+        result: payload .result del action o None.
+        feedback_count: nº de feedback recibidos durante la ejecución.
+        elapsed_sec: tiempo total transcurrido.
+    """
+
+    success: bool
+    reason: str
+    result: Optional[Any] = None
+    feedback_count: int = 0
+    elapsed_sec: float = 0.0
+
+
+def call_action_with_timeout(
+    node: Any,
+    action_type: Any,
+    action_name: str,
+    goal: Any,
+    *,
+    discovery_timeout_sec: float = 2.0,
+    accept_timeout_sec: float = 3.0,
+    result_timeout_sec: float = 60.0,
+    feedback_callback: Optional[Any] = None,
+    client_cache: Optional[Dict[str, Any]] = None,
+) -> ActionCallResult:
+    """Llama a un action server y devuelve un ``ActionCallResult``.
+
+    No levanta excepciones; toda condición de error vuelve como
+    ``ActionCallResult(success=False, reason=…)``.
+
+    Parameters:
+        node: nodo ROS 2 (rclpy.node.Node) que hace la llamada.
+        action_type: clase del action (ej. PlanToPose).
+        action_name: nombre absoluto del action server.
+        goal: instancia de la Goal del action.
+        discovery_timeout_sec: cuánto esperar a que aparezca el server.
+        accept_timeout_sec: cuánto esperar al accept del goal.
+        result_timeout_sec: cuánto esperar al result tras accept.
+        feedback_callback: opcional, llamado con cada Feedback que llega.
+        client_cache: dict opcional para reusar clients entre calls.
+    """
+    import time as _time
+    try:
+        import rclpy as _rclpy
+        from rclpy.action import ActionClient as _ActionClient
+    except ImportError:
+        return ActionCallResult(
+            success=False,
+            reason="rclpy_unavailable",
+        )
+
+    start = _time.monotonic()
+    feedback_box = {"count": 0}
+
+    def _feedback_wrapper(fb_msg):
+        feedback_box["count"] += 1
+        if feedback_callback is not None:
+            try:
+                feedback_callback(fb_msg)
+            except Exception:
+                pass
+
+    try:
+        if client_cache is not None and action_name in client_cache:
+            client = client_cache[action_name]
+        else:
+            client = _ActionClient(node, action_type, action_name)
+            if client_cache is not None:
+                client_cache[action_name] = client
+
+        if not client.wait_for_server(timeout_sec=discovery_timeout_sec):
+            return ActionCallResult(
+                success=False,
+                reason=f"action_server_unavailable:{action_name}",
+                elapsed_sec=_time.monotonic() - start,
+            )
+
+        send_future = client.send_goal_async(goal, feedback_callback=_feedback_wrapper)
+        _rclpy.spin_until_future_complete(node, send_future, timeout_sec=accept_timeout_sec)
+        if not send_future.done():
+            return ActionCallResult(
+                success=False,
+                reason=f"goal_send_timeout:{action_name}",
+                feedback_count=feedback_box["count"],
+                elapsed_sec=_time.monotonic() - start,
+            )
+
+        goal_handle = send_future.result()
+        if goal_handle is None or not getattr(goal_handle, "accepted", False):
+            return ActionCallResult(
+                success=False,
+                reason=f"goal_rejected:{action_name}",
+                feedback_count=feedback_box["count"],
+                elapsed_sec=_time.monotonic() - start,
+            )
+
+        result_future = goal_handle.get_result_async()
+        _rclpy.spin_until_future_complete(node, result_future, timeout_sec=result_timeout_sec)
+        if not result_future.done():
+            return ActionCallResult(
+                success=False,
+                reason=f"result_timeout:{action_name}",
+                feedback_count=feedback_box["count"],
+                elapsed_sec=_time.monotonic() - start,
+            )
+
+        wrapper = result_future.result()
+        payload = getattr(wrapper, "result", None)
+        ok = _response_success(payload)
+        msg = _response_message(payload) or ("ok" if ok else "action_returned_false")
+        return ActionCallResult(
+            success=ok,
+            reason=msg,
+            result=payload,
+            feedback_count=feedback_box["count"],
+            elapsed_sec=_time.monotonic() - start,
+        )
+
+    except Exception as exc:
+        return ActionCallResult(
+            success=False,
+            reason=f"exception:{type(exc).__name__}:{exc}",
+            feedback_count=feedback_box["count"],
+            elapsed_sec=_time.monotonic() - start,
+        )

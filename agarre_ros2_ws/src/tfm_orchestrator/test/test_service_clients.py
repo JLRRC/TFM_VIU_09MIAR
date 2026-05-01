@@ -25,8 +25,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from tfm_orchestrator.service_clients import (
+    ActionCallResult,
     PhaseServiceMap,
     ServiceCallResult,
+    call_action_with_timeout,
     call_service_with_timeout,
 )
 
@@ -239,3 +241,175 @@ def test_phase_service_map_from_dict_ignores_unknown():
     m = PhaseServiceMap.from_dict({"unknown_key": "x", "gripper_open": "/y"})
     assert m.gripper_open == "/y"
     # No raise
+
+
+def test_phase_service_map_includes_plan_to_pose():
+    m = PhaseServiceMap()
+    assert m.plan_to_pose_action == "/orchestrator/plan_to_pose"
+
+
+# ---------------------------------------------------------------------------
+# F6.3: call_action_with_timeout
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_rclpy_action(monkeypatch):
+    """Inyecta rclpy + rclpy.action mocks."""
+    fake_rclpy = types.ModuleType("rclpy")
+    fake_rclpy.spin_until_future_complete = MagicMock()
+    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
+
+    fake_rclpy_action = types.ModuleType("rclpy.action")
+    # ActionClient se reemplaza dinámicamente en cada test.
+    fake_rclpy_action.ActionClient = MagicMock()
+    monkeypatch.setitem(sys.modules, "rclpy.action", fake_rclpy_action)
+    return fake_rclpy, fake_rclpy_action
+
+
+def _make_action_client_mock(*, server_available=True, goal_accepted=True,
+                             result_payload=None, send_done=True, result_done=True):
+    """Construye una clase falsa ActionClient cuyo constructor devuelve
+    un mock con wait_for_server / send_goal_async / etc. preconfigurados."""
+
+    instance = MagicMock(name="ActionClient")
+    instance.wait_for_server = MagicMock(return_value=server_available)
+
+    def _send_goal_async(goal, feedback_callback=None):  # noqa: ARG001
+        send_future = MagicMock(name="SendFuture")
+        send_future.done = MagicMock(return_value=send_done)
+        if send_done:
+            goal_handle = MagicMock(name="GoalHandle")
+            goal_handle.accepted = goal_accepted
+
+            result_future = MagicMock(name="ResultFuture")
+            result_future.done = MagicMock(return_value=result_done)
+            if result_done:
+                wrapper = MagicMock(name="ResultWrapper")
+                wrapper.result = result_payload
+                result_future.result = MagicMock(return_value=wrapper)
+            goal_handle.get_result_async = MagicMock(return_value=result_future)
+            send_future.result = MagicMock(return_value=goal_handle)
+        return send_future
+
+    instance.send_goal_async = _send_goal_async
+
+    def _factory(node, action_type, name):  # noqa: ARG001
+        return instance
+
+    return _factory, instance
+
+
+def test_action_returns_dataclass(mock_rclpy_action):
+    fake_rclpy, fake_action_mod = mock_rclpy_action
+    payload = types.SimpleNamespace(success=True, reason="planned")
+    factory, _ = _make_action_client_mock(result_payload=payload)
+    fake_action_mod.ActionClient = factory
+
+    node = MagicMock()
+    r = call_action_with_timeout(node, MagicMock, "/act", MagicMock())
+    assert isinstance(r, ActionCallResult)
+    assert r.success is True
+    assert r.reason == "planned"
+
+
+def test_action_server_unavailable(mock_rclpy_action):
+    fake_rclpy, fake_action_mod = mock_rclpy_action
+    factory, _ = _make_action_client_mock(server_available=False)
+    fake_action_mod.ActionClient = factory
+
+    node = MagicMock()
+    r = call_action_with_timeout(node, MagicMock, "/missing", MagicMock(),
+                                  discovery_timeout_sec=0.01)
+    assert r.success is False
+    assert r.reason == "action_server_unavailable:/missing"
+
+
+def test_action_goal_rejected(mock_rclpy_action):
+    fake_rclpy, fake_action_mod = mock_rclpy_action
+    factory, _ = _make_action_client_mock(goal_accepted=False)
+    fake_action_mod.ActionClient = factory
+
+    node = MagicMock()
+    r = call_action_with_timeout(node, MagicMock, "/act", MagicMock())
+    assert r.success is False
+    assert r.reason == "goal_rejected:/act"
+
+
+def test_action_send_timeout(mock_rclpy_action):
+    fake_rclpy, fake_action_mod = mock_rclpy_action
+    factory, _ = _make_action_client_mock(send_done=False)
+    fake_action_mod.ActionClient = factory
+
+    node = MagicMock()
+    r = call_action_with_timeout(node, MagicMock, "/act", MagicMock(),
+                                  accept_timeout_sec=0.01)
+    assert r.success is False
+    assert r.reason == "goal_send_timeout:/act"
+
+
+def test_action_result_timeout(mock_rclpy_action):
+    fake_rclpy, fake_action_mod = mock_rclpy_action
+    factory, _ = _make_action_client_mock(result_done=False)
+    fake_action_mod.ActionClient = factory
+
+    node = MagicMock()
+    r = call_action_with_timeout(node, MagicMock, "/act", MagicMock(),
+                                  result_timeout_sec=0.01)
+    assert r.success is False
+    assert r.reason == "result_timeout:/act"
+
+
+def test_action_result_success_false(mock_rclpy_action):
+    fake_rclpy, fake_action_mod = mock_rclpy_action
+    payload = types.SimpleNamespace(success=False, reason="planning_failed")
+    factory, _ = _make_action_client_mock(result_payload=payload)
+    fake_action_mod.ActionClient = factory
+
+    node = MagicMock()
+    r = call_action_with_timeout(node, MagicMock, "/act", MagicMock())
+    assert r.success is False
+    assert r.reason == "planning_failed"
+
+
+def test_action_feedback_callback_invoked(mock_rclpy_action):
+    fake_rclpy, fake_action_mod = mock_rclpy_action
+    payload = types.SimpleNamespace(success=True, reason="ok")
+    factory, instance = _make_action_client_mock(result_payload=payload)
+    fake_action_mod.ActionClient = factory
+
+    received = []
+
+    def fb_cb(fb):
+        received.append(fb)
+
+    # send_goal_async normalmente invoca callbacks vía spin; aquí
+    # sólo verificamos que el callback se pase. No simulamos feedback
+    # entrante (eso es cosa del runtime ROS).
+    node = MagicMock()
+    r = call_action_with_timeout(node, MagicMock, "/act", MagicMock(),
+                                  feedback_callback=fb_cb)
+    assert r.success is True
+    # Con el mock no se entregan feedbacks, así que received está vacío
+    # pero el callback no debería romper la ejecución.
+    assert received == []
+
+
+def test_action_rclpy_unavailable(monkeypatch):
+    if "rclpy" in sys.modules:
+        monkeypatch.delitem(sys.modules, "rclpy")
+    if "rclpy.action" in sys.modules:
+        monkeypatch.delitem(sys.modules, "rclpy.action")
+
+    real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name in ("rclpy", "rclpy.action"):
+            raise ImportError(f"{name} not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    node = MagicMock()
+    r = call_action_with_timeout(node, MagicMock, "/x", MagicMock())
+    assert r.success is False
+    assert r.reason == "rclpy_unavailable"

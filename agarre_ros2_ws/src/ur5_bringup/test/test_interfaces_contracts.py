@@ -108,6 +108,43 @@ def test_pickplace_action_has_expected_sections():
 
 
 # ---------------------------------------------------------------------------
+# PlanToPose.action (F6.3)
+# ---------------------------------------------------------------------------
+
+
+def test_plantopose_action_exists():
+    f = INTERFACES_DIR / "action" / "PlanToPose.action"
+    assert f.is_file(), f"falta PlanToPose.action en {f}"
+
+
+def test_plantopose_action_has_expected_sections():
+    text = (INTERFACES_DIR / "action" / "PlanToPose.action").read_text()
+    goal, result, feedback = _split_action(text)
+    g = dict(_parse_section_fields(goal))
+    r = dict(_parse_section_fields(result))
+    f = dict(_parse_section_fields(feedback))
+
+    # Goal: target_pose_base + ee_frame + cartesian + timeout
+    assert g.get("target_pose_base") == "geometry_msgs/Pose", f"goal: {g}"
+    assert g.get("ee_frame") == "string", f"goal: {g}"
+    assert g.get("cartesian") == "bool", f"goal: {g}"
+    assert g.get("timeout_sec") == "float64", f"goal: {g}"
+
+    # Result: success + reason + final_pose_base + duration_sec + attempts
+    assert r.get("success") == "bool"
+    assert r.get("reason") == "string"
+    assert r.get("final_pose_base") == "geometry_msgs/Pose"
+    assert r.get("duration_sec") == "float64"
+    assert r.get("attempts") == "int32"
+
+    # Feedback: current_state + progress + attempts + detail
+    assert f.get("current_state") == "string"
+    assert f.get("progress") == "float32"
+    assert f.get("attempts") == "int32"
+    assert f.get("detail") == "string"
+
+
+# ---------------------------------------------------------------------------
 # Service contracts
 # ---------------------------------------------------------------------------
 
@@ -188,6 +225,7 @@ def test_cmake_lists_all_interfaces():
     for srv in EXPECTED_SRV:
         assert srv in cmake, f"CMakeLists.txt no genera {srv}"
     assert "PickPlace.action" in cmake, "CMakeLists.txt no genera PickPlace.action"
+    assert "PlanToPose.action" in cmake, "CMakeLists.txt no genera PlanToPose.action"
 
 
 def test_package_xml_dependencies():

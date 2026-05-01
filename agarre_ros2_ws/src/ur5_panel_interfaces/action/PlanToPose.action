@@ -1,0 +1,23 @@
+# Action de planificación + ejecución de movimiento del UR5+RG2 a una pose objetivo.
+# Goal: pose objetivo en base_link + frame del end-effector + modo cartesiano + timeout.
+# Result: success + reason + pose final alcanzada + duracion.
+# Feedback: estado actual (PLANNING / EXECUTING / RETRYING) + progreso + intentos.
+
+# Goal
+geometry_msgs/Pose target_pose_base
+string ee_frame                # rg2_pinch_center | rg2_tcp | tool0
+bool cartesian                  # true: linear cartesian, false: joint plan
+float64 timeout_sec             # 0 o negativo = usar default del planner
+---
+# Result
+bool success
+string reason
+geometry_msgs/Pose final_pose_base   # pose alcanzada (puede diferir del target)
+float64 duration_sec
+int32 attempts
+---
+# Feedback
+string current_state            # PLANNING | EXECUTING | RETRYING
+float32 progress                # [0.0, 1.0] estimado
+int32 attempts                  # nº de re-intentos hasta el momento
+string detail                   # detalle libre del planner
