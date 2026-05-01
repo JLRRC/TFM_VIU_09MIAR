@@ -25,6 +25,42 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ---------------------------------------------------------------------
+  # Job rápido y robusto: pytest sobre el subset offline (sin ROS, sin
+  # Gazebo, sin Qt). Cubre los 6 dataclasses *_params.py + helpers
+  # puros. Pasa siempre que las dataclasses estén coherentes; útil para
+  # detectar regresiones triviales sin esperar al build colcon completo.
+  # ---------------------------------------------------------------------
+  offline-tests:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pytest + PyYAML
+        run: pip install pytest pyyaml
+
+      - name: pytest offline subset (sin ROS, sin Qt)
+        working-directory: agarre_ros2_ws/src/ur5_qt_panel
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q \
+            test/test_panel_pick_demo_params.py \
+            test/test_panel_pick_object_params.py \
+            test/test_panel_ros_params.py \
+            test/test_panel_ui_params.py \
+            test/test_panel_tfm_params.py \
+            test/test_pick_demo_pure_helpers.py \
+            test/test_panel_ros_msg_helpers.py \
+            test/test_directo_geometry.py
+
   build-test:
     runs-on: ubuntu-22.04
     timeout-minutes: 25
