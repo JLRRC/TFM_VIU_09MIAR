@@ -76,6 +76,14 @@ from .panel_objects import (
 )
 from .panel_readiness import pick_ui_status, tf_ready_status
 from .panel_state import MoveItState
+from .pick_object.parsing_helpers import (
+    is_step_exec_failed as _is_step_exec_failed_pure,
+    is_step_tf_mismatch as _is_step_tf_mismatch_pure,
+    max_joint_error as _max_joint_error_pure,
+    norm_frame as _norm_frame_pure,
+    sanitize_ros_ns as _sanitize_ros_ns_pure,
+    tf_stamp_ns as _tf_stamp_ns_pure,
+)
 
 
 _PICK_OBJECT_GRIPPER_GEOMETRY = load_gripper_geometry()
@@ -1121,7 +1129,7 @@ def run_pick_object(panel) -> None:
         live_tf_listener = None
 
         def _norm_frame(frame_name: str) -> str:
-            return (frame_name or "").strip().lstrip("/")
+            return _norm_frame_pure(frame_name)
 
         def _log_selection_changed_during_pick() -> None:
             nonlocal selection_change_logged
@@ -1304,26 +1312,12 @@ def run_pick_object(panel) -> None:
             return live_world_xyz, live_base_xyz, "pose_info/live"
 
         def _tf_stamp_ns(tf_msg: Optional[object]) -> int:
-            try:
-                stamp = tf_msg.header.stamp  # type: ignore[attr-defined]
-                return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
-            except Exception:
-                return 0
+            return _tf_stamp_ns_pure(tf_msg)
 
         def _ros_clock_now_ns() -> int:
             # Use live ROS clock first; cached /clock is only a fallback.
             # This avoids stale cache values inflating TF age diagnostics.
-            def _sanitize_ros_ns(raw: object) -> int:
-                try:
-                    value = int(raw or 0)
-                except Exception:
-                    return 0
-                if value <= 0:
-                    return 0
-                # Filter out wall-time epoch values in sim-time checks.
-                if value > 1_000_000_000_000_000:
-                    return 0
-                return value
+            _sanitize_ros_ns = _sanitize_ros_ns_pure
 
             try:
                 if panel._ros_worker_started and panel.ros_worker.node_ready():
@@ -1978,17 +1972,8 @@ def run_pick_object(panel) -> None:
                 carry_joint_move_sec = 8.0
             carry_joint_move_sec = max(move_sec, carry_joint_move_sec)
 
-            def _is_step_tf_mismatch(msg: str, label: str) -> bool:
-                return "exec_succeeded_but_tf_mismatch" in str(msg) and f"label={label}" in str(msg)
-
-            def _is_step_exec_failed(msg: str, label: str) -> bool:
-                txt = str(msg)
-                return (
-                    f"execute failed ({label})" in txt
-                    or (f"label={label}" in txt and "exec_failed:" in txt)
-                    or (f"label={label}" in txt and "fjt_result_timeout" in txt)
-                    or (f"label={label}" in txt and "deterministic_joint_mode" in txt)
-                )
+            _is_step_tf_mismatch = _is_step_tf_mismatch_pure
+            _is_step_exec_failed = _is_step_exec_failed_pure
 
             def _run_joint_step(
                 label: str,
@@ -2092,13 +2077,7 @@ def run_pick_object(panel) -> None:
                     out.append(float(joint_map[joint_name]))
                 return out
 
-            def _max_joint_error(current: List[float], target: List[float]) -> float:
-                if not current or not target:
-                    return float("inf")
-                return max(
-                    abs(float(curr) - float(goal))
-                    for curr, goal in zip(current, target)
-                )
+            _max_joint_error = _max_joint_error_pure
 
             def _ensure_home_start() -> None:
                 force_home_start = _get_pick_object_params().force_home_start
