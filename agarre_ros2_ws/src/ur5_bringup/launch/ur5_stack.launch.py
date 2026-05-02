@@ -27,6 +27,8 @@ from launch_helpers import (
     resolve_gz_partition,
     resolve_world_name,
 )
+from gz_factory import build_gz_actions
+from runtime_nodes_factory import build_runtime_node_actions
 
 
 # Runtime defaults loaded from YAML at module import time.
@@ -38,22 +40,16 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     ExecuteProcess,
-    GroupAction,
     IncludeLaunchDescription,
-    RegisterEventHandler,
-    EmitEvent,
     OpaqueFunction,
     SetEnvironmentVariable,
     SetLaunchConfiguration,
 )
-from launch.events import Shutdown
-from launch.event_handlers import OnProcessExit
-from launch.conditions import IfCondition, UnlessCondition
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.logging import get_logger
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
-from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from ament_index_python.packages import get_package_share_directory
 from ur5_tools.gripper_geometry import (
@@ -437,191 +433,40 @@ def generate_launch_description():
         condition=IfCondition(bootstrap_controllers),
     )
 
-    gz_headless = ExecuteProcess(
-        cmd=[
-            "gz",
-            "sim",
-            "-s",
-            "-r",
-            "--headless-rendering",
-            "--render-engine",
-            render_engine,
-            world_file,
-        ],
-        output="screen",
-        condition=IfCondition(headless),
-    )
-    gz_gui_server = ExecuteProcess(
-        cmd=[
-            "gz",
-            "sim",
-            "-s",
-            "-r",
-            "--headless-rendering",
-            "--render-engine",
-            render_engine,
-            world_file,
-        ],
-        output="screen",
-        condition=UnlessCondition(headless),
-    )
-    gz_gui = ExecuteProcess(
-        cmd=["gz", "sim", "-g", "--gui-config", gui_config_file],
-        output="screen",
-        condition=UnlessCondition(headless),
-    )
-    gz_group = GroupAction(
-        actions=[gz_headless, gz_gui_server, gz_gui],
-        condition=IfCondition(launch_gazebo),
-    )
-    gz_shutdown_headless = RegisterEventHandler(
-        OnProcessExit(
-            target_action=gz_headless,
-            on_exit=[EmitEvent(event=Shutdown(reason="gz sim exited (headless)"))],
-        ),
-        condition=IfCondition(launch_gazebo),
-    )
-    gz_shutdown_gui = RegisterEventHandler(
-        OnProcessExit(
-            target_action=gz_gui_server,
-            on_exit=[EmitEvent(event=Shutdown(reason="gz sim server exited (gui mode)"))],
-        ),
-        condition=IfCondition(launch_gazebo),
+    # F17 (2026-05-01): el subgrupo Gazebo se construye en gz_factory.
+    gz_actions = build_gz_actions(
+        world_file=world_file,
+        render_engine=render_engine,
+        gui_config_file=gui_config_file,
+        headless=headless,
+        launch_gazebo=launch_gazebo,
+        launch_bridge=launch_bridge,
+        runtime_yaml=LaunchConfiguration("runtime_yaml"),
+        world_name=LaunchConfiguration("world_name"),
+        use_sim_time=use_sim_time,
     )
 
-    bridge = Node(
-        package="ros_gz_bridge",
-        executable="parameter_bridge",
-        name="ros_gz_bridge_main",
-        output="screen",
-        arguments=["--ros-args", "-p", "use_sim_time:=true"],
-        parameters=[
-            {"config_file": LaunchConfiguration("runtime_yaml")},
-            {"use_sim_time": ParameterValue(use_sim_time, value_type=bool)},
-        ],
-        condition=IfCondition(launch_bridge),
-    )
-    bridge_guard = RegisterEventHandler(
-        OnProcessExit(
-            target_action=bridge,
-            on_exit=[EmitEvent(event=Shutdown(reason="parameter_bridge exited"))],
-        ),
-        condition=IfCondition(launch_bridge),
-    )
-
-    gz_control_guard = Node(
-        package="ur5_tools",
-        executable="gz_ros_control_guard",
-        output="screen",
-        parameters=[
-            {"use_sim_time": use_sim_time},
-            {"hold_joints": False},
-        ],
-        condition=IfCondition(launch_gazebo),
-    )
-
-    gz_pose_bridge = Node(
-        package="ur5_tools",
-        executable="gz_pose_bridge",
-        output="screen",
-        parameters=[
-            {"world_name": LaunchConfiguration("world_name")},
-            {"world_frame": "world"},
-            {"startup_timeout_sec": 5.0},
-            {"use_sim_time": use_sim_time},
-        ],
-        condition=IfCondition(launch_gazebo),
-    )
-    gz_pose_guard = RegisterEventHandler(
-        OnProcessExit(
-            target_action=gz_pose_bridge,
-            on_exit=[EmitEvent(event=Shutdown(reason="gz_pose_bridge exited"))],
-        ),
-        condition=IfCondition(launch_gazebo),
-    )
-
-    world_tf = Node(
-        package="ur5_tools",
-        executable="world_tf_publisher",
-        output="screen",
-        parameters=[
-            {"world_name": LaunchConfiguration("world_name")},
-            {"model_name": "ur5_rg2"},
-            {"base_frame": "base_link"},
-            {"world_frame": "world"},
-            {"clock_timeout_sec": 20.0},
-            {"pose_timeout_sec": 12.0},
-            {"use_sim_time": use_sim_time},
-            # static_grace_sec < 0: publish world->base_link on /tf_static immediately
-            # from the world file pose, without waiting for /clock or Gazebo.
-            # Eliminates the TF-null window during the first 3-5 minutes of startup.
-            {"static_grace_sec": -1.0},
-        ],
-        condition=IfCondition(launch_world_tf),
-    )
-    # world_tf_publisher is helpful but non-critical; do not shutdown whole stack if it exits.
-    world_tf_guard = GroupAction(actions=[])
-
-    system_state = Node(
-        package="ur5_tools",
-        executable="system_state_manager",
-        output="screen",
-        parameters=[
-            PathJoinSubstitution(
-                [FindPackageShare("ur5_bringup"), "config", "system_state_manager.yaml"]
-            ),
-            {"use_sim_time": use_sim_time},
-            {"world_name": LaunchConfiguration("world_name")},
-            {"model_name": "ur5_rg2"},
-            {"base_frame": "base_link"},
-            {"world_frame": "world"},
-            {"ee_frame": "rg2_tcp"},
-            {"camera_topic": "/camera_overhead/image"},
-            {"camera_required": ParameterValue(camera_required, value_type=bool)},
-            {"controller_manager": LaunchConfiguration("controller_manager")},
-            {"moveit_required": ParameterValue(launch_moveit, value_type=bool)},
-            {
-                "geometry_offset_tol_m": float(
-                    _resolve_runtime("SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M", "0.002")
-                )
-            },
-            {
-                "geometry_pair_tol_m": float(
-                    _resolve_runtime("SYSTEM_STATE_GEOMETRY_PAIR_TOL_M", "0.001")
-                )
-            },
-            {
-                "startup_timeout_sec": float(
-                    _resolve_runtime("SYSTEM_STATE_STARTUP_TIMEOUT_SEC", "15.0")
-                )
-            },
-        ],
-        condition=IfCondition(launch_system_state),
-    )
-
-    system_state_guard = RegisterEventHandler(
-        OnProcessExit(
-            target_action=system_state,
-            on_exit=[EmitEvent(event=Shutdown(reason="system_state_manager exited"))],
-        ),
-        condition=IfCondition(launch_system_state),
-    )
-
-    release_service = Node(
-        package="ur5_tools",
-        executable="release_objects_service",
-        output="screen",
-        parameters=[
-            {"use_sim_time": use_sim_time},
-            {"world_sdf": LaunchConfiguration("world_file")},
-            {"world_name": LaunchConfiguration("world_name")},
-            {"delete_service": LaunchConfiguration("gz_delete_service")},
-            {"spawn_service": LaunchConfiguration("gz_spawn_service")},
-            {"settle_timeout_sec": 12.0},
-            {"settle_confirmations": 6},
-        ],
-        condition=IfCondition(launch_release_service),
-    )
+    # F17: parámetros runtime calculados aquí porque dependen de
+    # _resolve_runtime / _env_float / _env_flag (closures sobre el
+    # diccionario YAML cargado al import). Se pasan a la factory como
+    # listas/dicts ya resueltos.
+    system_state_extras = [
+        {
+            "geometry_offset_tol_m": float(
+                _resolve_runtime("SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M", "0.002")
+            )
+        },
+        {
+            "geometry_pair_tol_m": float(
+                _resolve_runtime("SYSTEM_STATE_GEOMETRY_PAIR_TOL_M", "0.001")
+            )
+        },
+        {
+            "startup_timeout_sec": float(
+                _resolve_runtime("SYSTEM_STATE_STARTUP_TIMEOUT_SEC", "15.0")
+            )
+        },
+    ]
 
     demo_transport_objects_env = os.environ.get(
         "ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS",
@@ -632,93 +477,54 @@ def generate_launch_description():
         for value in demo_transport_objects_env.split(",")
         if value.strip()
     ]
-
-    gripper_attach_backend_params = [
-        {"use_sim_time": use_sim_time},
-        {"attach_mode": LaunchConfiguration("attach_backend_mode")},
-        {"tcp_frame": "rg2_pinch_center"},
-        {"tool_anchor_prefix": "/gripper_anchor"},
+    attach_extras = [
         {
-            "max_pose_age_sec": LaunchConfiguration(
-                "attach_backend_max_pose_age_sec"
+            "gz_service_timeout_ms": int(
+                _resolve_runtime("ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS", "2000")
             )
         },
         {
-            "follow_rate_hz": LaunchConfiguration(
-                "attach_backend_follow_rate_hz"
+            "gz_cmd_timeout_sec": float(
+                _resolve_runtime("ATTACH_BACKEND_GZ_CMD_TIMEOUT_SEC", "3.0")
             )
         },
-        {
-            "follow_break_dist_m": LaunchConfiguration(
-                "attach_backend_follow_break_dist_m"
-            )
-        },
-        # FIX-ATTACH-THRESHOLD: tighten from 0.15 m to 0.05 m so that the backend
-        # only attaches when the TCP is geometrically close to the object (~contact).
-        # 0.15 m allowed false grasps; 0.05 m requires the gripper to be within ~5 cm.
-        {
-            "attach_max_dist_m": LaunchConfiguration(
-                "attach_backend_max_dist_m"
-            )
-        },
-        {"gz_service_timeout_ms": int(_resolve_runtime("ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS", "2000"))},
-        {"gz_cmd_timeout_sec": float(_resolve_runtime("ATTACH_BACKEND_GZ_CMD_TIMEOUT_SEC", "3.0"))},
-        # detachable_shadow_follow=False: disables the physics-joint shadow path for
-        # non-demo-transport objects. pick_demo goes through demo_transport exclusively
-        # (demo_transport_objects check fires first in _on_gripper_attach), so this
-        # flag only affects other objects that use detachable_joint mode.
-        {"detachable_shadow_follow": False},
-        # For the demo object we prefer deterministic transport once the grasp
-        # geometry gate has been passed. Leaving the list empty keeps the default
-        # follow_tcp behavior for the rest of the objects.
-        {"demo_transport_objects": demo_transport_objects},
     ]
-    if not demo_transport_objects:
-        gripper_attach_backend_params = gripper_attach_backend_params[:-1]
 
-    gripper_attach_backend = Node(
-        package="ur5_tools",
-        executable="gripper_attach_backend",
-        output="screen",
-        parameters=gripper_attach_backend_params,
-        condition=IfCondition(launch_attach_backend),
+    # FIX-DESIRED-GRASP / FIX-VELOCITY-SCALING / etc.: parámetros del
+    # ur5_moveit_bridge, calculados a partir de env vars de
+    # start_panel_v2.sh con _env_float / _env_flag.
+    bridge_exec_timeout = max(
+        1.0, _env_float("PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC", 150.0)
     )
-
-    planning_scene_sync = Node(
-        package="ur5_tools",
-        executable="planning_scene_sync",
-        output="screen",
-        parameters=[
-            {"use_sim_time": use_sim_time},
-            {"world_name": LaunchConfiguration("world_name")},
-            {"world_file": LaunchConfiguration("world_file")},
-            {"world_frame": "world"},
-            {"base_frame": "base_link"},
-            {"ee_frame": "rg2_tcp"},
-        ],
-        condition=IfCondition(launch_scene_sync),
+    bridge_request_timeout = max(
+        2.0, _env_float("PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC", 180.0)
     )
-
-    # FIX-DESIRED-GRASP: launch ur5_moveit_bridge as a standalone node so that
-    # /desired_grasp always has a real subscriber in the normal boot.
-    # Previously Subscription count was 0 because the bridge was only started
-    # on-demand via the panel button; this makes it part of the managed launch.
-    # When MoveIt (move_group) is not running the bridge will subscribe but will
-    # fall back to a no-op, ensuring the topic is live without crashing the stack.
-    bridge_exec_timeout = max(1.0, _env_float("PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC", 150.0))
-    bridge_request_timeout = max(2.0, _env_float("PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC", 180.0))
     bridge_stale_request_ttl_sec = max(
         20.0,
         _env_float("PANEL_MOVEIT_BRIDGE_STALE_REQUEST_TTL_SEC", 120.0),
     )
-    bridge_joint_state_timeout = max(0.2, _env_float("PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC", 6.0))
-    bridge_joint_state_max_age = max(0.1, _env_float("PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC", 2.5))
-    bridge_force_fjt_direct = _env_flag("PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT", False)
-    bridge_unwrap_continuous = _env_flag("PANEL_MOVEIT_BRIDGE_UNWRAP_CONTINUOUS_JOINTS", False)
-    bridge_require_request_id = _env_flag("PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID", True)
-    bridge_drop_pending = _env_flag("PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED", True)
+    bridge_joint_state_timeout = max(
+        0.2, _env_float("PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC", 6.0)
+    )
+    bridge_joint_state_max_age = max(
+        0.1, _env_float("PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC", 2.5)
+    )
+    bridge_force_fjt_direct = _env_flag(
+        "PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT", False
+    )
+    bridge_unwrap_continuous = _env_flag(
+        "PANEL_MOVEIT_BRIDGE_UNWRAP_CONTINUOUS_JOINTS", False
+    )
+    bridge_require_request_id = _env_flag(
+        "PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID", True
+    )
+    bridge_drop_pending = _env_flag(
+        "PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED", True
+    )
     bridge_dry_run = _env_flag("PANEL_MOVEIT_BRIDGE_DRY_RUN", False)
-    bridge_path_constraint_tol = max(0.0, _env_float("PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD", 0.35))
+    bridge_path_constraint_tol = max(
+        0.0, _env_float("PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD", 0.35)
+    )
     bridge_controller_goal_time_tol = max(
         0.0,
         _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TIME_TOL_SEC", 45.0),
@@ -738,11 +544,6 @@ def generate_launch_description():
         0.0,
         _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TOL_RAD", 0.20),
     )
-    # FIX-VELOCITY-SCALING: wire up PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE /
-    # PANEL_MOVEIT_BRIDGE_ACCEL_SCALE env vars (set in start_panel_v2.sh) to the
-    # bridge node parameters.  Previously these were exported but never read by the
-    # bridge, so it silently used the hard-coded default of 0.30.  Default kept at
-    # 0.30 here; set to 0.15 in start_panel_v2.sh for a more conservative profile.
     bridge_velocity_scale = max(
         0.05,
         min(1.0, _env_float("PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE", 0.30)),
@@ -751,36 +552,68 @@ def generate_launch_description():
         0.05,
         min(1.0, _env_float("PANEL_MOVEIT_BRIDGE_ACCEL_SCALE", 0.30)),
     )
-    moveit_bridge = Node(
-        package="ur5_tools",
-        executable="ur5_moveit_bridge",
-        output="screen",
-        parameters=[
-            {"use_sim_time": use_sim_time},
-            {"backend": "auto"},
-            {"base_frame": "base_link"},
-            {"ee_frame": "rg2_tcp"},
-            {"result_topic": "/desired_grasp/result"},
-            {"controller_manager": LaunchConfiguration("controller_manager")},
-            {"execute_timeout_sec": bridge_exec_timeout},
-            {"request_timeout_sec": bridge_request_timeout},
-            {"stale_request_ttl_sec": bridge_stale_request_ttl_sec},
-            {"joint_state_valid_timeout_sec": bridge_joint_state_timeout},
-            {"joint_state_valid_max_age_sec": bridge_joint_state_max_age},
-            {"force_fjt_direct_for_walltime_sim": bridge_force_fjt_direct},
-            {"unwrap_continuous_joints": bridge_unwrap_continuous},
-            {"require_request_id": bridge_require_request_id},
-            {"drop_pending_on_tagged_request": bridge_drop_pending},
-            {"dry_run_plan_only": bridge_dry_run},
-            {"path_constraint_joint_tolerance_rad": bridge_path_constraint_tol},
-            {"controller_goal_time_tolerance_sec": bridge_controller_goal_time_tol},
-            {"controller_expected_goal_time_sec": bridge_controller_expected_goal_time},
-            {"controller_path_tolerance_rad": bridge_controller_path_tol},
-            {"controller_goal_tolerance_rad": bridge_controller_goal_tol},
-            {"max_velocity_scaling_factor": bridge_velocity_scale},
-            {"max_acceleration_scaling_factor": bridge_accel_scale},
-        ],
-        condition=IfCondition(LaunchConfiguration("launch_moveit_bridge")),
+
+    bridge_params = [
+        {"use_sim_time": use_sim_time},
+        {"backend": "auto"},
+        {"base_frame": "base_link"},
+        {"ee_frame": "rg2_tcp"},
+        {"result_topic": "/desired_grasp/result"},
+        {"controller_manager": LaunchConfiguration("controller_manager")},
+        {"execute_timeout_sec": bridge_exec_timeout},
+        {"request_timeout_sec": bridge_request_timeout},
+        {"stale_request_ttl_sec": bridge_stale_request_ttl_sec},
+        {"joint_state_valid_timeout_sec": bridge_joint_state_timeout},
+        {"joint_state_valid_max_age_sec": bridge_joint_state_max_age},
+        {"force_fjt_direct_for_walltime_sim": bridge_force_fjt_direct},
+        {"unwrap_continuous_joints": bridge_unwrap_continuous},
+        {"require_request_id": bridge_require_request_id},
+        {"drop_pending_on_tagged_request": bridge_drop_pending},
+        {"dry_run_plan_only": bridge_dry_run},
+        {"path_constraint_joint_tolerance_rad": bridge_path_constraint_tol},
+        {"controller_goal_time_tolerance_sec": bridge_controller_goal_time_tol},
+        {"controller_expected_goal_time_sec": bridge_controller_expected_goal_time},
+        {"controller_path_tolerance_rad": bridge_controller_path_tol},
+        {"controller_goal_tolerance_rad": bridge_controller_goal_tol},
+        {"max_velocity_scaling_factor": bridge_velocity_scale},
+        {"max_acceleration_scaling_factor": bridge_accel_scale},
+    ]
+
+    runtime_actions = build_runtime_node_actions(
+        use_sim_time=use_sim_time,
+        world_name=LaunchConfiguration("world_name"),
+        world_file=LaunchConfiguration("world_file"),
+        camera_required=camera_required,
+        controller_manager=LaunchConfiguration("controller_manager"),
+        launch_moveit=launch_moveit,
+        launch_world_tf=launch_world_tf,
+        launch_system_state=launch_system_state,
+        launch_release_service=launch_release_service,
+        launch_attach_backend=launch_attach_backend,
+        launch_scene_sync=launch_scene_sync,
+        launch_moveit_bridge=LaunchConfiguration("launch_moveit_bridge"),
+        gz_delete_service=LaunchConfiguration("gz_delete_service"),
+        gz_spawn_service=LaunchConfiguration("gz_spawn_service"),
+        attach_backend_mode=LaunchConfiguration("attach_backend_mode"),
+        attach_backend_max_pose_age_sec=LaunchConfiguration(
+            "attach_backend_max_pose_age_sec"
+        ),
+        attach_backend_follow_rate_hz=LaunchConfiguration(
+            "attach_backend_follow_rate_hz"
+        ),
+        attach_backend_follow_break_dist_m=LaunchConfiguration(
+            "attach_backend_follow_break_dist_m"
+        ),
+        attach_backend_max_dist_m=LaunchConfiguration(
+            "attach_backend_max_dist_m"
+        ),
+        demo_transport_objects=demo_transport_objects,
+        bridge_params=bridge_params,
+        system_state_yaml=PathJoinSubstitution(
+            [FindPackageShare("ur5_bringup"), "config", "system_state_manager.yaml"]
+        ),
+        system_state_extras=system_state_extras,
+        attach_extras=attach_extras,
     )
 
     panel_python = _resolve_runtime("PANEL_PYTHON", "")
@@ -865,23 +698,9 @@ def generate_launch_description():
             OpaqueFunction(function=_maybe_moveit),
             rsp_launch,
             ros2_control_launch,
-            gz_group,
-            gz_shutdown_headless,
-            gz_shutdown_gui,
-            bridge,
-            bridge_guard,
             controller_bootstrap,
-            gz_control_guard,
-            gz_pose_bridge,
-            gz_pose_guard,
-            world_tf,
-            world_tf_guard,
-            system_state,
-            system_state_guard,
-            release_service,
-            gripper_attach_backend,
-            planning_scene_sync,
-            moveit_bridge,
+            *gz_actions,
+            *runtime_actions,
             panel,
         ]
     )

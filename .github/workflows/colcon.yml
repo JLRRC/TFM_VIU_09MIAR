@@ -80,3 +80,10 @@ jobs:
           PYTHONPATH: .
         run: |
           pytest -q test/test_pick_fsm.py test/test_service_clients.py test/test_phase_timings.py test/test_lifecycle_helpers.py
+
+      - name: pytest ur5_bringup (F17 launch modular factories)
+        working-directory: agarre_ros2_ws/src/ur5_bringup
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_launch_factories.py
