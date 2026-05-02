@@ -637,6 +637,16 @@ PANEL_START_ROS2_CONTROL="${PANEL_START_ROS2_CONTROL:-0}"
 PANEL_LAUNCH_BRIDGE="${PANEL_LAUNCH_BRIDGE:-$PANEL_START_STACK}"
 PANEL_LAUNCH_WORLD_TF="${PANEL_LAUNCH_WORLD_TF:-1}"
 PANEL_LAUNCH_SYSTEM_STATE="${PANEL_LAUNCH_SYSTEM_STATE:-1}"
+# Stack-side helpers que también arranca ur5_stack.launch.py por defecto.
+# Cuando este script gestiona el stack (PANEL_START_STACK=1) los queremos
+# todos en =1 para que el stack los lance. Cuando se conecta a un stack
+# externo (PANEL_START_STACK=0) los pasamos a 0 para evitar duplicación
+# (de lo contrario el panel arranca una segunda instancia que compite
+# con la del stack — observado 2026-05-02).
+PANEL_LAUNCH_RELEASE_SERVICE="${PANEL_LAUNCH_RELEASE_SERVICE:-${PANEL_START_STACK}}"
+PANEL_LAUNCH_ATTACH_BACKEND="${PANEL_LAUNCH_ATTACH_BACKEND:-${PANEL_START_STACK}}"
+PANEL_LAUNCH_SCENE_SYNC="${PANEL_LAUNCH_SCENE_SYNC:-${PANEL_START_STACK}}"
+PANEL_LAUNCH_TF_GEOMETRY_SERVICE="${PANEL_LAUNCH_TF_GEOMETRY_SERVICE:-${PANEL_START_STACK}}"
 # FIX-MOVE-GROUP-DEFAULT: move_group no es necesario en modo auto/bridge (el bridge usa moveit_py
 # directamente). Lanzarlo junto al bridge genera conflictos de TF (jump-back-in-time) y un SIGSEGV
 # al apagar (MoveItCpp destructor race en Jazzy/2.12.4). Solo lo lanzamos si moveit_mode=move_group.
@@ -657,6 +667,10 @@ if [[ "${PANEL_MODE}" == "manual" ]]; then
   PANEL_LAUNCH_WORLD_TF="0"
   PANEL_LAUNCH_SYSTEM_STATE="0"
   PANEL_LAUNCH_MOVEIT="0"
+  PANEL_LAUNCH_RELEASE_SERVICE="0"
+  PANEL_LAUNCH_ATTACH_BACKEND="0"
+  PANEL_LAUNCH_SCENE_SYNC="0"
+  PANEL_LAUNCH_TF_GEOMETRY_SERVICE="0"
   PANEL_MANAGED="0"
 fi
 HEADLESS="true"
@@ -696,6 +710,22 @@ fi
 LAUNCH_SYSTEM_STATE="false"
 if [[ "${PANEL_LAUNCH_SYSTEM_STATE}" == "1" ]]; then
   LAUNCH_SYSTEM_STATE="true"
+fi
+LAUNCH_RELEASE_SERVICE="false"
+if [[ "${PANEL_LAUNCH_RELEASE_SERVICE}" == "1" ]]; then
+  LAUNCH_RELEASE_SERVICE="true"
+fi
+LAUNCH_ATTACH_BACKEND="false"
+if [[ "${PANEL_LAUNCH_ATTACH_BACKEND}" == "1" ]]; then
+  LAUNCH_ATTACH_BACKEND="true"
+fi
+LAUNCH_SCENE_SYNC="false"
+if [[ "${PANEL_LAUNCH_SCENE_SYNC}" == "1" ]]; then
+  LAUNCH_SCENE_SYNC="true"
+fi
+LAUNCH_TF_GEOMETRY_SERVICE="false"
+if [[ "${PANEL_LAUNCH_TF_GEOMETRY_SERVICE}" == "1" ]]; then
+  LAUNCH_TF_GEOMETRY_SERVICE="true"
 fi
 LAUNCH_MOVEIT="false"
 if [[ "${PANEL_LAUNCH_MOVEIT}" == "1" ]]; then
@@ -763,6 +793,10 @@ if [[ "${DEBUG_LOGS_TO_STDOUT}" == "1" ]]; then
     launch_ros2_control:="$LAUNCH_ROS2_CONTROL" \
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
+    launch_release_service:="$LAUNCH_RELEASE_SERVICE" \
+    launch_attach_backend:="$LAUNCH_ATTACH_BACKEND" \
+    launch_scene_sync:="$LAUNCH_SCENE_SYNC" \
+    launch_tf_geometry_service:="$LAUNCH_TF_GEOMETRY_SERVICE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -810,6 +844,10 @@ if [[ "${PANEL_WRITE_PID}" == "1" ]]; then
     launch_ros2_control:="$LAUNCH_ROS2_CONTROL" \
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
+    launch_release_service:="$LAUNCH_RELEASE_SERVICE" \
+    launch_attach_backend:="$LAUNCH_ATTACH_BACKEND" \
+    launch_scene_sync:="$LAUNCH_SCENE_SYNC" \
+    launch_tf_geometry_service:="$LAUNCH_TF_GEOMETRY_SERVICE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -841,6 +879,10 @@ if [[ "${PANEL_AUTO_EXIT_ON_PANEL}" == "1" ]]; then
     launch_ros2_control:="$LAUNCH_ROS2_CONTROL" \
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
+    launch_release_service:="$LAUNCH_RELEASE_SERVICE" \
+    launch_attach_backend:="$LAUNCH_ATTACH_BACKEND" \
+    launch_scene_sync:="$LAUNCH_SCENE_SYNC" \
+    launch_tf_geometry_service:="$LAUNCH_TF_GEOMETRY_SERVICE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -884,6 +926,10 @@ if [[ "$PANEL_LOG_FILTER" == "1" ]]; then
     launch_ros2_control:="$LAUNCH_ROS2_CONTROL" \
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
+    launch_release_service:="$LAUNCH_RELEASE_SERVICE" \
+    launch_attach_backend:="$LAUNCH_ATTACH_BACKEND" \
+    launch_scene_sync:="$LAUNCH_SCENE_SYNC" \
+    launch_tf_geometry_service:="$LAUNCH_TF_GEOMETRY_SERVICE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -909,6 +955,10 @@ else
     launch_ros2_control:="$LAUNCH_ROS2_CONTROL" \
     launch_world_tf:="$LAUNCH_WORLD_TF" \
     launch_system_state:="$LAUNCH_SYSTEM_STATE" \
+    launch_release_service:="$LAUNCH_RELEASE_SERVICE" \
+    launch_attach_backend:="$LAUNCH_ATTACH_BACKEND" \
+    launch_scene_sync:="$LAUNCH_SCENE_SYNC" \
+    launch_tf_geometry_service:="$LAUNCH_TF_GEOMETRY_SERVICE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
