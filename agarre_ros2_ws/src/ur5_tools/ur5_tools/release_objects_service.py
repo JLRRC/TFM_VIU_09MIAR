@@ -19,6 +19,7 @@ from geometry_msgs.msg import Pose
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from ros_gz_interfaces.msg import Entity
 from ros_gz_interfaces.srv import DeleteEntity, SpawnEntity
 from std_msgs.msg import Empty
@@ -46,9 +47,21 @@ DROP_OBJECTS = [
 DROP_ANCHOR_NAME = "drop_anchor"
 
 
-class ReleaseObjectsService(Node):
+class ReleaseObjectsService(LifecycleNode):
+    """Servicio que orquesta el respawn físico de objetos en Gazebo.
+
+    F13b (2026-05-01): migrado a ``LifecycleNode`` (observable). La
+    inicialización completa permanece en ``__init__`` por la
+    complejidad del backend Gazebo CLI + retries. Las transiciones
+    lifecycle retornan SUCCESS sin re-crear recursos para preservar
+    operatividad. ``auto_activate=True`` por defecto.
+    """
+
     def __init__(self) -> None:
         super().__init__("release_objects_service")
+        # F13b lifecycle: auto-activate por defecto preserva backward-compat.
+        if not self.has_parameter("auto_activate"):
+            self.declare_parameter("auto_activate", True)
         self.declare_parameter("object_names", DROP_OBJECTS)
         self.declare_parameter("attempts", 2)
         self.declare_parameter("attempt_sleep", 0.25)
@@ -1107,9 +1120,40 @@ class ReleaseObjectsService(Node):
         return qx, qy, qz, qw
 
 
+    # ------------------------------------------------------------------
+    # Lifecycle transitions (F13b — observable, sin re-creación de recursos)
+    # ------------------------------------------------------------------
+
+    def on_configure(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] ReleaseObjectsService configured")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] ReleaseObjectsService activated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_deactivate(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] ReleaseObjectsService deactivated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] ReleaseObjectsService cleaned up")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, _state) -> TransitionCallbackReturn:
+        return self.on_cleanup(_state)
+
+
 def main() -> None:
     rclpy.init()
     node = ReleaseObjectsService()
+    # F13b lifecycle: auto-activate por defecto preserva backward-compat.
+    if bool(node.get_parameter("auto_activate").value):
+        try:
+            node.trigger_configure()
+            node.trigger_activate()
+        except Exception as exc:
+            node.get_logger().error(f"[LIFECYCLE] auto_activate failed: {exc}")
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):

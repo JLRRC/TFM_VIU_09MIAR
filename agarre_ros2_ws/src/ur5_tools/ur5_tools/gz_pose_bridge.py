@@ -17,14 +17,24 @@ from geometry_msgs.msg import TransformStamped
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from tf2_msgs.msg import TFMessage
 
 
-class GzPoseBridge(Node):
-    """Read gz pose/info and publish a TFMessage with named frames."""
+class GzPoseBridge(LifecycleNode):
+    """Read gz pose/info and publish a TFMessage with named frames.
+
+    F13b (2026-05-01): migrado a ``LifecycleNode`` (observable). La
+    inicialización completa permanece en ``__init__`` para preservar
+    el bridge funcional. Las transiciones lifecycle retornan SUCCESS
+    sin re-crear recursos. ``auto_activate=True`` por defecto.
+    """
 
     def __init__(self) -> None:
         super().__init__("gz_pose_bridge")
+        # F13b lifecycle: auto-activate por defecto preserva backward-compat.
+        if not self.has_parameter("auto_activate"):
+            self.declare_parameter("auto_activate", True)
         self.declare_parameter("world_name", "ur5_mesa_objetos")
         self.declare_parameter("gz_topic", "")
         self.declare_parameter("ros_topic", "")
@@ -194,9 +204,40 @@ class GzPoseBridge(Node):
         return self.get_clock().now().to_msg()
 
 
+    # ------------------------------------------------------------------
+    # Lifecycle transitions (F13b — observable, sin re-creación de recursos)
+    # ------------------------------------------------------------------
+
+    def on_configure(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] GzPoseBridge configured")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] GzPoseBridge activated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_deactivate(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] GzPoseBridge deactivated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] GzPoseBridge cleaned up")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, _state) -> TransitionCallbackReturn:
+        return self.on_cleanup(_state)
+
+
 def main() -> None:
     rclpy.init()
     node = GzPoseBridge()
+    # F13b lifecycle: auto-activate por defecto preserva backward-compat.
+    if bool(node.get_parameter("auto_activate").value):
+        try:
+            node.trigger_configure()
+            node.trigger_activate()
+        except Exception as exc:
+            node.get_logger().error(f"[LIFECYCLE] auto_activate failed: {exc}")
     try:
         rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):

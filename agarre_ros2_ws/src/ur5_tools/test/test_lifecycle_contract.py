@@ -43,6 +43,11 @@ LIFECYCLE_NODES = [
     "system_state_manager.py",
     "gripper_attach_backend.py",
     "ur5_moveit_bridge.py",
+    # F16: tf_geometry_service standalone
+    "tf_geometry_service.py",
+    # F13b: nodos restantes migrados
+    "release_objects_service.py",
+    "gz_pose_bridge.py",
 ]
 
 REQUIRED_CALLBACKS = (
