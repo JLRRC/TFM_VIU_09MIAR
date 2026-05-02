@@ -356,6 +356,7 @@ from .panel_v2_gripper_attach_mixin import PanelV2GripperAttachMixin  # noqa: E4
 from .panel_v2_motion_mixin import PanelV2MotionMixin  # noqa: E402
 from .panel_v2_traj_settle_mixin import PanelV2TrajSettleMixin  # noqa: E402
 from .panel_v2_system_state_mixin import PanelV2SystemStateMixin  # noqa: E402
+from .panel_v2_step_debug_mixin import PanelV2StepDebugMixin  # noqa: E402
 
 
 class ControlPanelV2(
@@ -365,6 +366,7 @@ class ControlPanelV2(
     PanelV2MotionMixin,
     PanelV2TrajSettleMixin,
     PanelV2SystemStateMixin,
+    PanelV2StepDebugMixin,
     QMainWindow,
 ):
     retry_send_joints = pyqtSignal()
@@ -1273,218 +1275,8 @@ class ControlPanelV2(
     def _run_ui_delayed(self, *args, **kwargs):
         return _ph._run_ui_delayed(self, *args, **kwargs)
 
-    def _set_debug_motion_button_waiting(self, *args, **kwargs):
-        return _ph._set_debug_motion_button_waiting(self, *args, **kwargs)
-
-    def _on_step_mode_combo_changed(self, *args, **kwargs):
-        return _ph._on_step_mode_combo_changed(self, *args, **kwargs)
-
-    def _set_step_mode(self, *args, **kwargs):
-        return _ph._set_step_mode(self, *args, **kwargs)
-
-    def _ensure_step_window(self, *args, **kwargs):
-        return _ph._ensure_step_window(self, *args, **kwargs)
-
-    def _step_cart_debug_trace_path(self, *args, **kwargs):
-        return _ph._step_cart_debug_trace_path(self, *args, **kwargs)
-
-    def _step_cart_debug_log_event(self, *args, **kwargs):
-        return _ph._step_cart_debug_log_event(self, *args, **kwargs)
-
-    def _step_cart_debug_sample(self, *args, **kwargs):
-        return _ph._step_cart_debug_sample(self, *args, **kwargs)
-
-    def _step_cart_debug_set_status(self, *args, **kwargs):
-        return _ph._step_cart_debug_set_status(self, *args, **kwargs)
-
-    def _step_cart_debug_refresh(self, *args, **kwargs):
-        return _ph._step_cart_debug_refresh(self, *args, **kwargs)
-
-    def _step_cart_debug_step_m(self, *args, **kwargs):
-        return _ph._step_cart_debug_step_m(self, *args, **kwargs)
-
-    def _direct_clear_waiting_for_approach_confirmation(self, *args, **kwargs):
-        return _ph._direct_clear_waiting_for_approach_confirmation(self, *args, **kwargs)
-
-    def _direct_enter_waiting_for_approach_confirmation(self, *args, **kwargs):
-        return _ph._direct_enter_waiting_for_approach_confirmation(self, *args, **kwargs)
-
-    def _direct_release_waiting_for_approach_confirmation(self, *args, **kwargs):
-        return _ph._direct_release_waiting_for_approach_confirmation(self, *args, **kwargs)
-
-    def _direct_waiting_for_approach_confirmation(self, *args, **kwargs):
-        return _ph._direct_waiting_for_approach_confirmation(self, *args, **kwargs)
-
-    def _ensure_step_cart_debug_window(self, *args, **kwargs):
-        return _ph._ensure_step_cart_debug_window(self, *args, **kwargs)
-
-    def _on_step_continue_clicked(self, *args, **kwargs):
-        return _ph._on_step_continue_clicked(self, *args, **kwargs)
-
-    def _on_step_phase_start_clicked(self, *args, **kwargs):
-        return _ph._on_step_phase_start_clicked(self, *args, **kwargs)
-
-    def _on_step_window_finished(self, *args, **kwargs):
-        return _ph._on_step_window_finished(self, *args, **kwargs)
-
-    def _read_gripper_feedback_state(self, *args, **kwargs):
-        return _ph._read_gripper_feedback_state(self, *args, **kwargs)
-
-    def _show_step_cart_debug_window(self, *args, **kwargs):
-        return _ph._show_step_cart_debug_window(self, *args, **kwargs)
-
-    def _step_assess_target_reached(self, *args, **kwargs):
-        return _ph._step_assess_target_reached(self, *args, **kwargs)
-
-    def _step_capture_start_pose(self, *args, **kwargs):
-        return _ph._step_capture_start_pose(self, *args, **kwargs)
-
-    def _step_cart_debug_handle_axis(self, *args, **kwargs):
-        return _ph._step_cart_debug_handle_axis(self, *args, **kwargs)
-
-    def _step_cart_debug_move_delta(self, *args, **kwargs):
-        return _ph._step_cart_debug_move_delta(self, *args, **kwargs)
-
-    def _step_cart_debug_run_validation_xyz(self, *args, **kwargs):
-        return _ph._step_cart_debug_run_validation_xyz(self, *args, **kwargs)
-
-    def _step_cartesian_move_runtime_target(self, *args, **kwargs):
-        return _ph._step_cartesian_move_runtime_target(self, *args, **kwargs)
-
-    def _step_display_position(self, *args, **kwargs):
-        return _ph._step_display_position(self, *args, **kwargs)
-
-    def _step_effective_flow(self, *args, **kwargs):
-        return _ph._step_effective_flow(self, *args, **kwargs)
-
-    def _step_fetch_live_pose(self, *args, **kwargs):
-        return _ph._step_fetch_live_pose(self, *args, **kwargs)
-
-    def _step_fetch_object_world(self, *args, **kwargs):
-        return _ph._step_fetch_object_world(self, *args, **kwargs)
-
-    def _step_find_history_row(self, *args, **kwargs):
-        return _ph._step_find_history_row(self, *args, **kwargs)
-
-    def _step_format_inline_rpy(self, *args, **kwargs):
-        return _ph._step_format_inline_rpy(self, *args, **kwargs)
-
-    def _step_format_inline_xyz(self, *args, **kwargs):
-        return _ph._step_format_inline_xyz(self, *args, **kwargs)
-
-    def _step_format_xyz(self, *args, **kwargs):
-        return _ph._step_format_xyz(self, *args, **kwargs)
-
-    def _step_live_gripper_state(self, *args, **kwargs):
-        return _ph._step_live_gripper_state(self, *args, **kwargs)
-
-    def _step_live_pose_text(self, *args, **kwargs):
-        return _ph._step_live_pose_text(self, *args, **kwargs)
-
-    def _step_operational_frame_name(self, *args, **kwargs):
-        return _ph._step_operational_frame_name(self, *args, **kwargs)
-
-    def _step_phase_action_text(self, *args, **kwargs):
-        return _ph._step_phase_action_text(self, *args, **kwargs)
-
-    def _step_phase_completed(self, *args, **kwargs):
-        return _ph._step_phase_completed(self, *args, **kwargs)
-
-    def _step_phase_gate_already_owned(self, *args, **kwargs):
-        return _ph._step_phase_gate_already_owned(self, *args, **kwargs)
-
-    def _step_phase_gripper_state(self, *args, **kwargs):
-        return _ph._step_phase_gripper_state(self, *args, **kwargs)
-
-    def _step_phase_intent(self, *args, **kwargs):
-        return _ph._step_phase_intent(self, *args, **kwargs)
-
-    def _step_phase_sequence(self, *args, **kwargs):
-        return _ph._step_phase_sequence(self, *args, **kwargs)
-
-    def _step_pipeline_phase_state(self, *args, **kwargs):
-        return _ph._step_pipeline_phase_state(self, *args, **kwargs)
-
-    def _step_pipeline_rebuild(self, *args, **kwargs):
-        return _ph._step_pipeline_rebuild(self, *args, **kwargs)
-
-    def _step_pre_insert_inicio_row(self, *args, **kwargs):
-        return _ph._step_pre_insert_inicio_row(self, *args, **kwargs)
-
-    def _step_predict_next_phase(self, *args, **kwargs):
-        return _ph._step_predict_next_phase(self, *args, **kwargs)
-
-    def _step_prepare_pipeline_view(self, *args, **kwargs):
-        return _ph._step_prepare_pipeline_view(self, *args, **kwargs)
-
-    def _step_present_flow_name(self, *args, **kwargs):
-        return _ph._step_present_flow_name(self, *args, **kwargs)
-
-    def _step_record_current_phase_actual(self, *args, **kwargs):
-        return _ph._step_record_current_phase_actual(self, *args, **kwargs)
-
-    def _step_record_direct_event_snapshot(self, *args, **kwargs):
-        return _ph._step_record_direct_event_snapshot(self, *args, **kwargs)
-
-    def _step_record_direct_home_initial(self, *args, **kwargs):
-        return _ph._step_record_direct_home_initial(self, *args, **kwargs)
-
-    def _step_record_direct_initial_snapshot(self, *args, **kwargs):
-        return _ph._step_record_direct_initial_snapshot(self, *args, **kwargs)
-
-    def _step_record_direct_mesa_ready(self, *args, **kwargs):
-        return _ph._step_record_direct_mesa_ready(self, *args, **kwargs)
-
-    def _step_record_history(self, *args, **kwargs):
-        return _ph._step_record_history(self, *args, **kwargs)
-
-    def _step_refresh_pipeline_table(self, *args, **kwargs):
-        return _ph._step_refresh_pipeline_table(self, *args, **kwargs)
-
-    def _step_reset_sequence_view(self, *args, **kwargs):
-        return _ph._step_reset_sequence_view(self, *args, **kwargs)
-
-    def _step_runtime_refresh(self, *args, **kwargs):
-        return _ph._step_runtime_refresh(self, *args, **kwargs)
-
-    def _step_selected_object_name(self, *args, **kwargs):
-        return _ph._step_selected_object_name(self, *args, **kwargs)
-
-    def _step_set_exec_target(self, *args, **kwargs):
-        return _ph._step_set_exec_target(self, *args, **kwargs)
-
-    def _step_status_item(self, *args, **kwargs):
-        return _ph._step_status_item(self, *args, **kwargs)
-
-    def _step_update_phase_result(self, *args, **kwargs):
-        return _ph._step_update_phase_result(self, *args, **kwargs)
-
-    def _step_update_row_object_metrics(self, *args, **kwargs):
-        return _ph._step_update_row_object_metrics(self, *args, **kwargs)
-
-    def _step_upsert_history_row_ordered(self, *args, **kwargs):
-        return _ph._step_upsert_history_row_ordered(self, *args, **kwargs)
-
-    def _step_wait_for_phase(self, *args, **kwargs):
-        return _ph._step_wait_for_phase(self, *args, **kwargs)
-
-    def _step_window_hide(self, *args, **kwargs):
-        return _ph._step_window_hide(self, *args, **kwargs)
-
-    def _step_window_maybe_refresh(self, *args, **kwargs):
-        return _ph._step_window_maybe_refresh(self, *args, **kwargs)
-
-    def _step_window_refresh(self, *args, **kwargs):
-        return _ph._step_window_refresh(self, *args, **kwargs)
-
-    def _step_window_set_waiting(self, *args, **kwargs):
-        return _ph._step_window_set_waiting(self, *args, **kwargs)
-
-    def _on_debug_motion_button(self, *args, **kwargs):
-        return _ph._on_debug_motion_button(self)
-
-    def _debug_motion_wait_for_continue(self, *args, **kwargs):
-        return _ph._debug_motion_wait_for_continue(self, *args, **kwargs)
+    # F14-step8: 72 wrappers step/direct/cart_debug/debug_motion heredados
+    # de PanelV2StepDebugMixin. Ver panel_v2_step_debug_mixin.py.
 
     def _run_async(self, *args, **kwargs):
         return _ph._run_async(self, *args, **kwargs)
@@ -2010,8 +1802,7 @@ class ControlPanelV2(
     def _compute_reach_overlay_points(self, *args, **kwargs):
         return _mc._compute_reach_overlay_points(self, *args, **kwargs)
 
-    def _step_joint(self, *args, **kwargs):
-        return _mc._step_joint(self, *args, **kwargs)
+    # F14-step8: _step_joint heredado de PanelV2StepDebugMixin.
 
     def _maybe_send_auto(self, *args, **kwargs):
         return _mc._maybe_send_auto(self, *args, **kwargs)
