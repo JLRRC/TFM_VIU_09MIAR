@@ -17,13 +17,19 @@ Para tunear sin perder reproducibilidad:
 1. Editar ``agarre_ros2_ws/src/ur5_qt_panel/config/pick_object_runtime.yaml``
 2. (Alternativa rápida) ``export PANEL_PICK_OBJECT_<NAME>=value`` y relanzar
 
-NO migrados (fuera de scope F2):
-- ``PANEL_PICK_OBJECT_GRASP_STEP_TOL_M``: divergencia (0.04 / 0.040 / 0.045).
-- 1 lectura de ``PANEL_PICK_OBJECT_GRASP_CARTESIAN`` con default vacío
-  (forma dinámica via ``cart_env_name``).
-- 8 env vars con prefijo distinto (``PANEL_ATTACH_*``,
-  ``PANEL_MOVEIT_BRIDGE_*``, ``PANEL_STRICT_PHYSICS_*``,
-  ``PANEL_TFM_CANONICAL_*``): cross-cutting, fuera de este dataclass.
+F2-step1 (2026-05-02) — añadidos 11 campos para reducir 28→14 reads en
+panel_pick_object.py: grasp_step_tol_m unificado a 0.040 (la divergencia
+0.04/0.040/0.045 se preserva via overrides Optional), tolerancias de
+GRASP_DOWN/GRASP_TF_STABLE/GRASP_Z_REACH segregadas, attach_xy/z_tol_m
+desambiguados (prefijo PANEL_ATTACH_*), pre_grasp_recenter_tol_m_override
+y pre_grasp_abort_recovery_tol_m_override como Optional con fallback al
+campo base pre_grasp_tol_m.
+
+NO migrados (fuera de scope F2-step1):
+- 6 vars con default dinámico que depende de ``moveit_exclusive``
+  (TRANSPORT_JOINT_FALLBACK, APPROACH_JOINT_FALLBACK, etc.).
+- ``PANEL_STRICT_PHYSICS_MODE``: cross-cutting global.
+- ``PANEL_MOVEIT_BRIDGE_*``, ``PANEL_TFM_CANONICAL_*``: dataclasses propios.
 """
 
 from __future__ import annotations
@@ -70,8 +76,12 @@ class PickObjectParams:
     approach_clearance_m: float = 0.2  # PANEL_PICK_OBJECT_APPROACH_CLEARANCE_M
     approach_skip_retry_on_fallback: bool = True  # PANEL_PICK_OBJECT_APPROACH_SKIP_RETRY_ON_FALLBACK
     approach_tol_m: float = 0.1  # PANEL_PICK_OBJECT_APPROACH_TOL_M
+    # F2-step1: PANEL_ATTACH_* (prefijo distinto, son cross-cutting de attach
+    # gate del flujo pick_object — viven aquí porque sólo los lee este flujo).
+    attach_xy_tol_m: float = 0.02  # PANEL_ATTACH_XY_TOL_M
     attach_z_clearance_m: float = 0.0  # PANEL_PICK_OBJECT_ATTACH_Z_CLEARANCE_M
     attach_z_ref_mode: str = 'top'  # PANEL_PICK_OBJECT_ATTACH_Z_REF_MODE
+    attach_z_tol_m: float = 0.04  # PANEL_ATTACH_Z_TOL_M
     carry_gate_enable: bool = True  # PANEL_PICK_OBJECT_CARRY_GATE_ENABLE
     carry_gate_max_dist_m: float = 0.18  # PANEL_PICK_OBJECT_CARRY_GATE_MAX_DIST_M
     carry_gate_min_consecutive: int = 2  # PANEL_PICK_OBJECT_CARRY_GATE_MIN_CONSECUTIVE
@@ -79,17 +89,34 @@ class PickObjectParams:
     carry_gate_sample_dt_sec: float = 0.08  # PANEL_PICK_OBJECT_CARRY_GATE_SAMPLE_DT_SEC
     carry_gate_timeout_sec: float = 1.4  # PANEL_PICK_OBJECT_CARRY_GATE_TIMEOUT_SEC
     carry_joint_time_sec: float = 8.0  # PANEL_PICK_OBJECT_CARRY_JOINT_TIME_SEC
+    # F2-step1: contact_down_z_m + extra_down_z_m son aliases (legacy primero).
+    # None = usar default = max(0.020, PICK_DEMO_GRASP_Z_OFFSET).
+    contact_down_z_m: Optional[float] = None  # PANEL_PICK_OBJECT_CONTACT_DOWN_Z_M
     deterministic_carry_gate_max_m: float = 0.8  # PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MAX_M
     deterministic_carry_gate_min_consecutive: int = 1  # PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MIN_CONSECUTIVE
     deterministic_joint_after_approach: bool = False  # PANEL_PICK_OBJECT_DETERMINISTIC_JOINT_AFTER_APPROACH
+    # F2-step1: alias legacy de contact_down_z_m. Si ambos están vacíos cae al default.
+    extra_down_z_m: Optional[float] = None  # PANEL_PICK_OBJECT_EXTRA_DOWN_Z
     force_home_start: bool = True  # PANEL_PICK_OBJECT_FORCE_HOME_START
+    # F2-step1: PANEL_PICK_OBJECT_GRASP_CARTESIAN (default off; el flujo lo
+    # mutaba en runtime para fallbacks → la mutación se queda como side-effect).
+    grasp_cartesian: bool = False  # PANEL_PICK_OBJECT_GRASP_CARTESIAN
     grasp_joint_fallback: bool = False  # PANEL_PICK_OBJECT_GRASP_JOINT_FALLBACK
     grasp_micro_steps_max: int = 0  # PANEL_PICK_OBJECT_GRASP_MICRO_STEPS_MAX
     grasp_micro_step_m: float = 0.012  # PANEL_PICK_OBJECT_GRASP_MICRO_STEP_M
     grasp_moveit_retry: bool = True  # PANEL_PICK_OBJECT_GRASP_MOVEIT_RETRY
     grasp_moveit_retry_count: int = 2  # PANEL_PICK_OBJECT_GRASP_MOVEIT_RETRY_COUNT
+    # F2-step1: tolerancia canónica de pasos GRASP_DOWN. Defaults históricos
+    # divergían: 0.04 (line 3017), 0.045 (line 3912), 0.040 (lines 3976/3987).
+    # Cada campo guarda su propio default histórico para preservar comportamiento.
+    # Nota: la cadena legacy "TF_STABLE_TOL hereda de STEP_TOL si éste se setea
+    # via env" se simplifica — ahora cada uno se override por su propio env var.
+    grasp_step_tol_m: float = 0.040  # PANEL_PICK_OBJECT_GRASP_STEP_TOL_M
     grasp_tf_stable_min_ok: int = 4  # PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK
     grasp_tf_stable_samples: int = 5  # PANEL_PICK_OBJECT_GRASP_TF_STABLE_SAMPLES
+    grasp_tf_stable_tol_m: float = 0.045  # PANEL_PICK_OBJECT_GRASP_TF_STABLE_TOL_M
+    grasp_z_reach_tol_m: float = 0.040  # PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M
+    grasp_z_reach_tol_fallback_m: float = 0.040  # PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_FALLBACK_M
     gripper_open_settle_sec: float = 0.7  # PANEL_PICK_OBJECT_GRIPPER_OPEN_SETTLE_SEC
     home_start_dur_sec: float = 8.0  # PANEL_PICK_OBJECT_HOME_START_DUR_SEC
     home_start_if_far: bool = True  # PANEL_PICK_OBJECT_HOME_START_IF_FAR
@@ -120,9 +147,13 @@ class PickObjectParams:
     post_lift_max_dist_m: float = 0.18  # PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M
     post_lift_min_consecutive: int = 2  # PANEL_PICK_OBJECT_POST_LIFT_MIN_CONSECUTIVE
     preflight_mode: str = 'mesa'  # PANEL_PICK_OBJECT_PREFLIGHT_MODE
+    # F2-step1: None ⇒ usa pre_grasp_tol_m. Override para path-tol abort recovery.
+    pre_grasp_abort_recovery_tol_m_override: Optional[float] = None  # PANEL_PICK_OBJECT_PRE_GRASP_ABORT_RECOVERY_TOL_M
     pre_grasp_align_xy_tol_m: float = 0.045  # PANEL_PICK_OBJECT_PRE_GRASP_ALIGN_XY_TOL_M
     pre_grasp_align_z_tol_m: float = 0.05  # PANEL_PICK_OBJECT_PRE_GRASP_ALIGN_Z_TOL_M
     pre_grasp_recenter_enable: bool = False  # PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_ENABLE
+    # F2-step1: None ⇒ usa pre_grasp_tol_m. Override para fase PRE_GRASP_RECENTER.
+    pre_grasp_recenter_tol_m_override: Optional[float] = None  # PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_TOL_M
     pre_grasp_tol_m: float = 0.1  # PANEL_PICK_OBJECT_PRE_GRASP_TOL_M
     pre_margin_m: float = 0.04  # PANEL_PICK_OBJECT_PRE_MARGIN_M
     selection_max_age_sec: float = 600.0  # PANEL_PICK_OBJECT_SELECTION_MAX_AGE_SEC
@@ -168,8 +199,10 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "approach_clearance_m": "PANEL_PICK_OBJECT_APPROACH_CLEARANCE_M",
     "approach_skip_retry_on_fallback": "PANEL_PICK_OBJECT_APPROACH_SKIP_RETRY_ON_FALLBACK",
     "approach_tol_m": "PANEL_PICK_OBJECT_APPROACH_TOL_M",
+    "attach_xy_tol_m": "PANEL_ATTACH_XY_TOL_M",  # F2-step1
     "attach_z_clearance_m": "PANEL_PICK_OBJECT_ATTACH_Z_CLEARANCE_M",
     "attach_z_ref_mode": "PANEL_PICK_OBJECT_ATTACH_Z_REF_MODE",
+    "attach_z_tol_m": "PANEL_ATTACH_Z_TOL_M",  # F2-step1
     "carry_gate_enable": "PANEL_PICK_OBJECT_CARRY_GATE_ENABLE",
     "carry_gate_max_dist_m": "PANEL_PICK_OBJECT_CARRY_GATE_MAX_DIST_M",
     "carry_gate_min_consecutive": "PANEL_PICK_OBJECT_CARRY_GATE_MIN_CONSECUTIVE",
@@ -177,17 +210,24 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "carry_gate_sample_dt_sec": "PANEL_PICK_OBJECT_CARRY_GATE_SAMPLE_DT_SEC",
     "carry_gate_timeout_sec": "PANEL_PICK_OBJECT_CARRY_GATE_TIMEOUT_SEC",
     "carry_joint_time_sec": "PANEL_PICK_OBJECT_CARRY_JOINT_TIME_SEC",
+    "contact_down_z_m": "PANEL_PICK_OBJECT_CONTACT_DOWN_Z_M",  # F2-step1
     "deterministic_carry_gate_max_m": "PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MAX_M",
     "deterministic_carry_gate_min_consecutive": "PANEL_PICK_OBJECT_DETERMINISTIC_CARRY_GATE_MIN_CONSECUTIVE",
     "deterministic_joint_after_approach": "PANEL_PICK_OBJECT_DETERMINISTIC_JOINT_AFTER_APPROACH",
+    "extra_down_z_m": "PANEL_PICK_OBJECT_EXTRA_DOWN_Z",  # F2-step1
     "force_home_start": "PANEL_PICK_OBJECT_FORCE_HOME_START",
+    "grasp_cartesian": "PANEL_PICK_OBJECT_GRASP_CARTESIAN",  # F2-step1
     "grasp_joint_fallback": "PANEL_PICK_OBJECT_GRASP_JOINT_FALLBACK",
     "grasp_micro_steps_max": "PANEL_PICK_OBJECT_GRASP_MICRO_STEPS_MAX",
     "grasp_micro_step_m": "PANEL_PICK_OBJECT_GRASP_MICRO_STEP_M",
     "grasp_moveit_retry": "PANEL_PICK_OBJECT_GRASP_MOVEIT_RETRY",
     "grasp_moveit_retry_count": "PANEL_PICK_OBJECT_GRASP_MOVEIT_RETRY_COUNT",
+    "grasp_step_tol_m": "PANEL_PICK_OBJECT_GRASP_STEP_TOL_M",  # F2-step1
     "grasp_tf_stable_min_ok": "PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK",
     "grasp_tf_stable_samples": "PANEL_PICK_OBJECT_GRASP_TF_STABLE_SAMPLES",
+    "grasp_tf_stable_tol_m": "PANEL_PICK_OBJECT_GRASP_TF_STABLE_TOL_M",  # F2-step1
+    "grasp_z_reach_tol_fallback_m": "PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_FALLBACK_M",  # F2-step1
+    "grasp_z_reach_tol_m": "PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M",  # F2-step1
     "gripper_open_settle_sec": "PANEL_PICK_OBJECT_GRIPPER_OPEN_SETTLE_SEC",
     "home_start_dur_sec": "PANEL_PICK_OBJECT_HOME_START_DUR_SEC",
     "home_start_if_far": "PANEL_PICK_OBJECT_HOME_START_IF_FAR",
@@ -218,9 +258,11 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "post_lift_max_dist_m": "PANEL_PICK_OBJECT_POST_LIFT_MAX_DIST_M",
     "post_lift_min_consecutive": "PANEL_PICK_OBJECT_POST_LIFT_MIN_CONSECUTIVE",
     "preflight_mode": "PANEL_PICK_OBJECT_PREFLIGHT_MODE",
+    "pre_grasp_abort_recovery_tol_m_override": "PANEL_PICK_OBJECT_PRE_GRASP_ABORT_RECOVERY_TOL_M",  # F2-step1
     "pre_grasp_align_xy_tol_m": "PANEL_PICK_OBJECT_PRE_GRASP_ALIGN_XY_TOL_M",
     "pre_grasp_align_z_tol_m": "PANEL_PICK_OBJECT_PRE_GRASP_ALIGN_Z_TOL_M",
     "pre_grasp_recenter_enable": "PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_ENABLE",
+    "pre_grasp_recenter_tol_m_override": "PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_TOL_M",  # F2-step1
     "pre_grasp_tol_m": "PANEL_PICK_OBJECT_PRE_GRASP_TOL_M",
     "pre_margin_m": "PANEL_PICK_OBJECT_PRE_MARGIN_M",
     "selection_max_age_sec": "PANEL_PICK_OBJECT_SELECTION_MAX_AGE_SEC",

@@ -897,16 +897,16 @@ def run_pick_object(panel) -> None:
         z_insert = _get_pick_object_params().insert_m
     except Exception:
         z_insert = 0.015
+    # F2-step1: contact_down_z con doble alias (CONTACT_DOWN_Z_M canonical >
+    # EXTRA_DOWN_Z legacy > default = max(0.020, PICK_DEMO_GRASP_Z_OFFSET)).
+    _po_params = _get_pick_object_params()
     try:
-        contact_down_z = float(
-            os.environ.get(
-                "PANEL_PICK_OBJECT_CONTACT_DOWN_Z_M",
-                os.environ.get(
-                    "PANEL_PICK_OBJECT_EXTRA_DOWN_Z",
-                    str(max(0.020, float(PICK_DEMO_GRASP_Z_OFFSET))),
-                ),
-            )
-        )
+        if _po_params.contact_down_z_m is not None:
+            contact_down_z = float(_po_params.contact_down_z_m)
+        elif _po_params.extra_down_z_m is not None:
+            contact_down_z = float(_po_params.extra_down_z_m)
+        else:
+            contact_down_z = max(0.020, float(PICK_DEMO_GRASP_Z_OFFSET))
     except Exception:
         contact_down_z = 0.020
     if contact_down_z < 0.0:
@@ -3005,16 +3005,20 @@ def run_pick_object(panel) -> None:
                             except Exception:
                                 return 0.10
                         if label_key == "PRE_GRASP_RECENTER":
+                            # F2-step1: override Optional ⇒ pre_grasp_tol_m fallback.
                             try:
+                                _p = _get_pick_object_params()
                                 return float(
-                                    os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_RECENTER_TOL_M", "")
-                                    or _get_pick_object_params().pre_grasp_tol_m
+                                    _p.pre_grasp_recenter_tol_m_override
+                                    if _p.pre_grasp_recenter_tol_m_override is not None
+                                    else _p.pre_grasp_tol_m
                                 )
                             except Exception:
                                 return 0.10
                         if str(label_key).startswith("GRASP_DOWN"):
+                            # F2-step1: canónico unificado a 0.040 (era 0.04 legacy).
                             try:
-                                return float(os.environ.get("PANEL_PICK_OBJECT_GRASP_STEP_TOL_M", "0.04"))
+                                return float(_get_pick_object_params().grasp_step_tol_m)
                             except Exception:
                                 return 0.04
                         if label_key in ("LIFT", "DROP") or str(label_key).startswith("TRANSPORT"):
@@ -3304,10 +3308,13 @@ def run_pick_object(panel) -> None:
                                 or "fjt_aborted" in msg_l
                             )
                             if pre_grasp_abort and path_tol_abort:
+                                # F2-step1: override Optional ⇒ pre_grasp_tol_m fallback.
                                 try:
+                                    _p = _get_pick_object_params()
                                     recover_tol = float(
-                                        os.environ.get("PANEL_PICK_OBJECT_PRE_GRASP_ABORT_RECOVERY_TOL_M", "")
-                                        or _get_pick_object_params().pre_grasp_tol_m
+                                        _p.pre_grasp_abort_recovery_tol_m_override
+                                        if _p.pre_grasp_abort_recovery_tol_m_override is not None
+                                        else _p.pre_grasp_tol_m
                                     )
                                 except Exception:
                                     recover_tol = 0.10
@@ -3790,9 +3797,10 @@ def run_pick_object(panel) -> None:
                     "exec_succeeded_but_tf_mismatch" in msg and "label=GRASP_DOWN" in msg
                 )
                 grasp_exec_failed = _is_step_exec_failed(msg, "GRASP_DOWN")
-                grasp_cartesian_enabled = str(
-                    os.environ.get("PANEL_PICK_OBJECT_GRASP_CARTESIAN", "0")
-                ).strip().lower() not in ("0", "false", "no", "off")
+                # F2-step1: lectura inicial via dataclass; el bloque de retry de
+                # más abajo sigue mutando os.environ para que _run_moveit_step
+                # (que lee env directamente) use el nuevo valor en el reintento.
+                grasp_cartesian_enabled = bool(_get_pick_object_params().grasp_cartesian)
                 if grasp_tf_mismatch and grasp_cartesian_enabled:
                     panel._emit_log(
                         "[PICK_OBJ][RECOVERY] GRASP_DOWN tf_mismatch en cartesian; "
@@ -3905,13 +3913,9 @@ def run_pick_object(panel) -> None:
             # tolerancia antes de aprobar la fase. Evita falsos positivos cuando
             # el resultado de bridge=OK llega justo en el límite de tolerancia.
             _grasp_target_pos = grasp_pose_send.get("position", (bx, by, bz))
+            # F2-step1: tolerancia explícita (default histórico 0.045).
             try:
-                _grasp_stable_tol = float(
-                    os.environ.get(
-                        "PANEL_PICK_OBJECT_GRASP_TF_STABLE_TOL_M",
-                        os.environ.get("PANEL_PICK_OBJECT_GRASP_STEP_TOL_M", "0.045"),
-                    )
-                )
+                _grasp_stable_tol = float(_get_pick_object_params().grasp_tf_stable_tol_m)
             except Exception:
                 _grasp_stable_tol = 0.045
             try:
@@ -3966,35 +3970,22 @@ def run_pick_object(panel) -> None:
             if tcp_base is None:
                 raise RuntimeError(f"no se pudo leer TCP en {base_frame}")
             target_tcp_z = float(grasp_pose_send.get("position", (bx, by, bz))[2])
-            if grasp_joint_fallback_applied:
-                try:
-                    grasp_z_reach_tol = float(
-                        os.environ.get(
-                            "PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_FALLBACK_M",
-                            os.environ.get(
-                                "PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M",
-                                os.environ.get("PANEL_PICK_OBJECT_GRASP_STEP_TOL_M", "0.040"),
-                            ),
-                        )
-                    )
-                except Exception:
-                    grasp_z_reach_tol = 0.040
-            else:
-                try:
-                    grasp_z_reach_tol = float(
-                        os.environ.get(
-                            "PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M",
-                            os.environ.get("PANEL_PICK_OBJECT_GRASP_STEP_TOL_M", "0.040"),
-                        )
-                    )
-                except Exception:
-                    grasp_z_reach_tol = 0.040
+            # F2-step1: tolerancias canónicas (defaults históricos 0.040).
+            try:
+                _po_p = _get_pick_object_params()
+                grasp_z_reach_tol = float(
+                    _po_p.grasp_z_reach_tol_fallback_m
+                    if grasp_joint_fallback_applied
+                    else _po_p.grasp_z_reach_tol_m
+                )
+            except Exception:
+                grasp_z_reach_tol = 0.040
             z_reach_err = abs(float(tcp_base[2]) - target_tcp_z)
             panel._emit_log(
                 f"[PICK_OBJ][GRASP_VALIDATE] target_tcp_z={target_tcp_z:.3f} "
                 f"tcp_z={float(tcp_base[2]):.3f} z_err={z_reach_err:.3f} "
                 f"z_tol={grasp_z_reach_tol:.3f} "
-                f"tol_source={str(os.environ.get('PANEL_PICK_OBJECT_GRASP_Z_REACH_TOL_M', '') or os.environ.get('PANEL_PICK_OBJECT_GRASP_STEP_TOL_M', 'default_grasp_step_tol'))}"
+                f"tol_source={'fallback' if grasp_joint_fallback_applied else 'primary'}"
             )
             if z_reach_err > grasp_z_reach_tol:
                 raise RuntimeError(
@@ -4111,13 +4102,13 @@ def run_pick_object(panel) -> None:
             gripper_open_required["active"] = False
             # Seguir patrón de PICK_DEMO: cierre + grasp + attach en MISMO contexto UI thread
             attach_result = {"ok": False, "strict_physical_pending": False}
+            # F2-step1: PANEL_ATTACH_XY_TOL_M / PANEL_ATTACH_Z_TOL_M centralizadas.
             try:
-                attach_xy_tol = float(os.environ.get("PANEL_ATTACH_XY_TOL_M", "0.02"))
+                _po_p = _get_pick_object_params()
+                attach_xy_tol = float(_po_p.attach_xy_tol_m)
+                attach_z_tol = float(_po_p.attach_z_tol_m)
             except Exception:
                 attach_xy_tol = 0.02
-            try:
-                attach_z_tol = float(os.environ.get("PANEL_ATTACH_Z_TOL_M", "0.04"))
-            except Exception:
                 attach_z_tol = 0.04
             if deterministic_joint_after_approach:
                 attach_xy_tol = max(attach_xy_tol, 0.22)

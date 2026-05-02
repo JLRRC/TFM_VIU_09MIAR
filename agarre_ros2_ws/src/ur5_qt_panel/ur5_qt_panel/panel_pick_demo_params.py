@@ -160,6 +160,8 @@ class PickDemoParams:
     align_z_bias_gain: float = 0.7  # PANEL_PICK_DEMO_ALIGN_Z_BIAS_GAIN
     align_z_improve_min_m: float = 0.006  # PANEL_PICK_DEMO_ALIGN_Z_IMPROVE_MIN_M
     align_z_residual_tol_m: float = 0.015  # PANEL_PICK_DEMO_ALIGN_Z_RESIDUAL_TOL_M
+    # F2-step1 (2026-05-02): default 0.10 del callsite "_dynamic_pre_close_reference_base".
+    approach_coarse_extra_z_m: float = 0.10  # PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M
     approach_coarse_gate_poll_sec: float = 0.1  # PANEL_PICK_DEMO_APPROACH_COARSE_GATE_POLL_SEC
     approach_coarse_gate_settle_sec: float = 0.8  # PANEL_PICK_DEMO_APPROACH_COARSE_GATE_SETTLE_SEC
     approach_coarse_gate_stable_samples: int = 2  # PANEL_PICK_DEMO_APPROACH_COARSE_GATE_STABLE_SAMPLES
@@ -215,6 +217,8 @@ class PickDemoParams:
     grasp_down_permissive_seed_weight: float = 0.65  # PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT
     grasp_down_use_moveit_cartesian: bool = True  # PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN
     grasp_down_util_dist_tol_m: float = 0.22  # PANEL_PICK_DEMO_GRASP_DOWN_UTIL_DIST_TOL_M
+    # F2-step1 (2026-05-02): default 0.012 del callsite "grasp_down_gate_metrics".
+    grasp_down_util_xy_tol_m: float = 0.012  # PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M
     gripper_confirm_max_state_age_sec: float = 0.35  # PANEL_PICK_DEMO_GRIPPER_CONFIRM_MAX_STATE_AGE_SEC
     gripper_confirm_stable_samples: int = 2  # PANEL_PICK_DEMO_GRIPPER_CONFIRM_STABLE_SAMPLES
     gripper_target_tol_m: float = 0.035  # PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M
@@ -232,6 +236,9 @@ class PickDemoParams:
     pre_close_consecutive: int = 3  # PANEL_PICK_DEMO_PRE_CLOSE_CONSECUTIVE
     pre_close_realign_retries: int = 2  # PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES
     pre_close_wait_sec: float = 1.2  # PANEL_PICK_DEMO_PRE_CLOSE_WAIT_SEC
+    # F2-step1: None ⇒ usa close_xy_tol_m / close_z_err_tol_m (campos de arriba).
+    pre_close_xy_tol_m_override: Optional[float] = None  # PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M
+    pre_close_z_err_tol_m_override: Optional[float] = None  # PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M
     release_open_confirm_timeout_sec: float = 1.8  # PANEL_PICK_DEMO_RELEASE_OPEN_CONFIRM_TIMEOUT_SEC
     release_wait_sec: float = 1.6  # PANEL_PICK_DEMO_RELEASE_WAIT_SEC
     route_mode: str = 'direct_ik_hybrid'  # PANEL_PICK_DEMO_ROUTE_MODE
@@ -298,6 +305,7 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "align_z_bias_gain": "PANEL_PICK_DEMO_ALIGN_Z_BIAS_GAIN",
     "align_z_improve_min_m": "PANEL_PICK_DEMO_ALIGN_Z_IMPROVE_MIN_M",
     "align_z_residual_tol_m": "PANEL_PICK_DEMO_ALIGN_Z_RESIDUAL_TOL_M",
+    "approach_coarse_extra_z_m": "PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M",  # F2-step1
     "approach_coarse_gate_poll_sec": "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_POLL_SEC",
     "approach_coarse_gate_settle_sec": "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_SETTLE_SEC",
     "approach_coarse_gate_stable_samples": "PANEL_PICK_DEMO_APPROACH_COARSE_GATE_STABLE_SAMPLES",
@@ -353,6 +361,7 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "grasp_down_permissive_seed_weight": "PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT",
     "grasp_down_use_moveit_cartesian": "PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN",
     "grasp_down_util_dist_tol_m": "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_DIST_TOL_M",
+    "grasp_down_util_xy_tol_m": "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M",  # F2-step1
     "gripper_confirm_max_state_age_sec": "PANEL_PICK_DEMO_GRIPPER_CONFIRM_MAX_STATE_AGE_SEC",
     "gripper_confirm_stable_samples": "PANEL_PICK_DEMO_GRIPPER_CONFIRM_STABLE_SAMPLES",
     "gripper_target_tol_m": "PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M",
@@ -370,6 +379,8 @@ ENV_VAR_BY_FIELD: Dict[str, str] = {
     "pre_close_consecutive": "PANEL_PICK_DEMO_PRE_CLOSE_CONSECUTIVE",
     "pre_close_realign_retries": "PANEL_PICK_DEMO_PRE_CLOSE_REALIGN_RETRIES",
     "pre_close_wait_sec": "PANEL_PICK_DEMO_PRE_CLOSE_WAIT_SEC",
+    "pre_close_xy_tol_m_override": "PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M",  # F2-step1
+    "pre_close_z_err_tol_m_override": "PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M",  # F2-step1
     "release_open_confirm_timeout_sec": "PANEL_PICK_DEMO_RELEASE_OPEN_CONFIRM_TIMEOUT_SEC",
     "release_wait_sec": "PANEL_PICK_DEMO_RELEASE_WAIT_SEC",
     "route_mode": "PANEL_PICK_DEMO_ROUTE_MODE",

@@ -1950,18 +1950,21 @@ def run_pick_demo(panel) -> None:
                     obj_base=_tuple3(_live_object_base()),
                     tcp_base=_tuple3(tcp_base),
                     grasp_z_target=_DIRECTO_GRASP_Z + grasp_contact_z_offset_m,
+                    # F2-step1: override Optional ⇒ close_xy_tol_m / close_z_err_tol_m fallback.
                     xy_tol=max(
                         0.004,
                         float(
-                            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "")
-                            or _get_pick_demo_params().close_xy_tol_m
+                            _get_pick_demo_params().pre_close_xy_tol_m_override
+                            if _get_pick_demo_params().pre_close_xy_tol_m_override is not None
+                            else _get_pick_demo_params().close_xy_tol_m
                         ),
                     ),
                     z_tol=max(
                         0.006,
                         float(
-                            os.environ.get("PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M", "")
-                            or _get_pick_demo_params().close_z_err_tol_m
+                            _get_pick_demo_params().pre_close_z_err_tol_m_override
+                            if _get_pick_demo_params().pre_close_z_err_tol_m_override is not None
+                            else _get_pick_demo_params().close_z_err_tol_m
                         ),
                     ),
                     pose_consistency=_json_safe(pose_consistency),
@@ -6686,12 +6689,13 @@ def run_pick_demo(panel) -> None:
                     return None
 
             def _dynamic_pre_close_reference_base(obj_base_reference) -> tuple[float, float, float] | None:
+                # F2-step1: APPROACH_COARSE_EXTRA_Z_M centralizado en dataclass.
+                # MANUAL_REF_EXTRA_Z_M sigue siendo override env (poco usado).
+                _manual_ref = os.environ.get("PANEL_PICK_DEMO_MANUAL_REF_EXTRA_Z_M", "")
                 dynamic_extra_z_m = float(
-                    os.environ.get(
-                        "PANEL_PICK_DEMO_MANUAL_REF_EXTRA_Z_M",
-                        os.environ.get("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.10"),
-                    )
-                    or 0.10
+                    _manual_ref
+                    if _manual_ref
+                    else _get_pick_demo_params().approach_coarse_extra_z_m
                 )
                 return _dynamic_pre_close_reference_pure(
                     _tuple3(obj_base_reference),
@@ -8397,9 +8401,10 @@ def run_pick_demo(panel) -> None:
                 grasp_down_gate_ok = False
                 grasp_down_gate_metrics = {}
                 if _gd_check_tcp is not None and _gd_check_obj is not None and target_base_grasp_down is not None:
+                    # F2-step1: GRASP_DOWN_UTIL_XY_TOL_M centralizado.
                     _gd_xy_tol = max(
                         0.006,
-                        float(os.environ.get("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M", "0.012") or 0.012),
+                        float(_get_pick_demo_params().grasp_down_util_xy_tol_m),
                     )
                     _gd_z_tol = max(
                         0.008,
