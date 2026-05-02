@@ -143,7 +143,25 @@ from .pick_demo.geometry import (
     apply_local_offset_to_fk as _apply_local_offset_to_fk,
     dynamic_pre_close_reference as _dynamic_pre_close_reference_pure,
     object_top_pose as _object_top_pose_pure,
+    vec_dist3 as _dist,  # F3-step1: alias canónico, reemplaza la def local previa.
 )
+
+# F3-step1: alias module-level (reemplaza def local en worker).
+_tuple3 = _pick_demo_tuple3
+
+
+def _pose_position(target_frame: str, source_frame: str, *, timeout_sec: float = 0.20):
+    pose, _pose_err = get_pose(target_frame, source_frame, timeout_sec=timeout_sec)
+    if pose is None:
+        return None
+    return _tuple3(pose.get("position"))
+
+
+def _object_top_pose(pose):
+    return _object_top_pose_pure(
+        _tuple3(pose),
+        _pick_demo_env_float("PANEL_PICK_DEMO_OBJECT_HEIGHT_M", 0.05, minimum=0.001),
+    )
 from .pick_demo.phase_checks import (
     build_approach_coarse_phase_check as _build_approach_coarse_phase_check_pure,
 )
@@ -521,9 +539,6 @@ def run_pick_demo(panel) -> None:
                     pass
                 panel._emit_log(line)
 
-            def _tuple3(data):
-                return _pick_demo_tuple3(data)
-
             selected_base_anchor = _tuple3(selected_base_anchor_raw)
             _pick_demo_cycle_object_world = None
             _pick_demo_cycle_object_base = None
@@ -624,14 +639,6 @@ def run_pick_demo(panel) -> None:
             def _fmt_scalar(value, *, digits: int = 3) -> str:
                 return _pick_demo_fmt_scalar(value, digits=digits)
 
-            def _object_top_pose(pose):
-                object_height_m = _pick_demo_env_float(
-                    "PANEL_PICK_DEMO_OBJECT_HEIGHT_M",
-                    0.05,
-                    minimum=0.001,
-                )
-                return _object_top_pose_pure(_tuple3(pose), object_height_m)
-
             def _resolved_align_object_base() -> tuple[tuple[float, float, float] | None, str, dict]:
                 obj_base_live = _tuple3(_live_object_base())
                 anchor_delta = _vector_minus(selected_base_anchor, obj_base_live)
@@ -666,12 +673,6 @@ def run_pick_demo(panel) -> None:
                 if selected_base_anchor is not None:
                     return selected_base_anchor, "selected_base_anchor_no_live_confirm", extra
                 return None, "target_unavailable", extra
-
-            def _pose_position(target_frame: str, source_frame: str, *, timeout_sec: float = 0.20):
-                pose, _pose_err = get_pose(target_frame, source_frame, timeout_sec=timeout_sec)
-                if pose is None:
-                    return None
-                return _tuple3(pose.get("position"))
 
             def _joint_error_snapshot(joints):
                 names = list(getattr(panel, "UR5_JOINT_NAMES", []) or [])
@@ -1121,12 +1122,6 @@ def run_pick_demo(panel) -> None:
                 raise RuntimeError(
                     f"{label} no alcanzado (timeout) diffs={_joint_error_snapshot(joints)}"
                 )
-
-            def _dist(a, b) -> float:
-                dx = float(a[0]) - float(b[0])
-                dy = float(a[1]) - float(b[1])
-                dz = float(a[2]) - float(b[2])
-                return math.sqrt(dx * dx + dy * dy + dz * dz)
 
             def _live_object_world():
                 lock_name = str(getattr(panel, "_pick_target_lock_name", "") or target_object_name)

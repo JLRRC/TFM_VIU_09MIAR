@@ -145,7 +145,7 @@ MAX_LOC_PER_FILE_GLOBAL = 1500
 # Sólo los archivos que SUPERAN el umbral global aparecen aquí. Los que
 # están entre 800-1500 ya cumplen el criterio sin necesidad de exención.
 LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   10449,
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   10444,  # F3-step1: -5 LOC
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  4614,
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py":          2149,
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py":        1763,
@@ -210,9 +210,9 @@ MAX_LOC_PER_FUNCTION_GLOBAL = 200
 # Baseline registrada por AST (function end_lineno - lineno + 1). Listado
 # completo por orden de prioridad de refactor (las top-3 son F3-step1).
 LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
-    # F3 step1 — el monolito que decide el TFM.
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo": 10236,
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo.worker": 9963,
+    # F3 step1 — el monolito que decide el TFM (drift hacia abajo).
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo": 10213,  # F3-step1: -23 LOC
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo.worker": 9940,  # F3-step1: -23 LOC
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object": 4518,
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object.worker": 3512,
     # Otros gigantes históricos.
