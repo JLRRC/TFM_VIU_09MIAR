@@ -26,6 +26,7 @@ from .panel_config import (
     UR5_MODEL_NAME,
     WORLDS_DIR,
 )
+from .panel_launchers_params import get_launchers_params as _get_launchers_params
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_utils import (
     bash_preamble,
@@ -99,7 +100,7 @@ def start_world_tf_publisher(panel, world_name: str) -> None:
         ensure_dir(LOG_DIR)
         tf_log = os.path.join(LOG_DIR, "world_tf_publisher.log")
         rotate_log(tf_log)
-        use_sim_time = os.environ.get("USE_SIM_TIME", "1") == "1"
+        use_sim_time = _get_launchers_params().use_sim_time
         sim_arg = " -p use_sim_time:=true" if use_sim_time else ""
         world_file = os.path.join(WORLDS_DIR, f"{world_name}.sdf")
         world_file_arg = ""
@@ -145,8 +146,10 @@ def start_attach_backend(panel, world_name: str) -> None:
         ensure_dir(LOG_DIR)
         ab_log = os.path.join(LOG_DIR, "attach_backend.log")
         rotate_log(ab_log)
-        max_dist = os.environ.get("ATTACH_BACKEND_MAX_DIST_M", "0.06").strip()
-        demo_transport = os.environ.get("ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS", "pick_demo").strip()
+        # F2-step2: ATTACH_BACKEND_* canalizado vía panel_launchers_params.
+        _lp = _get_launchers_params()
+        max_dist = f"{_lp.attach_backend_max_dist_m}"
+        demo_transport = _lp.attach_backend_demo_transport_objects
         gz_env = build_gz_env(resolve_gz_partition(getattr(panel, "gz_partition", "")))
         cmd_core = with_line_buffer(
             "ros2 run ur5_tools gripper_attach_backend "
@@ -174,7 +177,7 @@ def start_gz_pose_bridge(panel, world_name: str) -> None:
         ensure_dir(LOG_DIR)
         pose_log = os.path.join(LOG_DIR, "gz_pose_bridge.log")
         rotate_log(pose_log)
-        use_sim_time = os.environ.get("USE_SIM_TIME", "1") == "1"
+        use_sim_time = _get_launchers_params().use_sim_time
         sim_arg = " -p use_sim_time:=true" if use_sim_time else ""
         cmd_core = with_line_buffer(
             "ros2 run ur5_tools gz_pose_bridge "
@@ -269,7 +272,8 @@ def start_gazebo(panel):
                     f.write(sdf_text)
         except Exception as exc:
             _log_exception("prepare runtime model", exc)
-        render_engine = os.environ.get("GZ_RENDER_ENGINE", "").strip() or "ogre2"
+        # F2-step2: GZ_RENDER_ENGINE canalizado.
+        render_engine = _get_launchers_params().gz_render_engine
         env = (
             build_gz_env(panel.gz_partition)
             + f"export GZ_SIM_RESOURCE_PATH='{runtime_models_root}:{MODELS_DIR}:{WORLDS_DIR}:${{GZ_SIM_RESOURCE_PATH:-}}' ; "
@@ -281,9 +285,9 @@ def start_gazebo(panel):
             if os.path.isfile(world):
                 with open(world, "r", encoding="utf-8") as f:
                     world_text = f.read()
-                keep_cameras = os.environ.get("PANEL_KEEP_CAMERAS", "").strip() in ("1", "true", "True")
-                if not keep_cameras:
-                    keep_cameras = os.environ.get("PANEL_CAMERA_REQUIRED", "").strip() in ("1", "true", "True")
+                # F2-step2: PANEL_KEEP_CAMERAS / PANEL_CAMERA_REQUIRED en dataclass.
+                _lp_cam = _get_launchers_params()
+                keep_cameras = _lp_cam.keep_cameras or _lp_cam.camera_required
                 if mode != "gui" and not keep_cameras:
                     world_text = re.sub(
                         r"<plugin\s+filename=['\"]gz-sim-sensors-system['\"][\s\S]*?</plugin>",
@@ -712,7 +716,7 @@ def start_moveit(panel):
         moveit_log = os.path.join(LOG_DIR, "moveit_bringup.log")
         rotate_log(moveit_log)
         env = f"export ROS_LOG_DIR='{LOG_DIR}/ros' ; "
-        use_sim_time = os.environ.get("USE_SIM_TIME", "1") == "1"
+        use_sim_time = _get_launchers_params().use_sim_time
         sim_arg = " use_sim_time:=true" if use_sim_time else " use_sim_time:=false"
         cmd_core = with_line_buffer(
             "ros2 launch ur5_moveit_config ur5_moveit_bringup.launch.py "
@@ -808,15 +812,11 @@ def start_moveit_bridge(panel):
         except Exception:
             cm_path = "/controller_manager"
         ros_args.extend(["-p", f"controller_manager:={cm_path}"])
-        use_sim_time = os.environ.get("USE_SIM_TIME", "1") == "1"
-        bridge_moveit_py_sim_time_env = str(
-            os.environ.get(
-                "PANEL_MOVEIT_BRIDGE_SIM_TIME",
-                "0",
-            )
-        ).strip().lower() in ("1", "true", "yes", "on")
-        # Default false: MoveItPy on sim-time can abort on qos_overrides./clock in Jazzy.
-        bridge_moveit_py_sim_time = bool(bridge_moveit_py_sim_time_env)
+        use_sim_time = _get_launchers_params().use_sim_time
+        # F2-step2: PANEL_MOVEIT_BRIDGE_SIM_TIME canalizado. NOTA: el default
+        # histórico era "0" (False); el dataclass mantiene ese default. Con
+        # MoveItPy en sim-time en Jazzy puede abortar por qos_overrides./clock.
+        bridge_moveit_py_sim_time = _get_launchers_params().moveit_bridge_sim_time
         ros_args.extend(["-p", f"use_sim_time:={'true' if use_sim_time else 'false'}"])
         ros_args.extend(
             [

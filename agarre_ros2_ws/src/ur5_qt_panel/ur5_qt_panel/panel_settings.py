@@ -245,7 +245,8 @@ class PanelSettings:
 
     @classmethod
     def from_env(cls) -> "PanelSettings":
-        ws_dir = os.path.expanduser(os.environ.get("WS_DIR", "~/TFM/agarre_ros2_ws"))
+        # F2-step2: lecturas directas reemplazadas por helpers _env_* tipados.
+        ws_dir = os.path.expanduser(_env_str("WS_DIR", "~/TFM/agarre_ros2_ws"))
         os.environ.setdefault("WS_DIR", ws_dir)
         os.environ.setdefault("GZ_SIM_SYSTEM_PLUGIN_PATH", "/opt/ros/jazzy/lib")
 
@@ -255,7 +256,7 @@ class PanelSettings:
         log_dir = os.path.join(ws_dir, "log")
         bags_dir = os.path.join(ws_dir, "bags")
         fig_dir = os.path.join(ws_dir, "experiments", "figures_memoria")
-        vision_dir = os.path.expanduser(os.environ.get("VISION_DIR", "~/TFM/agarre_inteligente"))
+        vision_dir = os.path.expanduser(_env_str("VISION_DIR", "~/TFM/agarre_inteligente"))
         vision_exp_dir = os.path.join(vision_dir, "experiments")
         vision_plots_dir = os.path.join(vision_exp_dir, "plots")
         tfm_root_dir = os.path.dirname(ws_dir)
@@ -295,7 +296,7 @@ class PanelSettings:
             save_pose_info_positions=_env_bool("PANEL_SAVE_POSE_INFO_POSITIONS", False),
             infer_script=os.path.join(vision_dir, "scripts", "predict.py"),
             infer_ckpt=_env_str("INFER_CKPT", ""),
-            infer_roi_size=max(0, int(os.environ.get("INFER_ROI_SIZE", "96"))),
+            infer_roi_size=max(0, _env_int("INFER_ROI_SIZE", 96)),
             infer_retry_err_px=_env_float("INFER_RETRY_ERR_PX", 60.0),
             fastrtps_profiles=os.path.join(scripts_dir, "fastdds_no_shm.xml"),
             ur5_controllers_yaml=os.path.join(
@@ -315,9 +316,11 @@ class PanelSettings:
             auto_start_bridge_max_retries=_env_int("PANEL_AUTO_BRIDGE_MAX_RETRIES", 30),
             default_world_candidates=[os.path.join(worlds_dir, "ur5_mesa_objetos.sdf")],
             debug_frame_log=_env_bool("PANEL_DEBUG_FRAMES", False),
+            # F2-step2: PANEL_BASE_FRAME / PANEL_WORLD_FRAME son Optional[str]:
+            # ``None`` significa "no override", el panel deduce el frame.
             base_frame=os.environ.get("PANEL_BASE_FRAME"),
             world_frame=os.environ.get("PANEL_WORLD_FRAME"),
-            arm_traj_topic_default=os.environ.get(
+            arm_traj_topic_default=_env_str(
                 "ARM_TRAJ_TOPIC", "/joint_trajectory_controller/joint_trajectory"
             ),
             ur5_joint_names=[
@@ -334,7 +337,7 @@ class PanelSettings:
             ],
             ur5_home_env=os.path.join(scripts_dir, "ur5_home_pose.env"),
             ur5_home_default=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            ur5_model_name=os.environ.get("UR5_MODEL_NAME", "ur5_rg2"),
+            ur5_model_name=_env_str("UR5_MODEL_NAME", "ur5_rg2"),
             depth_pctl_refresh_frames=max(1, _env_int("PANEL_DEPTH_PCTL_REFRESH_FRAMES", 15)),
             depth_pctl_stride=max(1, _env_int("PANEL_DEPTH_PCTL_STRIDE", 4)),
             depth_fast=_env_bool("PANEL_DEPTH_FAST", False),
@@ -420,7 +423,7 @@ class PanelSettings:
             pickable_pre_grasp_z=_env_float("PANEL_PICKABLE_PRE_GRASP_Z", 0.12),
             pickable_min_clearance=_env_float("PANEL_PICKABLE_MIN_CLEARANCE", 0.05),
         )
-        yaml_path = os.environ.get("PANEL_SETTINGS_YAML", "")
+        yaml_path = _env_str("PANEL_SETTINGS_YAML", "")
         overrides = _load_yaml_overrides(yaml_path)
         if not overrides:
             return settings

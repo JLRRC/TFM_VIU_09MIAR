@@ -528,19 +528,13 @@ LEGACY_UNDOC_ENV_VARS: Set[str] = {
     "PANEL_PICK_OBJECT_LIFT_CARTESIAN",
     "PANEL_PICK_OBJECT_TRANSPORT_CARTESIAN",
     "PANEL_PICK_OBJECT_APPROACH_CARTESIAN",
-    # F2-step2 pendiente — panel_settings (defaults globales) y panel_launchers
-    # (runtime de launch); migración en bloque cuando se haga F2-step2.
+    # F2-step2 pendiente — panel_settings.py canaliza con helpers _env_*
+    # propios; estas vars se leen una sola vez y no encajan en un dataclass
+    # frozen separado. Documentadas en panel_settings.PanelSettings.
     "PANEL_BASE_FRAME",
     "PANEL_WORLD_FRAME",
     "PANEL_GRIPPER_TCP_Z_OFFSET",
-    "PANEL_SETTINGS_YAML",
-    "UR5_MODEL_NAME",
-    "PANEL_KEEP_CAMERAS",
-    "PANEL_CAMERA_REQUIRED",
-    "PANEL_MOVEIT_BRIDGE_SIM_TIME",
-    "ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS",
-    "ATTACH_BACKEND_MAX_DIST_M",
-    # F2-step2 pendiente — utilidades sueltas (panel_config, panel_process,
+    # F2-step3 pendiente — utilidades sueltas (panel_config, panel_process,
     # panel_utils, panel_startup, cameras_tab, gripper_geometry).
     "PANEL_CTRL_LIST_RETRY_WINDOW_SEC",
     "PANEL_CTRL_LAST_OK_GRACE_SEC",
