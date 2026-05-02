@@ -350,7 +350,10 @@ def _fk_tool0_to_ee_base_link(
     )
 
 
-class ControlPanelV2(QMainWindow):
+from .panel_v2_publisher_mixin import PanelV2PublisherMixin  # noqa: E402
+
+
+class ControlPanelV2(PanelV2PublisherMixin, QMainWindow):
     retry_send_joints = pyqtSignal()
     status_updated = pyqtSignal(bool, bool, bool, bool, bool, bool, bool)
     signal_status = pyqtSignal(str, bool)
@@ -388,6 +391,10 @@ class ControlPanelV2(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        # F14-step2: PanelV2PublisherMixin lee este flag en lugar de la
+        # constante global USE_SIM_TIME para no introducir un import
+        # circular en el mixin.
+        self._use_sim_time_flag = bool(USE_SIM_TIME)
         self._state_event = threading.Event()
         self._debug_motion_lock = threading.Lock()
         self._debug_motion_continue_event = threading.Event()
@@ -1064,64 +1071,8 @@ class ControlPanelV2(QMainWindow):
     def get_logger(self):
         return self._panel_logger
 
-    def _init_moveit_publisher(self) -> None:
-        self._moveit_node, self._moveit_pose_pub, self._moveit_pose_pub_cartesian = (
-            init_moveit_publishers(
-                node=self._moveit_node,
-                pose_pub=self._moveit_pose_pub,
-                pose_pub_cartesian=self._moveit_pose_pub_cartesian,
-                use_sim_time=bool(USE_SIM_TIME),
-                pose_topic=MOVEIT_POSE_TOPIC,
-                cartesian_topic=MOVEIT_CARTESIAN_POSE_TOPIC,
-                logger=self._log,
-            )
-        )
-        if self._moveit_node is not None and self._grasp_rect_pub is None:
-            try:
-                self._grasp_rect_pub = self._moveit_node.create_publisher(
-                    Float32MultiArray,
-                    self._grasp_rect_topic,
-                    10,
-                )
-            except Exception as exc:
-                self._emit_log(f"[TFM] WARN: no se pudo crear publisher {self._grasp_rect_topic} ({exc})")
-                self._grasp_rect_pub = None
-
-    def _ensure_moveit_node(self) -> None:
-        if self._moveit_node is None:
-            self._init_moveit_publisher()
-
-    def _publish_current_grasp_rect(self) -> bool:
-        if not self._last_grasp_px:
-            return False
-        self._ensure_moveit_node()
-        if self._grasp_rect_pub is None:
-            return False
-        try:
-            msg = Float32MultiArray()
-            msg.data = [
-                float(self._last_grasp_px.get("cx", 0.0)),
-                float(self._last_grasp_px.get("cy", 0.0)),
-                float(self._last_grasp_px.get("w", 0.0)),
-                float(self._last_grasp_px.get("h", 0.0)),
-                math.radians(float(self._last_grasp_px.get("angle_deg", 0.0))),
-            ]
-            self._grasp_rect_pub.publish(msg)
-            self._audit_append(
-                "logs/perception.log",
-                "[TFM] grasp_rect tx "
-                f"topic={self._grasp_rect_topic} type=std_msgs/msg/Float32MultiArray "
-                f"cx={msg.data[0]:.1f} cy={msg.data[1]:.1f} w={msg.data[2]:.1f} h={msg.data[3]:.1f} "
-                f"theta_rad={msg.data[4]:.4f}",
-            )
-            return True
-        except Exception as exc:
-            self._emit_log(f"[TFM] WARN: fallo publicando {self._grasp_rect_topic} ({exc})")
-            self._audit_append(
-                "logs/perception.log",
-                f"[TFM] grasp_rect tx_fail topic={self._grasp_rect_topic} err={exc}",
-            )
-            return False
+    # F14-step2: _init_moveit_publisher / _ensure_moveit_node /
+    # _publish_current_grasp_rect heredados de PanelV2PublisherMixin.
 
     def _expected_world_frame(self, *args, **kwargs):
         return _stm._expected_world_frame(self, *args, **kwargs)
@@ -1156,23 +1107,8 @@ class ControlPanelV2(QMainWindow):
     def get_pose_in_base(self, *args, **kwargs):
         return _stm.get_pose_in_base(self, *args, **kwargs)
 
-    def _moveit_publish_context(self, *args, **kwargs):
-        return _stm._moveit_publish_context(self, *args, **kwargs)
-
-    def _request_auto_bridge_start(self, *args, **kwargs):
-        return _stm._request_auto_bridge_start(self, *args, **kwargs)
-
-    def _auto_bridge_tick(self, *args, **kwargs):
-        return _stm._auto_bridge_tick(self, *args, **kwargs)
-
-    def _get_traj_publisher(self, *args, **kwargs):
-        return _stm._get_traj_publisher(self, *args, **kwargs)
-
-    def _get_gripper_publisher(self, *args, **kwargs):
-        return _stm._get_gripper_publisher(self, *args, **kwargs)
-
-    def _get_attach_publisher(self, *args, **kwargs):
-        return _stm._get_attach_publisher(self, *args, **kwargs)
+    # F14-step2: _moveit_publish_context, _request_auto_bridge_start,
+    # _auto_bridge_tick, _get_*_publisher heredados de PanelV2PublisherMixin.
 
     def _normalize_attach_name(self, *args, **kwargs):
         return _stm._normalize_attach_name(*args, **kwargs)
@@ -1228,14 +1164,11 @@ class ControlPanelV2(QMainWindow):
     def _clamp_joint_positions(self, *args, **kwargs):
         return _stm._clamp_joint_positions(self, *args, **kwargs)
 
-    def _publish_joint_trajectory(self, *args, **kwargs):
-        return _stm._publish_joint_trajectory(self, *args, **kwargs)
+    # F14-step2: _publish_joint_trajectory, _publish_moveit_pose heredados
+    # de PanelV2PublisherMixin.
 
     def _log_traj_action_fallback(self, *args, **kwargs):
         return _stm._log_traj_action_fallback(self, *args, **kwargs)
-
-    def _publish_moveit_pose(self, *args, **kwargs):
-        return _stm._publish_moveit_pose(self, *args, **kwargs)
 
     def _start_objects_settle_watch(self, *args, **kwargs):
         return _stm._start_objects_settle_watch(self, *args, **kwargs)
