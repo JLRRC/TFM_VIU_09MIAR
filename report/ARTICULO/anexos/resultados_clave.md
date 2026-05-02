@@ -1,6 +1,6 @@
 # Resultados clave
 
-## Tabla principal recomendada para el articulo
+## Tabla principal recomendada
 
 | experimento | modelo | modalidad | success | IoU | error angular | val_loss |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -9,17 +9,22 @@
 | `EXP3_RESNET18_RGB_AUGMENT` | `ResNet18Grasp` | RGB | 0,6801 +/- 0,0245 | 0,4010 +/- 0,0046 | 10,6071 +/- 1,1800 | 0,0297 +/- 0,0007 |
 | `EXP4_RESNET18_RGBD` | `ResNet18Grasp` | RGB-D | 0,6492 +/- 0,0102 | 0,3879 +/- 0,0148 | 11,4260 +/- 0,5339 | 0,0283 +/- 0,0006 |
 
-## Lectura principal
+## Lectura editorial
 
-- Mejor resultado medio oficial: `EXP3_RESNET18_RGB_AUGMENT` con `val_success` 0,6801.
-- `ResNet18Grasp` supera a `SimpleGraspCNN` en las dos modalidades oficiales.
-- En ResNet, RGB con augmentation (`EXP3`) supera a RGB-D sin augmentation (`EXP4`) en `val_success` medio.
-- En la CNN ligera oficial, RGB-D con augmentation (`EXP2`) supera a RGB sin augmentation (`EXP1`) en success, pero no en error angular.
-- La modalidad de entrada y la augmentation deben discutirse como factores dependientes de la arquitectura.
+- Resultado con mas fuerza para congreso: `EXP3_RESNET18_RGB_AUGMENT` alcanza el mejor `val_success` medio.
+- La arquitectura residual supera claramente a la CNN ligera bajo el protocolo oficial.
+- RGB-D mejora a la CNN ligera, pero no supera a RGB con augmentation en ResNet.
+- El error angular mas bajo tambien corresponde a `EXP3`, lo que refuerza precision geometrica.
+- `EXP4` obtiene la menor `val_loss`, dato util para discutir que las metricas no siempre cuentan la misma historia.
 
-## Resultados auxiliares
+## Resultados complementarios
 
-`EXP1.1_SIMPLEGRASP_RGB` y `EXP1.2_SIMPLEGRASP_RGBD` quedan como evidencia complementaria de una variante ligera posterior. No deben mezclarse con la tabla principal salvo que el articulo incluya una seccion explicita de material suplementario.
+`EXP1.1_SIMPLEGRASP_RGB` y `EXP1.2_SIMPLEGRASP_RGBD` iran dentro del articulo como tabla o parrafo complementario. Pueden servir para trazabilidad de variantes, pero no conviene mezclarlos con la tabla principal `EXP1..EXP4`.
+
+| experimento | modelo | modalidad | success | IoU | error angular | val_loss |
+| --- | --- | --- | --- | --- | --- | --- |
+| `EXP1.1_SIMPLEGRASP_RGB` | `SimpleGrasp` | RGB | 0,3646 +/- 0,1014 | 0,2477 +/- 0,0808 | 14,5377 +/- 1,5389 | 0,0336 +/- 0,0024 |
+| `EXP1.2_SIMPLEGRASP_RGBD` | `SimpleGrasp` | RGB-D | 0,4143 +/- 0,0404 | 0,3079 +/- 0,0517 | 17,1200 +/- 0,2046 | 0,0334 +/- 0,0006 |
 
 ## Fuentes
 

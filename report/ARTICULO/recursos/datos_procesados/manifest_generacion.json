@@ -1,6 +1,8 @@
 {
   "root": ".",
   "articulo_dir": "report/ARTICULO",
+  "orientacion": "articulo cientifico sobre grasping 2D/2.5D reproducible",
+  "titulo": "HACIA UN GRASPING 2D/2.5D REPRODUCIBLE: COMPARACIÓN DE ARQUITECTURAS CNN EN ENTORNOS NO ESTRUCTURADOS",
   "n_experimentos_configurados": 8,
   "n_experimentos_con_metricas": 6,
   "n_figuras_generadas": 17,

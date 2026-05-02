@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenera datos y figuras del workspace del articulo sin tocar borradores editoriales."""
+"""Regenera datos y figuras del workspace sin tocar los textos editoriales."""
 
 from __future__ import annotations
 
@@ -483,7 +483,7 @@ def rows_for_md(summary: pd.DataFrame) -> list[dict]:
 
 
 def build_markdown(exp_df: pd.DataFrame, best_df: pd.DataFrame, summary: pd.DataFrame, figs: list[dict]) -> None:
-    """Los Markdown publicables se editan manualmente; no regenerarlos desde plantillas obsoletas."""
+    """Los Markdown publicables se editan manualmente; no se regeneran desde plantillas."""
     _ = (exp_df, best_df, summary, figs)
     return
 
@@ -498,6 +498,8 @@ def main() -> None:
     manifest = {
         "root": rel(ROOT),
         "articulo_dir": rel(ART),
+        "orientacion": "articulo cientifico sobre grasping 2D/2.5D reproducible",
+        "titulo": "HACIA UN GRASPING 2D/2.5D REPRODUCIBLE: COMPARACIÓN DE ARQUITECTURAS CNN EN ENTORNOS NO ESTRUCTURADOS",
         "n_experimentos_configurados": int(len(exp_df)),
         "n_experimentos_con_metricas": int(best_df["experiment"].nunique()) if not best_df.empty else 0,
         "n_figuras_generadas": int(len(figs)),

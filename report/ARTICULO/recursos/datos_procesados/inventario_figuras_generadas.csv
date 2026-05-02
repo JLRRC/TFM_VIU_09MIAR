@@ -1,18 +1,18 @@
-archivo,representa,fuente,experimento_modelo,apta_articulo,retoque
-curvas_loss_EXP1.1_SIMPLEGRASP_RGB.png,Curvas train_loss y val_loss por seed.,agarre_inteligente/experiments/*/seed_*/metrics.csv,EXP1.1_SIMPLEGRASP_RGB,"si, si se simplifica visualmente segun limite de paginas",posible reduccion a paneles agregados
-curvas_loss_EXP1.2_SIMPLEGRASP_RGBD.png,Curvas train_loss y val_loss por seed.,agarre_inteligente/experiments/*/seed_*/metrics.csv,EXP1.2_SIMPLEGRASP_RGBD,"si, si se simplifica visualmente segun limite de paginas",posible reduccion a paneles agregados
-curvas_loss_EXP1_SIMPLE_RGB.png,Curvas train_loss y val_loss por seed.,agarre_inteligente/experiments/*/seed_*/metrics.csv,EXP1_SIMPLE_RGB,"si, si se simplifica visualmente segun limite de paginas",posible reduccion a paneles agregados
-curvas_loss_EXP2_SIMPLE_RGBD.png,Curvas train_loss y val_loss por seed.,agarre_inteligente/experiments/*/seed_*/metrics.csv,EXP2_SIMPLE_RGBD,"si, si se simplifica visualmente segun limite de paginas",posible reduccion a paneles agregados
-curvas_loss_EXP3_RESNET18_RGB_AUGMENT.png,Curvas train_loss y val_loss por seed.,agarre_inteligente/experiments/*/seed_*/metrics.csv,EXP3_RESNET18_RGB_AUGMENT,"si, si se simplifica visualmente segun limite de paginas",posible reduccion a paneles agregados
-curvas_loss_EXP4_RESNET18_RGBD.png,Curvas train_loss y val_loss por seed.,agarre_inteligente/experiments/*/seed_*/metrics.csv,EXP4_RESNET18_RGBD,"si, si se simplifica visualmente segun limite de paginas",posible reduccion a paneles agregados
-evolucion_val_success_todos.png,Media por epoca de val_success para experimentos con metricas disponibles.,agarre_inteligente/experiments/*/seed_*/metrics.csv,EXP1..EXP4 + EXP1.1/EXP1.2 si hay metricas,si,revisar densidad de leyenda
-evolucion_val_iou_todos.png,Media por epoca de val_iou para experimentos con metricas disponibles.,agarre_inteligente/experiments/*/seed_*/metrics.csv,EXP1..EXP4 + EXP1.1/EXP1.2 si hay metricas,si,revisar densidad de leyenda
-evolucion_val_angle_todos.png,Media por epoca de val_angle_deg para experimentos con metricas disponibles.,agarre_inteligente/experiments/*/seed_*/metrics.csv,EXP1..EXP4 + EXP1.1/EXP1.2 si hay metricas,si,revisar densidad de leyenda
-best_epoch_success_barras.png,Media y desviacion por seed de val_success_mean.,best_epoch_summary.csv por experimento,todos los experimentos ejecutados,si,posible acortar nombres de experimentos
-best_epoch_iou_barras.png,Media y desviacion por seed de val_iou_mean.,best_epoch_summary.csv por experimento,todos los experimentos ejecutados,si,posible acortar nombres de experimentos
-best_epoch_angle_barras.png,Media y desviacion por seed de val_angle_deg_mean.,best_epoch_summary.csv por experimento,todos los experimentos ejecutados,si,posible acortar nombres de experimentos
-best_epoch_loss_barras.png,Media y desviacion por seed de val_loss_mean.,best_epoch_summary.csv por experimento,todos los experimentos ejecutados,si,posible acortar nombres de experimentos
-comparacion_modalidad_success.png,Comparacion de success final entre modelo ligero y ResNet18 por modalidad.,report/tables/cap5/Tabla_5-4 y best_epoch_summary oficiales,EXP1..EXP4,si,no imprescindible
-latencia_inferencia_log.png,Latencia media CPU/CUDA para batch 1.,report/tables/cap5/Tabla_5-3_medicion_de_latencia_de_inferencia_por_experimento_y_dispositivo.csv,EXP1..EXP4,si,quizas separar CPU y CUDA si el venue exige legibilidad en B/N
-tamano_modelo_parametros.png,Numero de parametros por checkpoint medido en benchmark.,Tabla de latencia capitulo 5,EXP1..EXP4,si,no imprescindible
-delta_pre_post_retrain_success.png,Diferencia de val_success entre snapshot previo y resultados validados.,report/metrics/aggregated/chapter5_pre_vs_post_retrain_comparison.csv,EXP1..EXP4,"solo si se explica como control de reproducibilidad, no como resultado principal",decidir si incluir o dejar en material suplementario
+archivo,categoria_editorial,uso_recomendado,prioridad,comentario
+best_epoch_success_barras.png,esencial,figura principal de resultados,alta,"Comunica el hallazgo central: mejor success medio en EXP3."
+best_epoch_iou_barras.png,esencial,precision geometrica,alta,"Complementa success con solapamiento de rectangulos."
+best_epoch_angle_barras.png,esencial,precision angular,alta,"Refuerza la lectura de geometria del grasp."
+comparacion_modalidad_success.png,gancho_congreso,comparacion arquitectura/modalidad,alta,"Ayuda a contar RGB vs RGB-D y CNN ligera vs ResNet."
+evolucion_val_success_todos.png,apoyo,dinamica de aprendizaje,media,"Util si se quiere mostrar evolucion por epoca."
+evolucion_val_iou_todos.png,apoyo,dinamica de IoU,media,"Puede ir a suplemento por densidad visual."
+evolucion_val_angle_todos.png,apoyo,dinamica angular,media,"Puede ir a suplemento por densidad visual."
+best_epoch_loss_barras.png,apoyo,matiz de perdida de validacion,media,"Sirve para explicar que menor perdida no siempre equivale a mayor success."
+curvas_loss_EXP3_RESNET18_RGB_AUGMENT.png,apoyo,estabilidad del mejor modelo,media,"Candidata si se necesita mostrar entrenamiento del modelo principal."
+curvas_loss_EXP4_RESNET18_RGBD.png,apoyo,comparacion con segunda configuracion fuerte,media,"Util para contraste ResNet RGB-D."
+curvas_loss_EXP1_SIMPLE_RGB.png,auditoria,curva individual de baseline,baja,"Mejor como suplemento."
+curvas_loss_EXP2_SIMPLE_RGBD.png,auditoria,curva individual de baseline RGB-D,baja,"Mejor como suplemento."
+curvas_loss_EXP1.1_SIMPLEGRASP_RGB.png,auxiliar,experimento auxiliar,baja,"No mezclar con resultados oficiales."
+curvas_loss_EXP1.2_SIMPLEGRASP_RGBD.png,auxiliar,experimento auxiliar,baja,"No mezclar con resultados oficiales."
+latencia_inferencia_log.png,eficiencia,aplicabilidad funcional,media,"Usar brevemente si se discuten eficiencia y despliegue."
+tamano_modelo_parametros.png,eficiencia,trade-off de complejidad,media,"Complementa latencia."
+delta_pre_post_retrain_success.png,auditoria,control de reproducibilidad,baja,"Solo incluir si se explica como control de trazabilidad."

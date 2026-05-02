@@ -13,8 +13,8 @@
 
 ## Estados usados
 
-- `principal`: mejor configuracion oficial y eje de la discusion de resultados.
+- `principal`: mejor configuracion oficial y eje de la discusion.
 - `oficial`: experimento del bloque consolidado `EXP1..EXP4`.
-- `auxiliar`: experimento posterior util como material complementario.
+- `auxiliar`: experimento posterior incluido como bloque complementario dentro del articulo.
 - `metodologia pendiente`: configuracion localizada sin resultados consolidados.
 - `plantilla`: configuracion base no interpretable como resultado experimental.

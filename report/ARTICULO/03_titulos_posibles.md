@@ -1,23 +1,43 @@
 # Titulos posibles
 
-## Titulo rector
+## Recomendados
 
-1. HACIA UN GRASPING 2D/2.5D REPRODUCIBLE: COMPARACIÓN DE ARQUITECTURAS CNN EN ENTORNOS NO ESTRUCTURADOS
+1. **HACIA UN GRASPING 2D/2.5D REPRODUCIBLE: COMPARACIÓN DE ARQUITECTURAS CNN EN ENTORNOS NO ESTRUCTURADOS**
+2. Grasping 2D/2.5D reproducible mediante CNN: comparacion de arquitecturas en entornos no estructurados
+3. Comparacion reproducible de arquitecturas CNN para grasping 2D/2.5D con entradas RGB y RGB-D
+4. Evaluacion controlada de CNN ligeras y ResNet-18 para deteccion de agarres 2D/2.5D
 
-## Variantes si el venue pide ajuste
+## Alternativos
 
-2. Comparacion reproducible de arquitecturas CNN para agarres 2D/2.5D con imagenes RGB y RGB-D
-3. Evaluacion trazable de CNN ligeras y ResNet-18 para deteccion de agarres 2D/2.5D
-4. Analisis reproducible de arquitecturas RGB y RGB-D para grasping basado en rectangulos
-5. Evaluacion multisemilla de redes convolucionales para agarres 2D/2.5D sobre Cornell
-6. Comparacion metodologica de CNN para regresion de rectangulos de agarre en escenas no estructuradas
-7. Arquitecturas convolucionales para deteccion de agarres: comparacion, trazabilidad y metricas
-8. Efecto de arquitectura, modalidad y augmentation en deteccion visual de agarres 2D/2.5D
-9. ResNet-18 frente a CNN ligeras para prediccion reproducible de agarres 2D/2.5D
-10. Protocolo reproducible para evaluar arquitecturas CNN en deteccion de agarres roboticos
+5. Arquitectura, modalidad y augmentation en grasping 2D/2.5D: un estudio reproducible con CNN
+6. Evaluacion multisemilla de redes convolucionales para grasping 2D/2.5D sobre Cornell
+7. De RGB a RGB-D en deteccion de agarres: comparacion reproducible de arquitecturas CNN
+8. Protocolo reproducible para evaluar arquitecturas CNN en deteccion visual de agarres
 
-## Titulos descartados por enfoque
+## Demasiado tecnicos
 
-- Titulos centrados en integracion o plataforma de ejecucion desplazan el articulo hacia ingenieria aplicada.
-- Titulos que mencionan despliegue o seleccion de checkpoint sugieren un trabajo de ingenieria mas que una contribucion metodologica.
-- Titulos que prometen superioridad general deben evitarse porque el estudio esta acotado a Cornell y a tres semillas por configuracion.
+9. Evaluacion de `SimpleGraspCNN` y `ResNet18Grasp` con particion object-wise y tres semillas
+10. Analisis de `val_success`, IoU y error angular en modelos CNN para Cornell
+11. Benchmark de latencia y metricas por mejor epoca en arquitecturas CNN de grasping
+
+## Demasiado centrados en integracion
+
+12. Integracion funcional de ResNet-18 para inferencia de agarres
+13. De Cornell a ejecucion robotica: entrenamiento e inferencia de agarres con CNN
+14. Pipeline verificable para entrenamiento e inferencia de agarres roboticos con CNN
+
+## Demasiado administrativos
+
+15. Comparacion de modelos implementados para deteccion de poses de agarre
+16. Resultados experimentales de CNN y ResNet-18 para un sistema de agarre
+17. Del desarrollo experimental al articulo: modelos CNN para grasping visual
+
+## Demasiado generales para congreso
+
+18. Comparacion de modalidades RGB y RGB-D en regresion de rectangulos de agarre
+19. Prediccion de agarres con aprendizaje profundo: comparacion experimental
+20. Evaluacion de augmentation y profundidad para modelos de grasping 2D
+
+## Criterio editorial
+
+El titulo recomendado funciona mejor porque combina direccion conceptual ("hacia"), dominio tecnico ("grasping 2D/2.5D"), valor academico ("reproducible"), objeto de estudio ("arquitecturas CNN") y escenario ("entornos no estructurados").
