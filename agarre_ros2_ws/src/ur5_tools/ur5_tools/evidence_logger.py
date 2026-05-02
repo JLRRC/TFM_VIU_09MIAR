@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import rclpy
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -117,6 +118,12 @@ class EvidenceLogger(Node):
         )
 
         self._subs: List[Any] = []
+        # F19 (2026-05-02): MutuallyExclusiveCallbackGroup serializa los
+        # callbacks de subscriptions, evitando que dos eventos compitan
+        # por el lock implícito de escritura en events.jsonl + summary.csv.
+        # Reduce contención y elimina race conditions sobre los file
+        # descriptors abiertos.
+        self._cb_group = MutuallyExclusiveCallbackGroup()
         self._setup_subscriptions()
 
         self._record(
@@ -143,6 +150,7 @@ class EvidenceLogger(Node):
                 result_topic,
                 self._on_grasp_result,
                 self._reliable_qos,
+                callback_group=self._cb_group,
             )
         )
 
@@ -155,6 +163,7 @@ class EvidenceLogger(Node):
                 state_topic,
                 self._on_system_state,
                 self._reliable_qos,
+                callback_group=self._cb_group,
             )
         )
 
@@ -167,6 +176,7 @@ class EvidenceLogger(Node):
                 diag_topic,
                 self._on_system_diag,
                 self._best_effort_qos,
+                callback_group=self._cb_group,
             )
         )
 
@@ -183,6 +193,7 @@ class EvidenceLogger(Node):
                     topic,
                     lambda msg, name=obj: self._on_gripper_state(msg, name),
                     self._reliable_qos,
+                    callback_group=self._cb_group,
                 )
             )
 

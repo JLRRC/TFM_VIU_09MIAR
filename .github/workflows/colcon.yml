@@ -78,7 +78,8 @@ jobs:
             test/test_panel_v2_droprecover_mixin.py \
             test/test_panel_v2_calibpick_mixin.py \
             test/test_panel_v2_overlaysselection_mixin.py \
-            test/test_panel_v2_tfmsciencetrace_mixin.py
+            test/test_panel_v2_tfmsciencetrace_mixin.py \
+            test/test_panel_tf_geometry_client_logic.py
 
       - name: pytest offline subset ur5_tools (F4/F10/F6.5/F13 helpers puros)
         working-directory: agarre_ros2_ws/src/ur5_tools

@@ -24,15 +24,18 @@ from tf2_msgs.msg import TFMessage
 class GzPoseBridge(LifecycleNode):
     """Read gz pose/info and publish a TFMessage with named frames.
 
-    F13b (2026-05-01): migrado a ``LifecycleNode`` (observable). La
-    inicialización completa permanece en ``__init__`` para preservar
-    el bridge funcional. Las transiciones lifecycle retornan SUCCESS
-    sin re-crear recursos. ``auto_activate=True`` por defecto.
+    F13c (2026-05-02): segregación de recursos a Pleno.
+
+    * ``__init__`` solo declara parámetros y reserva atributos.
+    * ``on_configure``: lee parámetros y crea el publisher.
+    * ``on_activate``: arranca el hilo gz topic + watchdog timer.
+    * ``on_deactivate``: detiene hilo y timer (deja publisher creado
+      para reuso rápido sin reservar topic).
+    * ``on_cleanup``: destruye publisher y reset.
     """
 
     def __init__(self) -> None:
         super().__init__("gz_pose_bridge")
-        # F13b lifecycle: auto-activate por defecto preserva backward-compat.
         if not self.has_parameter("auto_activate"):
             self.declare_parameter("auto_activate", True)
         self.declare_parameter("world_name", "ur5_mesa_objetos")
@@ -41,33 +44,20 @@ class GzPoseBridge(LifecycleNode):
         self.declare_parameter("world_frame", "world")
         self.declare_parameter("startup_timeout_sec", 5.0)
 
-        self._world_name = str(self.get_parameter("world_name").value)
-        self._gz_topic = (
-            str(self.get_parameter("gz_topic").value)
-            or f"/world/{self._world_name}/pose/info"
-        )
-        self._ros_topic = (
-            str(self.get_parameter("ros_topic").value)
-            or f"/world/{self._world_name}/pose/info"
-        )
-        self._world_frame = str(self.get_parameter("world_frame").value) or "world"
-        self._startup_timeout = float(self.get_parameter("startup_timeout_sec").value)
-        if self._startup_timeout <= 0.0:
-            self._startup_timeout = 5.0
-
-        self._pub = self.create_publisher(TFMessage, self._ros_topic, 10)
+        # Recursos creados en lifecycle, no en __init__.
+        self._world_name = ""
+        self._gz_topic = ""
+        self._ros_topic = ""
+        self._world_frame = "world"
+        self._startup_timeout = 5.0
+        self._pub = None
         self._stop = threading.Event()
         self._last_valid = 0.0
-        self._start_wall = time.monotonic()
+        self._start_wall = 0.0
         self._proc = None
         self._proc_lock = threading.Lock()
-        self._thread = threading.Thread(target=self._reader_loop, daemon=True)
-        self._thread.start()
-        self._timer = self.create_timer(0.5, self._watchdog)
-
-        self.get_logger().info(
-            f"GzPoseBridge active (gz={self._gz_topic} -> ros={self._ros_topic})"
-        )
+        self._thread: Optional[threading.Thread] = None
+        self._timer = None
 
     def _watchdog(self) -> None:
         if self._last_valid > 0.0:
@@ -126,12 +116,10 @@ class GzPoseBridge(LifecycleNode):
         self.get_logger().error(reason)
         self._stop.set()
         self._terminate_proc()
+        # F13c: en LifecycleNode delegamos en deactivate; el supervisor
+        # decide shutdown.
         try:
-            self.destroy_node()
-        except Exception:
-            pass
-        try:
-            rclpy.try_shutdown()
+            self.trigger_deactivate()
         except Exception:
             pass
 
@@ -205,22 +193,86 @@ class GzPoseBridge(LifecycleNode):
 
 
     # ------------------------------------------------------------------
-    # Lifecycle transitions (F13b — observable, sin re-creación de recursos)
+    # Lifecycle transitions (F13c — Pleno, segregación real de recursos)
     # ------------------------------------------------------------------
 
     def on_configure(self, _state) -> TransitionCallbackReturn:
-        self.get_logger().info("[LIFECYCLE] GzPoseBridge configured")
+        self._world_name = str(self.get_parameter("world_name").value)
+        self._gz_topic = (
+            str(self.get_parameter("gz_topic").value)
+            or f"/world/{self._world_name}/pose/info"
+        )
+        self._ros_topic = (
+            str(self.get_parameter("ros_topic").value)
+            or f"/world/{self._world_name}/pose/info"
+        )
+        self._world_frame = (
+            str(self.get_parameter("world_frame").value) or "world"
+        )
+        try:
+            self._startup_timeout = float(
+                self.get_parameter("startup_timeout_sec").value
+            )
+        except Exception:
+            self._startup_timeout = 5.0
+        if self._startup_timeout <= 0.0:
+            self._startup_timeout = 5.0
+
+        self._pub = self.create_publisher(TFMessage, self._ros_topic, 10)
+        self.get_logger().info(
+            f"[LIFECYCLE] GzPoseBridge configured "
+            f"(gz={self._gz_topic} -> ros={self._ros_topic})"
+        )
         return TransitionCallbackReturn.SUCCESS
 
     def on_activate(self, _state) -> TransitionCallbackReturn:
-        self.get_logger().info("[LIFECYCLE] GzPoseBridge activated")
+        self._stop.clear()
+        self._last_valid = 0.0
+        self._start_wall = time.monotonic()
+        self._thread = threading.Thread(target=self._reader_loop, daemon=True)
+        self._thread.start()
+        self._timer = self.create_timer(0.5, self._watchdog)
+        self.get_logger().info(
+            "[LIFECYCLE] GzPoseBridge activated; reader thread + watchdog up"
+        )
         return TransitionCallbackReturn.SUCCESS
 
     def on_deactivate(self, _state) -> TransitionCallbackReturn:
+        self._stop.set()
+        self._terminate_proc()
+        if self._timer is not None:
+            try:
+                self._timer.cancel()
+                self.destroy_timer(self._timer)
+            except Exception:
+                pass
+            self._timer = None
+        if self._thread is not None:
+            try:
+                self._thread.join(timeout=2.0)
+            except Exception:
+                pass
+            self._thread = None
         self.get_logger().info("[LIFECYCLE] GzPoseBridge deactivated")
         return TransitionCallbackReturn.SUCCESS
 
     def on_cleanup(self, _state) -> TransitionCallbackReturn:
+        # Por si on_deactivate no se ejecutó.
+        self._stop.set()
+        self._terminate_proc()
+        if self._timer is not None:
+            try:
+                self.destroy_timer(self._timer)
+            except Exception:
+                pass
+            self._timer = None
+        if self._pub is not None:
+            try:
+                self.destroy_publisher(self._pub)
+            except Exception:
+                pass
+            self._pub = None
+        self._thread = None
         self.get_logger().info("[LIFECYCLE] GzPoseBridge cleaned up")
         return TransitionCallbackReturn.SUCCESS
 

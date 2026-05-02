@@ -175,26 +175,54 @@ DIRECT_GRASP_AUDIT_PREFIX = "[PICK][DIRECT_GRASP_AUDIT]"
 # _coerce_ur5_joint_vector → moved to directo_gate_evaluator.py
 
 
-_RUN_PICK_DEMO_DEPRECATION_EMITTED = False
+_RUN_PICK_DEMO_INVOCATION_COUNT = 0
+
+
+def _record_legacy_invocation(panel) -> int:
+    """F12-step2: contador + audit log de cada llamada al legacy.
+
+    Cada llamada a ``run_pick_demo`` se registra en
+    ``audit/legacy_pick_demo.log`` (vía ``panel._audit_append``) con
+    timestamp + invocation count. Esto permite, en una sesión post-
+    drenado, comprobar si todavía hay paths que disparan el legacy y
+    cuáles. Devuelve el contador actualizado.
+    """
+    global _RUN_PICK_DEMO_INVOCATION_COUNT
+    _RUN_PICK_DEMO_INVOCATION_COUNT += 1
+    n = _RUN_PICK_DEMO_INVOCATION_COUNT
+    try:
+        panel._emit_log(
+            f"[PICK_DEMO][DEPRECATED][N={n}] run_pick_demo legacy en uso. "
+            "Path canónico: orchestrator vía /pick_place "
+            "(tfm_orchestrator). Override: USE_LEGACY_PICK_DEMO=1."
+        )
+    except Exception:
+        pass
+    try:
+        from datetime import datetime, timezone
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        panel._audit_append(
+            "audit/legacy_pick_demo.log",
+            f"[LEGACY][N={n}] ts={ts} object={getattr(panel, '_selected_object', '')} "
+            f"caller=run_pick_demo",
+        )
+    except Exception:
+        pass
+    return n
 
 
 def run_pick_demo(panel) -> None:
-    # F12 (2026-05-01): este flujo legacy queda en deprecación. El path
-    # canónico es ``pick_demo_dispatcher.dispatch_pick_demo`` →
-    # PickPlaceClient → /pick_place (tfm_orchestrator). El legacy se
-    # mantiene como rollback (USE_LEGACY_PICK_DEMO=1) hasta que el
-    # orchestrator drene 100% del comportamiento aquí embebido.
-    global _RUN_PICK_DEMO_DEPRECATION_EMITTED
-    if not _RUN_PICK_DEMO_DEPRECATION_EMITTED:
-        _RUN_PICK_DEMO_DEPRECATION_EMITTED = True
-        try:
-            panel._emit_log(
-                "[PICK_DEMO][DEPRECATED] run_pick_demo legacy en uso. Path "
-                "canónico desde F12 (2026-05-01): orchestrator vía "
-                "/pick_place. Para forzar este legacy: USE_LEGACY_PICK_DEMO=1."
-            )
-        except Exception:
-            pass
+    # F12 (2026-05-01) → F12-step2 (2026-05-02): legacy fuertemente
+    # deprecado. El path canónico es
+    # ``pick_demo_dispatcher.dispatch_pick_demo`` → PickPlaceClient →
+    # /pick_place (tfm_orchestrator). Este legacy emite log
+    # ``[PICK_DEMO][DEPRECATED][N=X]`` y escribe a
+    # ``audit/legacy_pick_demo.log`` cada vez que se invoca, para
+    # auditar uso residual. Se mantiene operativo como rollback
+    # controlado por env var ``USE_LEGACY_PICK_DEMO=1`` hasta que el
+    # orchestrator drene 100% del comportamiento aquí embebido (F12-
+    # step2c, requiere ROS vivo).
+    _record_legacy_invocation(panel)
     sync_start_mono = time.monotonic()
     run_context = {
         "last_sync_gate": "entry",
