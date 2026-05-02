@@ -70,7 +70,8 @@ jobs:
             test/test_panel_clock_helpers.py \
             test/test_pick_object_diagnostics.py \
             test/test_panel_v2_step_debug_mixin.py \
-            test/test_panel_v2_runtime_diagnostics_mixin.py
+            test/test_panel_v2_runtime_diagnostics_mixin.py \
+            test/test_panel_v2_subprocess_motion_mixin.py
 
       - name: pytest offline subset ur5_tools (F4/F10/F6.5/F13 helpers puros)
         working-directory: agarre_ros2_ws/src/ur5_tools
