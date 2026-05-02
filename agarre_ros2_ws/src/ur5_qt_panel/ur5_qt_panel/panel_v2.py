@@ -351,9 +351,10 @@ def _fk_tool0_to_ee_base_link(
 
 
 from .panel_v2_publisher_mixin import PanelV2PublisherMixin  # noqa: E402
+from .panel_v2_base_pose_mixin import PanelV2BasePoseMixin  # noqa: E402
 
 
-class ControlPanelV2(PanelV2PublisherMixin, QMainWindow):
+class ControlPanelV2(PanelV2PublisherMixin, PanelV2BasePoseMixin, QMainWindow):
     retry_send_joints = pyqtSignal()
     status_updated = pyqtSignal(bool, bool, bool, bool, bool, bool, bool)
     signal_status = pyqtSignal(str, bool)
@@ -1074,38 +1075,11 @@ class ControlPanelV2(PanelV2PublisherMixin, QMainWindow):
     # F14-step2: _init_moveit_publisher / _ensure_moveit_node /
     # _publish_current_grasp_rect heredados de PanelV2PublisherMixin.
 
-    def _expected_world_frame(self, *args, **kwargs):
-        return _stm._expected_world_frame(self, *args, **kwargs)
-
-    def _business_base_frame(self, *args, **kwargs):
-        return _stm._business_base_frame(self, *args, **kwargs)
-
-    def _base_frame_candidates(self, *args, **kwargs):
-        return _stm._base_frame_candidates(self, *args, **kwargs)
-
-    def ensure_base_pose(self, *args, **kwargs):
-        return _stm.ensure_base_pose(self, *args, **kwargs)
-
-    def _ensure_base_coords(self, *args, **kwargs):
-        return _stm._ensure_base_coords(self, *args, **kwargs)
-
-    def get_tcp_base(self, *args, **kwargs):
-        return _stm.get_tcp_base(self, *args, **kwargs)
-
-    def get_tcp_pose_base(self, *args, **kwargs):
-        return _stm.get_tcp_pose_base(self, *args, **kwargs)
-
-    def transform_pose_to_base(self, *args, **kwargs):
-        return _stm.transform_pose_to_base(self, *args, **kwargs)
-
-    def log_pose_base(self, *args, **kwargs):
-        return _stm.log_pose_base(self, *args, **kwargs)
-
-    def log_pose(self, *args, **kwargs):
-        return _stm.log_pose(self, *args, **kwargs)
-
-    def get_pose_in_base(self, *args, **kwargs):
-        return _stm.get_pose_in_base(self, *args, **kwargs)
+    # F14-step3: _expected_world_frame, _business_base_frame,
+    # _base_frame_candidates, ensure_base_pose, _ensure_base_coords,
+    # get_tcp_base, get_tcp_pose_base, transform_pose_to_base,
+    # log_pose_base, log_pose, get_pose_in_base — heredados de
+    # PanelV2BasePoseMixin.
 
     # F14-step2: _moveit_publish_context, _request_auto_bridge_start,
     # _auto_bridge_tick, _get_*_publisher heredados de PanelV2PublisherMixin.
