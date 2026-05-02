@@ -354,6 +354,8 @@ from .panel_v2_publisher_mixin import PanelV2PublisherMixin  # noqa: E402
 from .panel_v2_base_pose_mixin import PanelV2BasePoseMixin  # noqa: E402
 from .panel_v2_gripper_attach_mixin import PanelV2GripperAttachMixin  # noqa: E402
 from .panel_v2_motion_mixin import PanelV2MotionMixin  # noqa: E402
+from .panel_v2_traj_settle_mixin import PanelV2TrajSettleMixin  # noqa: E402
+from .panel_v2_system_state_mixin import PanelV2SystemStateMixin  # noqa: E402
 
 
 class ControlPanelV2(
@@ -361,6 +363,8 @@ class ControlPanelV2(
     PanelV2BasePoseMixin,
     PanelV2GripperAttachMixin,
     PanelV2MotionMixin,
+    PanelV2TrajSettleMixin,
+    PanelV2SystemStateMixin,
     QMainWindow,
 ):
     retry_send_joints = pyqtSignal()
@@ -1101,137 +1105,24 @@ class ControlPanelV2(
     # _joint_motion_since, _wait_for_joint_target, _wait_for_tcp_base_z,
     # _wait_for_tcp_base_target — heredados de PanelV2MotionMixin.
 
-    def _send_joint_trajectory_action(self, *args, **kwargs):
-        return _stm._send_joint_trajectory_action(self, *args, **kwargs)
-
-    def _schedule_traj_action_fallback(self, *args, **kwargs):
-        return _stm._schedule_traj_action_fallback(self, *args, **kwargs)
-
-    def _clamp_joint_positions(self, *args, **kwargs):
-        return _stm._clamp_joint_positions(self, *args, **kwargs)
+    # F14-step6: _send_joint_trajectory_action, _schedule_traj_action_fallback,
+    # _clamp_joint_positions, _log_traj_action_fallback,
+    # _start_objects_settle_watch, _invalidate_settle, _run_fall_test_async,
+    # _objects_settle_worker, _handle_objects_settled, _log_calib_blocked,
+    # _log_settle_snapshot, _request_settle_snapshot, wait_for_objects_to_settle
+    # — heredados de PanelV2TrajSettleMixin.
 
     # F14-step2: _publish_joint_trajectory, _publish_moveit_pose heredados
     # de PanelV2PublisherMixin.
 
-    def _log_traj_action_fallback(self, *args, **kwargs):
-        return _stm._log_traj_action_fallback(self, *args, **kwargs)
-
-    def _start_objects_settle_watch(self, *args, **kwargs):
-        return _stm._start_objects_settle_watch(self, *args, **kwargs)
-
-    def _invalidate_settle(self, *args, **kwargs):
-        return _stm._invalidate_settle(self, *args, **kwargs)
-
-    def _run_fall_test_async(self, *args, **kwargs):
-        return _stm._run_fall_test_async(self, *args, **kwargs)
-
-    def _objects_settle_worker(self, *args, **kwargs):
-        return _stm._objects_settle_worker(self, *args, **kwargs)
-
-    def _handle_objects_settled(self, *args, **kwargs):
-        return _stm._handle_objects_settled(self, *args, **kwargs)
-
-    def _log_calib_blocked(self, *args, **kwargs):
-        return _stm._log_calib_blocked(self, *args, **kwargs)
-
-    def _log_settle_snapshot(self, *args, **kwargs):
-        return _stm._log_settle_snapshot(self, *args, **kwargs)
-
-    def _request_settle_snapshot(self, *args, **kwargs):
-        return _stm._request_settle_snapshot(self, *args, **kwargs)
-
-    def wait_for_objects_to_settle(self, *args, **kwargs):
-        return _stm.wait_for_objects_to_settle(self, *args, **kwargs)
-
-    def _build_ui(self, *args, **kwargs):
-        return _stm._build_ui(self, *args, **kwargs)
-
-    def _debounced_btn_action(self, *args, **kwargs):
-        return _stm._debounced_btn_action(self, *args, **kwargs)
-
-    def showEvent(self, *args, **kwargs):
-        return _stm.showEvent(self, *args, **kwargs)
-
-    def _set_status(self, *args, **kwargs):
-        return _stm._set_status(self, *args, **kwargs)
-
-    def _set_status_async(self, *args, **kwargs):
-        return _stm._set_status_async(self, *args, **kwargs)
-
-    def _set_led_async(self, *args, **kwargs):
-        return _stm._set_led_async(self, *args, **kwargs)
-
-    def _on_tf_ready_signal(self, *args, **kwargs):
-        return _stm._on_tf_ready_signal(self, *args, **kwargs)
-
-    def _on_calib_ready_signal(self, *args, **kwargs):
-        return _stm._on_calib_ready_signal(self, *args, **kwargs)
-
-    def _run_startup_tf_sanity_check_once(self, *args, **kwargs):
-        return _stm._run_startup_tf_sanity_check_once(self, *args, **kwargs)
-
-    def _on_controllers_ready_signal(self, *args, **kwargs):
-        return _stm._on_controllers_ready_signal(self, *args, **kwargs)
-
-    def _on_error_signal(self, *args, **kwargs):
-        return _stm._on_error_signal(self, *args, **kwargs)
-
-    def _on_moveit_state_signal(self, *args, **kwargs):
-        return _stm._on_moveit_state_signal(self, *args, **kwargs)
-
-    def _on_trace_ready(self, *args, **kwargs):
-        return _stm._on_trace_ready(self, *args, **kwargs)
-
-    def _on_calibration_check(self, *args, **kwargs):
-        return _stm._on_calibration_check(self, *args, **kwargs)
-
-    def _set_system_state(self, *args, **kwargs):
-        return _stm._set_system_state(self, *args, **kwargs)
-
-    def _effective_system_state(self, *args, **kwargs):
-        return _stm._effective_system_state(self, *args, **kwargs)
-
-    def _trigger_fatal(self, *args, **kwargs):
-        return _stm._trigger_fatal(self, *args, **kwargs)
-
-    def _resolve_system_state(self, *args, **kwargs):
-        return _stm._resolve_system_state(self, *args, **kwargs)
-
-    def _build_state_snapshot(self, *args, **kwargs):
-        return _stm._build_state_snapshot(self, *args, **kwargs)
-
-    def _evaluate_system_state(self, *args, **kwargs):
-        return _stm._evaluate_system_state(self, *args, **kwargs)
-
-    def _update_system_state(self, *args, **kwargs):
-        return _stm._update_system_state(self, *args, **kwargs)
-
-    def _check_critical_timeouts(self, *args, **kwargs):
-        return _stm._check_critical_timeouts(self, *args, **kwargs)
-
-    def _resolve_critical_fault(self, *args, **kwargs):
-        return _stm._resolve_critical_fault(self, *args, **kwargs)
-
-    def _state_ready_basic(self, *args, **kwargs):
-        return _stm._state_ready_basic(self, *args, **kwargs)
-
-    def _state_ready_vision(self, *args, **kwargs):
-        return _stm._state_ready_vision(self, *args, **kwargs)
-
-    def _state_ready_moveit(self, *args, **kwargs):
-        return _stm._state_ready_moveit(self, *args, **kwargs)
-
-    def _state_ready_level(self, *args, **kwargs):
-        return _stm._state_ready_level(self, *args, **kwargs)
-
-    def _manual_control_ready(self, *args, **kwargs):
-        return _stm._manual_control_ready(self, *args, **kwargs)
-
-    def _calibration_topic_allowed(self, *args, **kwargs):
-        return _stm._calibration_topic_allowed(self, *args, **kwargs)
-
-    def _overhead_camera_active(self, *args, **kwargs):
-        return _stm._overhead_camera_active(self, *args, **kwargs)
+    # F14-step7: _build_ui, _debounced_btn_action, showEvent,
+    # _set_status*, _set_led_async, _on_*_signal*, _on_trace_ready,
+    # _on_calibration_check, _set_system_state, _effective_system_state,
+    # _trigger_fatal, _resolve_system_state, _build_state_snapshot,
+    # _evaluate_system_state, _update_system_state,
+    # _check_critical_timeouts, _resolve_critical_fault,
+    # _state_ready_*, _manual_control_ready, _calibration_topic_allowed,
+    # _overhead_camera_active — heredados de PanelV2SystemStateMixin.
 
 
 

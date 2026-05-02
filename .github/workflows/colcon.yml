@@ -64,7 +64,9 @@ jobs:
             test/test_panel_v2_publisher_mixin.py \
             test/test_panel_v2_base_pose_mixin.py \
             test/test_panel_v2_gripper_attach_mixin.py \
-            test/test_panel_v2_motion_mixin.py
+            test/test_panel_v2_motion_mixin.py \
+            test/test_panel_v2_traj_settle_mixin.py \
+            test/test_panel_v2_system_state_mixin.py
 
       - name: pytest offline subset ur5_tools (F4/F10/F6.5/F13 helpers puros)
         working-directory: agarre_ros2_ws/src/ur5_tools
