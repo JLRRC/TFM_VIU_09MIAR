@@ -40,7 +40,7 @@ from .panel_utils import (
     set_led,
     with_line_buffer,
 )
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
 
 _DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 
@@ -48,7 +48,7 @@ _DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 def _log_exception(context: str, exc: Exception) -> None:
     if not _DEBUG_EXCEPTIONS:
         return
-    print(timestamped_line(f"[LAUNCHERS][WARN] {context}: {exc}"), flush=True)
+    emit_log_line(timestamped_line(f"[LAUNCHERS][WARN] {context}: {exc}"))
 
 
 def _env_flag(name: str, default: bool) -> bool:

@@ -1,0 +1,48 @@
+# Ruta/archivo: pyproject.toml
+# Contenido: Configuración Python tooling (ruff) para el workspace TFM.
+# Uso breve: leído por ruff/black/mypy desde la raíz del proyecto. No afecta a
+#            colcon ni a los setup.py de los paquetes ROS 2.
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [
+    "BORRAR",
+    "auditoria",
+    "historico",
+    "report",
+    "agarre_inteligente",
+    "**/build",
+    "**/install",
+    "**/log",
+    "**/__pycache__",
+    "**/*.egg-info",
+]
+
+[tool.ruff.lint]
+# Conjunto deliberadamente acotado para FASE 1: sólo reglas que NO requieren
+# refactorizar código existente. Se ampliará en FASE 4 (meta-tests calidad).
+select = [
+    "E9",   # syntax errors
+    "F63",  # invalid bool comparison
+    "F7",   # syntax errors in function definitions
+    "F82",  # undefined name in __all__
+    "B006", # mutable default argument
+    "B008", # function call in default argument (limitado)
+]
+# Reglas explícitamente excluidas hasta FASE 3 (split de monolitos):
+#   F401 (unused imports)        — re-exports legacy en mixins
+#   F811 (redefinition)          — overloads de mixins
+#   E501 (line too long)         — pendiente formatter (FASE 4)
+#   E402 (module-level import)   — uso intencional en panel_v2 con noqa
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"**/test_*.py" = ["E501", "B"]
+"**/__init__.py" = ["F401"]
+
+[tool.ruff.format]
+# Sólo definido para futura activación. NO se usa todavía en CI.
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

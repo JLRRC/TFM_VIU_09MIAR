@@ -10,6 +10,7 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
+from .logging_utils import emit_log_line
 from .panel_env import get_gz_transport_ip
 from .panel_objects import bulk_update_object_positions
 from .panel_process import bash_preamble, resolve_gz_partition
@@ -64,7 +65,7 @@ from .panel_utils import _can_transform_between, _parse_pose_json, ROBOT_FRAME_K
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[OBJ_MGMT][ERROR][{context}] {exc}")
+    emit_log_line(f"[OBJ_MGMT][ERROR][{context}] {exc}")
 
 
 def _resolve_table_top_z(panel) -> float:

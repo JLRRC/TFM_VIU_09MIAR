@@ -105,6 +105,19 @@ Notas de rigor:
 - El codigo editable vive sobre todo en `agarre_inteligente/` y `agarre_ros2_ws/src/`.
 - Solo existen `README` en la raiz y en los bloques principales del proyecto; cada uno explica su zona.
 
+## Lint y pre-commit (FASE 1, opcional)
+
+Configuración preparada en `pyproject.toml` y `.pre-commit-config.yaml`. Para activarla:
+
+```bash
+pip install --user ruff pre-commit
+pre-commit install                  # registra el hook git
+pre-commit run --all-files          # primera pasada (no bloqueante)
+ruff check agarre_ros2_ws/src       # ejecución manual del linter
+```
+
+El selector de reglas en `pyproject.toml` está deliberadamente acotado a errores graves (sintaxis, mutable defaults, undefined names) para no bloquear el refactor en curso. Se ampliará en FASE 4.
+
 ## Siguiente lectura
 
 - `agarre_inteligente/README.md`

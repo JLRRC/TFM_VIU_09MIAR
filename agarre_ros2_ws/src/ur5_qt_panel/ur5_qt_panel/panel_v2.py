@@ -107,7 +107,7 @@ from .panel_env import (
     format_env_diagnostics,
     validate_env,
 )
-from .logging_utils import _PanelLogger, timestamped_line
+from .logging_utils import _PanelLogger, emit_log_line, timestamped_line
 from .panel_camera import CameraController
 from .panel_trace_ui import build_trace_group, build_science_group
 from . import panel_remote_callbacks as _rc
@@ -189,7 +189,10 @@ _DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 def _log_exception(context: str, exc: Exception) -> None:
     if not _DEBUG_EXCEPTIONS:
         return
-    print(timestamped_line(f"[PANEL_V2][WARN] {context}: {exc}"), file=sys.stderr, flush=True)
+    emit_log_line(
+        timestamped_line(f"[PANEL_V2][WARN] {context}: {exc}"),
+        stream=sys.stderr,
+    )
 
 
 # F14 (2026-05-01): helpers puros extraídos a panel_v2_helpers.

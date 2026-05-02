@@ -17,6 +17,7 @@ from .panel_config import (
     UR5_JOINT_NAMES,
     UR5_REACH_RADIUS,
 )
+from .logging_utils import emit_log_line
 from .panel_env import effective_mode
 from .panel_motion_helpers import build_joint_trajectory
 from .panel_objects import recalc_object_states
@@ -28,7 +29,7 @@ from .panel_utils import load_home_pose, table_xy_to_pixel, world_xyz_to_pixel
 def _log_exception(label: str, exc: Exception) -> None:
     try:
         import traceback
-        print(f"[EXC][{label}] {exc}\n{traceback.format_exc()}")
+        emit_log_line(f"[EXC][{label}] {exc}\n{traceback.format_exc()}")
     except Exception:
         pass
 

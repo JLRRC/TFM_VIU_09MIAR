@@ -90,14 +90,17 @@ from .panel_config import (
 )
 from .panel_state import MoveItState, SystemState
 from .panel_utils import angle_shortest_diff_rad, get_pose, world_to_base
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
 from .panel_robot_presets import _build_pose_stamped
 from .panel_moveit_flow import publish_moveit_pose as _publish_moveit_pose_flow
 
 
 def _log_exception(context: str, exc: Exception) -> None:
     import sys
-    print(timestamped_line(f"[MOTION][WARN] {context}: {exc}"), file=sys.stderr, flush=True)
+    emit_log_line(
+        timestamped_line(f"[MOTION][WARN] {context}: {exc}"),
+        stream=sys.stderr,
+    )
 
 
 def command_gripper(panel,

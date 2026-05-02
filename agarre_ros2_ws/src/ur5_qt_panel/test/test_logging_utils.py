@@ -3,7 +3,9 @@
 """Unit tests for logging_utils — pure stdlib, no ROS/Qt needed."""
 from __future__ import annotations
 
-from ur5_qt_panel.logging_utils import _PanelLogger, timestamped_line
+import io
+
+from ur5_qt_panel.logging_utils import _PanelLogger, emit_log_line, timestamped_line
 
 
 def test_timestamped_line_contains_message() -> None:
@@ -41,3 +43,58 @@ def test_panel_logger_stores_panel_reference() -> None:
     stub = _Stub()
     logger = _PanelLogger(stub)
     assert logger._panel is stub
+
+
+def test_emit_log_line_appends_newline_if_missing() -> None:
+    buf = io.StringIO()
+    emit_log_line("hello", stream=buf)
+    assert buf.getvalue() == "hello\n"
+
+
+def test_emit_log_line_does_not_double_newline() -> None:
+    buf = io.StringIO()
+    emit_log_line("hello\n", stream=buf)
+    assert buf.getvalue() == "hello\n"
+
+
+def test_emit_log_line_writes_to_provided_stream() -> None:
+    target = io.StringIO()
+    emit_log_line("[TAG][WARN] something failed", stream=target)
+    assert target.getvalue().startswith("[TAG][WARN]")
+
+
+def test_emit_log_line_default_stream_is_stdout(capsys) -> None:
+    emit_log_line("on stdout please")
+    captured = capsys.readouterr()
+    assert "on stdout please" in captured.out
+    assert captured.err == ""
+
+
+def test_emit_log_line_stderr_routing(capsys) -> None:
+    import sys as _sys
+    emit_log_line("on stderr please", stream=_sys.stderr)
+    captured = capsys.readouterr()
+    assert "on stderr please" in captured.err
+    assert captured.out == ""
+
+
+class _FlushTrackingStream(io.StringIO):
+    def __init__(self) -> None:
+        super().__init__()
+        self.flush_calls = 0
+
+    def flush(self) -> None:  # type: ignore[override]
+        self.flush_calls += 1
+        super().flush()
+
+
+def test_emit_log_line_flushes_by_default() -> None:
+    s = _FlushTrackingStream()
+    emit_log_line("flush me", stream=s)
+    assert s.flush_calls == 1
+
+
+def test_emit_log_line_skips_flush_when_disabled() -> None:
+    s = _FlushTrackingStream()
+    emit_log_line("no flush", stream=s, flush=False)
+    assert s.flush_calls == 0

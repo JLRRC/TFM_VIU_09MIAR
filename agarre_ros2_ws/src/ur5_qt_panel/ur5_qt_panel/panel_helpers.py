@@ -45,7 +45,7 @@ from .panel_external_state import (
     apply_external_system_state,
 )
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
 from . import panel_step_callbacks as _sc
 from PyQt5.QtCore import QTimer, QThread
 from PyQt5.QtWidgets import QPushButton
@@ -56,7 +56,7 @@ from .panel_utils import _can_transform_between
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[HELPERS][ERROR][{context}] {exc}")
+    emit_log_line(f"[HELPERS][ERROR][{context}] {exc}")
 
 
 def _moveit_not_ready_reason(panel) -> str:
@@ -431,10 +431,10 @@ def _update_camera_topics_async(panel, topics: object) -> None:
     panel._camera_ctrl.update_topics_async(topics)
 
 def _emit_log(panel, msg: str, *, flush: bool = True):
-    """Print a timestamped log line."""
+    """Emit a timestamped log line to stdout."""
     if not panel._should_emit_log(msg):
         return
-    print(timestamped_line(msg), flush=flush)
+    emit_log_line(timestamped_line(msg), flush=flush)
 
 def _metric_mark(panel, label: str) -> None:
     if not panel._metrics_enabled:

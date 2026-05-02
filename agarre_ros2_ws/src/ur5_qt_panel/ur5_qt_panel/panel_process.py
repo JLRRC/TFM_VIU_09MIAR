@@ -15,7 +15,7 @@ from typing import List, Optional, Tuple, Union
 
 from .panel_config import FASTRTPS_PROFILES, GZ_PARTITION_FILE
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
 
 ROS_CMD_TIMEOUT = float(os.environ.get("PANEL_ROS_TIMEOUT", "1.5"))
 STDBUF_PREFIX = "stdbuf -oL -eL " if shutil.which("stdbuf") else ""
@@ -30,7 +30,7 @@ _DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 def _log_exception(context: str, exc: Exception) -> None:
     if not _DEBUG_EXCEPTIONS:
         return
-    print(timestamped_line(f"[PROCESS][WARN] {context}: {exc}"), flush=True)
+    emit_log_line(timestamped_line(f"[PROCESS][WARN] {context}: {exc}"))
 
 
 def run_cmd(

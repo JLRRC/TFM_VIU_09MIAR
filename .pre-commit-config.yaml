@@ -1,0 +1,32 @@
+# Ruta/archivo: .pre-commit-config.yaml
+# Contenido: Hooks pre-commit para TFM (ruff + checks básicos).
+# Uso breve:
+#   pip install pre-commit ruff
+#   pre-commit install
+#   pre-commit run --all-files   # primera ejecución manual
+#
+# Nota FASE 1 (2026-05-02): hooks en modo check-only para no bloquear
+# commits del refactor en curso. El selector ruff de pyproject.toml está
+# acotado a errores graves (sintaxis, undefined names, mutable defaults).
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (lint, check-only)
+        args: [--no-fix]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '^(BORRAR|historico|auditoria|report)/'
+      - id: end-of-file-fixer
+        exclude: '^(BORRAR|historico|auditoria|report)/'
+      - id: check-yaml
+        exclude: '^(BORRAR|historico|auditoria|report|agarre_inteligente)/'
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: check-toml
