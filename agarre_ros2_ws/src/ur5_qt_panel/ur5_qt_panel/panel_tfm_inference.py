@@ -43,6 +43,7 @@ from .panel_tfm_canonical import (
 )
 from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
 from .panel_tfm_preprocess import (
+    _resolve_infer_roi,
     build_tfm_preprocessed_input,
     reconcile_inferred_grasp_angle,
     reconcile_inferred_grasp_center,
