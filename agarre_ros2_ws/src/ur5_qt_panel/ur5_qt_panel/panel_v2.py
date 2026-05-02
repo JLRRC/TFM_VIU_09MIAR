@@ -352,9 +352,17 @@ def _fk_tool0_to_ee_base_link(
 
 from .panel_v2_publisher_mixin import PanelV2PublisherMixin  # noqa: E402
 from .panel_v2_base_pose_mixin import PanelV2BasePoseMixin  # noqa: E402
+from .panel_v2_gripper_attach_mixin import PanelV2GripperAttachMixin  # noqa: E402
+from .panel_v2_motion_mixin import PanelV2MotionMixin  # noqa: E402
 
 
-class ControlPanelV2(PanelV2PublisherMixin, PanelV2BasePoseMixin, QMainWindow):
+class ControlPanelV2(
+    PanelV2PublisherMixin,
+    PanelV2BasePoseMixin,
+    PanelV2GripperAttachMixin,
+    PanelV2MotionMixin,
+    QMainWindow,
+):
     retry_send_joints = pyqtSignal()
     status_updated = pyqtSignal(bool, bool, bool, bool, bool, bool, bool)
     signal_status = pyqtSignal(str, bool)
@@ -1084,50 +1092,14 @@ class ControlPanelV2(PanelV2PublisherMixin, PanelV2BasePoseMixin, QMainWindow):
     # F14-step2: _moveit_publish_context, _request_auto_bridge_start,
     # _auto_bridge_tick, _get_*_publisher heredados de PanelV2PublisherMixin.
 
-    def _normalize_attach_name(self, *args, **kwargs):
-        return _stm._normalize_attach_name(*args, **kwargs)
+    # F14-step4: _normalize_attach_name, _find_attach_candidate,
+    # _attempt_attach, _schedule_attach_attempt, _command_gripper,
+    # _command_gripper_preopen — heredados de PanelV2GripperAttachMixin.
 
-    def _find_attach_candidate(self, *args, **kwargs):
-        return _stm._find_attach_candidate(self, *args, **kwargs)
-
-    def _attempt_attach(self, *args, **kwargs):
-        return _stm._attempt_attach(self, *args, **kwargs)
-
-    def _schedule_attach_attempt(self, *args, **kwargs):
-        return _stm._schedule_attach_attempt(self, *args, **kwargs)
-
-    def _command_gripper(self, *args, **kwargs):
-        return _stm._command_gripper(self, *args, **kwargs)
-
-    def _command_gripper_preopen(self, *args, **kwargs):
-        return _stm._command_gripper_preopen(self, *args, **kwargs)
-
-    def _traj_action_target(self, *args, **kwargs):
-        return _stm._traj_action_target(self, *args, **kwargs)
-
-    def _resolve_traj_action_name(self, *args, **kwargs):
-        return _stm._resolve_traj_action_name(self, *args, **kwargs)
-
-    def _get_action_client(self, *args, **kwargs):
-        return _stm._get_action_client(self, *args, **kwargs)
-
-    def _wait_action_server(self, *args, **kwargs):
-        return _stm._wait_action_server(*args, **kwargs)
-
-    def _format_action_error(self, *args, **kwargs):
-        return _stm._format_action_error(self, *args, **kwargs)
-
-    def _joint_motion_since(self, *args, **kwargs):
-        return _stm._joint_motion_since(self, *args, **kwargs)
-
-    def _wait_for_joint_target(self, *args, **kwargs):
-        return _stm._wait_for_joint_target(self, *args, **kwargs)
-
-    def _wait_for_tcp_base_z(self, *args, **kwargs):
-        return _stm._wait_for_tcp_base_z(self, *args, **kwargs)
-
-    def _wait_for_tcp_base_target(self, *args, **kwargs):
-        return _stm._wait_for_tcp_base_target(self, *args, **kwargs)
+    # F14-step5: _traj_action_target, _resolve_traj_action_name,
+    # _get_action_client, _wait_action_server, _format_action_error,
+    # _joint_motion_since, _wait_for_joint_target, _wait_for_tcp_base_z,
+    # _wait_for_tcp_base_target — heredados de PanelV2MotionMixin.
 
     def _send_joint_trajectory_action(self, *args, **kwargs):
         return _stm._send_joint_trajectory_action(self, *args, **kwargs)
