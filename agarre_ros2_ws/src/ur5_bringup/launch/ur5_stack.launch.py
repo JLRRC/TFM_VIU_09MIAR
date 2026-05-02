@@ -592,6 +592,9 @@ def generate_launch_description():
         launch_attach_backend=launch_attach_backend,
         launch_scene_sync=launch_scene_sync,
         launch_moveit_bridge=LaunchConfiguration("launch_moveit_bridge"),
+        launch_tf_geometry_service=LaunchConfiguration(
+            "launch_tf_geometry_service"
+        ),
         gz_delete_service=LaunchConfiguration("gz_delete_service"),
         gz_spawn_service=LaunchConfiguration("gz_spawn_service"),
         attach_backend_mode=LaunchConfiguration("attach_backend_mode"),
@@ -673,6 +676,13 @@ def generate_launch_description():
             ),
             # FIX-MOVEIT-BRIDGE: launch ur5_moveit_bridge so /desired_grasp has a real subscriber.
             DeclareLaunchArgument("launch_moveit_bridge", default_value="true"),
+            # F16 (2026-05-01): tf_geometry_service nuevo microservicio.
+            # Default true — preserva backward-compat (aunque ningún
+            # consumidor lo usa todavía, su arranque es seguro: solo aloja
+            # los servicios sin efectos colaterales).
+            DeclareLaunchArgument(
+                "launch_tf_geometry_service", default_value="true"
+            ),
             DeclareLaunchArgument("launch_scene_sync", default_value="true"),
             DeclareLaunchArgument("launch_system_state", default_value="true"),
             DeclareLaunchArgument("launch_moveit", default_value="false"),

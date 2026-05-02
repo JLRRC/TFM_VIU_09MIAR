@@ -59,6 +59,7 @@ def build_runtime_node_actions(
     launch_attach_backend: LaunchConfiguration,
     launch_scene_sync: LaunchConfiguration,
     launch_moveit_bridge: LaunchConfiguration,
+    launch_tf_geometry_service: LaunchConfiguration,
     gz_delete_service: LaunchConfiguration,
     gz_spawn_service: LaunchConfiguration,
     attach_backend_mode: LaunchConfiguration,
@@ -214,6 +215,23 @@ def build_runtime_node_actions(
         condition=IfCondition(launch_moveit_bridge),
     )
 
+    # F16 (2026-05-01): tf_geometry_service — microservicio dedicado que
+    # aloja /tf_geometry/world_to_base y /tf_geometry/compute_approach_pose.
+    # LifecycleNode con auto-activate. Centraliza cálculos TF que estaban
+    # duplicados entre world_tf_publisher, panel y panel_state_methods.
+    tf_geometry_service = Node(
+        package="ur5_tools",
+        executable="tf_geometry_service",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"world_frame": "world"},
+            {"base_frame": "base_link"},
+            {"tf_timeout_sec": 0.2},
+        ],
+        condition=IfCondition(launch_tf_geometry_service),
+    )
+
     return [
         world_tf,
         world_tf_guard,
@@ -223,4 +241,5 @@ def build_runtime_node_actions(
         gripper_attach_backend,
         planning_scene_sync,
         moveit_bridge,
+        tf_geometry_service,
     ]
