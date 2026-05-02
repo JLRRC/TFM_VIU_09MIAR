@@ -265,3 +265,230 @@ def aggregate_phase_timings(
         "successful_sessions": successful_sessions,
         "avg_total_duration_sec": avg_total_duration_sec,
     }
+
+
+# ---------------------------------------------------------------------------
+# F18 — Telemetría/observabilidad extendida
+# ---------------------------------------------------------------------------
+
+
+def compute_inter_event_latencies(
+    events: Iterable[Dict[str, Any]],
+    *,
+    from_kind: str,
+    to_kind: str,
+) -> Dict[str, Any]:
+    """Latencias entre eventos ``from_kind`` → siguiente ``to_kind``.
+
+    Recorre los eventos en orden y, cada vez que aparece ``from_kind``,
+    busca el siguiente ``to_kind`` y calcula la diferencia en
+    ``ts_mono``. Devuelve un agregado con:
+
+    * ``samples`` — número de pares matcheados.
+    * ``mean_sec`` / ``min_sec`` / ``max_sec`` / ``p95_sec`` — sobre las
+      diferencias en segundos. ``None`` si no hubo muestras.
+    * ``unmatched_from`` — eventos ``from_kind`` que no encontraron
+      pareja (cierre/abandono).
+
+    Útil para medir, p.ej., latencia entre ``system_state=READY`` y el
+    primer ``grasp_result`` del ciclo, o entre ``gripper_state`` y el
+    siguiente snapshot ``phase_timings``.
+    """
+    diffs: List[float] = []
+    pending_ts: Optional[float] = None
+    unmatched_from = 0
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        kind = str(ev.get("kind") or "")
+        ts = ev.get("ts_mono")
+        if not isinstance(ts, (int, float)):
+            continue
+        ts_f = float(ts)
+        if kind == from_kind:
+            if pending_ts is not None:
+                # un from previo nunca encontró su to → contar como unmatched
+                unmatched_from += 1
+            pending_ts = ts_f
+        elif kind == to_kind and pending_ts is not None:
+            delta = ts_f - pending_ts
+            if delta >= 0.0:
+                diffs.append(delta)
+            pending_ts = None
+
+    if pending_ts is not None:
+        unmatched_from += 1
+
+    if not diffs:
+        return {
+            "samples": 0,
+            "mean_sec": None,
+            "min_sec": None,
+            "max_sec": None,
+            "p95_sec": None,
+            "unmatched_from": unmatched_from,
+            "from_kind": from_kind,
+            "to_kind": to_kind,
+        }
+
+    sorted_diffs = sorted(diffs)
+    p95_idx = max(0, int(round(0.95 * (len(sorted_diffs) - 1))))
+    return {
+        "samples": len(diffs),
+        "mean_sec": sum(diffs) / len(diffs),
+        "min_sec": min(diffs),
+        "max_sec": max(diffs),
+        "p95_sec": sorted_diffs[p95_idx],
+        "unmatched_from": unmatched_from,
+        "from_kind": from_kind,
+        "to_kind": to_kind,
+    }
+
+
+def compute_event_rates(
+    events: Iterable[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Tasa global (eventos/segundo) por ``kind`` en la sesión completa.
+
+    Para cada kind devuelve un dict con:
+
+    * ``count`` — total de eventos de ese kind.
+    * ``rate_hz`` — count / span_sec, donde ``span_sec`` es la
+      diferencia entre el primer y último ``ts_mono`` observado para
+      ese kind. ``None`` si no hubo muestras o span ≤ 0.
+    * ``span_sec`` — duración cubierta por los eventos del kind.
+
+    Útil para ver, p.ej., a qué frecuencia real llega ``system_diag``
+    o cuántos ``grasp_result`` por minuto produce el bridge.
+    """
+    per_kind: Dict[str, Dict[str, Any]] = {}
+    monos_by_kind: Dict[str, List[float]] = {}
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        kind = str(ev.get("kind") or "")
+        if not kind:
+            continue
+        monos_by_kind.setdefault(kind, [])
+        ts = ev.get("ts_mono")
+        # Aceptamos ts >= 0 (ts=0 es origen monotónico válido). Solo
+        # rechazamos None / no-numérico.
+        if isinstance(ts, (int, float)) and float(ts) >= 0.0:
+            monos_by_kind[kind].append(float(ts))
+
+    for kind, monos in monos_by_kind.items():
+        count = len(monos)
+        if count >= 2:
+            span = max(monos) - min(monos)
+            rate = (count / span) if span > 0 else None
+        else:
+            span = 0.0 if count <= 1 else None
+            rate = None
+        per_kind[kind] = {
+            "count": count,
+            "rate_hz": rate,
+            "span_sec": span,
+        }
+    return per_kind
+
+
+def generate_latency_report_md(
+    *,
+    metrics: Dict[str, Any],
+    title: str = "Reporte de telemetría F18",
+) -> str:
+    """Genera un reporte Markdown a partir del ``metrics.json`` extendido.
+
+    El dict ``metrics`` debe contener al menos las claves producidas por
+    ``compute_session_metrics`` y, opcionalmente, los nuevos campos
+    F18: ``event_rates`` (de ``compute_event_rates``) e
+    ``inter_event_latencies`` (lista de dicts de
+    ``compute_inter_event_latencies``).
+
+    Devuelve un string Markdown listo para incrustar en la memoria
+    académica o en un README de evidencias.
+    """
+    lines: List[str] = [
+        f"# {title}",
+        "",
+        "## Resumen de sesión",
+        "",
+        f"- Total de eventos: **{metrics.get('total_events', 0)}**",
+        f"- Duración: **{_fmt_sec(metrics.get('duration_sec'))}**",
+        f"- Grasp success: **{metrics.get('grasp_success', 0)}**",
+        f"- Grasp failure: **{metrics.get('grasp_failure', 0)}**",
+    ]
+    success_rate = metrics.get("grasp_success_rate")
+    if success_rate is not None:
+        lines.append(f"- Tasa de éxito: **{success_rate * 100:.1f}%**")
+    else:
+        lines.append("- Tasa de éxito: **n/d**")
+    lines.append("")
+
+    by_kind = metrics.get("by_kind") or {}
+    if by_kind:
+        lines.append("## Conteo por tipo de evento")
+        lines.append("")
+        lines.append("| Kind | Count |")
+        lines.append("|---|---:|")
+        for kind in sorted(by_kind.keys()):
+            lines.append(f"| `{kind}` | {by_kind[kind]} |")
+        lines.append("")
+
+    rates = metrics.get("event_rates") or {}
+    if rates:
+        lines.append("## Tasa por kind (eventos/segundo)")
+        lines.append("")
+        lines.append("| Kind | Count | Span (s) | Rate (Hz) |")
+        lines.append("|---|---:|---:|---:|")
+        for kind in sorted(rates.keys()):
+            entry = rates[kind] or {}
+            count = entry.get("count", 0)
+            span = entry.get("span_sec")
+            rate = entry.get("rate_hz")
+            lines.append(
+                f"| `{kind}` | {count} | {_fmt_sec(span)} | "
+                f"{_fmt_rate(rate)} |"
+            )
+        lines.append("")
+
+    latencies = metrics.get("inter_event_latencies") or []
+    if latencies:
+        lines.append("## Latencias entre eventos")
+        lines.append("")
+        lines.append(
+            "| From → To | Samples | Mean (s) | Min (s) | Max (s) | "
+            "P95 (s) |"
+        )
+        lines.append("|---|---:|---:|---:|---:|---:|")
+        for entry in latencies:
+            from_k = entry.get("from_kind", "?")
+            to_k = entry.get("to_kind", "?")
+            lines.append(
+                f"| `{from_k}` → `{to_k}` | {entry.get('samples', 0)} | "
+                f"{_fmt_sec(entry.get('mean_sec'))} | "
+                f"{_fmt_sec(entry.get('min_sec'))} | "
+                f"{_fmt_sec(entry.get('max_sec'))} | "
+                f"{_fmt_sec(entry.get('p95_sec'))} |"
+            )
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _fmt_sec(value) -> str:
+    if value is None:
+        return "n/d"
+    try:
+        return f"{float(value):.3f}"
+    except (TypeError, ValueError):
+        return "n/d"
+
+
+def _fmt_rate(value) -> str:
+    if value is None:
+        return "n/d"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "n/d"
