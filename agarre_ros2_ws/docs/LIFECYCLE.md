@@ -43,6 +43,7 @@ unconfigured → configure → inactive → activate → ACTIVE
 | `system_state_manager` | ✅ LifecycleNode | ✅ Pleno | **F13** ✓ | Recursos segregados: subs/timer en `on_activate`, publishers en `on_configure` |
 | `gripper_attach_backend` | ✅ LifecycleNode | ⚠ Observable | **F13** ✓ | Callbacks expuestos; segregación de recursos en F13b si necesaria |
 | `ur5_moveit_bridge` | ✅ LifecycleNode | ⚠ Observable | **F13** ✓ | Callbacks expuestos; segregación profunda en F13b (8 mixins) |
+| `tf_geometry_service` | ✅ LifecycleNode | ✅ Pleno | **F16** ✓ | Servicios `/tf_geometry/world_to_base` + `/tf_geometry/compute_approach_pose` (lógica pura en `tf_geometry_logic`) |
 | `release_objects_service` | Node | — | F13b | Pendiente |
 | `evidence_logger` | Node | — (no necesario, solo escribe) | — | — |
 | `gz_pose_bridge` | Node | LifecycleNode | F19 | Parte de optimización |
