@@ -192,32 +192,15 @@ def _log_exception(context: str, exc: Exception) -> None:
     print(timestamped_line(f"[PANEL_V2][WARN] {context}: {exc}"), file=sys.stderr, flush=True)
 
 
-def _runtime_time() -> float:
-    """Return a steady local timestamp for runtime freshness and watchdog logic."""
-    return time.monotonic()
-
-
-def _camera_required_label(value: Optional[bool]) -> str:
-    if value is None:
-        return "unset"
-    return "true" if value else "false"
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return float(raw)
-    except Exception:
-        return default
-
-
-def _env_flag(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+# F14 (2026-05-01): helpers puros extraídos a panel_v2_helpers.
+# Re-exportados con sus nombres legacy con underscore para no romper
+# el resto de panel_v2.py.
+from .panel_v2_helpers import (  # noqa: E402,F401
+    camera_required_label as _camera_required_label,
+    env_flag as _env_flag,
+    env_float as _env_float,
+    runtime_time as _runtime_time,
+)
 
 
 # TFM Grasp geometry helpers (compartidos con panel_tfm via panel_tfm_geometry).
@@ -240,12 +223,9 @@ CONTROLLER_LAST_OK_GRACE_SEC = max(
 CONTROLLER_LIST_RETRY_STEP_SEC = 0.25
 
 
-def _proto_time_to_seconds(value: Dict[str, object]) -> float:
-    if not isinstance(value, dict):
-        return 0.0
-    sec = float(value.get("sec", 0.0)) if value.get("sec") is not None else 0.0
-    nsec = float(value.get("nsec", 0.0)) if value.get("nsec") is not None else 0.0
-    return sec + nsec * 1e-9
+from .panel_v2_helpers import (  # noqa: E402,F401
+    proto_time_to_seconds as _proto_time_to_seconds,
+)
 
 
 def _load_cornell_metrics(vision_dir: str):
@@ -2753,27 +2733,11 @@ class ControlPanelV2(QMainWindow):
     def _force_cleanup_leftovers(self, *args, **kwargs):
         return _gs._force_cleanup_leftovers(self, *args, **kwargs)
 
-def _normalize_joint_name(name) -> str:
-    text = str(name).strip()
-    if "::" in text:
-        text = text.split("::")[-1]
-    if "/" in text:
-        text = text.split("/")[-1]
-    return text.strip()
-
-
-def _rot_to_rpy(rot):
-    sy = math.sqrt((rot[0, 0] * rot[0, 0]) + (rot[1, 0] * rot[1, 0]))
-    singular = sy < 1e-6
-    if not singular:
-        roll = math.atan2(rot[2, 1], rot[2, 2])
-        pitch = math.atan2(-rot[2, 0], sy)
-        yaw = math.atan2(rot[1, 0], rot[0, 0])
-    else:
-        roll = math.atan2(-rot[1, 2], rot[1, 1])
-        pitch = math.atan2(-rot[2, 0], sy)
-        yaw = 0.0
-    return roll, pitch, yaw
+# F14: extraídos a panel_v2_helpers; re-exports legacy preservados.
+from .panel_v2_helpers import (  # noqa: E402,F401
+    normalize_joint_name as _normalize_joint_name,
+    rot_to_rpy as _rot_to_rpy,
+)
 
 
 def main():
