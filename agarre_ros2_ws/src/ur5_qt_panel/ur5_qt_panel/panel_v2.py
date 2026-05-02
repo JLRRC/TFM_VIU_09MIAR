@@ -364,6 +364,7 @@ from .panel_v2_subprocess_motion_mixin import (  # noqa: E402
     PanelV2SubprocessMotionMixin,
 )
 from .panel_v2_audit_log_mixin import PanelV2AuditLogMixin  # noqa: E402
+from .panel_v2_tfm_remote_mixin import PanelV2TfmRemoteMixin  # noqa: E402
 
 
 class ControlPanelV2(
@@ -377,6 +378,7 @@ class ControlPanelV2(
     PanelV2RuntimeDiagnosticsMixin,
     PanelV2SubprocessMotionMixin,
     PanelV2AuditLogMixin,
+    PanelV2TfmRemoteMixin,
     QMainWindow,
 ):
     retry_send_joints = pyqtSignal()
@@ -1249,86 +1251,8 @@ class ControlPanelV2(
     # F14-step10: 64 wrappers subprocess + motion control heredados
     # de PanelV2SubprocessMotionMixin (panel_status_mgmt _sm + panel_motion_control _mc).
 
-    def _tfm_infer_grasp(self, *args, **kwargs):
-        return tfm_infer_grasp(self)
-
-    def _tfm_canonical_use_pick_object(self, *args, **kwargs):
-        return tfm_canonical_use_pick_object(self, *args, **kwargs)
-
-    def _complete_pending_tfm_infer_request(self, *args, **kwargs):
-        return complete_pending_tfm_infer_request(self, *args, **kwargs)
-
-    def _complete_pending_tfm_execute_request(self, *args, **kwargs):
-        return complete_pending_tfm_execute_request(self, *args, **kwargs)
-
-    def _complete_pending_pick_demo_request(self, *args, **kwargs):
-        return complete_pending_pick_demo_request(self, *args, **kwargs)
-
-    def _build_tfm_pick_object_override(self, *args, **kwargs):
-        return build_tfm_pick_object_override(self, *args, **kwargs)
-
-    def _tfm_canonical_state_reset(self, *args, **kwargs):
-        return tfm_canonical_state_reset(self, *args, **kwargs)
-
-    def _tfm_canonical_phase_update(self, *args, **kwargs):
-        return tfm_canonical_phase_update(self, *args, **kwargs)
-
-    def _tfm_canonical_finish(self, *args, **kwargs):
-        return tfm_canonical_finish(self, *args, **kwargs)
-
-    def _restore_infer_selection_snapshot(self, *args, **kwargs):
-        return restore_infer_selection_snapshot(self, *args, **kwargs)
-
-    def _latest_camera_frame_snapshot(self, *args, **kwargs):
-        return latest_camera_frame_snapshot(self, *args, **kwargs)
-
-    def _ensure_selected_object_in_store(self, *args, **kwargs):
-        return ensure_selected_object_in_store(self, *args, **kwargs)
-
-    def _handle_infer_result(self, *args, **kwargs):
-        return handle_infer_result(self, *args, **kwargs)
-
-    def _sync_tfm_module_grasp_state(self, *args, **kwargs):
-        return sync_tfm_module_grasp_state(self, *args, **kwargs)
-
-    def _tfm_visualize_grasp(self, *args, **kwargs):
-        return tfm_visualize_grasp(self)
-
-    def _wait_tfm_moveit_result(self, *args, **kwargs):
-        return wait_tfm_moveit_result(self, *args, **kwargs)
-
-    def _execute_tfm_world_grasp(self, *args, **kwargs):
-        return execute_tfm_world_grasp(self, *args, **kwargs)
-
-    def _on_tfm_grasp_object_clicked(self, *args, **kwargs):
-        return on_tfm_grasp_object_clicked(self)
-
-    def _tfm_publish_grasp(self, *args, **kwargs):
-        return tfm_publish_grasp(self, *args, **kwargs)
-
-    def _on_remote_camera_connect_request(self, source: str) -> None:
-        _rc._on_remote_camera_connect_request(self, source)
-
-    def _on_remote_camera_disconnect_request(self, source: str) -> None:
-        _rc._on_remote_camera_disconnect_request(self, source)
-
-    def _on_remote_recover_request(self, source: str) -> None:
-        _rc._on_remote_recover_request(self, source)
-
-    def _on_remote_tfm_infer_request(self, source: str) -> None:
-        _rc._on_remote_tfm_infer_request(self, source)
-
-    def _on_remote_tfm_execute_request(self, source: str) -> None:
-        _rc._on_remote_tfm_execute_request(self, source)
-
-    def _on_remote_pick_demo_request(self, source: str) -> None:
-        _rc._on_remote_pick_demo_request(self, source)
-
-    def _on_remote_pick_object_request(self, source: str) -> None:
-        _rc._on_remote_pick_object_request(self, source)
-
-    def _on_remote_object_select_request(self, name: str, source: str) -> None:
-        _rc._on_remote_object_select_request(self, name, source)
+    # F14-step12: 27 wrappers TFM grasp + remote callbacks heredados
+    # de PanelV2TfmRemoteMixin.
 
     def _publish_calib_grid_marker(self, *args, **kwargs):
         return _ca._publish_calib_grid_marker(self, *args, **kwargs)
