@@ -36,7 +36,14 @@ class PickPhase(str, Enum):
 
     Orden lineal del flujo "happy path":
 
-        IDLE → SELECT_OBJECT → APPROACH → GRASP → LIFT → TRANSPORT → RELEASE → DONE
+        IDLE → INITIAL_SNAPSHOT → HOME_INITIAL → SELECT_OBJECT → APPROACH
+            → GRASP → LIFT → TRANSPORT → RELEASE → DONE
+
+    INITIAL_SNAPSHOT y HOME_INITIAL (F12-step2c.1, 2026-05-02) son las
+    primeras dos fases granulares del legacy ``run_pick_demo`` migradas
+    al FSM canónico. Capturan respectivamente el snapshot inicial del
+    estado (TCP/objeto/joints) y el movimiento joint a la pose HOME
+    previa a la selección de objeto.
 
     Estados terminales:
 
@@ -46,6 +53,8 @@ class PickPhase(str, Enum):
     """
 
     IDLE = "IDLE"
+    INITIAL_SNAPSHOT = "INITIAL_SNAPSHOT"
+    HOME_INITIAL = "HOME_INITIAL"
     SELECT_OBJECT = "SELECT_OBJECT"
     APPROACH = "APPROACH"
     GRASP = "GRASP"
@@ -60,6 +69,8 @@ class PickPhase(str, Enum):
 # Orden lineal happy-path.
 _HAPPY_PATH: List[PickPhase] = [
     PickPhase.IDLE,
+    PickPhase.INITIAL_SNAPSHOT,
+    PickPhase.HOME_INITIAL,
     PickPhase.SELECT_OBJECT,
     PickPhase.APPROACH,
     PickPhase.GRASP,

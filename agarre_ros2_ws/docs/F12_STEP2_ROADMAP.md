@@ -1,7 +1,54 @@
 # F12-step2 — Drenaje real de `panel_pick_demo.py` (roadmap)
 
-> Estado: pendiente. Requiere ROS sourceado + Gazebo para validación E2E.
-> Última actualización: 2026-05-01.
+> Estado: **F12-step2c.1 cerrado offline 2026-05-02**. Resto sigue pendiente
+> de ROS vivo + Gazebo para validación E2E.
+> Última actualización: 2026-05-02.
+
+## F12-step2c.1 — INITIAL_SNAPSHOT + HOME_INITIAL (cerrado offline)
+
+Primer corte real al god-file. Trabajo offline preparatorio:
+
+* **FSM granulado**: `PickPhase` añade `INITIAL_SNAPSHOT` y `HOME_INITIAL`
+  entre `IDLE` y `SELECT_OBJECT` (`pick_fsm.py`). Happy path ahora 10
+  fases. Cero consumidores externos dependen de un `phase_index` literal.
+* **Módulo puro `tfm_orchestrator/preflight.py`**:
+    - `compose_initial_snapshot(...)` — construye `InitialSnapshot`
+      frozen con TCP/objeto/joints, calcula deltas y `dist3d`.
+    - `validate_home_target(current, target=UR5_HOME_JOINTS_RAD, tol_rad)`
+      — comparación joint a joint con wrap angular [-π, π].
+    - 100% testeable sin ROS.
+* **Cableado en orchestrator**: `pick_orchestrator_lifecycle_node.py`
+  + `pick_orchestrator_node.py` (legacy F5/F6) emiten las dos nuevas
+  fases en `next_phases`. En modo `use_stubs=True` (default) los stubs
+  de delay 0.2s mantienen paridad. En modo `use_stubs=False` el
+  fallback `no_op` deja la fase pasar sin ejecutar service calls.
+* **Tests offline**: `test_preflight.py` (20 tests) +
+  `test_pick_fsm.py` ampliado (3 tests nuevos) → 119 tests verdes en
+  `tfm_orchestrator/`, 172 en orchestrator+bringup.
+
+**No tocado** (sigue requiriendo ROS vivo):
+* `panel_pick_demo.py` permanece intacto. El movimiento físico HOME y
+  los traces `[PICK][DIRECT]` siguen viviendo en el legacy.
+* Wiring real `_dispatch_phase_service` para INITIAL_SNAPSHOT y
+  HOME_INITIAL — pendiente de F12-step2c.2 cuando haya stack vivo.
+
+**Tag de rollback**: `audit-pre-f12-step2c-INITIAL_SNAPSHOT-HOME_INITIAL-20260502`.
+
+## F12-step2c.2 — Wiring real con stack vivo (PENDIENTE)
+
+Cuando haya stack vivo:
+
+1. Decidir si las dos fases se sirven por:
+    * Service nuevo `/orchestrator/initial_snapshot` (request → snapshot
+      composer en panel + return), o
+    * Action `PreflightAction` que aglutine ambas, o
+    * Lógica interna del orchestrator que llame a `tf_geometry_service`
+      + service de comando joint trajectory para HOME.
+2. Implementar y migrar el bloque equivalente en `panel_pick_demo.py`
+   (líneas 802-815 + 1589 + 6596) al orchestrator.
+3. Validar `validate_pick_3_cycles.sh 3` antes y después.
+4. Eliminar `_emit_initial_snapshot_trace` y `_emit_home_initial_trace`
+   del legacy.
 
 ## 1. Contexto
 

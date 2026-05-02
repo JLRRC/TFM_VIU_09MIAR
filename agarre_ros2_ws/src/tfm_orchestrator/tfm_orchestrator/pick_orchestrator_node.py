@@ -101,7 +101,7 @@ class PickOrchestratorNode(Node):
         self.get_logger().info(
             "[ORCHESTRATOR] ready, action=/pick_place "
             f"use_stubs={self._use_stubs} "
-            f"phases={[p.value for p in [PickPhase.SELECT_OBJECT, PickPhase.APPROACH, PickPhase.GRASP, PickPhase.LIFT, PickPhase.TRANSPORT, PickPhase.RELEASE]]}"
+            f"phases={[p.value for p in [PickPhase.INITIAL_SNAPSHOT, PickPhase.HOME_INITIAL, PickPhase.SELECT_OBJECT, PickPhase.APPROACH, PickPhase.GRASP, PickPhase.LIFT, PickPhase.TRANSPORT, PickPhase.RELEASE]]}"
         )
 
     # ------------------------------------------------------------------
@@ -144,8 +144,11 @@ class PickOrchestratorNode(Node):
         result = PickPlace.Result()
 
         # Happy path completo. Cada paso es un stub F5 — F6 substituirá
-        # por service calls.
+        # por service calls. INITIAL_SNAPSHOT/HOME_INITIAL añadidos en
+        # F12-step2c.1 (paridad con el lifecycle node).
         next_phases = [
+            (PickPhase.INITIAL_SNAPSHOT, "initial_snapshot_stub"),
+            (PickPhase.HOME_INITIAL, "home_initial_stub"),
             (PickPhase.SELECT_OBJECT, "select_object_stub"),
             (PickPhase.APPROACH, "approach_stub"),
             (PickPhase.GRASP, "grasp_stub"),

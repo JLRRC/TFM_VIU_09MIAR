@@ -38,12 +38,30 @@ def test_happy_path_order():
     path = happy_path()
     assert path[0] == PickPhase.IDLE
     assert path[-1] == PickPhase.DONE
+    assert PickPhase.INITIAL_SNAPSHOT in path
+    assert PickPhase.HOME_INITIAL in path
     assert PickPhase.SELECT_OBJECT in path
     assert PickPhase.APPROACH in path
     assert PickPhase.GRASP in path
     assert PickPhase.LIFT in path
     assert PickPhase.TRANSPORT in path
     assert PickPhase.RELEASE in path
+
+
+def test_happy_path_includes_initial_snapshot_before_home_initial():
+    """F12-step2c.1: INITIAL_SNAPSHOT precede a HOME_INITIAL y ambos preceden a SELECT_OBJECT."""
+    path = happy_path()
+    idx_snap = path.index(PickPhase.INITIAL_SNAPSHOT)
+    idx_home = path.index(PickPhase.HOME_INITIAL)
+    idx_select = path.index(PickPhase.SELECT_OBJECT)
+    assert idx_snap < idx_home < idx_select
+
+
+def test_idle_advances_to_initial_snapshot_only():
+    """IDLE solo puede avanzar a INITIAL_SNAPSHOT (o FAILED/ABORTED)."""
+    assert can_transition(PickPhase.IDLE, PickPhase.INITIAL_SNAPSHOT)
+    assert not can_transition(PickPhase.IDLE, PickPhase.HOME_INITIAL)
+    assert not can_transition(PickPhase.IDLE, PickPhase.SELECT_OBJECT)
 
 
 def test_happy_path_full_advance():
@@ -70,6 +88,8 @@ def test_cannot_skip_phases():
     assert not can_transition(PickPhase.IDLE, PickPhase.APPROACH)
     # SELECT_OBJECT no puede saltar a GRASP.
     assert not can_transition(PickPhase.SELECT_OBJECT, PickPhase.GRASP)
+    # INITIAL_SNAPSHOT no puede saltar a SELECT_OBJECT (debe pasar por HOME_INITIAL).
+    assert not can_transition(PickPhase.INITIAL_SNAPSHOT, PickPhase.SELECT_OBJECT)
 
 
 def test_can_transition_to_failed_from_any_non_terminal():
@@ -115,9 +135,15 @@ def test_context_initial_state():
 
 def test_context_advance_records_history():
     ctx = PickContext()
+    ctx.advance(PickPhase.INITIAL_SNAPSHOT, detail="snapshot ok")
+    ctx.advance(PickPhase.HOME_INITIAL, detail="home reached")
     ctx.advance(PickPhase.SELECT_OBJECT, detail="picked from store")
     assert ctx.current_phase == PickPhase.SELECT_OBJECT
-    assert ctx.history == [PickPhase.IDLE]
+    assert ctx.history == [
+        PickPhase.IDLE,
+        PickPhase.INITIAL_SNAPSHOT,
+        PickPhase.HOME_INITIAL,
+    ]
     assert ctx.detail == "picked from store"
 
 
@@ -129,6 +155,8 @@ def test_context_invalid_transition_raises():
 
 def test_context_fail_shortcut():
     ctx = PickContext()
+    ctx.advance(PickPhase.INITIAL_SNAPSHOT)
+    ctx.advance(PickPhase.HOME_INITIAL)
     ctx.advance(PickPhase.SELECT_OBJECT)
     ctx.fail("object not visible")
     assert ctx.current_phase == PickPhase.FAILED
@@ -138,6 +166,8 @@ def test_context_fail_shortcut():
 
 def test_context_abort_shortcut():
     ctx = PickContext()
+    ctx.advance(PickPhase.INITIAL_SNAPSHOT)
+    ctx.advance(PickPhase.HOME_INITIAL)
     ctx.advance(PickPhase.SELECT_OBJECT)
     ctx.advance(PickPhase.APPROACH)
     ctx.abort()
@@ -197,6 +227,8 @@ def test_progress_monotonic_in_happy_path():
 
 def test_feedback_snapshot_shape():
     ctx = PickContext(object_name="box_red")
+    ctx.advance(PickPhase.INITIAL_SNAPSHOT)
+    ctx.advance(PickPhase.HOME_INITIAL)
     ctx.advance(PickPhase.SELECT_OBJECT, detail="ok")
     snap = ctx.feedback_snapshot()
     assert set(snap.keys()) == {"current_phase", "progress", "phase_index", "detail"}

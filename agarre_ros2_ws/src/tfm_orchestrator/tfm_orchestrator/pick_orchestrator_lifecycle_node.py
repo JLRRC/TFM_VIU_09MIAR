@@ -267,6 +267,8 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         result = PickPlace.Result()
 
         next_phases = [
+            (PickPhase.INITIAL_SNAPSHOT, "initial_snapshot_stub"),
+            (PickPhase.HOME_INITIAL, "home_initial_stub"),
             (PickPhase.SELECT_OBJECT, "select_object_stub"),
             (PickPhase.APPROACH, "approach_stub"),
             (PickPhase.GRASP, "grasp_stub"),
