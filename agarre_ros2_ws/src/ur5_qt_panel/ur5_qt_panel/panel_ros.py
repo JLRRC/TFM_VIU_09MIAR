@@ -40,9 +40,9 @@ from .panel_ros_handlers import (
 CLOCK_MAX_AGE_SEC = 8.0
 
 
-def _steady_time() -> float:
-    """Devuelve un timestamp monotono local al proceso para watchdogs y frescura."""
-    return time.monotonic()
+# F15 (2026-05-01): _steady_time canónico vive en panel_clock_helpers
+# para evitar duplicación con panel_v2_helpers.runtime_time.
+from .panel_clock_helpers import steady_time as _steady_time  # noqa: E402,F401
 
 try:
     import rclpy

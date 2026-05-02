@@ -36,8 +36,15 @@ from typing import Dict, Optional
 
 
 def runtime_time() -> float:
-    """Devuelve un timestamp monotónico local para freshness/watchdog."""
-    return time.monotonic()
+    """Devuelve un timestamp monotónico local para freshness/watchdog.
+
+    F15 (2026-05-01): delega al helper canónico
+    ``panel_clock_helpers.steady_time`` para evitar duplicación con
+    ``panel_ros._steady_time``. Se mantiene por compat con el resto de
+    panel_v2 (que importa con el alias ``_runtime_time``).
+    """
+    from .panel_clock_helpers import steady_time
+    return steady_time()
 
 
 def camera_required_label(value: Optional[bool]) -> str:
