@@ -165,6 +165,10 @@ def _object_top_pose(pose):
 from .pick_demo.phase_checks import (
     build_approach_coarse_phase_check as _build_approach_coarse_phase_check_pure,
 )
+from .pick_demo.audit_emit import (
+    AuditEmitContext,
+    audit_emit as _audit_emit_pure,
+)
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -1577,216 +1581,44 @@ def run_pick_demo(panel) -> None:
 
             # F3-step1.3: _camera_audit_meta promovido a module-level.
 
-            def _audit_emit(
-                stage: str,
-                *,
-                target_source: str,
-                target_frame_original: str | None,
-                target_pose_original=None,
-                target_pose_world=None,
-                target_pose_base_link=None,
-                command_pose_sent=None,
-                command_frame: str | None,
-                command_joint_goal=None,
-                extra: dict | None = None,
-            ) -> None:
-                world_frame = str(
-                    getattr(panel, "_world_frame_last_first", lambda fallback=None: WORLD_FRAME or "world")(
-                        WORLD_FRAME or "world"
-                    )
-                ).strip() or "world"
-                try:
-                    base_frame = str(panel._business_base_frame() or BASE_FRAME or "base_link")
-                except Exception:
-                    base_frame = str(BASE_FRAME or "base_link")
-                object_world = _tuple3(_live_object_world())
-                object_base = _tuple3(_live_object_base())
-                object_top_world = _object_top_pose(object_world)
-                object_top_base = _object_top_pose(object_base)
-                tcp_world = _tuple3(_live_tcp_world())
-                tcp_base = _tuple3(_live_tcp_base())
-                tool0_world = _pose_position(world_frame, DIRECT_EXECUTION_FRAME, timeout_sec=0.12)
-                tool0_base = _pose_position(base_frame, DIRECT_EXECUTION_FRAME, timeout_sec=0.12)
-                pinch_world = _pose_position(world_frame, DIRECT_SOURCE_FRAME, timeout_sec=0.12)
-                pinch_base = _pose_position(base_frame, DIRECT_SOURCE_FRAME, timeout_sec=0.12) or tcp_base
-                rg2_tcp_world = _pose_position(world_frame, DIRECT_LEGACY_TCP_FRAME, timeout_sec=0.12)
-                rg2_tcp_base = _pose_position(base_frame, DIRECT_LEGACY_TCP_FRAME, timeout_sec=0.12)
-                object_height_m = _pick_demo_env_float(
-                    "PANEL_PICK_DEMO_OBJECT_HEIGHT_M",
-                    0.05,
-                    minimum=0.001,
+            # F3-step3: _audit_emit body extraído a pick_demo/audit_emit.py.
+            # El wrapper construye AuditEmitContext con los helpers/vars
+            # del closure y delega a la función pura. Los 4 callsites
+            # legacy siguen funcionando sin cambios.
+            def _audit_emit(stage, **kwargs):
+                _audit_ctx = AuditEmitContext(
+                    panel=panel,
+                    live_object_world=_live_object_world,
+                    live_object_base=_live_object_base,
+                    live_tcp_world=_live_tcp_world,
+                    live_tcp_base=_live_tcp_base,
+                    append_trace=_append_trace,
+                    run_id=run_id,
+                    selected_name=selected_name,
+                    user_selected=user_selected,
+                    target_object_id=target_object_id,
+                    direct_execution_frame=DIRECT_EXECUTION_FRAME,
+                    direct_source_frame=DIRECT_SOURCE_FRAME,
+                    direct_legacy_tcp_frame=DIRECT_LEGACY_TCP_FRAME,
+                    get_pose_position=_pose_position,
+                    env_object_height_m_fn=lambda: _pick_demo_env_float(
+                        "PANEL_PICK_DEMO_OBJECT_HEIGHT_M", 0.05, minimum=0.001,
+                    ),
+                    camera_audit_meta_fn=_camera_audit_meta,
+                    tuple3_fn=_tuple3,
+                    object_top_pose_fn=_object_top_pose,
+                    fmt_vec_fn=_fmt_vec,
+                    fmt_scalar_fn=_fmt_scalar,
+                    iso_now_fn=_iso_now,
+                    vector_minus_fn=_vector_minus,
+                    vec_norm_fn=_vec_norm,
+                    z_delta_fn=_z_delta,
+                    json_safe_fn=_json_safe,
+                    world_frame_default=WORLD_FRAME or "world",
+                    base_frame_default=BASE_FRAME or "base_link",
                 )
-                camera_meta = _camera_audit_meta(panel)
-                selection_ts = float(getattr(panel, "_selection_timestamp", 0.0) or 0.0)
-                selection_age = max(0.0, time.time() - selection_ts) if selection_ts > 0.0 else None
-                selected_world = _tuple3(getattr(panel, "_selected_world", None))
-                selected_base = _tuple3(getattr(panel, "_selected_base", None))
-                panel_tcp_fk_base = _tuple3(getattr(panel, "_last_tcp_base", None))
-                panel_tcp_fk_rpy_deg = _tuple3(getattr(panel, "_last_tcp_rpy_deg", None))
-                panel_tcp_fk_age = max(
-                    0.0,
-                    time.monotonic() - float(getattr(panel, "_last_tcp_fk_ts", 0.0) or 0.0),
-                ) if float(getattr(panel, "_last_tcp_fk_ts", 0.0) or 0.0) > 0.0 else None
-                panel_trace_tcp_base = _tuple3(getattr(panel, "_last_trace_tcp_base", None))
-                panel_trace_tcp_rpy_deg = _tuple3(getattr(panel, "_last_trace_tcp_rpy_deg", None))
-                panel_trace_tcp_age = max(
-                    0.0,
-                    time.monotonic() - float(getattr(panel, "_last_trace_tcp_ts", 0.0) or 0.0),
-                ) if float(getattr(panel, "_last_trace_tcp_ts", 0.0) or 0.0) > 0.0 else None
-                panel_object_age = getattr(panel, "_last_trace_object_age_sec", None)
-                delta_world = _vector_minus(tcp_world, object_world)
-                delta_base = _vector_minus(tcp_base, object_base)
-                delta_pinch_world = _vector_minus(pinch_world, object_world)
-                delta_pinch_base = _vector_minus(pinch_base, object_base)
-                delta_panel_live = _vector_minus(panel_tcp_fk_base, tcp_base)
-                delta_panel_live_norm = _vec_norm(delta_panel_live)
-                legacy_gap = _vector_minus(rg2_tcp_base, pinch_base)
-                legacy_gap_norm = _vec_norm(legacy_gap)
-                tool0_top_dz = _z_delta(tool0_base, object_top_base)
-                pinch_top_dz = _z_delta(pinch_base, object_top_base)
-                rg2_tcp_top_dz = _z_delta(rg2_tcp_base, object_top_base)
-                extra_payload = _json_safe(extra) or {}
-                _append_trace(
-                    f"{DIRECT_GRASP_AUDIT_PREFIX} "
-                    f"stage={stage} "
-                    f"timestamp={_iso_now()} "
-                    f"request_id={run_id} "
-                    f"grasp_mode=direct_object "
-                    f"selected_object_name={selected_name or 'none'} "
-                    f"selected_object_id={target_object_id} "
-                    f"user_selected_name={user_selected or 'none'} "
-                    f"selection_age_sec={_fmt_scalar(selection_age)} "
-                    f"target_source={target_source or 'none'} "
-                    f"target_frame_original={target_frame_original or 'none'} "
-                    f"target_pose_original={_fmt_vec(target_pose_original)} "
-                    f"target_pose_world={_fmt_vec(target_pose_world)} "
-                    f"target_pose_base_link={_fmt_vec(target_pose_base_link)} "
-                    f"selected_pose_world={_fmt_vec(selected_world)} "
-                    f"selected_pose_base_link={_fmt_vec(selected_base)} "
-                    f"object_pose_world={_fmt_vec(object_world)} "
-                    f"object_pose_base_link={_fmt_vec(object_base)} "
-                    f"object_top_pose_world={_fmt_vec(object_top_world)} "
-                    f"object_top_pose_base_link={_fmt_vec(object_top_base)} "
-                    f"tcp_pose_world={_fmt_vec(tcp_world)} "
-                    f"tcp_pose_base_link={_fmt_vec(tcp_base)} "
-                    f"tool0_pose_world={_fmt_vec(tool0_world)} "
-                    f"tool0_pose_base_link={_fmt_vec(tool0_base)} "
-                    f"rg2_pinch_center_pose_world={_fmt_vec(pinch_world)} "
-                    f"rg2_pinch_center_pose_base_link={_fmt_vec(pinch_base)} "
-                    f"rg2_tcp_pose_world={_fmt_vec(rg2_tcp_world)} "
-                    f"rg2_tcp_pose_base_link={_fmt_vec(rg2_tcp_base)} "
-                    f"delta_object_tcp_world={_fmt_vec(delta_world)} "
-                    f"delta_object_tcp_base={_fmt_vec(delta_base)} "
-                    f"delta_object_pinch_center_world={_fmt_vec(delta_pinch_world)} "
-                    f"delta_object_pinch_center_base={_fmt_vec(delta_pinch_base)} "
-                    f"dz_tool0_vs_object_top_m={_fmt_scalar(tool0_top_dz)} "
-                    f"dz_pinch_center_vs_object_top_m={_fmt_scalar(pinch_top_dz)} "
-                    f"dz_rg2_tcp_vs_object_top_m={_fmt_scalar(rg2_tcp_top_dz)} "
-                    f"command_pose_sent={_fmt_vec(command_pose_sent)} "
-                    f"command_frame={command_frame or 'none'} "
-                    f"command_joint_goal={json.dumps(_json_safe(command_joint_goal), ensure_ascii=True)} "
-                    f"camera_topic={camera_meta['topic']} "
-                    f"camera_frame={camera_meta['frame']} "
-                    f"image_timestamp={_fmt_scalar(camera_meta['image_timestamp'])} "
-                    f"pose_from_image=false "
-                    f"panel_tcp_fk_base={_fmt_vec(panel_tcp_fk_base)} "
-                    f"panel_tcp_fk_rpy_deg={_fmt_vec(panel_tcp_fk_rpy_deg)} "
-                    f"panel_trace_tcp_base={_fmt_vec(panel_trace_tcp_base)} "
-                    f"panel_trace_tcp_rpy_deg={_fmt_vec(panel_trace_tcp_rpy_deg)} "
-                    f"delta_panel_tcp_live={_fmt_vec(delta_panel_live)} "
-                    f"delta_panel_tcp_live_norm_m={_fmt_scalar(delta_panel_live_norm)} "
-                    f"panel_tcp_fk_age_sec={_fmt_scalar(panel_tcp_fk_age)} "
-                    f"panel_trace_tcp_age_sec={_fmt_scalar(panel_trace_tcp_age)} "
-                    f"panel_object_age_sec={_fmt_scalar(panel_object_age)} "
-                    f"object_height_m={_fmt_scalar(object_height_m)} "
-                    f"world_frame={world_frame} "
-                    f"base_frame={base_frame} "
-                    f"extra={json.dumps(extra_payload, ensure_ascii=True, sort_keys=True)}"
-                )
-                _append_trace(
-                    "[PICK][DIRECT][BUTTON] "
-                    f"stage={stage} request_id={run_id} grasp_mode=direct_object "
-                    f"selected_object={selected_name or 'none'} user_selected={user_selected or 'none'} "
-                    f"target_source={target_source or 'none'} target_frame_original={target_frame_original or 'none'} "
-                    f"selection_age_sec={_fmt_scalar(selection_age)} pose_from_image=false"
-                )
-                _append_trace(
-                    "[PICK][DIRECT][SELECT] "
-                    f"stage={stage} selected_pose_world={_fmt_vec(selected_world)} "
-                    f"selected_pose_base_link={_fmt_vec(selected_base)} "
-                    f"target_pose_original={_fmt_vec(target_pose_original)} "
-                    f"target_pose_world={_fmt_vec(target_pose_world)} "
-                    f"target_pose_base_link={_fmt_vec(target_pose_base_link)} "
-                    f"panel_object_age_sec={_fmt_scalar(panel_object_age)}"
-                )
-                _append_trace(
-                    "[PICK][DIRECT][LIVE_OBJECT] "
-                    f"stage={stage} object_pose_world={_fmt_vec(object_world)} "
-                    f"object_pose_base_link={_fmt_vec(object_base)} world_frame={world_frame} base_frame={base_frame}"
-                )
-                _append_trace(
-                    "[PICK][DIRECT][TCP_LIVE] "
-                    f"stage={stage} tcp_pose_world={_fmt_vec(tcp_world)} "
-                    f"tcp_pose_base_link={_fmt_vec(tcp_base)} "
-                    f"tool0_pose_world={_fmt_vec(tool0_world)} tool0_pose_base_link={_fmt_vec(tool0_base)} "
-                    f"rg2_pinch_center_pose_world={_fmt_vec(pinch_world)} rg2_pinch_center_pose_base_link={_fmt_vec(pinch_base)} "
-                    f"rg2_tcp_pose_world={_fmt_vec(rg2_tcp_world)} rg2_tcp_pose_base_link={_fmt_vec(rg2_tcp_base)} "
-                    f"panel_trace_tcp_base={_fmt_vec(panel_trace_tcp_base)} panel_trace_tcp_rpy_deg={_fmt_vec(panel_trace_tcp_rpy_deg)} "
-                    f"panel_trace_tcp_age_sec={_fmt_scalar(panel_trace_tcp_age)}"
-                )
-                _append_trace(
-                    "[RG2][AUDIT][CONTROL] "
-                    f"stage={stage} reasoning_frame={DIRECT_SOURCE_FRAME} "
-                    f"legacy_tcp_frame={DIRECT_LEGACY_TCP_FRAME} execution_frame={DIRECT_EXECUTION_FRAME} "
-                    f"tool0_pose_base_link={_fmt_vec(tool0_base)} "
-                    f"rg2_pinch_center_pose_base_link={_fmt_vec(pinch_base)} "
-                    f"rg2_tcp_pose_base_link={_fmt_vec(rg2_tcp_base)}"
-                )
-                _append_trace(
-                    "[RG2][AUDIT][COMPARE] "
-                    f"stage={stage} object_pose_base_link={_fmt_vec(object_base)} "
-                    f"tool0_pose_base_link={_fmt_vec(tool0_base)} "
-                    f"rg2_pinch_center_pose_base_link={_fmt_vec(pinch_base)} "
-                    f"rg2_tcp_pose_base_link={_fmt_vec(rg2_tcp_base)} "
-                    f"delta_object_pinch_center_base={_fmt_vec(delta_pinch_base)} "
-                    f"delta_object_tcp_base={_fmt_vec(delta_base)} "
-                    f"legacy_tcp_vs_pinch_center_base={_fmt_vec(legacy_gap)} "
-                    f"legacy_tcp_vs_pinch_center_dist_m={_fmt_scalar(legacy_gap_norm)}"
-                )
-                geom_audit_line = (
-                    "[RG2][AUDIT][GEOM] "
-                    f"stage={stage} "
-                    f"object_pose_base_link={_fmt_vec(object_base)} "
-                    f"object_top_pose_base_link={_fmt_vec(object_top_base)} "
-                    f"tool0_pose_base_link={_fmt_vec(tool0_base)} "
-                    f"rg2_pinch_center_pose_base_link={_fmt_vec(pinch_base)} "
-                    f"rg2_tcp_pose_base_link={_fmt_vec(rg2_tcp_base)} "
-                    f"dz_tool0_vs_object_top_m={_fmt_scalar(tool0_top_dz)} "
-                    f"dz_pinch_center_vs_object_top_m={_fmt_scalar(pinch_top_dz)} "
-                    f"dz_rg2_tcp_vs_object_top_m={_fmt_scalar(rg2_tcp_top_dz)} "
-                    f"object_height_m={_fmt_scalar(object_height_m)}"
-                )
-                panel._emit_log(geom_audit_line)
-                _append_trace(geom_audit_line)
-                _append_trace(
-                    "[PICK][DIRECT][PANEL_TRACE] "
-                    f"stage={stage} panel_tcp_fk_base={_fmt_vec(panel_tcp_fk_base)} "
-                    f"panel_tcp_fk_rpy_deg={_fmt_vec(panel_tcp_fk_rpy_deg)} "
-                    f"tcp_live_base={_fmt_vec(tcp_base)} "
-                    f"delta_panel_tcp_live={_fmt_vec(delta_panel_live)} "
-                    f"delta_panel_tcp_live_norm_m={_fmt_scalar(delta_panel_live_norm)} "
-                    f"panel_tcp_fk_age_sec={_fmt_scalar(panel_tcp_fk_age)}"
-                )
-                if delta_panel_live_norm is not None and delta_panel_live_norm > 0.02:
-                    _append_trace(
-                        "[PICK][DIRECT][DIVERGENCE] "
-                        "kind=panel_fk_vs_live_tf "
-                        f"stage={stage} delta_m={_fmt_scalar(delta_panel_live_norm)} "
-                        f"panel_tcp_fk_base={_fmt_vec(panel_tcp_fk_base)} "
-                        f"tcp_live_base={_fmt_vec(tcp_base)} "
-                        f"delta={_fmt_vec(delta_panel_live)} "
-                        "note=panel_fk_is_model_pose_not_runtime_rg2_tcp"
-                    )
+                _audit_emit_pure(_audit_ctx, stage, **kwargs)
+
 
             _audit_emit(
                 "BUTTON_PRESS",
