@@ -55,6 +55,7 @@ from .lifecycle_helpers import (
     OrchestratorLifecycleResources,
     reject_reason_for_state,
 )
+from .phase_dispatch import PhaseDispatchContext, dispatch_phase
 from .phase_timings import PhaseTimings
 from .pick_fsm import PickContext, PickPhase
 from .service_clients import (
@@ -348,22 +349,16 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
     def _dispatch_phase_service(
         self, phase: PickPhase, ctx: PickContext
     ) -> tuple[bool, str]:
-        common = dict(
+        """F5-step1: delega al módulo puro phase_dispatch para paridad
+        funcional con pick_orchestrator_node.py (Node legacy)."""
+        dctx = PhaseDispatchContext(
+            node=self,
+            service_map=self._service_map or PhaseServiceMap(),
+            client_cache=self._client_cache,
             discovery_timeout_sec=self._discovery_timeout,
             call_timeout_sec=self._call_timeout,
-            client_cache=self._client_cache,
         )
-        if phase == PickPhase.SELECT_OBJECT:
-            req = SelectObjectSrv.Request()
-            req.name = ctx.object_name
-            r = call_service_with_timeout(
-                self, SelectObjectSrv, self._service_map.select_object, req, **common
-            )
-            return r.success, f"select_object:{r.reason}"
-        # Las demás fases usan PlanToPose / Open/Close/Attach/Detach
-        # como en el nodo F5/F6; para F9 mantenemos paridad funcional
-        # via use_stubs por defecto.
-        return True, f"{phase.value}_no_op"
+        return dispatch_phase(dctx, phase, ctx)
 
     def _publish_feedback(self, goal_handle, ctx: PickContext) -> None:
         snap = ctx.feedback_snapshot()
