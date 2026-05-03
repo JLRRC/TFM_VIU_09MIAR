@@ -41,11 +41,14 @@ from .panel_camera import CameraView
 from .cameras_tab import ObjectListPanel
 
 
-def _build_main_ui_topbar_and_leds(panel) -> None:
+def _build_main_ui_topbar_and_leds(panel):
     """F3-step9: bloque inicial extraído de build_main_ui (~111 LOC).
 
     Crea: botones top (STOP/START/EXIT/debug), combo step_mode, label status,
     combo mundos/modos, bridge YAML/bag/MoveIt buttons + LEDs (sin estilo final).
+
+    Devuelve (root, main, top) para que build_main_ui pueda continuar
+    el ensamblado del layout.
     """
     root = QWidget()
     main = QVBoxLayout()
@@ -159,9 +162,17 @@ def _build_main_ui_topbar_and_leds(panel) -> None:
     ):
         set_led(led, "off")
 
+    return root, main, top
 
-def build_main_ui(panel) -> None:
-    _build_main_ui_topbar_and_leds(panel)
+
+def _build_main_ui_controls_status_row(panel, main, top) -> None:
+    """F3-step9bis: bloque Sistema + controls_status_row extraído.
+
+    Crea: labels CPU/RAM/Load + status_timer + click handlers top.
+    Layout horizontal con controles (gz_row + bridge_row + bag_row +
+    moveit_row), status_group (LEDs en grid), sys_group (CPU/RAM/Load).
+    main.addLayout(controls_status_row).
+    """
 
     # --- Sistema: labels para CPU/RAM/Load ---
     panel.sys_cpu_lbl = QLabel("CPU  --")
@@ -284,6 +295,11 @@ def build_main_ui(panel) -> None:
     controls_status_row.addWidget(sys_group, 0)
 
     main.addLayout(controls_status_row)
+
+
+def build_main_ui(panel) -> None:
+    root, main, top = _build_main_ui_topbar_and_leds(panel)
+    _build_main_ui_controls_status_row(panel, main, top)
 
     cam_group = QGroupBox("")
     cam_group.setFlat(True)
