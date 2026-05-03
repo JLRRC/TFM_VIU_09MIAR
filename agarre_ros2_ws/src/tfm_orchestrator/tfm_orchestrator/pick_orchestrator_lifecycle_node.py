@@ -105,6 +105,14 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         self._snapshot_tcp_frame: str = "rg2_tcp"
         self._snapshot_tf_timeout: float = 0.5
         self._snapshot_require_object_pose: bool = True
+        # B-iter6 (2026-05-03): ActionClient FollowJointTrajectory para HOME_INITIAL real.
+        # Init en on_configure.
+        self._fjt_client = None
+        self._home_action_name: str = "/joint_trajectory_controller/follow_joint_trajectory"
+        self._home_duration_sec: float = 5.0
+        self._home_position_tol_rad: float = 0.10
+        self._home_goal_time_tol_sec: float = 5.0
+        self._home_result_timeout_sec: float = 30.0
         self.get_logger().info(
             "[ORCHESTRATOR_LC] instantiated (UNCONFIGURED) — "
             "use `ros2 lifecycle set <node> configure` para inicializar"
@@ -125,6 +133,15 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             self.declare_parameter("snapshot_tcp_frame", "rg2_tcp")
             self.declare_parameter("snapshot_tf_timeout_sec", 0.5)
             self.declare_parameter("snapshot_require_object_pose", True)
+            # B-iter6: params del HOME_INITIAL real.
+            self.declare_parameter(
+                "home_action_name",
+                "/joint_trajectory_controller/follow_joint_trajectory",
+            )
+            self.declare_parameter("home_duration_sec", 5.0)
+            self.declare_parameter("home_position_tol_rad", 0.10)
+            self.declare_parameter("home_goal_time_tol_sec", 5.0)
+            self.declare_parameter("home_result_timeout_sec", 30.0)
         except Exception:
             # Re-configure scenario: parameters already declared, skip.
             pass
@@ -144,6 +161,22 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         )
         self._snapshot_require_object_pose = bool(
             self.get_parameter("snapshot_require_object_pose").value
+        )
+        self._home_action_name = str(
+            self.get_parameter("home_action_name").value
+            or "/joint_trajectory_controller/follow_joint_trajectory"
+        )
+        self._home_duration_sec = float(
+            self.get_parameter("home_duration_sec").value
+        )
+        self._home_position_tol_rad = float(
+            self.get_parameter("home_position_tol_rad").value
+        )
+        self._home_goal_time_tol_sec = float(
+            self.get_parameter("home_goal_time_tol_sec").value
+        )
+        self._home_result_timeout_sec = float(
+            self.get_parameter("home_result_timeout_sec").value
         )
         self._service_map = PhaseServiceMap()
         self._client_cache = {}
@@ -169,6 +202,22 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             )
             self._tf_buffer = None
             self._joint_state_sub = None
+        # B-iter6: ActionClient FollowJointTrajectory para HOME_INITIAL real.
+        try:
+            from rclpy.action import ActionClient
+            from control_msgs.action import FollowJointTrajectory
+            self._fjt_client = ActionClient(
+                self,
+                FollowJointTrajectory,
+                self._home_action_name,
+                callback_group=self._cb_group,
+            )
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[ORCHESTRATOR_LC] FJT client init failed: "
+                f"{type(exc).__name__}: {exc} (HOME_INITIAL degradará a scaffold)"
+            )
+            self._fjt_client = None
         self._action_server = ActionServer(
             self,
             PickPlace,
@@ -400,6 +449,14 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
                 return False, (
                     f"initial_snapshot_exception:{type(exc).__name__}:{exc}"
                 )
+        # B-iter6: HOME_INITIAL real (intercepta antes del dispatch genérico).
+        if phase == PickPhase.HOME_INITIAL:
+            try:
+                return self._execute_home_initial_real(ctx)
+            except Exception as exc:
+                return False, (
+                    f"home_initial_exception:{type(exc).__name__}:{exc}"
+                )
         try:
             return self._dispatch_phase_service(phase, ctx)
         except Exception as exc:
@@ -499,6 +556,81 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
                 f"[ORCHESTRATOR_LC][INITIAL_SNAPSHOT] partial: {result.reason}"
             )
         return result.success, f"initial_snapshot:{result.reason}"
+
+    # ------------------------------------------------------------------
+    # B-iter6 (2026-05-03) — HOME_INITIAL real
+    # ------------------------------------------------------------------
+
+    def _execute_home_initial_real(self, ctx: PickContext) -> tuple[bool, str]:
+        """Mueve el robot a HOME via FollowJointTrajectory.action directo.
+
+        Llamado desde _execute_phase cuando dst=HOME_INITIAL y use_stubs=False.
+        Si el ActionClient FJT no está disponible (init falló en on_configure),
+        degrada a scaffold (no-op success) para no bloquear el resto del FSM.
+        """
+        import threading
+        from .home_initial import (
+            build_follow_joint_trajectory_goal,
+            build_home_joint_trajectory,
+            parse_fjt_result,
+        )
+
+        if self._fjt_client is None:
+            return True, "home_initial:scaffold_fallback"
+
+        # Wait for server (timeout corto: si el controller no está listo,
+        # mejor degradar que bloquear el ciclo entero).
+        if not self._fjt_client.wait_for_server(timeout_sec=3.0):
+            self.get_logger().warning(
+                f"[ORCHESTRATOR_LC][HOME_INITIAL] FJT server unavailable: "
+                f"{self._home_action_name}"
+            )
+            return False, f"home_initial:fjt_server_unavailable:{self._home_action_name}"
+
+        jt = build_home_joint_trajectory(duration_sec=self._home_duration_sec)
+        goal = build_follow_joint_trajectory_goal(
+            jt,
+            position_tol_rad=self._home_position_tol_rad,
+            goal_time_tol_sec=self._home_goal_time_tol_sec,
+        )
+
+        self.get_logger().info(
+            f"[ORCHESTRATOR_LC][HOME_INITIAL] sending goal "
+            f"home_positions=[0,-π/2,0,-π/2,0,0] duration={self._home_duration_sec:.1f}s "
+            f"pos_tol={self._home_position_tol_rad:.3f}rad"
+        )
+
+        send_future = self._fjt_client.send_goal_async(goal)
+        send_event = threading.Event()
+        send_future.add_done_callback(lambda _f: send_event.set())
+        send_event.wait(timeout=3.0)
+        if not send_future.done():
+            return False, "home_initial:fjt_goal_send_timeout"
+
+        gh = send_future.result()
+        if gh is None or not getattr(gh, "accepted", False):
+            return False, "home_initial:fjt_goal_rejected"
+
+        result_future = gh.get_result_async()
+        result_event = threading.Event()
+        result_future.add_done_callback(lambda _f: result_event.set())
+        result_event.wait(timeout=float(max(1.0, self._home_result_timeout_sec)))
+        if not result_future.done():
+            return False, (
+                f"home_initial:fjt_result_timeout:{self._home_result_timeout_sec:.1f}s"
+            )
+
+        wrapper = result_future.result()
+        ok, reason = parse_fjt_result(wrapper)
+        if ok:
+            self.get_logger().info(
+                f"[ORCHESTRATOR_LC][HOME_INITIAL] success reason={reason}"
+            )
+        else:
+            self.get_logger().warning(
+                f"[ORCHESTRATOR_LC][HOME_INITIAL] failed reason={reason}"
+            )
+        return ok, f"home_initial:{reason}"
 
     def _publish_feedback(self, goal_handle, ctx: PickContext) -> None:
         snap = ctx.feedback_snapshot()
