@@ -350,6 +350,55 @@ def test_transport_uses_drop_xyz_from_pick_context():
     assert pose.position.z == pytest.approx(0.10)
 
 
+def test_transport_retries_on_first_failure_then_succeeds(monkeypatch):
+    """B-iter9: TRANSPORT reintenta el plan_to_pose ante fallo transitorio."""
+    # No esperar back-off real en tests.
+    import tfm_orchestrator.retry as retry_mod
+    sleeps = []
+    monkeypatch.setattr(retry_mod.time, "sleep", sleeps.append)
+
+    # Mock que falla 1ª llamada y ok 2ª.
+    calls = {"n": 0}
+
+    def _action_caller(node, action_type, name, goal, **_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return ActionCallResult(success=False, reason="planning_transient")
+        return ActionCallResult(success=True, reason="ok")
+
+    spec = _MockCallerSpec()
+    dctx = _ctx_for(spec)
+    # Override action_caller (bypass spec).
+    dctx.action_caller = _action_caller
+
+    ok, reason = dispatch_phase(dctx, PickPhase.TRANSPORT, _pick_ctx())
+    assert ok is True
+    assert reason == "transport:ok|attempts=2"
+    assert calls["n"] == 2
+    assert sleeps == [1.0]  # back-off antes del 2º intento
+
+
+def test_transport_fails_after_exhausting_retries(monkeypatch):
+    """B-iter9: TRANSPORT falla con detalle si todos los intentos abortan."""
+    import tfm_orchestrator.retry as retry_mod
+    sleeps = []
+    monkeypatch.setattr(retry_mod.time, "sleep", sleeps.append)
+
+    def _action_caller(node, action_type, name, goal, **_kwargs):
+        return ActionCallResult(success=False, reason="moveit_err:PLANNING_FAILED")
+
+    spec = _MockCallerSpec()
+    dctx = _ctx_for(spec)
+    dctx.action_caller = _action_caller
+
+    ok, reason = dispatch_phase(dctx, PickPhase.TRANSPORT, _pick_ctx())
+    assert ok is False
+    assert "moveit_err:PLANNING_FAILED" in reason
+    assert "attempts=2" in reason
+    # Default max_attempts=2 → 1 back-off entre intentos.
+    assert len(sleeps) == 1
+
+
 # ---------------------------------------------------------------------------
 # RELEASE (Detach + Open)
 # ---------------------------------------------------------------------------

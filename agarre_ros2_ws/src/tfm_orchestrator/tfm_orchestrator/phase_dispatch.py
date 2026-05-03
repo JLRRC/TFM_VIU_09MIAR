@@ -329,9 +329,18 @@ def dispatch_phase(
         return r.success, f"lift:{r.reason}"
 
     if phase == PickPhase.TRANSPORT:
-        goal = build_plan_to_pose_goal_for_transport(ctx)
-        r = _call_plan_to_pose(dispatch_ctx, goal)
-        return r.success, f"transport:{r.reason}"
+        # B-iter9: retry con back-off para fallos transitorios de planning.
+        # Default: 2 intentos con back-off 1s → 2s. Si MoveIt está
+        # momentáneamente saturado, el 2º intento típicamente pasa.
+        from .retry import retry_with_backoff
+
+        def _attempt() -> Any:
+            goal = build_plan_to_pose_goal_for_transport(ctx)
+            return _call_plan_to_pose(dispatch_ctx, goal)
+
+        result, attempts = retry_with_backoff(_attempt)
+        suffix = f"|attempts={attempts}" if attempts > 1 else ""
+        return result.success, f"transport:{result.reason}{suffix}"
 
     if phase == PickPhase.RELEASE:
         # 1) Detach.
