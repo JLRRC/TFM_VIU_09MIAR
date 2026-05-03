@@ -50,6 +50,86 @@ from trajectory_msgs.msg import JointTrajectory
 class ExecutorMixin:
     """FollowJointTrajectory execution loop con retries y validación final."""
 
+    def _make_fjt_feedback_cb(
+        self,
+        *,
+        joint_names: list[str],
+        target_joint_positions: list[float],
+    ) -> tuple[dict[str, Any], threading.Lock, Any]:
+        feedback_lock = threading.Lock()
+        feedback_state: dict[str, Any] = {
+            "last_mono": 0.0,
+            "count": 0,
+            "best_detail": "feedback_never_received",
+            "best_max_err": float("inf"),
+            "stable_since": 0.0,
+        }
+
+        def _feedback_cb(feedback_msg: Any) -> None:
+            ok = False
+            detail = "feedback_goal_timeout"
+            max_err = float("inf")
+            try:
+                ok, detail = self._feedback_goal_reached(
+                    feedback_msg,
+                    target_joint_names=joint_names,
+                    target_joint_positions=target_joint_positions,
+                    tol_rad=max(
+                        0.08,
+                        self._env_float("PANEL_MOVEIT_BRIDGE_FEEDBACK_GOAL_TOL_RAD", 0.14),
+                    ),
+                )
+                try:
+                    feedback = getattr(feedback_msg, "feedback", feedback_msg)
+                except Exception:
+                    feedback = feedback_msg
+                names = list(getattr(feedback, "joint_names", []) or [])
+                actual = list(getattr(getattr(feedback, "actual", None), "positions", []) or [])
+                target_map = {
+                    str(jname or "").strip(): float(pos)
+                    for jname, pos in zip(joint_names, target_joint_positions)
+                    if str(jname or "").strip()
+                }
+                usable = min(len(names), len(actual))
+                if usable > 0:
+                    errs = []
+                    for idx in range(usable):
+                        jname = str(names[idx] or "").strip()
+                        if not jname or jname not in target_map:
+                            continue
+                        des = float(target_map[jname])
+                        act = float(actual[idx])
+                        if jname in self._WRAPAROUND_JOINTS:
+                            des = self._normalize_joint_position(jname, des)
+                            act = self._normalize_joint_position(jname, act)
+                            err = abs(math.atan2(math.sin(act - des), math.cos(act - des)))
+                        else:
+                            err = abs(act - des)
+                        errs.append(err)
+                    if errs:
+                        max_err = max(errs)
+            except Exception as exc:
+                detail = f"feedback_eval_exc:{type(exc).__name__}:{exc}"
+            now_mono = time.monotonic()
+            with feedback_lock:
+                feedback_state["last_mono"] = now_mono
+                feedback_state["count"] = int(feedback_state.get("count", 0)) + 1
+                feedback_state["last_detail"] = detail
+                feedback_state["last_ok"] = bool(ok)
+                feedback_state["last_max_err"] = float(max_err)
+                best = float(feedback_state.get("best_max_err", float("inf")))
+                if max_err < best:
+                    feedback_state["best_max_err"] = float(max_err)
+                    feedback_state["best_detail"] = detail
+                if ok:
+                    stable_since = float(feedback_state.get("stable_since", 0.0) or 0.0)
+                    if stable_since <= 0.0:
+                        feedback_state["stable_since"] = now_mono
+                else:
+                    feedback_state["stable_since"] = 0.0
+
+        return feedback_state, feedback_lock, _feedback_cb
+
     def _build_fjt_goal_with_tolerances(
         self,
         jt: JointTrajectory,
@@ -264,77 +344,10 @@ class ExecutorMixin:
             path_tol_override_rad=path_tol_override_rad,
             effective_goal_time_tol_sec=effective_goal_time_tol_sec,
         )
-        feedback_lock = threading.Lock()
-        feedback_state: dict[str, Any] = {
-            "last_mono": 0.0,
-            "count": 0,
-            "best_detail": "feedback_never_received",
-            "best_max_err": float("inf"),
-            "stable_since": 0.0,
-        }
-
-        def _feedback_cb(feedback_msg: Any) -> None:
-            ok = False
-            detail = "feedback_goal_timeout"
-            max_err = float("inf")
-            try:
-                ok, detail = self._feedback_goal_reached(
-                    feedback_msg,
-                    target_joint_names=joint_names,
-                    target_joint_positions=target_joint_positions,
-                    tol_rad=max(
-                        0.08,
-                        self._env_float("PANEL_MOVEIT_BRIDGE_FEEDBACK_GOAL_TOL_RAD", 0.14),
-                    ),
-                )
-                try:
-                    feedback = getattr(feedback_msg, "feedback", feedback_msg)
-                except Exception:
-                    feedback = feedback_msg
-                names = list(getattr(feedback, "joint_names", []) or [])
-                actual = list(getattr(getattr(feedback, "actual", None), "positions", []) or [])
-                target_map = {
-                    str(jname or "").strip(): float(pos)
-                    for jname, pos in zip(joint_names, target_joint_positions)
-                    if str(jname or "").strip()
-                }
-                usable = min(len(names), len(actual))
-                if usable > 0:
-                    errs = []
-                    for idx in range(usable):
-                        jname = str(names[idx] or "").strip()
-                        if not jname or jname not in target_map:
-                            continue
-                        des = float(target_map[jname])
-                        act = float(actual[idx])
-                        if jname in self._WRAPAROUND_JOINTS:
-                            des = self._normalize_joint_position(jname, des)
-                            act = self._normalize_joint_position(jname, act)
-                            err = abs(math.atan2(math.sin(act - des), math.cos(act - des)))
-                        else:
-                            err = abs(act - des)
-                        errs.append(err)
-                    if errs:
-                        max_err = max(errs)
-            except Exception as exc:
-                detail = f"feedback_eval_exc:{type(exc).__name__}:{exc}"
-            now_mono = time.monotonic()
-            with feedback_lock:
-                feedback_state["last_mono"] = now_mono
-                feedback_state["count"] = int(feedback_state.get("count", 0)) + 1
-                feedback_state["last_detail"] = detail
-                feedback_state["last_ok"] = bool(ok)
-                feedback_state["last_max_err"] = float(max_err)
-                best = float(feedback_state.get("best_max_err", float("inf")))
-                if max_err < best:
-                    feedback_state["best_max_err"] = float(max_err)
-                    feedback_state["best_detail"] = detail
-                if ok:
-                    stable_since = float(feedback_state.get("stable_since", 0.0) or 0.0)
-                    if stable_since <= 0.0:
-                        feedback_state["stable_since"] = now_mono
-                else:
-                    feedback_state["stable_since"] = 0.0
+        feedback_state, feedback_lock, _feedback_cb = self._make_fjt_feedback_cb(
+            joint_names=joint_names,
+            target_joint_positions=target_joint_positions,
+        )
 
         send_future = client.send_goal_async(goal, feedback_callback=_feedback_cb)
         if not self._wait_future_done(send_future, timeout_sec=min(2.0, timeout_sec)):
