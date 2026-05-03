@@ -169,6 +169,10 @@ from .pick_demo.audit_emit import (
     AuditEmitContext,
     audit_emit as _audit_emit_pure,
 )
+from .pick_demo.transport_replan import (
+    TransportReplanContext,
+    attempt_transport_replan as _attempt_transport_replan_pure,
+)
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -3776,190 +3780,39 @@ def run_pick_demo(panel) -> None:
                     f"timeout_sec={float(timeout_sec):.3f}"
                 )
 
+                # F3-step3b: cuerpo de _attempt_transport_replan extraído a
+                # pick_demo/transport_replan.py. El wrapper construye el
+                # TransportReplanContext con los kwargs/helpers capturados
+                # del closure y delega. Los 4 callsites legacy invariables.
                 def _attempt_transport_replan(exec_exc):
-                    if not (is_transport_stage and transport_replan_remaining > 0):
-                        return None
-                    recovery_live_tcp = _tuple3(_live_tcp_base())
-                    recovery_min_stages = max(
-                        2,
-                        int(
-                            _pick_demo_env_int(
-                                "PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MIN_STAGES",
-                                2,
-                                minimum=2,
-                            )
-                        ),
+                    _replan_ctx = TransportReplanContext(
+                        panel=panel,
+                        live_tcp_base_fn=_live_tcp_base,
+                        move_tcp_direct_fn=_move_tcp_direct,
+                        env_int_fn=_pick_demo_env_int,
+                        env_float_fn=_pick_demo_env_float,
+                        env_flag_fn=_pick_demo_env_flag,
+                        compute_recovery_stages_fn=_compute_demo_transport_recovery_stage_targets,
+                        compute_micro_recovery_fn=_compute_demo_transport_micro_recovery_target,
+                        dist_fn=_dist,
+                        tuple3_fn=_tuple3,
+                        fmt_vec_fn=_fmt_vec,
+                        fmt_scalar_fn=_fmt_scalar,
+                        label=label,
+                        audit_target_source=audit_target_source,
+                        target_tcp_runtime_3=target_tcp_runtime_3,
+                        target_pose_original=target_pose_original,
+                        target_frame_original=target_frame_original,
+                        rot_weight=rot_weight,
+                        ik_err_tol=ik_err_tol,
+                        joint_weight=joint_weight,
+                        move_sec=move_sec,
+                        timeout_sec=timeout_sec,
+                        transport_replan_remaining=transport_replan_remaining,
+                        is_transport_stage=is_transport_stage,
                     )
-                    recovery_max_stages = max(
-                        recovery_min_stages,
-                        int(
-                            _pick_demo_env_int(
-                                "PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MAX_STAGES",
-                                4,
-                                minimum=recovery_min_stages,
-                            )
-                        ),
-                    )
-                    try:
-                        recovery_targets = _compute_demo_transport_recovery_stage_targets(
-                            recovery_live_tcp,
-                            target_tcp_runtime_3,
-                            min_remaining_dist_m=_pick_demo_env_float(
-                                "PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MIN_REMAINING_DIST_M",
-                                0.060,
-                                minimum=0.0,
-                            ),
-                            min_stages=recovery_min_stages,
-                            max_stage_dist_m=_pick_demo_env_float(
-                                "PANEL_PICK_DEMO_TRANSPORT_STAGE_REPLAN_MAX_STAGE_DIST_M",
-                                0.050,
-                                minimum=0.01,
-                            ),
-                            max_stages=recovery_max_stages,
-                        )
-                    except Exception as recovery_exc:
-                        panel._emit_log(
-                            "[PICK][DIRECT][TRANSPORT_REPLAN] "
-                            f"label={label} status=skipped "
-                            f"reason=compute_failed:{recovery_exc}"
-                        )
-                        return None
-                    if not recovery_targets:
-                        return None
-                    remaining_dist_m = _dist(recovery_live_tcp, target_tcp_runtime_3)
-                    per_stage_timeout_sec = max(
-                        8.0,
-                        max(
-                            float(move_sec) + 2.0,
-                            float(timeout_sec) / float(len(recovery_targets)),
-                        ),
-                    )
-                    panel._emit_log(
-                        "[PICK][DIRECT][TRANSPORT_REPLAN] "
-                        f"label={label} status=start "
-                        f"reason={str(exec_exc)} "
-                        f"remaining_attempts={int(transport_replan_remaining)} "
-                        f"segments={len(recovery_targets)} "
-                        f"remaining_dist_m={_fmt_scalar(remaining_dist_m)} "
-                        f"live_tcp={_fmt_vec(recovery_live_tcp)} "
-                        f"target_tcp={_fmt_vec(target_tcp_runtime_3)} "
-                        f"segment_timeout_sec={per_stage_timeout_sec:.3f}"
-                    )
-                    recovery_result = {}
-                    for recovery_idx, recovery_target in enumerate(recovery_targets, start=1):
-                        recovery_label = f"{label}_RECOVER_{recovery_idx}"
-                        recovery_source = (
-                            f"{str(audit_target_source or 'runtime_target')}_replan_{recovery_idx}"
-                        )
-                        if (
-                            recovery_label == "CESTA_STAGE_1_RECOVER_2"
-                            and _pick_demo_env_flag(
-                                "PANEL_PICK_DEMO_TRANSPORT_RECOVER2_MICRO_ENABLED",
-                                True,
-                            )
-                        ):
-                            recovery_live_tcp_before_micro = _tuple3(_live_tcp_base())
-                            micro_step_m = _pick_demo_env_float(
-                                "PANEL_PICK_DEMO_TRANSPORT_RECOVER2_MICRO_STEP_M",
-                                0.015,
-                                minimum=0.010,
-                            )
-                            micro_min_remaining_m = _pick_demo_env_float(
-                                "PANEL_PICK_DEMO_TRANSPORT_RECOVER2_MICRO_MIN_REMAINING_M",
-                                0.040,
-                                minimum=0.0,
-                            )
-                            micro_target = _compute_demo_transport_micro_recovery_target(
-                                recovery_live_tcp_before_micro,
-                                recovery_target,
-                                step_m=micro_step_m,
-                                minimum_remaining_dist_m=micro_min_remaining_m,
-                            )
-                            if micro_target is not None:
-                                remaining_before_micro = _dist(
-                                    recovery_live_tcp_before_micro,
-                                    recovery_target,
-                                )
-                                panel._emit_log(
-                                    "[PICK][DIRECT][RECOVER2_MICRO] "
-                                    f"label={recovery_label} status=start "
-                                    f"live_tcp_before={_fmt_vec(recovery_live_tcp_before_micro)} "
-                                    f"target_before={_fmt_vec(recovery_target)} "
-                                    f"micro_target={_fmt_vec(micro_target)} "
-                                    f"remaining_dist_before={_fmt_scalar(remaining_before_micro)} "
-                                    f"step_m={micro_step_m:.3f}"
-                                )
-                                try:
-                                    _move_tcp_direct(
-                                        label=f"{recovery_label}_MICRO",
-                                        target_tcp_runtime=micro_target,
-                                        timeout_sec=per_stage_timeout_sec,
-                                        audit_target_source=f"{recovery_source}_micro",
-                                        target_pose_original=target_pose_original,
-                                        target_frame_original=target_frame_original,
-                                        rot_weight=rot_weight,
-                                        ik_err_tol=ik_err_tol,
-                                        joint_weight=joint_weight,
-                                        force_send=True,
-                                        transport_replan_remaining=0,
-                                    )
-                                except Exception as micro_exc:
-                                    recovery_live_tcp_after_micro = _tuple3(_live_tcp_base())
-                                    remaining_after_micro = _dist(
-                                        recovery_live_tcp_after_micro,
-                                        recovery_target,
-                                    )
-                                    panel._emit_log(
-                                        "[PICK][DIRECT][RECOVER2_MICRO] "
-                                        f"label={recovery_label} status=failed "
-                                        f"reason={micro_exc} "
-                                        f"live_tcp_after={_fmt_vec(recovery_live_tcp_after_micro)} "
-                                        f"target_after={_fmt_vec(recovery_target)} "
-                                        f"remaining_dist_after={_fmt_scalar(remaining_after_micro)}"
-                                    )
-                                else:
-                                    recovery_live_tcp_after_micro = _tuple3(_live_tcp_base())
-                                    remaining_after_micro = _dist(
-                                        recovery_live_tcp_after_micro,
-                                        recovery_target,
-                                    )
-                                    progress_after_micro = None
-                                    if (
-                                        remaining_before_micro is not None
-                                        and remaining_after_micro is not None
-                                    ):
-                                        progress_after_micro = (
-                                            float(remaining_before_micro)
-                                            - float(remaining_after_micro)
-                                        )
-                                    panel._emit_log(
-                                        "[PICK][DIRECT][RECOVER2_MICRO] "
-                                        f"label={recovery_label} status=ok "
-                                        f"live_tcp_after={_fmt_vec(recovery_live_tcp_after_micro)} "
-                                        f"target_after={_fmt_vec(recovery_target)} "
-                                        f"remaining_dist_after={_fmt_scalar(remaining_after_micro)} "
-                                        f"progress_m={_fmt_scalar(progress_after_micro)}"
-                                    )
-                        recovery_result = _move_tcp_direct(
-                            label=recovery_label,
-                            target_tcp_runtime=recovery_target,
-                            timeout_sec=per_stage_timeout_sec,
-                            audit_target_source=recovery_source,
-                            target_pose_original=target_pose_original,
-                            target_frame_original=target_frame_original,
-                            rot_weight=rot_weight,
-                            ik_err_tol=ik_err_tol,
-                            joint_weight=joint_weight,
-                            force_send=True,
-                            transport_replan_remaining=transport_replan_remaining - 1,
-                        )
-                    panel._emit_log(
-                        "[PICK][DIRECT][TRANSPORT_REPLAN] "
-                        f"label={label} status=ok "
-                        f"segments={len(recovery_targets)} "
-                        f"remaining_attempts={int(transport_replan_remaining) - 1}"
-                    )
-                    return recovery_result
+                    return _attempt_transport_replan_pure(_replan_ctx, exec_exc)
+
 
                 preexec_model_guard = None
                 if _is_demo_basket_transport_stage(label_name):

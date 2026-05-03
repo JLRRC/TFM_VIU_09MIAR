@@ -133,7 +133,7 @@ LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
     # F3-step1.4 (2026-05-03): +23 LOC por cadena _seed_devs/max/sum
     # (constante _TWO_PI_R + 3 helpers IK) y _close_only(panel)
     # promovidos a module-level. run_pick_demo y worker bajaron -7 LOC.
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   10364,  # F3-step3a: -168 LOC (_audit_emit body fuera, wrapper 33 LOC + import)
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   10217,  # F3-step3b: -147 LOC (_attempt_transport_replan body fuera, wrapper 28 LOC + import)
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  4614,
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py":          2149,
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py":        1763,
@@ -199,8 +199,8 @@ MAX_LOC_PER_FUNCTION_GLOBAL = 200
 # completo por orden de prioridad de refactor (las top-3 son F3-step1).
 LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3 step1 — el monolito que decide el TFM (drift hacia abajo).
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo": 9806,   # F3-step3a: -172 LOC (_audit_emit body fuera)
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo.worker": 9533,  # F3-step3a: -172 LOC
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo": 9655,   # F3-step3b: -151 LOC (_attempt_transport_replan body fuera)
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo.worker": 9382,  # F3-step3b: -151 LOC
     # F3-step3a (2026-05-03): nueva fn pura ``audit_emit`` en
     # pick_demo/audit_emit.py contiene el cuerpo legacy 1:1 (217 LOC).
     # La rebajada estructural a < 200 LOC requiere extraer las múltiples
