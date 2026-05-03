@@ -72,6 +72,56 @@ def _drop_xyz_from_panel(panel: Any) -> tuple:
     return (0.5, 0.0, 0.05)
 
 
+def _object_pose_world_from_panel(
+    panel: Any, object_name: str
+) -> Optional[tuple]:
+    """Resuelve la pose actual del objeto en world (F5-step2).
+
+    Estrategia best-effort, devuelve None si nada disponible:
+      1. ``panel.get_object_pose_world(name)`` callable → tuple de 3 o 7.
+      2. ``panel._object_positions[name]`` dict → tuple de 3 (xyz).
+      3. Helper de panel_objects: ``get_object_position(name)`` → tuple de 3.
+
+    None se interpreta como "sin hint" por el orchestrator (placeholder).
+    """
+    name = str(object_name or "").strip()
+    if not name:
+        return None
+    # 1) Callable ad-hoc en el panel.
+    fn = getattr(panel, "get_object_pose_world", None)
+    if callable(fn):
+        try:
+            cand = fn(name)
+            if cand is not None:
+                seq = tuple(float(c) for c in cand)
+                if len(seq) in (3, 7):
+                    return seq
+        except Exception:
+            pass
+    # 2) Dict cacheado en el panel.
+    positions = getattr(panel, "_object_positions", None)
+    if isinstance(positions, dict):
+        cand = positions.get(name)
+        if cand is not None:
+            try:
+                seq = tuple(float(c) for c in cand)
+                if len(seq) in (3, 7):
+                    return seq
+            except Exception:
+                pass
+    # 3) Helper del módulo panel_objects.
+    try:
+        from .panel_objects import get_object_position
+        cand = get_object_position(name)
+        if cand is not None:
+            seq = tuple(float(c) for c in cand)
+            if len(seq) in (3, 7):
+                return seq
+    except Exception:
+        pass
+    return None
+
+
 def dispatch_pick_demo(
     panel: Any,
     *,
@@ -145,6 +195,7 @@ def dispatch_pick_demo(
         return "orchestrator_fallback_no_object"
 
     drop_xyz = _drop_xyz_from_panel(panel)
+    object_pose_hint = _object_pose_world_from_panel(panel, object_name)
 
     from .pick_place_client import PickPlaceClient
     client = PickPlaceClient(node)
@@ -189,6 +240,7 @@ def dispatch_pick_demo(
     client.send_goal(
         object_name,
         drop_xyz,
+        object_pose_world_hint=object_pose_hint,
         on_feedback=_on_feedback,
         on_done=_on_done,
         on_rejected=_on_rejected,

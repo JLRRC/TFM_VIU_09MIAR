@@ -31,15 +31,51 @@ from typing import Any, Dict, Optional, Tuple
 
 @dataclass(frozen=True)
 class PickPlaceGoalRequest:
-    """Goal del action PickPlace, ya validado y normalizado."""
+    """Goal del action PickPlace, ya validado y normalizado.
+
+    F5-step2: ``object_pose_world_hint`` opcional. Tuple de 7 floats
+    ``(x,y,z,qx,qy,qz,qw)`` o None. Si None, el orchestrator usará
+    placeholder (modo F5-step1).
+    """
 
     object_name: str
     drop_xyz_world: Tuple[float, float, float]
+    object_pose_world_hint: Optional[Tuple[float, ...]] = None
+
+
+def _validate_pose_hint(
+    pose_hint: Optional[Tuple[float, ...]],
+) -> Tuple[Optional[Tuple[float, ...]], str]:
+    """Valida y normaliza un pose hint para el goal.
+
+    Acepta:
+      * None → (None, "").
+      * Tuple/list de 3 (xyz) → completa con identity quat → tuple de 7.
+      * Tuple/list de 7 (xyz + quat) → cast a floats.
+
+    Devuelve ``(norm, "")`` si OK; ``(None, reason)`` si inválido.
+    """
+    if pose_hint is None:
+        return None, ""
+    try:
+        coords = tuple(float(c) for c in pose_hint)
+    except (TypeError, ValueError) as exc:
+        return None, f"object_pose_world_hint_invalid:{exc}"
+    for c in coords:
+        if not math.isfinite(c):
+            return None, "object_pose_world_hint_invalid:non_finite"
+    if len(coords) == 3:
+        return coords + (0.0, 0.0, 0.0, 1.0), ""
+    if len(coords) == 7:
+        return coords, ""
+    return None, f"object_pose_world_hint_invalid:len={len(coords)}"
 
 
 def build_goal_request(
     object_name: str,
     drop_xyz_world: Tuple[float, float, float],
+    *,
+    object_pose_world_hint: Optional[Tuple[float, ...]] = None,
 ) -> Tuple[Optional[PickPlaceGoalRequest], str]:
     """Construye y valida un PickPlaceGoalRequest.
 
@@ -48,6 +84,8 @@ def build_goal_request(
     Reglas:
       - object_name no vacío tras strip.
       - drop_xyz_world debe ser tuple/list de 3 elementos finitos.
+      - object_pose_world_hint (opcional) debe ser None, tuple/list de
+        3 (xyz, identity quat asumido) o de 7 (xyz + quat).
     """
     name = str(object_name or "").strip()
     if not name:
@@ -65,9 +103,14 @@ def build_goal_request(
     except (TypeError, ValueError, IndexError) as exc:
         return None, f"drop_xyz_world_invalid:{exc}"
 
+    hint_norm, hint_reason = _validate_pose_hint(object_pose_world_hint)
+    if hint_reason:
+        return None, hint_reason
+
     return PickPlaceGoalRequest(
         object_name=name,
         drop_xyz_world=coords,
+        object_pose_world_hint=hint_norm,
     ), ""
 
 

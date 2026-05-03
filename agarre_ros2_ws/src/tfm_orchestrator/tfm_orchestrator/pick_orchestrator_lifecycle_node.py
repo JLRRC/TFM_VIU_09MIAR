@@ -55,7 +55,7 @@ from .lifecycle_helpers import (
     OrchestratorLifecycleResources,
     reject_reason_for_state,
 )
-from .phase_dispatch import PhaseDispatchContext, dispatch_phase
+from .phase_dispatch import PhaseDispatchContext, dispatch_phase, pose_msg_to_tuple7
 from .phase_timings import PhaseTimings
 from .pick_fsm import PickContext, PickPhase
 from .service_clients import (
@@ -259,6 +259,9 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
                 float(request.drop_xyz_world.x),
                 float(request.drop_xyz_world.y),
                 float(request.drop_xyz_world.z),
+            ),
+            object_pose_world_hint=pose_msg_to_tuple7(
+                getattr(request, "object_pose_world_hint", None)
             ),
         )
         self._cancel_requested = False

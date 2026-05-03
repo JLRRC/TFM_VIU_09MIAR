@@ -137,12 +137,20 @@ class PickContext:
     """Contexto runtime del FSM pick & place.
 
     Inmutable salvo por ``current_phase`` y ``detail``. Los atributos
-    de configuración (object_name, drop_xyz_world) se setean al inicio
-    desde el goal de la action.
+    de configuración (object_name, drop_xyz_world, object_pose_world_hint)
+    se setean al inicio desde el goal de la action.
+
+    F5-step2: ``object_pose_world_hint`` es la pose actual del objeto en
+    world tal y como la conoce el cliente (panel). Si es None o cumple
+    ``is_no_hint(pose)``, el orchestrator usará el placeholder previo.
+    Formato canónico: tuple de 7 floats ``(x, y, z, qx, qy, qz, qw)``.
+    Aceptamos también tuple de 3 (xyz solo, orientación implícita
+    identity) por simplicidad para callers que no manejan orientación.
     """
 
     object_name: str = ""
     drop_xyz_world: tuple = (0.0, 0.0, 0.0)
+    object_pose_world_hint: Optional[tuple] = None
     current_phase: PickPhase = PickPhase.IDLE
     detail: str = ""
     history: List[PickPhase] = field(default_factory=list)
@@ -190,3 +198,45 @@ class PickContext:
 def happy_path() -> List[PickPhase]:
     """Devuelve copia del happy path canónico."""
     return list(_HAPPY_PATH)
+
+
+def normalize_pose_hint(pose_hint: Optional[tuple]) -> Optional[tuple]:
+    """Normaliza un pose hint a tuple de 7 floats (x,y,z,qx,qy,qz,qw).
+
+    Acepta:
+      * None → None.
+      * Tuple/list de 3 (xyz) → completa con identity (0,0,0,1).
+      * Tuple/list de 7 (xyz + quat) → cast a floats.
+
+    Si el input es inválido (longitud 4-6, no iterable, no convertible),
+    devuelve None — fail-soft, el caller debe verificar.
+    """
+    if pose_hint is None:
+        return None
+    try:
+        seq = tuple(float(v) for v in pose_hint)
+    except (TypeError, ValueError):
+        return None
+    if len(seq) == 3:
+        return seq + (0.0, 0.0, 0.0, 1.0)
+    if len(seq) == 7:
+        return seq
+    return None
+
+
+def is_no_hint(pose_hint: Optional[tuple]) -> bool:
+    """True si el pose hint es ``None`` o cumple la convención "no hint".
+
+    Convención: position (0,0,0) y orientation identity (qw=1, qx=qy=qz=0).
+    Cualquier otra pose se considera hint válido.
+    """
+    if pose_hint is None:
+        return True
+    norm = normalize_pose_hint(pose_hint)
+    if norm is None:
+        return True
+    x, y, z, qx, qy, qz, qw = norm
+    return (
+        x == 0.0 and y == 0.0 and z == 0.0
+        and qx == 0.0 and qy == 0.0 and qz == 0.0 and qw == 1.0
+    )

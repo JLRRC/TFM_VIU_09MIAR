@@ -32,7 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from .pick_fsm import PickContext, PickPhase
+from .pick_fsm import PickContext, PickPhase, is_no_hint, normalize_pose_hint
 from .service_clients import (
     ActionCallResult,
     PhaseServiceMap,
@@ -40,6 +40,30 @@ from .service_clients import (
     call_action_with_timeout,
     call_service_with_timeout,
 )
+
+
+# F5-step2: clearance Z por defecto sobre la pose del objeto para approach.
+# El cliente puede sobreescribir vía PhaseDispatchContext si fuese necesario.
+_APPROACH_Z_CLEARANCE_M_DEFAULT = 0.10
+
+
+def pose_msg_to_tuple7(pose_msg: Any) -> Optional[tuple]:
+    """Convierte un ``geometry_msgs/Pose`` a tuple ``(x,y,z,qx,qy,qz,qw)``.
+
+    Devuelve None si ``pose_msg`` es None o no expone los atributos
+    esperados — fail-soft (deja que ``is_no_hint`` lo trate como "sin hint").
+    """
+    if pose_msg is None:
+        return None
+    try:
+        pos = pose_msg.position
+        ori = pose_msg.orientation
+        return (
+            float(pos.x), float(pos.y), float(pos.z),
+            float(ori.x), float(ori.y), float(ori.z), float(ori.w),
+        )
+    except (AttributeError, TypeError, ValueError):
+        return None
 
 
 # Tipos para los inyectables (testabilidad).
@@ -63,6 +87,8 @@ class PhaseDispatchContext:
         action_result_timeout_sec: timeout del result tras accept (action).
         service_caller: inyectable para tests (default = real).
         action_caller: inyectable para tests (default = real).
+        approach_z_clearance_m: clearance vertical sobre la pose del objeto
+            cuando el ctx tiene hint válido (F5-step2).
     """
 
     node: Any
@@ -74,6 +100,7 @@ class PhaseDispatchContext:
     action_result_timeout_sec: float = 60.0
     service_caller: ServiceCallerFn = call_service_with_timeout
     action_caller: ActionCallerFn = call_action_with_timeout
+    approach_z_clearance_m: float = _APPROACH_Z_CLEARANCE_M_DEFAULT
 
     def common_service_kwargs(self) -> Dict[str, Any]:
         return dict(
@@ -96,20 +123,38 @@ class PhaseDispatchContext:
 # ---------------------------------------------------------------------------
 
 
-def build_plan_to_pose_goal_for_approach(ctx: PickContext) -> Any:
-    """Goal placeholder para APPROACH.
+def build_plan_to_pose_goal_for_approach(
+    ctx: PickContext,
+    *,
+    z_clearance_m: float = _APPROACH_Z_CLEARANCE_M_DEFAULT,
+) -> Any:
+    """Goal de APPROACH para el PlanToPose action server.
 
-    F5-step1: pose neutra (origen). El server real (F5-step2) hará el
-    cómputo de la pose de approach desde el nombre del objeto.
+    F5-step2: si ``ctx.object_pose_world_hint`` es un hint válido (no
+    cumple ``is_no_hint``), construye el goal usando esa pose con
+    ``z_clearance_m`` añadidos en Z y la orientación del hint. Si no
+    hay hint, mantiene el placeholder F5-step1 (pose neutra origen).
+
+    Nota: la pose viaja como "world" en el target (el server PlanToPose
+    es responsable de la conversión world→base si hace falta).
     """
     from geometry_msgs.msg import Pose, Point, Quaternion
     from ur5_panel_interfaces.action import PlanToPose
 
     goal = PlanToPose.Goal()
-    goal.target_pose_base = Pose(
-        position=Point(x=0.0, y=0.0, z=0.0),
-        orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
-    )
+    if not is_no_hint(ctx.object_pose_world_hint):
+        norm = normalize_pose_hint(ctx.object_pose_world_hint)
+        # norm garantizado != None aquí (is_no_hint cubre None y mal-formados).
+        x, y, z, qx, qy, qz, qw = norm  # type: ignore[misc]
+        goal.target_pose_base = Pose(
+            position=Point(x=x, y=y, z=z + float(z_clearance_m)),
+            orientation=Quaternion(x=qx, y=qy, z=qz, w=qw),
+        )
+    else:
+        goal.target_pose_base = Pose(
+            position=Point(x=0.0, y=0.0, z=0.0),
+            orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
+        )
     goal.ee_frame = "rg2_pinch_center"
     goal.cartesian = False
     goal.timeout_sec = 0.0
@@ -192,7 +237,9 @@ def dispatch_phase(
         return r.success, f"select_object:{r.reason}"
 
     if phase == PickPhase.APPROACH:
-        goal = build_plan_to_pose_goal_for_approach(ctx)
+        goal = build_plan_to_pose_goal_for_approach(
+            ctx, z_clearance_m=dispatch_ctx.approach_z_clearance_m,
+        )
         r = _call_plan_to_pose(dispatch_ctx, goal)
         return r.success, f"approach:{r.reason}"
 

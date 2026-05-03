@@ -25,6 +25,8 @@ from tfm_orchestrator.pick_fsm import (
     allowed_transitions,
     can_transition,
     happy_path,
+    is_no_hint,
+    normalize_pose_hint,
     phase_index,
     progress_fraction,
 )
@@ -246,3 +248,76 @@ def test_feedback_snapshot_at_done():
     assert snap["current_phase"] == "DONE"
     assert snap["progress"] == 1.0
     assert snap["phase_index"] == len(happy_path()) - 1
+
+
+# ---------------------------------------------------------------------------
+# F5-step2: PickContext.object_pose_world_hint + normalize_pose_hint + is_no_hint
+# ---------------------------------------------------------------------------
+
+
+def test_context_default_pose_hint_is_none():
+    ctx = PickContext()
+    assert ctx.object_pose_world_hint is None
+
+
+def test_context_accepts_pose_hint_tuple7():
+    hint = (0.5, 0.0, 0.05, 0.0, 0.0, 0.0, 1.0)
+    ctx = PickContext(object_name="box", object_pose_world_hint=hint)
+    assert ctx.object_pose_world_hint == hint
+
+
+def test_normalize_pose_hint_none_returns_none():
+    assert normalize_pose_hint(None) is None
+
+
+def test_normalize_pose_hint_tuple3_completes_with_identity_quat():
+    norm = normalize_pose_hint((0.5, 0.1, 0.05))
+    assert norm == (0.5, 0.1, 0.05, 0.0, 0.0, 0.0, 1.0)
+
+
+def test_normalize_pose_hint_tuple7_passthrough():
+    inp = (1.0, 2.0, 3.0, 0.1, 0.2, 0.3, 0.9)
+    norm = normalize_pose_hint(inp)
+    assert norm == inp
+
+
+def test_normalize_pose_hint_invalid_length_returns_none():
+    assert normalize_pose_hint((1.0, 2.0)) is None
+    assert normalize_pose_hint((1.0, 2.0, 3.0, 4.0)) is None
+    assert normalize_pose_hint((1.0,) * 10) is None
+
+
+def test_normalize_pose_hint_invalid_type_returns_none():
+    assert normalize_pose_hint("not a tuple") is None
+    assert normalize_pose_hint([1.0, "two", 3.0]) is None
+
+
+def test_normalize_pose_hint_accepts_list_input():
+    norm = normalize_pose_hint([0.1, 0.2, 0.3])
+    assert norm == (0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0)
+
+
+def test_is_no_hint_none_is_true():
+    assert is_no_hint(None) is True
+
+
+def test_is_no_hint_zero_pos_identity_quat_is_true():
+    assert is_no_hint((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)) is True
+    # Convención también para tuple3 (xyz=0).
+    assert is_no_hint((0.0, 0.0, 0.0)) is True
+
+
+def test_is_no_hint_real_pose_is_false():
+    assert is_no_hint((0.5, 0.0, 0.05)) is False
+    assert is_no_hint((0.5, 0.0, 0.05, 0.0, 0.0, 0.0, 1.0)) is False
+
+
+def test_is_no_hint_non_identity_quat_is_false():
+    # Posición cero pero rotada.
+    assert is_no_hint((0.0, 0.0, 0.0, 0.7071, 0.0, 0.0, 0.7071)) is False
+
+
+def test_is_no_hint_invalid_input_is_treated_as_no_hint():
+    # Fail-soft: si normalize devuelve None, lo tratamos como "sin hint".
+    assert is_no_hint("not a tuple") is True
+    assert is_no_hint((1.0, 2.0)) is True

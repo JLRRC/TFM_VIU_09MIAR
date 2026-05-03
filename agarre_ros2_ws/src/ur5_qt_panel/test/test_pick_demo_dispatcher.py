@@ -225,3 +225,74 @@ def test_drop_xyz_from_panel_default_when_invalid():
     panel._basket_drop_world = "garbage"
     xyz = _drop_xyz_from_panel(panel)
     assert xyz == (0.5, 0.0, 0.05)
+
+
+# ---------------------------------------------------------------------------
+# F5-step2: _object_pose_world_from_panel
+# ---------------------------------------------------------------------------
+
+
+def test_object_pose_world_from_callable_attribute():
+    from ur5_qt_panel.pick_demo_dispatcher import _object_pose_world_from_panel
+
+    class _P:
+        def get_object_pose_world(self, name):
+            return (0.4, 0.1, 0.03) if name == "box_red" else None
+
+    panel = _P()
+    assert _object_pose_world_from_panel(panel, "box_red") == (0.4, 0.1, 0.03)
+    assert _object_pose_world_from_panel(panel, "missing") is None
+
+
+def test_object_pose_world_from_callable_returns_tuple7():
+    from ur5_qt_panel.pick_demo_dispatcher import _object_pose_world_from_panel
+
+    class _P:
+        def get_object_pose_world(self, name):
+            return (0.4, 0.1, 0.03, 0.0, 0.0, 0.7071, 0.7071)
+
+    pose = _object_pose_world_from_panel(_P(), "box")
+    assert pose == (0.4, 0.1, 0.03, 0.0, 0.0, 0.7071, 0.7071)
+
+
+def test_object_pose_world_returns_none_for_empty_name():
+    from ur5_qt_panel.pick_demo_dispatcher import _object_pose_world_from_panel
+
+    panel = MagicMock()
+    assert _object_pose_world_from_panel(panel, "") is None
+    assert _object_pose_world_from_panel(panel, "   ") is None
+    assert _object_pose_world_from_panel(panel, None) is None
+
+
+def test_object_pose_world_from_dict_fallback():
+    from ur5_qt_panel.pick_demo_dispatcher import _object_pose_world_from_panel
+
+    class _P:
+        # Sin get_object_pose_world callable; sólo dict.
+        _object_positions = {"box_red": (0.5, -0.2, 0.05)}
+
+    pose = _object_pose_world_from_panel(_P(), "box_red")
+    assert pose == (0.5, -0.2, 0.05)
+
+
+def test_object_pose_world_returns_none_for_invalid_dict_value():
+    from ur5_qt_panel.pick_demo_dispatcher import _object_pose_world_from_panel
+
+    class _P:
+        _object_positions = {"box": "garbage"}
+
+    pose = _object_pose_world_from_panel(_P(), "box")
+    assert pose is None
+
+
+def test_object_pose_world_callable_exception_falls_back_to_dict():
+    from ur5_qt_panel.pick_demo_dispatcher import _object_pose_world_from_panel
+
+    class _P:
+        _object_positions = {"box": (0.6, 0.2, 0.04)}
+
+        def get_object_pose_world(self, name):
+            raise RuntimeError("simulated")
+
+    pose = _object_pose_world_from_panel(_P(), "box")
+    assert pose == (0.6, 0.2, 0.04)

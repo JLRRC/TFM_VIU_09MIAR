@@ -62,6 +62,7 @@ class PickPlaceClient:
         object_name: str,
         drop_xyz_world: Tuple[float, float, float],
         *,
+        object_pose_world_hint: Optional[Tuple[float, ...]] = None,
         on_feedback: Optional[Callable[[dict], None]] = None,
         on_done: Optional[Callable[[dict], None]] = None,
         on_rejected: Optional[Callable[[], None]] = None,
@@ -71,16 +72,23 @@ class PickPlaceClient:
         Validación previa via ``build_goal_request``. Si inválido,
         no envía nada y devuelve False.
 
+        F5-step2: ``object_pose_world_hint`` opcional. Tuple de 3 (xyz)
+        o 7 (xyz+quat). Si None, el orchestrator usa placeholder.
+
         Devuelve True si el goal se envió (no garantiza accept).
         """
-        from geometry_msgs.msg import Point
+        from geometry_msgs.msg import Point, Pose, Quaternion
         from .pick_place_client_logic import (
             build_goal_request,
             feedback_to_panel_event,
             result_to_panel_event,
         )
 
-        request, reason = build_goal_request(object_name, drop_xyz_world)
+        request, reason = build_goal_request(
+            object_name,
+            drop_xyz_world,
+            object_pose_world_hint=object_pose_world_hint,
+        )
         if request is None:
             self._node.get_logger().warning(
                 f"[PICK_PLACE_CLIENT] goal inválido: {reason}"
@@ -104,6 +112,15 @@ class PickPlaceClient:
             y=float(request.drop_xyz_world[1]),
             z=float(request.drop_xyz_world[2]),
         )
+        if request.object_pose_world_hint is not None:
+            x, y, z, qx, qy, qz, qw = request.object_pose_world_hint
+            goal.object_pose_world_hint = Pose(
+                position=Point(x=x, y=y, z=z),
+                orientation=Quaternion(x=qx, y=qy, z=qz, w=qw),
+            )
+        # Si no hay hint, dejamos goal.object_pose_world_hint con su
+        # default (Pose vacío = pos 0,0,0 + quat identity) — interpretado
+        # como "sin hint" por is_no_hint() en el server.
 
         def _feedback_cb(fb_msg):
             if on_feedback is None:

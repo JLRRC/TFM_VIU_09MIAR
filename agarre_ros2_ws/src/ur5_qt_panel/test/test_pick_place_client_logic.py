@@ -215,3 +215,78 @@ def test_should_use_orchestrator_legacy_override_forces_legacy(v):
 def test_should_use_orchestrator_legacy_override_inactive(v):
     """USE_LEGACY_PICK_DEMO falsy o ausente: respeta el default orchestrator."""
     assert should_use_orchestrator(None, legacy_env_value=v) is True
+
+
+# ---------------------------------------------------------------------------
+# F5-step2: object_pose_world_hint en build_goal_request
+# ---------------------------------------------------------------------------
+
+
+def test_build_goal_request_default_hint_is_none():
+    req, _ = build_goal_request("box", (0.5, 0.0, 0.05))
+    assert req is not None
+    assert req.object_pose_world_hint is None
+
+
+def test_build_goal_request_accepts_hint_tuple3_completes_with_identity():
+    req, reason = build_goal_request(
+        "box", (0.5, 0.0, 0.05),
+        object_pose_world_hint=(0.4, 0.1, 0.03),
+    )
+    assert reason == ""
+    assert req is not None
+    assert req.object_pose_world_hint == (0.4, 0.1, 0.03, 0.0, 0.0, 0.0, 1.0)
+
+
+def test_build_goal_request_accepts_hint_tuple7_passthrough():
+    hint7 = (0.4, 0.1, 0.03, 0.0, 0.0, 0.7071, 0.7071)
+    req, reason = build_goal_request(
+        "box", (0.5, 0.0, 0.05), object_pose_world_hint=hint7,
+    )
+    assert reason == ""
+    assert req.object_pose_world_hint == hint7
+
+
+def test_build_goal_request_accepts_hint_list():
+    req, _ = build_goal_request(
+        "box", (0.5, 0.0, 0.05),
+        object_pose_world_hint=[0.4, 0.1, 0.03],
+    )
+    assert req.object_pose_world_hint == (0.4, 0.1, 0.03, 0.0, 0.0, 0.0, 1.0)
+
+
+def test_build_goal_request_rejects_hint_invalid_length():
+    req, reason = build_goal_request(
+        "box", (0.5, 0.0, 0.05),
+        object_pose_world_hint=(1.0, 2.0),
+    )
+    assert req is None
+    assert "object_pose_world_hint_invalid" in reason
+    assert "len=2" in reason
+
+
+def test_build_goal_request_rejects_hint_with_non_finite():
+    req, reason = build_goal_request(
+        "box", (0.5, 0.0, 0.05),
+        object_pose_world_hint=(0.1, float("nan"), 0.3),
+    )
+    assert req is None
+    assert "non_finite" in reason
+
+
+def test_build_goal_request_rejects_hint_non_numeric():
+    req, reason = build_goal_request(
+        "box", (0.5, 0.0, 0.05),
+        object_pose_world_hint=("a", "b", "c"),
+    )
+    assert req is None
+    assert "object_pose_world_hint_invalid" in reason
+
+
+def test_build_goal_request_hint_inf_rejected():
+    req, reason = build_goal_request(
+        "box", (0.5, 0.0, 0.05),
+        object_pose_world_hint=(0.0, float("inf"), 0.0, 0.0, 0.0, 0.0, 1.0),
+    )
+    assert req is None
+    assert "non_finite" in reason

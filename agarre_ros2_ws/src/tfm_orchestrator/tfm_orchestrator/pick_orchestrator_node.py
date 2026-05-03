@@ -50,7 +50,7 @@ from ur5_panel_interfaces.srv import (
     WorldToBase as WorldToBaseSrv,
 )
 
-from .phase_dispatch import PhaseDispatchContext, dispatch_phase
+from .phase_dispatch import PhaseDispatchContext, dispatch_phase, pose_msg_to_tuple7
 from .pick_fsm import PickContext, PickPhase
 from .phase_timings import PhaseTimings
 from .service_clients import (
@@ -136,6 +136,9 @@ class PickOrchestratorNode(Node):
                 float(request.drop_xyz_world.x),
                 float(request.drop_xyz_world.y),
                 float(request.drop_xyz_world.z),
+            ),
+            object_pose_world_hint=pose_msg_to_tuple7(
+                getattr(request, "object_pose_world_hint", None)
             ),
         )
         self._cancel_requested = False
