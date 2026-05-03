@@ -227,8 +227,27 @@ def test_approach_failure_propagates():
 # ---------------------------------------------------------------------------
 
 
+def _attach_payload_close(tcp_obj_dist_m: float = 0.020):
+    """B-iter8: helper para construir un Attach response payload con
+    tcp_obj_dist_m dentro de tolerancia para que el gate pase."""
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        success=True,
+        message="attached",
+        method="drop_anchor",
+        tcp_obj_dist_m=float(tcp_obj_dist_m),
+    )
+
+
 def test_grasp_calls_close_then_attach_in_order():
-    spec = _MockCallerSpec()
+    spec = _MockCallerSpec(
+        service_results={
+            "/orchestrator/attach": ServiceCallResult(
+                success=True, reason="attached",
+                payload=_attach_payload_close(0.020),
+            )
+        }
+    )
     dctx = _ctx_for(spec)
     ok, reason = dispatch_phase(dctx, PickPhase.GRASP, _pick_ctx("cube"))
     assert ok is True
@@ -267,6 +286,33 @@ def test_grasp_propagates_attach_failure():
     ok, reason = dispatch_phase(dctx, PickPhase.GRASP, _pick_ctx())
     assert ok is False
     assert "object_too_far" in reason
+
+
+def test_grasp_fails_when_attach_distance_gate_too_far():
+    """B-iter8: el gate detecta el bug 'drop_anchor placebo' donde el backend
+    retorna success=True pero TCP a >5cm del objeto."""
+    spec = _MockCallerSpec(
+        service_results={
+            "/orchestrator/attach": ServiceCallResult(
+                success=True, reason="attached",
+                payload=_attach_payload_close(1.093),  # del log live
+            )
+        }
+    )
+    dctx = _ctx_for(spec)
+    ok, reason = dispatch_phase(dctx, PickPhase.GRASP, _pick_ctx())
+    assert ok is False
+    assert "grasp_attach_gate" in reason
+    assert "too_far" in reason
+
+
+def test_grasp_fails_when_attach_distance_unmeasured():
+    """B-iter8: si el payload no expone tcp_obj_dist_m, el gate falla seguro."""
+    spec = _MockCallerSpec()  # default payload=None
+    dctx = _ctx_for(spec)
+    ok, reason = dispatch_phase(dctx, PickPhase.GRASP, _pick_ctx())
+    assert ok is False
+    assert "unmeasured" in reason
 
 
 # ---------------------------------------------------------------------------

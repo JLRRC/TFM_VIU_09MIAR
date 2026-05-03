@@ -304,7 +304,24 @@ def dispatch_phase(
             req_attach,
             **common,
         )
-        return r_att.success, f"grasp_attach:{r_att.reason}"
+        if not r_att.success:
+            return False, f"grasp_attach:{r_att.reason}"
+        # 3) B-iter8: gate de distancia. Detecta el bug "drop_anchor placebo"
+        # donde el backend retorna success=True pero el TCP estaba a >1m del
+        # objeto (visto live: tcp_obj_dist_m=1.093). Sin este gate, el FSM
+        # avanza a LIFT con un objeto que NO está físicamente en el TCP.
+        from .pick_gates import evaluate_attach_distance_gate
+
+        att_payload = getattr(r_att, "payload", None)
+        tcp_obj_dist = (
+            float(getattr(att_payload, "tcp_obj_dist_m", 0.0))
+            if att_payload is not None
+            else None
+        )
+        gate_ok, gate_reason = evaluate_attach_distance_gate(tcp_obj_dist)
+        if not gate_ok:
+            return False, f"grasp_attach_gate:{gate_reason}"
+        return True, f"grasp_attach:{r_att.reason}|{gate_reason}"
 
     if phase == PickPhase.LIFT:
         goal = build_plan_to_pose_goal_for_lift(ctx)
