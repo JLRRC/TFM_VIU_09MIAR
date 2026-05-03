@@ -137,7 +137,7 @@ LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
 
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  3823,   # F3-step5bis-c: -84 más (moveit_bridge_path body fuera con callables-as-args)
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py":          2149,
-    "ur5_tools/ur5_tools/ur5_moveit_bridge.py":        1763,
+    "ur5_tools/ur5_tools/ur5_moveit_bridge.py":        1838,  # F3-step21a/b: +75 LOC docstrings + helpers
 }
 # Margen de crecimiento permitido para legacy oversize (drift cap).
 LEGACY_FILE_GROWTH_MARGIN_LOC = 50
@@ -298,8 +298,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3-step17 (a/b/c) (2026-05-03): build_runtime_audit_snapshot bajó de
     # 213 → 114 LOC con 3 sub-helpers (_build_dh_tf_block 57 + _build_joints_
     # control_block 56 + _build_sdf_gazebo_block 73). Removido de baseline.
-    "ur5_tools/ur5_tools/ur5_moveit_bridge.py::UR5MoveItBridge._pose_callback": 210,
-    "ur5_tools/ur5_tools/ur5_moveit_bridge.py::UR5MoveItBridge._plan_worker": 207,
+    # F3-step21a/b (2026-05-03): _pose_callback bajó 210→186 con _pose_
+    # callback_publish_rejection (50 LOC); _plan_worker bajó 207→180 con
+    # _plan_worker_finalize_result (55 LOC). Removidos de baseline.
     # F3-step16 (2026-05-03): _on_remote_object_select_request bajó de 206 →
     # 139 LOC con _remote_select_defer_until_on_table (86 LOC, module-level).
     # Removido de baseline (T15 cumplido).

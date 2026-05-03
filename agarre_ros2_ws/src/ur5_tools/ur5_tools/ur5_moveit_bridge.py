@@ -867,6 +867,57 @@ class UR5MoveItBridge(
     def _parse_request_meta(frame_raw: str) -> tuple[str, int | None, str, dict[str, Any]]:
         return parse_request_meta(frame_raw)
 
+    def _pose_callback_publish_rejection(
+        self,
+        *,
+        msg: PoseStamped,
+        request_id: int,
+        req_uuid: str,
+        request_stamp_ns: int,
+        cartesian: bool,
+        frame_clean: str,
+        frame_raw: str,
+        topic_name: str,
+        reason: str,
+        message: str,
+        log_prefix: str,
+        log_level: str = "warning",
+        log_extra: str = "",
+    ) -> None:
+        """F3-step21a: emite log RX rejected + publish_result + log final.
+
+        Helper compartido entre los 2 paths de rejection en _pose_callback
+        (invalid_business_frame y missing_request_id).
+        """
+        rx_ts_us = int(time.time() * 1_000_000)
+        self.get_logger().warning(
+            _fmt_rx_log(
+                ts_us=rx_ts_us,
+                request_id=request_id,
+                request_uuid=req_uuid,
+                frame_id=frame_clean,
+                pose=msg.pose.position,
+                accepted=False,
+                reason=reason,
+            )
+        )
+        self._publish_result(
+            request_id=request_id,
+            request_uuid=req_uuid,
+            target=msg,
+            request_stamp_ns=request_stamp_ns,
+            cartesian=cartesian,
+            success=False,
+            plan_ok=False,
+            exec_ok=False,
+            message=message,
+        )
+        getattr(self.get_logger(), log_level)(
+            f"{log_prefix} "
+            f"topic={topic_name or 'n/a'} frame_raw={frame_raw or 'n/a'} "
+            f"{log_extra}"
+        )
+
     def _pose_callback(self, msg: PoseStamped, cartesian: bool = False, topic_name: str = "") -> None:
         try:
             now = time.monotonic()
@@ -879,33 +930,20 @@ class UR5MoveItBridge(
             if _is_invalid_business_frame(frame_clean, self._base_frame):
                 self._command_seq += 1
                 rejected_request_id = int(self._command_seq)
-                rx_ts_us = int(time.time() * 1_000_000)
-                self.get_logger().warning(
-                    _fmt_rx_log(
-                        ts_us=rx_ts_us,
-                        request_id=req_from_msg if req_from_msg is not None else rejected_request_id,
-                        request_uuid=req_uuid,
-                        frame_id=frame_clean,
-                        pose=msg.pose.position,
-                        accepted=False,
-                        reason="invalid_business_frame",
-                    )
-                )
-                self._publish_result(
-                    request_id=rejected_request_id,
-                    request_uuid=req_uuid,
-                    target=msg,
+                self._pose_callback_publish_rejection(
+                    msg=msg,
+                    request_id=req_from_msg if req_from_msg is not None else rejected_request_id,
+                    req_uuid=req_uuid,
                     request_stamp_ns=req_stamp_ns,
                     cartesian=cartesian,
-                    success=False,
-                    plan_ok=False,
-                    exec_ok=False,
+                    frame_clean=frame_clean,
+                    frame_raw=frame_raw,
+                    topic_name=topic_name,
+                    reason="invalid_business_frame",
                     message="invalid_business_frame:base",
-                )
-                self.get_logger().error(
-                    "[BRIDGE][P0] rejected_invalid_business_frame "
-                    f"topic={topic_name or 'n/a'} frame_raw={frame_raw or 'n/a'} "
-                    f"required={self._base_frame}"
+                    log_prefix="[BRIDGE][P0] rejected_invalid_business_frame",
+                    log_level="error",
+                    log_extra=f"required={self._base_frame}",
                 )
                 return
             ee_target_tol_m = None
@@ -918,34 +956,23 @@ class UR5MoveItBridge(
             if self._require_request_id and req_from_msg is None:
                 self._command_seq += 1
                 rejected_request_id = int(self._command_seq)
-                rx_ts_us = int(time.time() * 1_000_000)
-                self.get_logger().warning(
-                    _fmt_rx_log(
-                        ts_us=rx_ts_us,
-                        request_id=rejected_request_id,
-                        request_uuid=req_uuid,
-                        frame_id=frame_clean,
-                        pose=msg.pose.position,
-                        accepted=False,
-                        reason="missing_request_id",
-                    )
-                )
-                self._publish_result(
+                self._pose_callback_publish_rejection(
+                    msg=msg,
                     request_id=rejected_request_id,
-                    request_uuid=req_uuid,
-                    target=msg,
+                    req_uuid=req_uuid,
                     request_stamp_ns=req_stamp_ns,
                     cartesian=cartesian,
-                    success=False,
-                    plan_ok=False,
-                    exec_ok=False,
+                    frame_clean=frame_clean,
+                    frame_raw=frame_raw,
+                    topic_name=topic_name,
+                    reason="missing_request_id",
                     message="missing_request_id",
-                )
-                self.get_logger().warning(
-                    "[BRIDGE][RECV] rejected_missing_request_id "
-                    f"topic={topic_name or 'n/a'} frame_raw={frame_raw or 'n/a'} "
-                    f"assigned_request_id={rejected_request_id} pos=({msg.pose.position.x:.3f},"
-                    f"{msg.pose.position.y:.3f},{msg.pose.position.z:.3f})"
+                    log_prefix="[BRIDGE][RECV] rejected_missing_request_id",
+                    log_level="warning",
+                    log_extra=(
+                        f"assigned_request_id={rejected_request_id} "
+                        f"pos=({msg.pose.position.x:.3f},{msg.pose.position.y:.3f},{msg.pose.position.z:.3f})"
+                    ),
                 )
                 return
             with self._pose_lock:
@@ -1274,6 +1301,62 @@ class UR5MoveItBridge(
         )
         return result
 
+    def _plan_worker_finalize_result(
+        self,
+        *,
+        request_id: int,
+        request_uuid: str,
+        target: PoseStamped,
+        request_stamp_ns: int,
+        cartesian: bool,
+        success: bool,
+        plan_ok: bool,
+        exec_ok: bool,
+        message: str,
+    ) -> None:
+        """F3-step21b: publica el resultado final del request + log
+        RESULT_DIAG/RESULT_PUBLISHED + libera _active_request_*. Centraliza
+        el bloque finally del dispatch en _plan_worker (~40 LOC).
+        """
+        try:
+            pub_ts_us = int(time.time() * 1_000_000)
+            self.get_logger().info(
+                f"[BRIDGE][RESULT_DIAG] request_id={request_id} "
+                f"request_uuid={request_uuid or 'n/a'} "
+                f"about_to_publish_result pub_ts_us={pub_ts_us} "
+                f"success={success} plan_ok={plan_ok} exec_ok={exec_ok}"
+            )
+            self._publish_result(
+                request_id=request_id,
+                request_uuid=request_uuid,
+                target=target,
+                request_stamp_ns=request_stamp_ns,
+                cartesian=cartesian,
+                success=success,
+                plan_ok=plan_ok,
+                exec_ok=exec_ok,
+                message=message,
+            )
+            pub_ts_us_after = int(time.time() * 1_000_000)
+            self.get_logger().info(
+                f"[BRIDGE][RESULT_PUBLISHED] request_id={request_id} "
+                f"request_uuid={request_uuid or 'n/a'} "
+                f"pub_elapsed_us={pub_ts_us_after - pub_ts_us} pub_ts_us={pub_ts_us_after}"
+            )
+        except Exception as pub_exc:
+            self.get_logger().error(
+                "[BRIDGE][PUB_RESULT] failed "
+                f"request_id={request_id} topic={self._result_topic} err={pub_exc}"
+            )
+        finally:
+            with self._pose_lock:
+                if int(getattr(self, "_active_request_id", 0) or 0) == int(request_id):
+                    self._active_request_id = 0
+                    self._active_request_uuid = ""
+                    self._active_request_started_mono = 0.0
+                    self._active_exec_timeout_sec = 0.0
+                    self._active_exec_timeout_deadline_mono = 0.0
+
     def _plan_worker(self) -> None:
         while rclpy.ok() and not self._shutdown:
             try:
@@ -1436,44 +1519,17 @@ class UR5MoveItBridge(
                             f"{traceback.format_exc()}"
                         )
                     finally:
-                        try:
-                            pub_ts_us = int(time.time() * 1_000_000)
-                            self.get_logger().info(
-                                f"[BRIDGE][RESULT_DIAG] request_id={request_id} "
-                                f"request_uuid={request_uuid or 'n/a'} "
-                                f"about_to_publish_result pub_ts_us={pub_ts_us} "
-                                f"success={success} plan_ok={plan_ok} exec_ok={exec_ok}"
-                            )
-                            self._publish_result(
-                                request_id=request_id,
-                                request_uuid=request_uuid,
-                                target=target,
-                                request_stamp_ns=request_stamp_ns,
-                                cartesian=cartesian,
-                                success=success,
-                                plan_ok=plan_ok,
-                                exec_ok=exec_ok,
-                                message=message,
-                            )
-                            pub_ts_us_after = int(time.time() * 1_000_000)
-                            self.get_logger().info(
-                                f"[BRIDGE][RESULT_PUBLISHED] request_id={request_id} "
-                                f"request_uuid={request_uuid or 'n/a'} "
-                                f"pub_elapsed_us={pub_ts_us_after - pub_ts_us} pub_ts_us={pub_ts_us_after}"
-                            )
-                        except Exception as pub_exc:
-                            self.get_logger().error(
-                                "[BRIDGE][PUB_RESULT] failed "
-                                f"request_id={request_id} topic={self._result_topic} err={pub_exc}"
-                            )
-                        finally:
-                            with self._pose_lock:
-                                if int(getattr(self, "_active_request_id", 0) or 0) == int(request_id):
-                                    self._active_request_id = 0
-                                    self._active_request_uuid = ""
-                                    self._active_request_started_mono = 0.0
-                                    self._active_exec_timeout_sec = 0.0
-                                    self._active_exec_timeout_deadline_mono = 0.0
+                        self._plan_worker_finalize_result(
+                            request_id=request_id,
+                            request_uuid=request_uuid,
+                            target=target,
+                            request_stamp_ns=request_stamp_ns,
+                            cartesian=cartesian,
+                            success=success,
+                            plan_ok=plan_ok,
+                            exec_ok=exec_ok,
+                            message=message,
+                        )
                         self._last_plan_time = time.monotonic()
             except Exception as exc:
                 self.get_logger().error(
