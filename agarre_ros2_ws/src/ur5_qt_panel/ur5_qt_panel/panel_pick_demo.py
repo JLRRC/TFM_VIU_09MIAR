@@ -243,6 +243,119 @@ def _write_json_snapshot(path: Path, payload: dict) -> None:
         json.dump(_json_safe(payload), fh, indent=2, ensure_ascii=False, sort_keys=True)
 
 
+# F3-step1.3: helpers UI promovidos del closure ``run_pick_demo.worker``.
+# Toman ``panel`` como primer parámetro. Los callsites pasan a ``fn(panel)``
+# (llamadas directas) o ``lambda: fn(panel)`` (cuando se usan como callables
+# en ``signal_run_ui.emit`` o ``cmd_fn=...``).
+
+def _direct_debug_stamp(panel):
+    try:
+        node = getattr(panel, "_moveit_node", None) or getattr(panel, "_node", None)
+        if node is not None and hasattr(node, "get_clock"):
+            return node.get_clock().now().to_msg()
+    except Exception:
+        pass
+    return None
+
+
+def _camera_frame_size(panel) -> tuple[int, int]:
+    view = getattr(panel, "camera_view", None)
+    if view is None:
+        return 0, 0
+    try:
+        fw = int(getattr(view, "_img_width", 0) or 0)
+        fh = int(getattr(view, "_img_height", 0) or 0)
+    except Exception:
+        fw, fh = 0, 0
+    return fw, fh
+
+
+def _current_arm_joint_snapshot(panel) -> list[float | None]:
+    snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
+    values = []
+    for joint_name in UR5_JOINT_NAMES:
+        current = snapshot.get(joint_name)
+        if current is None:
+            values.append(None)
+        else:
+            values.append(float(current))
+    return values
+
+
+def _camera_audit_meta(panel) -> dict:
+    topic = str(getattr(panel, "camera_topic", "") or "none").strip() or "none"
+    image_ts = None
+    frame_data = getattr(panel, "_last_camera_frame", None)
+    if frame_data:
+        try:
+            image_ts = float(frame_data[3])
+        except Exception:
+            image_ts = None
+    return {
+        "topic": topic,
+        "frame": "unknown",
+        "image_timestamp": image_ts,
+    }
+
+
+def _joint_error_snapshot(panel, joints) -> str:
+    names = list(getattr(panel, "UR5_JOINT_NAMES", []) or [])
+    if not names:
+        names = [
+            "shoulder_pan_joint",
+            "shoulder_lift_joint",
+            "elbow_joint",
+            "wrist_1_joint",
+            "wrist_2_joint",
+            "wrist_3_joint",
+        ]
+    parts = []
+    for idx, name in enumerate(names):
+        if idx >= len(joints):
+            break
+        curr = panel._last_joint_positions.get(name)
+        if curr is None:
+            parts.append(f"{name}=n/a")
+            continue
+        diff = abs(float(curr) - float(joints[idx]))
+        parts.append(f"{name}={diff:.3f}")
+    return " ".join(parts)
+
+
+def _joint_error_metrics(panel, joints) -> dict:
+    names = list(getattr(panel, "UR5_JOINT_NAMES", []) or []) or [
+        "shoulder_pan_joint",
+        "shoulder_lift_joint",
+        "elbow_joint",
+        "wrist_1_joint",
+        "wrist_2_joint",
+        "wrist_3_joint",
+    ]
+    snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
+    return _joint_error_metrics_pure(joints, names, snapshot)
+
+
+def _open_gripper_short(panel) -> None:
+    panel._command_gripper(False, log_action="DROP", force=True)
+
+
+def _lock_pick_demo_button(panel) -> None:
+    panel.btn_pick_demo.setEnabled(False)
+    panel.btn_pick_demo.setToolTip("Ya ejecutado: objeto demo confirmado en cesta")
+    panel._ui_set_status("Pick demo completado", error=False)
+    panel._emit_log("[PICK][DIRECT] AVISO: TRAMO FINAL COMPLETADO route=basket")
+    panel._emit_log("[PICK][DIRECT] SECUENCIA COMPLETADA EXITOSAMENTE route=basket")
+    panel._emit_log("[PICK][DEMO] boton deshabilitado (objeto confirmado en cesta)")
+
+
+def _disable_button_anyway(panel) -> None:
+    panel.btn_pick_demo.setEnabled(False)
+    panel.btn_pick_demo.setToolTip(
+        "Secuencia completada sin entrega valida en cesta"
+    )
+    panel._ui_set_status("Pick demo fallido: cesta no confirmada", error=True)
+
+
 _RUN_PICK_DEMO_INVOCATION_COUNT = 0
 
 
@@ -720,51 +833,8 @@ def run_pick_demo(panel) -> None:
                     return selected_base_anchor, "selected_base_anchor_no_live_confirm", extra
                 return None, "target_unavailable", extra
 
-            def _joint_error_snapshot(joints):
-                names = list(getattr(panel, "UR5_JOINT_NAMES", []) or [])
-                if not names:
-                    names = [
-                        "shoulder_pan_joint",
-                        "shoulder_lift_joint",
-                        "elbow_joint",
-                        "wrist_1_joint",
-                        "wrist_2_joint",
-                        "wrist_3_joint",
-                    ]
-                parts = []
-                for idx, name in enumerate(names):
-                    if idx >= len(joints):
-                        break
-                    curr = panel._last_joint_positions.get(name)
-                    if curr is None:
-                        parts.append(f"{name}=n/a")
-                        continue
-                    diff = abs(float(curr) - float(joints[idx]))
-                    parts.append(f"{name}={diff:.3f}")
-                return " ".join(parts)
-
-            def _joint_error_metrics(joints):
-                names = list(getattr(panel, "UR5_JOINT_NAMES", []) or []) or [
-                    "shoulder_pan_joint",
-                    "shoulder_lift_joint",
-                    "elbow_joint",
-                    "wrist_1_joint",
-                    "wrist_2_joint",
-                    "wrist_3_joint",
-                ]
-                snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
-                return _joint_error_metrics_pure(joints, names, snapshot)
-
-            def _current_arm_joint_snapshot() -> list[float | None]:
-                snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
-                values = []
-                for joint_name in UR5_JOINT_NAMES:
-                    current = snapshot.get(joint_name)
-                    if current is None:
-                        values.append(None)
-                    else:
-                        values.append(float(current))
-                return values
+            # F3-step1.3: _joint_error_snapshot, _joint_error_metrics y
+            # _current_arm_joint_snapshot promovidos a module-level.
 
             def _emit_direct_event_trace(
                 stage_name: str,
@@ -781,7 +851,7 @@ def run_pick_demo(panel) -> None:
                     dy = float(tcp_base[1]) - float(object_base[1])
                     dz = float(tcp_base[2]) - float(object_base[2])
                     dist3d = math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
-                joints_current = _current_arm_joint_snapshot()
+                joints_current = _current_arm_joint_snapshot(panel)
                 _append_trace(
                     f"[PICK][DIRECT][{stage_name}] "
                     f"request_id={run_id} "
@@ -1133,7 +1203,7 @@ def run_pick_demo(panel) -> None:
                     or is_basket_transport_stage
                 ):
                     panel._emit_log(
-                        f"[PICK][RECOVERY] {label} no alcanzado; reintentando una vez diffs={_joint_error_snapshot(joints)}"
+                        f"[PICK][RECOVERY] {label} no alcanzado; reintentando una vez diffs={_joint_error_snapshot(panel, joints)}"
                     )
                     ok_retry, info_retry = panel._publish_joint_trajectory(joints, effective_move_sec)
                     if not ok_retry:
@@ -1166,7 +1236,7 @@ def run_pick_demo(panel) -> None:
                         )
                         return
                 raise RuntimeError(
-                    f"{label} no alcanzado (timeout) diffs={_joint_error_snapshot(joints)}"
+                    f"{label} no alcanzado (timeout) diffs={_joint_error_snapshot(panel, joints)}"
                 )
 
             def _live_object_world():
@@ -1345,20 +1415,7 @@ def run_pick_demo(panel) -> None:
                 tcp_world = getattr(panel, "_last_tcp_world", None)
                 return _tuple3(tcp_world)
 
-            def _camera_audit_meta() -> dict:
-                topic = str(getattr(panel, "camera_topic", "") or "none").strip() or "none"
-                image_ts = None
-                frame_data = getattr(panel, "_last_camera_frame", None)
-                if frame_data:
-                    try:
-                        image_ts = float(frame_data[3])
-                    except Exception:
-                        image_ts = None
-                return {
-                    "topic": topic,
-                    "frame": "unknown",
-                    "image_timestamp": image_ts,
-                }
+            # F3-step1.3: _camera_audit_meta promovido a module-level.
 
             def _audit_emit(
                 stage: str,
@@ -1399,7 +1456,7 @@ def run_pick_demo(panel) -> None:
                     0.05,
                     minimum=0.001,
                 )
-                camera_meta = _camera_audit_meta()
+                camera_meta = _camera_audit_meta(panel)
                 selection_ts = float(getattr(panel, "_selection_timestamp", 0.0) or 0.0)
                 selection_age = max(0.0, time.time() - selection_ts) if selection_ts > 0.0 else None
                 selected_world = _tuple3(getattr(panel, "_selected_world", None))
@@ -2109,21 +2166,14 @@ def run_pick_demo(panel) -> None:
                     panel._direct_pick_debug_marker_pub = None
                     return None
 
-            def _direct_debug_stamp():
-                try:
-                    node = getattr(panel, "_moveit_node", None) or getattr(panel, "_node", None)
-                    if node is not None and hasattr(node, "get_clock"):
-                        return node.get_clock().now().to_msg()
-                except Exception:
-                    pass
-                return None
+            # F3-step1.3: _direct_debug_stamp promovido a module-level.
 
             def _direct_make_sphere_marker(*, ns: str, marker_id: int, frame_id: str, xyz, rgba) -> Marker | None:
                 return _make_sphere_marker_pure(
                     ns=ns, marker_id=marker_id,
                     frame_id=str(frame_id or WORLD_FRAME or "world"),
                     xyz=_tuple3(xyz), rgba=rgba,
-                    stamp=_direct_debug_stamp(),
+                    stamp=_direct_debug_stamp(panel),
                 )
 
             def _direct_make_arrow_marker(
@@ -2140,7 +2190,7 @@ def run_pick_demo(panel) -> None:
                     frame_id=str(frame_id or WORLD_FRAME or "world"),
                     start_xyz=_tuple3(start_xyz), end_xyz=_tuple3(end_xyz),
                     rgba=rgba,
-                    stamp=_direct_debug_stamp(),
+                    stamp=_direct_debug_stamp(panel),
                 )
 
             def _publish_direct_debug_markers(
@@ -2741,16 +2791,7 @@ def run_pick_demo(panel) -> None:
 
             visual_focus_phases = {"GRASP_ALIGN_IK", "PRE_CLOSE", "ATTACH_GATE"}
 
-            def _camera_frame_size() -> tuple[int, int]:
-                view = getattr(panel, "camera_view", None)
-                if view is None:
-                    return 0, 0
-                try:
-                    fw = int(getattr(view, "_img_width", 0) or 0)
-                    fh = int(getattr(view, "_img_height", 0) or 0)
-                except Exception:
-                    fw, fh = 0, 0
-                return fw, fh
+            # F3-step1.3: _camera_frame_size promovido a module-level.
 
             def _project_base_to_overhead(base_coords, frame_w: int, frame_h: int):
                 base_3 = _tuple3(base_coords)
@@ -2802,7 +2843,7 @@ def run_pick_demo(panel) -> None:
                 return None
 
             def _emit_visual_coherence(phase: str, *, event: str) -> None:
-                frame_w, frame_h = _camera_frame_size()
+                frame_w, frame_h = _camera_frame_size(panel)
                 tcp_base = _tuple3(_live_tcp_base())
                 obj_base = _tuple3(_live_object_base())
                 tcp_world, tcp_px, tcp_src = _project_base_to_overhead(tcp_base, frame_w, frame_h)
@@ -4244,7 +4285,7 @@ def run_pick_demo(panel) -> None:
                                 f"label={label} status=degraded "
                                 "reason=prep_step_failed final_stage_retry=enabled"
                             )
-                            prep_metrics = _joint_error_metrics(solved_q_list)
+                            prep_metrics = _joint_error_metrics(panel, solved_q_list)
                             prep_replan_min_failed_fraction = _pick_demo_env_float(
                                 "PANEL_PICK_DEMO_TRANSPORT_PREP_DIRECT_REPLAN_MIN_FAILED_FRACTION",
                                 0.70,
@@ -9901,8 +9942,7 @@ def run_pick_demo(panel) -> None:
             if short_release_mode:
                 panel._emit_log("[PICK][DEMO] short_release_mode=true")
 
-                def _open_gripper_short():
-                    panel._command_gripper(False, log_action="DROP", force=True)
+                # F3-step1.3: _open_gripper_short promovido a module-level.
 
                 _phase_begin(
                     "RELEASE",
@@ -9917,7 +9957,7 @@ def run_pick_demo(panel) -> None:
                     tag="pre_open",
                     reason="before short release open command",
                 )
-                panel.signal_run_ui.emit(_open_gripper_short)
+                panel.signal_run_ui.emit(lambda: _open_gripper_short(panel))
                 time.sleep(0.4)
                 release_mark_ok = bool(
                     mark_object_released(
@@ -10361,29 +10401,16 @@ def run_pick_demo(panel) -> None:
                 if basket_ok:
                     _set_pick_demo_result(True, "basket_confirmed", executed=True)
 
-                    def _lock_pick_demo_button() -> None:
-                        panel.btn_pick_demo.setEnabled(False)
-                        panel.btn_pick_demo.setToolTip("Ya ejecutado: objeto demo confirmado en cesta")
-                        panel._ui_set_status("Pick demo completado", error=False)
-                        panel._emit_log("[PICK][DIRECT] AVISO: TRAMO FINAL COMPLETADO route=basket")
-                        panel._emit_log("[PICK][DIRECT] SECUENCIA COMPLETADA EXITOSAMENTE route=basket")
-                        panel._emit_log("[PICK][DEMO] boton deshabilitado (objeto confirmado en cesta)")
-
-                    panel.signal_run_ui.emit(_lock_pick_demo_button)
+                    # F3-step1.3: _lock_pick_demo_button promovido a module-level.
+                    panel.signal_run_ui.emit(lambda: _lock_pick_demo_button(panel))
                 else:
                     _set_pick_demo_result(False, failure_reason, executed=True)
                     panel._emit_log(
                         f"[PICK][DEMO][FAIL] basket_confirmation_failed reason={failure_reason}"
                     )
 
-                    def _disable_button_anyway() -> None:
-                        panel.btn_pick_demo.setEnabled(False)
-                        panel.btn_pick_demo.setToolTip(
-                            "Secuencia completada sin entrega valida en cesta"
-                        )
-                        panel._ui_set_status("Pick demo fallido: cesta no confirmada", error=True)
-
-                    panel.signal_run_ui.emit(_disable_button_anyway)
+                    # F3-step1.3: _disable_button_anyway promovido a module-level.
+                    panel.signal_run_ui.emit(lambda: _disable_button_anyway(panel))
 
             # Ejecutar verificación en thread separado para no bloquear
             panel._pick_demo_checker_thread = panel._run_async(_deferred_basket_check)
