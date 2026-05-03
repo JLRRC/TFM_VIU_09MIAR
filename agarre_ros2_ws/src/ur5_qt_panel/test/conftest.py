@@ -27,6 +27,7 @@ def _inject_ur5_tools_stub() -> None:
     gg.RG2_TCP_FRAME = "rg2_tcp"
     gg.TOOL0_FRAME = "tool0"
     gg.contact_z_correction_for_frame = lambda frame: 0.0
+    gg.tool0_offset_for_frame = lambda frame: (0.0, 0.0, 0.0)
 
     class _GripperGeometry:
         def xyz_for_frame(self, frame):
