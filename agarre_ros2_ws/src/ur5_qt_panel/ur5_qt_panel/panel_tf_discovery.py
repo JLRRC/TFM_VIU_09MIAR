@@ -42,7 +42,7 @@ try:
 except ImportError:  # pragma: no cover
     yaml = None
 
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_tf import get_tf_helper  # noqa: F401
 
@@ -245,9 +245,8 @@ def _log_tf_frames_once(frames: Set[str]) -> None:
     if _TF_FRAMES_LOGGED or not frames:
         return
     sample = ", ".join(sorted(frames)[:80])
-    print(
+    emit_log_line(
         timestamped_line(f"[TRACE] Available TF frames ({len(frames)}): {sample}"),
-        flush=True,
     )
     _TF_FRAMES_LOGGED = True
 
@@ -256,11 +255,10 @@ def _log_tf_frame_summary(all_frames: Set[str], robot_keyword_frames: List[str])
     if _TF_FRAME_SUMMARY_LOGGED or not all_frames:
         return
     sample = ", ".join(sorted(all_frames)[:80])
-    print(
+    emit_log_line(
         timestamped_line(
             f"[TRACE] TF summary frames={len(all_frames)} robot_candidates={len(robot_keyword_frames)} sample={sample}"
         ),
-        flush=True,
     )
     _TF_FRAME_SUMMARY_LOGGED = True
 
@@ -271,9 +269,8 @@ def _log_tf_yaml_head_once(yaml_text: str) -> None:
         return
     lines = yaml_text.strip().splitlines()
     head = "\n".join(lines[:20])
-    print(
+    emit_log_line(
         timestamped_line(f"[TRACE][DIAG] TF YAML head:\n{head}"),
-        flush=True,
     )
     _TF_YAML_HEAD_LOGGED = True
 
@@ -282,7 +279,7 @@ def _log_ee_unavailable_once() -> None:
     global _EE_UNAVAILABLE_LOGGED
     if _EE_UNAVAILABLE_LOGGED:
         return
-    print(timestamped_line("[TRACE] EE unavailable (no valid EE frame)"), flush=True)
+    emit_log_line(timestamped_line("[TRACE] EE unavailable (no valid EE frame)"))
     _EE_UNAVAILABLE_LOGGED = True
 
 
@@ -373,6 +370,6 @@ def discover_base_and_ee_frames(world_frame: Optional[str] = None, timeout_sec: 
         _EE_UNAVAILABLE_LOGGED = False
     log_msg = f"[TRACE] Using BASE_FRAME_EFFECTIVE={effective_base or 'n/a'} EE_FRAME_EFFECTIVE={ee_frame or 'n/a'}"
     if log_msg != _LAST_TRACE_FRAME_LOG:
-        print(timestamped_line(log_msg), flush=True)
+        emit_log_line(timestamped_line(log_msg))
         _LAST_TRACE_FRAME_LOG = log_msg
     return effective_base, ee_frame

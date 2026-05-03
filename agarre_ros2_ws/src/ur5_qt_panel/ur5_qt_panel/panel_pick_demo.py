@@ -193,6 +193,56 @@ DIRECT_GRASP_AUDIT_PREFIX = "[PICK][DIRECT_GRASP_AUDIT]"
 # _coerce_ur5_joint_vector → moved to directo_gate_evaluator.py
 
 
+# F3-step1.2: helpers triviales promovidos del closure ``run_pick_demo.worker``.
+# Sin dependencias del closure (free=0). Cada ``def`` local equivalente queda
+# eliminada del worker; Python resuelve la referencia por scope hacia este
+# nivel module-level.
+
+def _fmt_vec(vec) -> str:
+    return fmt_vec3(vec)
+
+
+def _fmt_scalar(value, *, digits: int = 3) -> str:
+    return _pick_demo_fmt_scalar(value, digits=digits)
+
+
+def _fmt_px(px) -> str:
+    if px is None:
+        return "none"
+    try:
+        return f"({float(px[0]):.1f},{float(px[1]):.1f})"
+    except Exception:
+        return "none"
+
+
+def _execution_type_from_decision(decision: str | None) -> str:
+    decision_txt = str(decision or "").strip().lower()
+    if "fallback_joint_preset" in decision_txt or "target_unavailable" in decision_txt:
+        return "preset"
+    if decision_txt in {"direct_ik_move", "direct_ik_move_refresh"}:
+        return "geometrico"
+    if decision_txt:
+        return "hibrido"
+    return "hibrido"
+
+
+def _grasp_down_permissive_ik_err_tol() -> float:
+    requested = _get_pick_demo_params().grasp_down_permissive_ik_err_tol
+    return min(0.025, max(0.010, requested))
+
+
+def _joint_delta_metrics(reference_joints, final_joints) -> dict:
+    return _joint_delta_metrics_pure(
+        reference_joints, final_joints, UR5_JOINT_NAMES
+    )
+
+
+def _write_json_snapshot(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        json.dump(_json_safe(payload), fh, indent=2, ensure_ascii=False, sort_keys=True)
+
+
 _RUN_PICK_DEMO_INVOCATION_COUNT = 0
 
 
@@ -633,11 +683,7 @@ def run_pick_demo(panel) -> None:
                 "source=canonical_urdf_rg2_pinch_center"
             )
 
-            def _fmt_vec(vec) -> str:
-                return fmt_vec3(vec)
-
-            def _fmt_scalar(value, *, digits: int = 3) -> str:
-                return _pick_demo_fmt_scalar(value, digits=digits)
+            # F3-step1.2: _fmt_vec / _fmt_scalar promovidos a module-level.
 
             def _resolved_align_object_base() -> tuple[tuple[float, float, float] | None, str, dict]:
                 obj_base_live = _tuple3(_live_object_base())
@@ -2294,15 +2340,7 @@ def run_pick_demo(panel) -> None:
                     )
                 _monitor_alcance(trigger=f"{phase}:{event}")
 
-            def _execution_type_from_decision(decision: str | None) -> str:
-                decision_txt = str(decision or "").strip().lower()
-                if "fallback_joint_preset" in decision_txt or "target_unavailable" in decision_txt:
-                    return "preset"
-                if decision_txt in {"direct_ik_move", "direct_ik_move_refresh"}:
-                    return "geometrico"
-                if decision_txt:
-                    return "hibrido"
-                return "hibrido"
+            # F3-step1.2: _execution_type_from_decision promovido a module-level.
 
             def _phase_tcp_obj_metrics_base() -> dict:
                 obj_base = _tuple3(_live_object_base())
@@ -2769,13 +2807,7 @@ def run_pick_demo(panel) -> None:
                 obj_base = _tuple3(_live_object_base())
                 tcp_world, tcp_px, tcp_src = _project_base_to_overhead(tcp_base, frame_w, frame_h)
                 obj_world, obj_px, obj_src = _project_base_to_overhead(obj_base, frame_w, frame_h)
-                def _fmt_px(px) -> str:
-                    if px is None:
-                        return "none"
-                    try:
-                        return f"({float(px[0]):.1f},{float(px[1]):.1f})"
-                    except Exception:
-                        return "none"
+                # F3-step1.2: _fmt_px promovido a module-level.
                 px_dist = None
                 if tcp_px is not None and obj_px is not None:
                     px_dist = math.hypot(
@@ -2796,10 +2828,7 @@ def run_pick_demo(panel) -> None:
                     f"snapshot={snap_path or 'none'}"
                 )
 
-            def _write_json_snapshot(path: Path, payload: dict) -> None:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                with path.open("w", encoding="utf-8") as fh:
-                    json.dump(_json_safe(payload), fh, indent=2, ensure_ascii=False, sort_keys=True)
+            # F3-step1.2: _write_json_snapshot promovido a module-level.
 
             def _phase_target_update(
                 phase: str,
@@ -4619,10 +4648,7 @@ def run_pick_demo(panel) -> None:
                     obj_base=obj_resolved,
                 )
 
-            def _joint_delta_metrics(reference_joints, final_joints) -> dict:
-                return _joint_delta_metrics_pure(
-                    reference_joints, final_joints, UR5_JOINT_NAMES
-                )
+            # F3-step1.2: _joint_delta_metrics promovido a module-level.
 
             def _grasp_down_joint_quality(
                 *,
@@ -4865,9 +4891,7 @@ def run_pick_demo(panel) -> None:
                         _get_pick_demo_params().grasp_down_permissive_rot_weight,
                     )
 
-                def _grasp_down_permissive_ik_err_tol() -> float:
-                    requested = _get_pick_demo_params().grasp_down_permissive_ik_err_tol
-                    return min(0.025, max(0.010, requested))
+                # F3-step1.2: _grasp_down_permissive_ik_err_tol promovido a module-level.
 
                 def _grasp_down_permissive_joint_weight() -> float:
                     return max(

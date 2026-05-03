@@ -31,6 +31,7 @@ from typing import Set
 from .panel_camera import _runtime_time
 from .panel_utils import _can_transform_between, _log_tf_yaml_head_once
 from .panel_tf import TfHelper
+from .logging_utils import emit_log_line
 from .tf_pose_utils import (
     get_tcp_in_base as tf_get_tcp_in_base,
     get_transform as tf_get_transform,
@@ -45,7 +46,7 @@ except Exception:
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[TRACE_CB][ERROR][{context}] {exc}")
+    emit_log_line(f"[TRACE_CB][ERROR][{context}] {exc}")
 
 
 def _start_trace_timer(panel):

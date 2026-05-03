@@ -33,10 +33,11 @@ from .panel_readiness import pick_ui_status, tf_ready_status
 from .panel_tf_diagnose import run_tf_diagnose
 from .panel_utils import nearest_table_object, object_out_of_reach, pixel_to_table_xy, table_xy_to_pixel, transform_point_to_frame, yaw_from_quaternion
 from .panel_state import MoveItState
+from .logging_utils import emit_log_line
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[CALIB_SEL][ERROR][{context}] {exc}")
+    emit_log_line(f"[CALIB_SEL][ERROR][{context}] {exc}")
 
 
 def _handle_calibration_click(panel, px: int, py: int):

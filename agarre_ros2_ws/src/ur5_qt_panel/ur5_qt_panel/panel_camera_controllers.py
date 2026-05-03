@@ -37,6 +37,7 @@ from .panel_config import (
     WRIST_CAMERA_TOPIC_CANDIDATES,
 )
 from .panel_camera import _runtime_time
+from .logging_utils import emit_log_line
 from .tf_pose_utils import get_transform as tf_get_transform
 
 try:
@@ -51,7 +52,7 @@ except ImportError:
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[CAM_CTRL][ERROR][{context}] {exc}")
+    emit_log_line(f"[CAM_CTRL][ERROR][{context}] {exc}")
 
 
 def _controllers_ready(panel) -> Tuple[bool, str]:

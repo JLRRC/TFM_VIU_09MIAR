@@ -29,10 +29,11 @@ from .panel_utils import (
     world_xyz_to_pixel_float,
 )
 from .panel_camera import _runtime_time
+from .logging_utils import emit_log_line
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[TFM_SCI][ERROR][{context}] {exc}")
+    emit_log_line(f"[TFM_SCI][ERROR][{context}] {exc}")
 
 
 def _discover_tfm_checkpoints(panel, allow_rgbd: Optional[bool] = None) -> List[str]:

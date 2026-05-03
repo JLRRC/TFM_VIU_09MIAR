@@ -33,7 +33,7 @@ from .panel_config import (
     refresh_object_groups,
 )
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
 
 OBJECT_POS_LOCK = threading.Lock()
 _DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
@@ -101,7 +101,7 @@ _ALLOWED_TRANSITIONS = {
 def _log_exception(context: str, exc: Exception) -> None:
     if not _DEBUG_EXCEPTIONS:
         return
-    print(timestamped_line(f"[OBJECTS][WARN] {context}: {exc}"), file=sys.stderr, flush=True)
+    emit_log_line(timestamped_line(f"[OBJECTS][WARN] {context}: {exc}"), stream=sys.stderr)
 
 
 def _log_state(message: str, *, key: Optional[str] = None) -> None:
@@ -111,7 +111,7 @@ def _log_state(message: str, *, key: Optional[str] = None) -> None:
     if (now - last) < _STATE_LOG_PERIOD_SEC:
         return
     _STATE_LOG_LAST[log_key] = now
-    print(timestamped_line(message), file=sys.stderr, flush=True)
+    emit_log_line(timestamped_line(message), stream=sys.stderr)
 
 
 def _log_object_types_once() -> None:

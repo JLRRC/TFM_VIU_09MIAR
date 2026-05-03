@@ -22,7 +22,7 @@ try:
 except Exception:  # pragma: no cover
     psutil = None
 
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_process import (  # noqa: F401
     GZ_LOG_FILTERS,
@@ -274,7 +274,7 @@ _CM_CACHE_TTL_SEC = 2.0
 def _log_exception(context: str, exc: Exception) -> None:
     if not _DEBUG_EXCEPTIONS:
         return
-    print(timestamped_line(f"[PANEL_UTILS][WARN] {context}: {exc}"), flush=True)
+    emit_log_line(timestamped_line(f"[PANEL_UTILS][WARN] {context}: {exc}"))
 
 
 _TF_TRANSFORM_WARN_LAST: Dict[str, float] = {}
@@ -297,7 +297,7 @@ def _log_tf_transform_warning(context: str, exc: Exception) -> None:
     count = _TF_TRANSFORM_WARN_COUNT.get(key, 0)
     _TF_TRANSFORM_WARN_COUNT[key] = 0
     msg = f"[TRACE][TF] {context} failed ({count}): {exc}"
-    print(timestamped_line(msg), flush=True)
+    emit_log_line(timestamped_line(msg))
 
 
 def _transform_xyz_via_tf(

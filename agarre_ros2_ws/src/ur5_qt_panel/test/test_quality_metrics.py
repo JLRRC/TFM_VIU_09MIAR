@@ -63,26 +63,11 @@ def _rel(path: Path) -> str:
 # a emit_log_line / self.get_logger(). Cualquier print() en un archivo NO
 # listado aquí hace fallar el test.
 LEGACY_PRINT_FILES: Set[str] = {
+    # F1 cierre (2026-05-03): 19 archivos panel_* migrados a emit_log_line.
+    # Quedan sólo:
+    #  - tfm_grasping/grasp_inference.py: warning fatal pre-rclpy.init.
+    #  - ur5_tools/generate_latency_table.py: CLI standalone, no nodo.
     "tfm_grasping/tfm_grasping/grasp_inference.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_calib_actions.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_calib_selection.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_camera_controllers.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_config.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_draw_overlays.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_gz_objects.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_gz_startup.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_objects.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_settings.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_shutdown.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_state_methods.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_status_mgmt.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_step_callbacks.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_table_objects.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_tf_discovery.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_tfm_science.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_tf.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_trace_callbacks.py",
-    "ur5_qt_panel/ur5_qt_panel/panel_utils.py",
     "ur5_tools/ur5_tools/generate_latency_table.py",
 }
 
@@ -145,7 +130,10 @@ MAX_LOC_PER_FILE_GLOBAL = 1500
 # Sólo los archivos que SUPERAN el umbral global aparecen aquí. Los que
 # están entre 800-1500 ya cumplen el criterio sin necesidad de exención.
 LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   10444,  # F3-step1: -5 LOC
+    # F3-step1.2 (2026-05-03): +24 LOC en panel_pick_demo por 7 helpers
+    # promovidos a module-level (con docstring); las funciones run_pick_demo
+    # y worker bajaron -26 LOC cada una. Net: archivo crece, complejidad baja.
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   10468,  # F3-step1.2: +24 LOC (helpers fuera)
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  4614,
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py":          2149,
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py":        1763,
@@ -211,8 +199,8 @@ MAX_LOC_PER_FUNCTION_GLOBAL = 200
 # completo por orden de prioridad de refactor (las top-3 son F3-step1).
 LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3 step1 — el monolito que decide el TFM (drift hacia abajo).
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo": 10213,  # F3-step1: -23 LOC
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo.worker": 9940,  # F3-step1: -23 LOC
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo": 10187,  # F3-step1.2: -26 LOC (7 helpers fuera)
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo.worker": 9914,  # F3-step1.2: -26 LOC
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object": 4518,
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object.worker": 3512,
     # Otros gigantes históricos.

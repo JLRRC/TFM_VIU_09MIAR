@@ -51,6 +51,7 @@ from .panel_utils import set_led, transform_point_to_frame
 from .panel_motion_helpers import publish_moveit_pose, traj_action_target
 from PyQt5.QtCore import QTimer
 from .panel_robot_presets import _build_pose_stamped
+from .logging_utils import emit_log_line
 
 try:
     from geometry_msgs.msg import PoseStamped
@@ -63,7 +64,7 @@ GLOBAL_FRAME_EFFECTIVE = "base_link"
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[STATE_METHODS][ERROR][{context}] {exc}")
+    emit_log_line(f"[STATE_METHODS][ERROR][{context}] {exc}")
 
 
 def _expected_world_frame(panel) -> str:

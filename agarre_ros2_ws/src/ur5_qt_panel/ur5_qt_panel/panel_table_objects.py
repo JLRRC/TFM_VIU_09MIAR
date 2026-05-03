@@ -79,7 +79,7 @@ except Exception:  # pragma: no cover
 
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
 from .panel_objects import get_object_positions
 from .panel_system_status import _create_graph_node
 
@@ -235,7 +235,7 @@ def save_home_pose(joint_values: List[float]) -> None:
             for idx, val in enumerate(joint_values):
                 f.write(f"HOME_POS_{idx}={val}\n")
     except Exception as e:
-        print(timestamped_line(f"[ERROR] No se pudo guardar la pose HOME: {e}"), flush=True)
+        emit_log_line(timestamped_line(f"[ERROR] No se pudo guardar la pose HOME: {e}"))
 
 
 def object_out_of_reach(x: float, y: float) -> bool:

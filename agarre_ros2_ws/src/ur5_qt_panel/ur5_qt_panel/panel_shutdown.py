@@ -10,7 +10,7 @@ import signal
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_tf import shutdown_tf_helper
 from .panel_config import rclpy
@@ -21,7 +21,7 @@ _DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 def _log_exception(context: str, exc: Exception) -> None:
     if not _DEBUG_EXCEPTIONS:
         return
-    print(timestamped_line(f"[SHUTDOWN][WARN] {context}: {exc}"), flush=True)
+    emit_log_line(timestamped_line(f"[SHUTDOWN][WARN] {context}: {exc}"))
 
 
 @dataclass

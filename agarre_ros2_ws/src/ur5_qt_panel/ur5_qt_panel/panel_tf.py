@@ -12,7 +12,7 @@ from typing import Optional, Set, Tuple
 
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 
 from .panel_config import ROS_AVAILABLE, USE_SIM_TIME
@@ -112,7 +112,7 @@ class TfHelper:
     def _log_exception(self, context: str, exc: Exception) -> None:
         if not self._debug_exceptions:
             return
-        print(timestamped_line(f"[TF][WARN] {context}: {exc}"), flush=True)
+        emit_log_line(timestamped_line(f"[TF][WARN] {context}: {exc}"))
 
     def _start(self):
         with self._lock:
@@ -126,9 +126,9 @@ class TfHelper:
             # Si rclpy sigue sin estar inicializado (el init falló silenciosamente),
             # no intentar crear el nodo — evita NotInitializedException en cascada.
             if not rclpy.ok():
-                print(timestamped_line(
+                emit_log_line(timestamped_line(
                     "[TF][WARN] _start: rclpy no inicializado, TfHelper inactivo"
-                ), flush=True)
+                ))
                 return
             use_sim_time = bool(USE_SIM_TIME)
             overrides = None
@@ -303,11 +303,10 @@ class TfHelper:
 
     def _log_tf_listener_active(self) -> None:
         stats = self.tf_listener_stats()
-        print(
+        emit_log_line(
             timestamped_line(
                 f"[TRACE] TF listener active (tf_msgs={stats[0]} tf_static={stats[1]})"
             ),
-            flush=True,
         )
 
     def transform_pose(self, pose, target_frame: str, timeout_sec: float = 0.8):
@@ -427,9 +426,9 @@ def get_tf_helper() -> Optional[TfHelper]:
         try:
             _TF_HELPER = TfHelper()
         except Exception as exc:
-            print(timestamped_line(
+            emit_log_line(timestamped_line(
                 f"[TF][WARN] get_tf_helper: creación fallida ({exc})"
-            ), flush=True)
+            ))
     return _TF_HELPER
 
 

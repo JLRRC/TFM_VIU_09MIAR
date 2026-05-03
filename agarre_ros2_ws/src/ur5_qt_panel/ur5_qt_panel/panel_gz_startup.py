@@ -49,10 +49,11 @@ from PyQt5.QtCore import QTimer
 from .panel_state import MoveItState, SystemState
 from .panel_camera import _runtime_time
 from . import panel_launch_control
+from .logging_utils import emit_log_line
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[GZ_STARTUP][ERROR][{context}] {exc}")
+    emit_log_line(f"[GZ_STARTUP][ERROR][{context}] {exc}")
 
 
 def _gazebo_bridge_signal(panel) -> Tuple[bool, str]:

@@ -62,10 +62,11 @@ from .panel_config import (
     CONTROLLER_CHECK_INTERVAL_SEC,
     MOVEIT_POSE_TOPIC,
 )
+from .logging_utils import emit_log_line
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[STATUS_MGMT][ERROR][{context}] {exc}")
+    emit_log_line(f"[STATUS_MGMT][ERROR][{context}] {exc}")
 
 
 def _log_trace(panel, message: str) -> None:

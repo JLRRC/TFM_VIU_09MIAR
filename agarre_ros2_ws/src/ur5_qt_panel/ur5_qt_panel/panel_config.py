@@ -11,6 +11,7 @@ from ur5_tools.gripper_geometry import RG2_PINCH_CENTER_FRAME, contact_z_correct
 
 from .panel_settings import PanelSettings
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
+from .logging_utils import emit_log_line
 
 # Disable FastDDS SHM early to avoid noisy startup errors.
 os.environ.setdefault("RMW_FASTRTPS_USE_SHM", "0")
@@ -119,7 +120,7 @@ def refresh_object_groups() -> None:
             UNKNOWN_NAME_SET.add(name)
             if name not in _UNKNOWN_WARNED:
                 _UNKNOWN_WARNED.add(name)
-                print(f"[OBJECTS][WARN] object_type=UNKNOWN name={name}", file=sys.stderr, flush=True)
+                emit_log_line(f"[OBJECTS][WARN] object_type=UNKNOWN name={name}", stream=sys.stderr)
     DROP_OBJECT_NAMES[:] = list(DROP_OBJECTS.keys())
     PICK_DEMO_OBJECT_NAMES[:] = list(PICK_DEMO_OBJECTS.keys())
     UNKNOWN_OBJECT_NAMES[:] = list(UNKNOWN_OBJECTS.keys())
@@ -308,7 +309,7 @@ try:
 except Exception as exc:  # pragma: no cover
     rclpy = None  # type: ignore
     qos_profile_sensor_data = None  # type: ignore
-    print(f"[WARN] ROS 2 / OpenCV no disponible en el panel: {exc}", file=sys.stderr)
+    emit_log_line(f"[WARN] ROS 2 / OpenCV no disponible en el panel: {exc}", stream=sys.stderr)
 
 # ── Topic / overlay constants (originally in panel_v2.py) ──────────────────
 CAMERA_TOPIC_PREFIX = "/camera"

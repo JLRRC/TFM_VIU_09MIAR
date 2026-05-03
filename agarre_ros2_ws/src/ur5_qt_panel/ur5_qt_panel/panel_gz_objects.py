@@ -43,6 +43,7 @@ from .panel_objects import (
 from .panel_process import build_gz_env, resolve_gz_partition
 from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 from .panel_utils import read_world_name, world_to_base
+from .logging_utils import emit_log_line
 import xml.etree.ElementTree as ET
 from PyQt5.QtCore import QTimer
 from .panel_config import (
@@ -70,7 +71,7 @@ except Exception:
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[GZ_OBJ][ERROR][{context}] {exc}")
+    emit_log_line(f"[GZ_OBJ][ERROR][{context}] {exc}")
 
 
 def _drop_detach_supported(panel) -> bool:

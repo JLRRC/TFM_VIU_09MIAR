@@ -47,6 +47,7 @@ from .step_pipeline_helpers import step_present_flow_name
 from .ur5_kinematics import fk_ur5, ik_ur5
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
 from .panel_objects import ObjectLogicalState
+from .logging_utils import emit_log_line
 
 
 def _normalize_joint_name(name) -> str:
@@ -59,7 +60,7 @@ def _normalize_joint_name(name) -> str:
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[STEP_CB][ERROR][{context}] {exc}")
+    emit_log_line(f"[STEP_CB][ERROR][{context}] {exc}")
 
 
 def _step_cartesian_move_runtime_target(panel,

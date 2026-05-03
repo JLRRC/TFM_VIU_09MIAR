@@ -10,6 +10,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from .logging_utils import emit_log_line
+
 
 def _env_float(name: str, default: float) -> float:
     try:
@@ -53,20 +55,18 @@ def _warn_ignored_legacy_gripper_tcp_z_offset(raw_value: object = None, *, sourc
     try:
         value = float(raw)
     except Exception:
-        print(
+        emit_log_line(
             "[PANEL][WARN] PANEL_GRIPPER_TCP_Z_OFFSET inválida en "
             f"{source}; se ignora y se mantiene la geometría del URDF canónico.",
-            file=sys.stderr,
-            flush=True,
+            stream=sys.stderr,
         )
         return
-    print(
+    emit_log_line(
         "[PANEL][WARN] PANEL_GRIPPER_TCP_Z_OFFSET/gripper_tcp_z_offset es legacy. "
         f"Valor ignorado ({value:.6f}) en {source}. "
         "La fuente de verdad geométrica es el URDF canónico y el frame operativo "
         "debe ser rg2_pinch_center.",
-        file=sys.stderr,
-        flush=True,
+        stream=sys.stderr,
     )
 
 def _load_yaml_overrides(path: str) -> Dict[str, object]:
@@ -78,13 +78,13 @@ def _load_yaml_overrides(path: str) -> Dict[str, object]:
     try:
         import yaml  # type: ignore
     except Exception:
-        print(f"[PANEL][WARN] PyYAML no disponible; ignorando {path}", file=sys.stderr, flush=True)
+        emit_log_line(f"[PANEL][WARN] PyYAML no disponible; ignorando {path}", stream=sys.stderr)
         return {}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     except Exception as exc:
-        print(f"[PANEL][WARN] Error leyendo YAML {path}: {exc}", file=sys.stderr, flush=True)
+        emit_log_line(f"[PANEL][WARN] Error leyendo YAML {path}: {exc}", stream=sys.stderr)
         return {}
     if isinstance(data, dict) and "panel_settings" in data:
         data = data.get("panel_settings") or {}
@@ -436,7 +436,7 @@ class PanelSettings:
                         source=f"yaml:{os.path.expandvars(os.path.expanduser(yaml_path or '<inline>'))}",
                     )
                     continue
-                print(f"[PANEL][WARN] Clave desconocida en YAML: {key}", file=sys.stderr, flush=True)
+                emit_log_line(f"[PANEL][WARN] Clave desconocida en YAML: {key}", stream=sys.stderr)
                 continue
             data[key] = value
         return cls(**data)

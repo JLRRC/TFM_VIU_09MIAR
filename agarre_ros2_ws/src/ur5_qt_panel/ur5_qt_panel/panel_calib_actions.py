@@ -36,12 +36,13 @@ from .panel_calibration import start_calibration
 from .panel_objects import get_object_positions
 from .panel_pick_demo import run_pick_demo
 from .panel_pick_object import run_pick_object
+from .logging_utils import emit_log_line
 
 
 def _log_exception(label: str, exc: Exception) -> None:
     try:
         import traceback
-        print(f"[EXC][{label}] {exc}\n{traceback.format_exc()}")
+        emit_log_line(f"[EXC][{label}] {exc}\n{traceback.format_exc()}")
     except Exception:
         pass
 

@@ -38,10 +38,11 @@ from .panel_utils import (
 from .panel_config import TEST_CORNER_OVERLAY, TCP_POSE_TEXT_OVERLAY
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
 from .tf_pose_utils import get_tcp_in_base as tf_get_tcp_in_base
+from .logging_utils import emit_log_line
 
 
 def _log_exception(context: str, exc: Exception) -> None:
-    print(f"[DRAW][ERROR][{context}] {exc}")
+    emit_log_line(f"[DRAW][ERROR][{context}] {exc}")
 
 
 def _compute_homography(pixel_points: List[Tuple[float, float]], world_points: List[Tuple[float, float]]):
