@@ -261,7 +261,10 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # history_widgets 90). Removido de baseline (T15 cumplido).
     "ur5_tools/ur5_tools/moveit_bridge/geometry.py::GeometryMixin._compute_approach_ik_seeded": 341,
     "ur5_tools/ur5_tools/moveit_bridge/trajectory_prep.py::TrajectoryPrepMixin._prepare_joint_trajectory_for_controller": 339,
-    "ur5_qt_panel/ur5_qt_panel/panel_tfm.py::on_tfm_grasp_object_clicked": 318,
+    # F3-step12 (a/b/c) (2026-05-03): on_tfm_grasp_object_clicked bajó de
+    # 318 → 199 LOC con 3 sub-helpers (_tfm_grasp_compute_yaw_from_minor_axis 59
+    # + _tfm_grasp_compute_width_and_preopen 44 + _tfm_grasp_run_pre_checks 98).
+    # Removido de baseline (T15 cumplido).
     "ur5_tools/ur5_tools/gripper_attach_backend.py::GripperAttachBackend.__init__": 342,  # F5-step6b: +33 LOC (params + state nuevos para 4 services)
     "ur5_qt_panel/ur5_qt_panel/panel_launchers.py::start_moveit_bridge": 287,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py::execute_tfm_world_grasp.worker": 286,
