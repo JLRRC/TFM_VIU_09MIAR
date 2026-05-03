@@ -192,6 +192,79 @@ def wait_tfm_moveit_result(panel,
     panel._motion_in_progress = False
     return False, f"timeout_active_request>{max(0.0, deadline - started):.1f}s"
 
+def _execute_tfm_canonical_pick_object_route(panel, *, grasp_base: dict, source: str) -> bool:
+    """F3-step33a: ruta canónica TFM (use_pick_object=True) ~57 LOC.
+
+    Valida selected_name + grasp_selection mismatch, marca _tfm_execute_inflight,
+    construye build_tfm_pick_object_override, ejecuta tfm_canonical_state_reset
+    + 5 phase_updates (READY/OBJECT_SELECTED/GRASP_FRESH/VISUAL_GRASP_OK/
+    EXECUTABLE_GRASP_OK) y dispara run_pick_object. Devuelve True si arrancó.
+    """
+    selected_name = str(
+        getattr(panel, "_selected_object", "") or getattr(panel, "_last_grasp_selection_name", "") or ""
+    ).strip()
+    grasp_selection = str(getattr(panel, "_last_grasp_selection_name", "") or "").strip()
+    if not selected_name:
+        panel._set_status("TFM: selección de objeto no disponible", error=True)
+        panel._audit_append(
+            "logs/execute.log",
+            "[TFM] execute FAIL reason=selected_object_missing_for_canonical_route",
+        )
+        return False
+    if grasp_selection and selected_name != grasp_selection:
+        panel._set_status(
+            f"TFM: grasp no corresponde a la selección actual ({grasp_selection} -> {selected_name})",
+            error=True,
+        )
+        panel._audit_append(
+            "logs/execute.log",
+            "[TFM] execute FAIL reason=selection_grasp_mismatch "
+            f"selected={selected_name} grasp_selection={grasp_selection}",
+        )
+        return False
+    panel._tfm_execute_inflight = True
+    panel._pick_object_grasp_override = build_tfm_pick_object_override(
+        panel,
+        grasp_base=grasp_base,
+        selected_object=selected_name,
+        source=source,
+    )
+    tfm_canonical_state_reset(
+        panel,
+        selected_object=selected_name,
+        grasp_base=grasp_base,
+        source=source,
+    )
+    tfm_canonical_phase_update(panel, "READY", detail="preconditions_ok")
+    tfm_canonical_phase_update(panel, "OBJECT_SELECTED", detail=f"name={selected_name}")
+    tfm_canonical_phase_update(
+        panel,
+        "GRASP_FRESH",
+        detail=f"source={source} age_sec={max(0.0, _runtime_time() - float(panel._last_grasp_update_ts or 0.0)):.2f}",
+    )
+    tfm_canonical_phase_update(
+        panel,
+        "VISUAL_GRASP_OK",
+        detail=f"topic={panel._grasp_rect_topic or '/grasp_rect'}",
+    )
+    tfm_canonical_phase_update(
+        panel,
+        "EXECUTABLE_GRASP_OK",
+        detail=f"pose_topic={MOVEIT_POSE_TOPIC} cartesian_topic={MOVEIT_CARTESIAN_POSE_TOPIC}",
+    )
+    setattr(panel, "_pick_object_worker_started", False)
+    run_pick_object(panel)
+    if not bool(getattr(panel, "_pick_object_worker_started", False)):
+        tfm_canonical_finish(
+            panel,
+            False,
+            "tfm_canonical_pick_object_not_started",
+            final_state="FAIL_TERMINAL",
+        )
+        return False
+    return True
+
+
 def execute_tfm_world_grasp(panel) -> bool:
     if not panel._last_grasp_px:
         return False
@@ -219,63 +292,9 @@ def execute_tfm_world_grasp(panel) -> bool:
     grasp_base = dict(panel._last_grasp_base)
     source = panel._last_grasp_source or "unknown"
     if tfm_canonical_use_pick_object(panel):
-        selected_name = str(
-            getattr(panel, "_selected_object", "") or getattr(panel, "_last_grasp_selection_name", "") or ""
-        ).strip()
-        grasp_selection = str(getattr(panel, "_last_grasp_selection_name", "") or "").strip()
-        if not selected_name:
-            panel._set_status("TFM: selección de objeto no disponible", error=True)
-            panel._audit_append(
-                "logs/execute.log",
-                "[TFM] execute FAIL reason=selected_object_missing_for_canonical_route",
-            )
-            return False
-        if grasp_selection and selected_name != grasp_selection:
-            panel._set_status(
-                f"TFM: grasp no corresponde a la selección actual ({grasp_selection} -> {selected_name})",
-                error=True,
-            )
-            panel._audit_append(
-                "logs/execute.log",
-                "[TFM] execute FAIL reason=selection_grasp_mismatch "
-                f"selected={selected_name} grasp_selection={grasp_selection}",
-            )
-            return False
-        panel._tfm_execute_inflight = True
-        panel._pick_object_grasp_override = build_tfm_pick_object_override(panel, 
-            grasp_base=grasp_base,
-            selected_object=selected_name,
-            source=source,
+        return _execute_tfm_canonical_pick_object_route(
+            panel, grasp_base=grasp_base, source=source,
         )
-        tfm_canonical_state_reset(panel, 
-            selected_object=selected_name,
-            grasp_base=grasp_base,
-            source=source,
-        )
-        tfm_canonical_phase_update(panel, "READY", detail="preconditions_ok")
-        tfm_canonical_phase_update(panel, "OBJECT_SELECTED", detail=f"name={selected_name}")
-        tfm_canonical_phase_update(panel, 
-            "GRASP_FRESH",
-            detail=f"source={source} age_sec={max(0.0, _runtime_time() - float(panel._last_grasp_update_ts or 0.0)):.2f}",
-        )
-        tfm_canonical_phase_update(panel, 
-            "VISUAL_GRASP_OK",
-            detail=f"topic={panel._grasp_rect_topic or '/grasp_rect'}",
-        )
-        tfm_canonical_phase_update(panel, 
-            "EXECUTABLE_GRASP_OK",
-            detail=f"pose_topic={MOVEIT_POSE_TOPIC} cartesian_topic={MOVEIT_CARTESIAN_POSE_TOPIC}",
-        )
-        setattr(panel, "_pick_object_worker_started", False)
-        run_pick_object(panel)
-        if not bool(getattr(panel, "_pick_object_worker_started", False)):
-            tfm_canonical_finish(panel, 
-                False,
-                "tfm_canonical_pick_object_not_started",
-                final_state="FAIL_TERMINAL",
-            )
-            return False
-        return True
 
     panel._tfm_execute_inflight = True
     _minor_yaw_override = getattr(panel, "_tfm_grasp_minor_yaw_deg", None)

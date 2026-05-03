@@ -250,7 +250,7 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # bajó de 678 → 177 LOC con 6 sub-helpers _init_*. Removido de la
     # baseline (T15 cumplido para esta función).
     "ur5_tools/ur5_tools/moveit_bridge/moveit_py_planner.py::MoveItPyPlannerMixin._plan_with_moveit_py": 557,
-    "ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py::execute_tfm_world_grasp": 462,
+    "ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py::execute_tfm_world_grasp": 408,  # F3-step33: -54 LOC con _execute_tfm_canonical_pick_object_route (71 LOC)
     # F3-step30 (2026-05-03): _refresh_trace_data bajó 438→116 con 3 helpers
     # (_refresh_trace_data_resolve_object_pose 109 + _resolve_tcp_pose 154 +
     # _emit_audits 117). Removido de baseline.
