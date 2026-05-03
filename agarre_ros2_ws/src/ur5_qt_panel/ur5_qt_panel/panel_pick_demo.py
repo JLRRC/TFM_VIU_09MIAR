@@ -1122,6 +1122,9 @@ def run_pick_demo(panel) -> None:
                     wait_for_ui=True,
                 )
 
+            def _get_global_step_timeout_extra() -> float:
+                return _pick_demo_env_float("PANEL_PICK_DEMO_GLOBAL_STEP_TIMEOUT_EXTRA_SEC", 0.0)
+
             # F3-step3e: cuerpo de _run_joint_step extraído a
             # pick_demo/joint_step.py. El wrapper construye JointStepContext
             # y delega. Los 15 callsites legacy NO cambian (firma idéntica).
