@@ -433,8 +433,13 @@ class ControlPanelV2(
         return _sm.get_health_report(self, *args, **kwargs)
 
 
-    def __init__(self):
-        super().__init__()
+
+    def _init_step_machinery_state(self) -> None:
+        """F3-step6: bloque de inicialización extraído de __init__.
+
+        Inicializa state machinery + debug motion (~72 LOC).
+        Sin dependencias externas más allá del closure de __init__.
+        """
         # F14-step2: PanelV2PublisherMixin lee este flag en lugar de la
         # constante global USE_SIM_TIME para no introducir un import
         # circular en el mixin.
@@ -507,6 +512,13 @@ class ControlPanelV2(
             0.0,
             _get_panel_ui_params().debug_pause_timeout_sec,
         )
+
+
+    def _init_process_and_gz_state(self) -> None:
+        """F3-step6-bis: bloque de inicialización extraído de __init__.
+
+        Inicializa procesos (gz/moveit/bridge/...) y estado Gazebo + watchdogs (~70 LOC).
+        """
         self.setWindowTitle("Panel V2")
         self.setMinimumWidth(1200)
         load_object_positions()
@@ -577,6 +589,11 @@ class ControlPanelV2(
         self._perf_marks: Dict[str, float] = {}
         self._debug_logs_enabled = bool(DEBUG_LOGS_TO_STDOUT)
         self._panel_logger = _PanelLogger(self)
+
+    def __init__(self):
+        super().__init__()
+        self._init_step_machinery_state()
+        self._init_process_and_gz_state()
         self._camera_ctrl = CameraController(self)
         self._tf_monitor = TFMonitor(self)
         self._state_evaluator = PanelStateEvaluator()
