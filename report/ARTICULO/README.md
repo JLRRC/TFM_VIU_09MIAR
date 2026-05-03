@@ -1,22 +1,33 @@
-<!-- generado-articulo-tfm -->
+# Workspace editorial del articulo
 
-# Articulo cientifico derivado del TFM
+Este directorio organiza la preparacion de un articulo cientifico basado en resultados, codigo y evidencias experimentales ya disponibles. La orientacion actual no es documentar un desarrollo previo, sino construir una pieza publicable, competitiva para congreso y con identidad propia.
 
-Este directorio es el espacio de trabajo para convertir el proyecto de master en un articulo cientifico. Todo el contenido generado aqui procede de fuentes internas del workspace: codigo, configuraciones, metricas, tablas, figuras y evidencias ya existentes.
+## Titulo rector
 
-## Estado actual
+**HACIA UN GRASPING 2D/2.5D REPRODUCIBLE: COMPARACIÓN DE ARQUITECTURAS CNN EN ENTORNOS NO ESTRUCTURADOS**
 
-- Modelos inventariados: `SimpleGraspCNN`/`SimpleCNN`, `ResNet18Grasp`/`ResNetGrasp`, `SimpleGrasp` y referencias legacy no materializadas.
-- Experimentos ejecutados con metricas: `EXP1_SIMPLE_RGB`, `EXP2_SIMPLE_RGBD`, `EXP3_RESNET18_RGB_AUGMENT`, `EXP4_RESNET18_RGBD`, `EXP1.1_SIMPLEGRASP_RGB`, `EXP1.2_SIMPLEGRASP_RGBD`.
-- Configuraciones adicionales localizadas: `EXP_METHOD_V2_RGB` y `EXP_TEMPLATE`.
-- Modelo final documentado para inferencia reproducible: `EXP3_RESNET18_RGB_AUGMENT` con `ResNet18Grasp`, seed 0 en el preset de memoria.
-- Figuras generadas para el articulo: 17 PNG en `recursos/figuras/`.
-- Destino inicial actualizado: II Congreso Internacional de Investigacion 2026, UNET. El primer entregable es un resumen anonimo en PDF; las normas verificadas estan en `recursos/referencias/normas_cii2026_unet.md`.
+## Enfoque del articulo
 
-## Proximos pasos
+- Tema: grasping visual 2D/2.5D mediante regresion de rectangulos de agarre.
+- Aportacion: comparacion reproducible y controlada de arquitecturas CNN.
+- Eje metodologico: configuraciones versionadas, particion object-wise, tres semillas, metricas por epoca y agregacion verificable.
+- Variables analizadas: arquitectura, modalidad de entrada RGB/RGB-D, augmentation, precision geometrica, IoU, error angular y eficiencia.
+- Cierre aplicado: evidencia funcional de aplicabilidad, tratada como validacion contextual y no como contribucion principal.
 
-1. Cerrar y exportar el resumen de `01_resumen_congreso.md` en formato PDF anonimo.
-2. Confirmar datos del tutor, afiliacion y CRediT para el formulario.
-3. Enviar antes de la fecha limite indicada por la web del congreso.
-4. Si se acepta el resumen, convertir `02_articulo_borrador.md` a la plantilla editorial asignada.
-5. Seleccionar 4-6 figuras finales desde `05_figuras_y_tablas.md`.
+## Material disponible
+
+- Borrador publicable: `02_articulo_borrador.md`.
+- Resumen de congreso: `01_resumen_congreso.md`.
+- Plan editorial: `00_plan_trabajo.md`.
+- Aportaciones y limites: `04_aportaciones_clave.md`.
+- Figuras y tablas priorizadas: `05_figuras_y_tablas.md`.
+- Anexos de trazabilidad, metodologia, resultados, modelos y limitaciones.
+- Recursos: tablas CSV, figuras PNG y referencias de formato del venue.
+
+## Uso recomendado
+
+1. Usar `01_resumen_congreso.md` para el envio inicial anonimo.
+2. Usar `02_articulo_borrador.md` como base para plantilla de articulo completo.
+3. Seleccionar 3-5 figuras desde `05_figuras_y_tablas.md`.
+4. Mantener el mensaje central: comparacion reproducible, resultados comparativos y aplicabilidad funcional final.
+5. Evitar que el texto derive hacia documentacion interna o tono administrativo.

@@ -1,5 +1,3 @@
-<!-- generado-articulo-tfm -->
-
 # Normas CII 2026 UNET verificadas
 
 Fuente consultada el 2026-04-30:

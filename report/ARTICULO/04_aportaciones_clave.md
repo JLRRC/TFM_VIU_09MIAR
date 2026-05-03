@@ -1,25 +1,30 @@
-<!-- generado-articulo-tfm -->
-
 # Aportaciones clave
 
-## Aportacion real
+## Que aporta realmente el articulo
 
-- Comparacion reproducible de dos familias oficiales de modelos (`SimpleGraspCNN`/`SimpleCNN` y `ResNet18Grasp`/`ResNetGrasp`) en RGB y RGB-D.
-- Evidencia multisemilla con metricas por epoca, mejor epoca, latencia y resumen agregado.
-- Integracion funcional de inferencia en ROS 2/Gazebo/MoveIt 2 con seleccion de checkpoint final.
-- Trazabilidad explicita entre memoria, codigo, configuraciones y resultados.
+- Una comparacion reproducible y controlada de arquitecturas CNN para grasping 2D/2.5D.
+- Un protocolo experimental con particion object-wise, configuraciones versionadas, tres semillas por experimento y metricas trazables.
+- Una lectura comparativa del efecto de arquitectura, modalidad RGB/RGB-D y augmentation.
+- Una evaluacion conjunta de success, IoU, error angular, perdida de validacion, eficiencia y tamano de modelo.
+- Una seleccion razonada de la configuracion con mejor `val_success` y cierre de aplicabilidad mediante inferencia funcional.
 
-## Novedad defendible
+## Por que es defendible y atractivo
 
-La novedad defendible no es una arquitectura nueva, sino la combinacion de comparacion reproducible, curacion de artefactos, analisis de trade-offs rendimiento/latencia y despliegue funcional en un pipeline robotico simulado.
+El articulo no depende de prometer una arquitectura nueva. Su valor esta en comparar con rigor un problema practico: que se gana al pasar de una CNN ligera a una arquitectura residual, que aporta realmente RGB-D bajo este protocolo y hasta que punto augmentation puede ser mas determinante que la modalidad de entrada. Ese framing es competitivo para congreso porque conecta reproducibilidad, aprendizaje profundo aplicado y grasping 2D/2.5D sin inflar la aportacion.
 
-## Que no debe prometer el articulo
+## Angulo correcto
 
-- No prometer rendimiento superior al estado del arte.
-- No afirmar validacion en robot fisico si no se aporta evidencia directa.
-- No mezclar metricas oficiales historicas con la variante metodologica posterior.
-- No presentar `SimpleGraspCNN` como clase Python real; es nombre de configuracion que instancia `SimpleCNN`.
+El angulo correcto es: "un estudio reproducible sobre decisiones experimentales que cambian el rendimiento en grasping 2D/2.5D". La integracion funcional aparece como evidencia de aplicabilidad final, pero el argumento principal esta en la comparacion controlada y en la interpretacion de resultados.
 
-## Mensaje principal recomendado
+## Que no se debe vender
 
-`ResNet18Grasp` RGB con augmentation ofrece el mejor equilibrio de rendimiento dentro del bloque oficial, mientras que el workspace aporta trazabilidad suficiente para reproducir y auditar la comparacion completa.
+- No venderlo como nuevo estado del arte.
+- No afirmar generalizacion universal fuera de Cornell.
+- No presentar validacion fisica si no existe evidencia sistematica.
+- No convertir la plataforma de integracion en el centro del articulo.
+- No mezclar resultados oficiales con variantes metodologicas pendientes.
+- No ocultar que tres semillas limitan la inferencia estadistica.
+
+## Mensaje para congreso
+
+El articulo puede interesar porque ofrece una historia clara: grasping visual en escenarios no estructurados, comparacion de modelos CNN bajo protocolo exigente, resultados cuantitativos interpretables y cierre funcional. Es una contribucion metodologica seria, compacta y verificable.

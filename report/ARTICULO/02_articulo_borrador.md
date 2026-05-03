@@ -1,102 +1,131 @@
-<!-- generado-articulo-tfm -->
-
 # Titulo
 
-Comparacion reproducible de CNN ligeras y ResNet-18 para prediccion de agarres 2D/2.5D con integracion ROS 2
+HACIA UN GRASPING 2D/2.5D REPRODUCIBLE: COMPARACIÓN DE ARQUITECTURAS CNN EN ENTORNOS NO ESTRUCTURADOS
 
 ## Resumen
 
-Este articulo deriva de un trabajo de fin de master centrado en la deteccion de poses de agarre mediante vision y aprendizaje profundo. Se comparan modelos convolucionales para regresion de rectangulos de agarre en formato Cornell, usando imagenes RGB y RGB-D, particion object-wise y tres semillas por configuracion. El pipeline incluye entrenamiento, evaluacion, benchmark de latencia e integracion funcional en ROS 2/Gazebo/MoveIt 2 para un UR5 con pinza RG2. Los resultados oficiales muestran que `ResNet18Grasp` con RGB y augmentation (`EXP3_RESNET18_RGB_AUGMENT`) alcanza el mejor rendimiento medio entre los experimentos consolidados: `val_success` 0.6801 +/- 0.0300, IoU 0.4010 +/- 0.0057 y error angular 10.6071 +/- 1.4451 grados. El trabajo tambien documenta discrepancias entre la arquitectura ligera teorica y la baseline historica usada en resultados, preservando la trazabilidad entre codigo, configuraciones y artefactos experimentales.
+El grasping visual en entornos no estructurados requiere convertir imagenes RGB o RGB-D en parametros geometricos de agarre precisos, comparables y accionables. Este articulo presenta una comparacion reproducible de arquitecturas CNN para deteccion de agarres 2D/2.5D mediante regresion de rectangulos en una representacion tipo Cornell. Se comparan dos familias principales: una CNN ligera configurada como `SimpleGraspCNN` e implementada como `SimpleCNN`, y una arquitectura residual `ResNet18Grasp` implementada sobre ResNet-18. El protocolo fija particion object-wise, configuraciones YAML versionadas, tres semillas por experimento, entrenamiento con PyTorch y evaluacion mediante `grasp success`, IoU, error angular y perdida de validacion. Los resultados oficiales muestran que `ResNet18Grasp` con entrada RGB y augmentation (`EXP3_RESNET18_RGB_AUGMENT`) obtiene el mejor rendimiento medio: `val_success` 0,6801 +/- 0,0245, IoU 0,4010 +/- 0,0046 y error angular 10,6071 +/- 1,1800 grados. La comparacion evidencia que la arquitectura residual supera a la CNN ligera, mientras que RGB-D no proporciona una mejora uniforme frente a RGB con augmentation. La aportacion principal es metodologica y experimental: un estudio controlado sobre arquitectura, modalidad de entrada, augmentation, precision geometrica, eficiencia y aplicabilidad funcional final.
 
 ## Palabras clave
 
-agarre robotico; CNN; ResNet-18; RGB-D; Cornell grasping dataset; ROS 2; reproducibilidad
+grasping 2D/2.5D; redes convolucionales; ResNet-18; RGB-D; Cornell grasping dataset; reproducibilidad
 
 ## Introduccion
 
-La prediccion de agarres a partir de imagenes es una tarea central en manipulacion robotica. En escenarios no estructurados, una formulacion frecuente consiste en estimar un rectangulo orientado de agarre definido por centro, dimensiones y angulo. Este enfoque reduce la complejidad frente a formulaciones 6-DoF completas y permite evaluar modelos mediante protocolos derivados del Cornell Grasping Dataset.
+En escenas no estructuradas, detectar un agarre no equivale solo a localizar un objeto: implica estimar una geometria ejecutable con centro, dimensiones y orientacion coherentes. En grasping 2D/2.5D, esta formulacion permite transformar informacion visual en rectangulos de agarre evaluables y potencialmente ejecutables con pinzas paralelas. La dificultad aparece cuando pequenas diferencias de arquitectura, modalidad de entrada o entrenamiento cambian la lectura del rendimiento.
 
-El proyecto del que deriva este articulo implementa un pipeline completo: preparacion de datos, definicion de modelos, entrenamiento multisemilla, evaluacion, analisis de latencia e integracion de inferencia en un entorno ROS 2/Gazebo/MoveIt 2. La pregunta principal no es proponer una arquitectura nueva, sino medir de forma trazable que configuracion resulta mas adecuada dentro de un sistema robotico reproducible.
+El interes de este estudio surge de una tension frecuente en aprendizaje profundo aplicado: los resultados dependen tanto del modelo como del protocolo experimental. La arquitectura elegida, la modalidad RGB o RGB-D, el uso de augmentation, la particion del dataset, las semillas y las metricas pueden modificar sustancialmente la conclusion. Sin un protocolo controlado, la comparacion entre modelos pierde fuerza y puede confundir ventajas arquitectonicas con efectos del procedimiento.
 
-## Estado del arte
+Este articulo aborda esa brecha mediante una comparacion reproducible de arquitecturas CNN para deteccion de agarres 2D/2.5D. El foco no es proponer una arquitectura nueva ni reclamar superioridad universal, sino mostrar que se aprende al comparar una CNN ligera y una ResNet-18 adaptada bajo el mismo marco experimental. La contribucion se articula en tres planos: rigor metodologico, resultados comparativos y cierre funcional de aplicabilidad.
 
-Pendiente de cerrar con referencias formales del venue. La redaccion deberia cubrir, como minimo:
+## Estado del arte y posicionamiento
 
-- formulacion Cornell de rectangulos de agarre;
-- redes densas tipo GGCNN y variantes RGB-D;
-- enfoques basados en CNN profundas y transferencia;
-- datasets Cornell, Jacquard y GraspNet/Acronym como contexto;
-- integracion de percepcion con ROS/MoveIt para manipulacion.
+La representacion rectangular de agarres, popularizada por el Cornell Grasping Dataset [1], ofrece una forma compacta de evaluar poses de agarre para pinzas paralelas. Frente a enfoques 6-DoF mas generales, el grasping 2D/2.5D permite concentrarse en la relacion entre imagen, geometria proyectada y exito de una configuracion de agarre. Esta simplificacion sigue siendo util para estudiar arquitecturas de vision y protocolos de evaluacion.
+
+El campo ha evolucionado desde detectores rectangulares sobre datasets acotados hacia metodos densos, reactivos o basados en grandes benchmarks. GG-CNN muestra el interes de predicciones densas en tiempo real para control en bucle cerrado [2]. Jacquard amplia la escala de datos sinteticos RGB-D para deteccion de agarres [3], Dex-Net 2.0 explota datos sinteticos y metricas analiticas para aprender calidad de agarre desde profundidad [4], y GraspNet-1Billion desplaza la evaluacion hacia benchmarks RGB-D de gran escala y agarres 6-DoF en escenas con desorden [5]. Este articulo se situa deliberadamente antes de esa complejidad: compara de forma controlada arquitecturas CNN para agarres 2D/2.5D sobre una representacion tipo Cornell, sin presentarse como un benchmark universal.
+
+Las CNN ligeras resultan atractivas por su bajo coste y facilidad de despliegue, pero pueden limitar la extraccion de caracteristicas complejas. Las arquitecturas residuales, como ResNet-18 [6], ofrecen mayor capacidad representacional y transferencia visual, a costa de mas parametros. A su vez, la profundidad puede aportar informacion geometrica, aunque su impacto depende del preprocesamiento, de la arquitectura y de la metrica empleada. Por ello, una comparacion rigurosa debe controlar arquitectura, modalidad de entrada y augmentation.
+
+El estudio se posiciona como una evaluacion reproducible y acotada. Su valor no esta en competir directamente con todos los metodos del estado del arte, sino en ofrecer una lectura clara, auditable y util sobre decisiones experimentales que afectan al rendimiento en grasping 2D/2.5D. Esta orientacion conecta con las recomendaciones de reproducibilidad en aprendizaje automatico y AI, que insisten en documentar datos, metodo, configuraciones, codigo y condiciones experimentales para que los resultados sean verificables [7], [8].
 
 ## Metodologia
 
-El pipeline experimental usa configuraciones YAML versionadas en `agarre_inteligente/config/`. Cada experimento define modelo, modalidad de entrada, augmentation, optimizador, epocas, batch size, funcion de perdida y rutas de datos. El entrenamiento se ejecuta mediante `scripts/train.py`, que construye el modelo desde `src/models/factory.py`, carga el dataset Cornell procesado, aplica transformaciones de entrenamiento/validacion y guarda metricas por epoca, checkpoints y `config_snapshot.yaml`.
+El protocolo experimental se disena para que cada resultado pueda rastrearse desde la configuracion hasta la metrica final. Cada experimento se define mediante YAML, incluyendo arquitectura, modalidad de entrada, augmentation, optimizador, epocas, batch size, criterio de perdida y rutas de datos. El dataset Cornell procesado se divide con particion object-wise, evitando que instancias del mismo objeto aparezcan simultaneamente en entrenamiento y validacion.
 
-La evaluacion oficial usa `SmoothL1Loss` para entrenamiento y metricas Cornell implementadas en el codigo historico. Existe una variante metodologica posterior con `GraspLoss` e IoU orientada, pero no sustituye los resultados oficiales.
+Las entradas se normalizan a 224 x 224 pixeles. Las configuraciones RGB usan tres canales; las RGB-D incorporan un cuarto canal de profundidad. Las configuraciones con augmentation aplican transformaciones controladas como rotacion, volteo horizontal y variaciones de color cuando corresponde. La salida de los modelos es un vector de cinco parametros: `cx`, `cy`, `w`, `h` y `angle`.
 
-## Modelos
+La evaluacion oficial usa `SmoothL1Loss` y reporta `val_success`, `val_iou`, `val_angle_deg` y `val_loss` en la mejor epoca de validacion. Cada configuracion se ejecuta con tres semillas. Los resultados se agregan como media y desviacion entre semillas, y se preservan las metricas por epoca y los resumenes de mejor epoca. Existe una variante metodologica posterior con perdida angular periodica e IoU orientada, pero se mantiene como extension pendiente para no mezclar resultados consolidados con ensayos no equivalentes.
 
-| nombre_codigo | clase_real | archivo_definicion | arquitectura | entradas | salidas | uso_real | estado | evidencia |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| SimpleGraspCNN | SimpleCNN | agarre_inteligente/src/models/simple_cnn.py | CNN ligera: tres bloques Conv2d 3x3 + BatchNorm + ReLU + MaxPool, AdaptiveAvgPool2d(1,1), MLP 128-128-5. | Tensor imagen 224x224 con 3 canales RGB o 4 canales RGB-D segun input_channels. | Vector de 5 parametros: cx, cy, w, h, angle. En dataset se entrenan normalizados; el wrapper ROS decodifica a pixeles/angulo. | Entrenamiento oficial EXP1/EXP2, inferencia CLI generica, cargable por wrapper ROS actual. | Activo como baseline oficial; el nombre de clase no coincide con el nombre de configuracion. | factory.py construye SimpleCNN si model.name == SimpleGraspCNN; configs EXP1/EXP2; metrics en experiments/EXP1 y EXP2. |
-| ResNet18Grasp | ResNetGrasp | agarre_inteligente/src/models/resnet_variants.py | torchvision ResNet-18 con fc reemplazada por Dropout + Linear(...,5); conv1 adaptada cuando input_channels != 3. | Tensor imagen 224x224 RGB (3 canales) o RGB-D (4 canales). | Vector de 5 parametros: cx, cy, w, h, angle. | Entrenamiento oficial EXP3/EXP4, inferencia CLI generica y wrapper ROS. El preset de memoria usa EXP3 seed_0. | Activo y modelo final documentado para inferencia reproducible. | factory.py construye ResNetGrasp para ResNet18Grasp; panel_tfm_science fija EXP3_RESNET18_RGB_AUGMENT/seed_0 en modo memoria. |
-| SimpleGrasp | SimpleGrasp | agarre_inteligente/src/models/simple_grasp.py | CNN ligera alineada con diseno teorico: primera Conv2d 7x7 stride 2, bloques 3x3, AdaptiveAvgPool2d(7,7), MLP 128*7*7-256-5. | Tensor imagen 224x224 RGB o RGB-D segun input_channels. | Vector de 5 parametros normalizados; wrapper ROS aplica clipping para evitar decodificacion divergente. | Experimentos auxiliares EXP1.1/EXP1.2 y pruebas de carga del wrapper ROS. | Activo como variante auxiliar/posterior; no sustituye resultados oficiales EXP1..EXP4. | configs exp1_1/exp1_2, docs/modelos/simplegrasp.md, test_model_load_exp11.py. |
-| graspnet.models.simple_grasp_cnn.SimpleGraspCNN | No encontrada en el arbol actual | No existe bajo agarre_inteligente/graspnet/models en el workspace actual | Referencia legacy no materializada como archivo actual. | El nodo legacy la invoca como RGB de 3 canales. | Vector de 5 parametros segun nodo legacy. | Nodo ROS legacy grasp_inference.py intenta importarla; el wrapper actual usa fallback a src/models. | Legacy/obsoleto o referencia rota; no debe presentarse como modelo implementado actual. | agarre_ros2_ws/src/tfm_grasping/tfm_grasping/grasp_inference.py importa graspnet.models.simple_grasp_cnn; find no localiza ese modulo. |
+## Modelos evaluados
+
+| modelo en configuracion | clase implementada | modalidad | descripcion | papel en el estudio |
+| --- | --- | --- | --- | --- |
+| `SimpleGraspCNN` | `SimpleCNN` | RGB / RGB-D | CNN ligera con bloques convolucionales, normalizacion, pooling adaptativo y MLP final de cinco salidas. | Baseline de baja complejidad. |
+| `ResNet18Grasp` | `ResNetGrasp` | RGB / RGB-D | ResNet-18 con capa final adaptada a cinco parametros de agarre y primera convolucion ajustable a cuatro canales. | Arquitectura residual principal. |
+| `SimpleGrasp` | `SimpleGrasp` | RGB / RGB-D | Variante ligera posterior entrenada en experimentos complementarios. | Bloque complementario dentro del articulo; no sustituye el bloque oficial. |
+
+La distincion entre nombre de configuracion y clase real es importante: `SimpleGraspCNN` instancia `SimpleCNN`, mientras que `ResNet18Grasp` instancia `ResNetGrasp`.
 
 ## Protocolo experimental
 
-Los experimentos oficiales son `EXP1..EXP4`. Cada uno se ejecuta con tres seeds. Las metricas principales son `val_success`, `val_iou`, `val_angle_deg` y `val_loss` en la mejor epoca de validacion. Tambien hay mediciones de latencia CPU/CUDA para batch 1.
+El nucleo del articulo esta formado por cuatro experimentos oficiales:
 
-| experimento | modelo_config | clase_real | modalidad | canales | augmentation | augmentation_level | epochs | criterion | config_file | metrics_csv_por_seed | best_epoch_summary | estado |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| EXP1_SIMPLE_RGB | SimpleGraspCNN | SimpleCNN | RGB | 3 | False | -- | 10 | smooth_l1 | agarre_inteligente/config/exp1_simple_rgb.yaml | 3 | agarre_inteligente/experiments/EXP1_SIMPLE_RGB/best_epoch_summary.csv | oficial |
-| EXP2_SIMPLE_RGBD | SimpleGraspCNN | SimpleCNN | RGB-D | 4 | True | moderate | 10 | smooth_l1 | agarre_inteligente/config/exp2_simple_rgbd.yaml | 3 | agarre_inteligente/experiments/EXP2_SIMPLE_RGBD/best_epoch_summary.csv | oficial |
-| EXP3_RESNET18_RGB_AUGMENT | ResNet18Grasp | ResNetGrasp | RGB | 3 | True | moderate_strong | 50 | smooth_l1 | agarre_inteligente/config/exp3_resnet18_rgb_augment.yaml | 3 | agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/best_epoch_summary.csv | final |
-| EXP4_RESNET18_RGBD | ResNet18Grasp | ResNetGrasp | RGB-D | 4 | False | -- | 50 | smooth_l1 | agarre_inteligente/config/exp4_resnet18_rgbd.yaml | 3 | agarre_inteligente/experiments/EXP4_RESNET18_RGBD/best_epoch_summary.csv | oficial |
-| EXP1.1_SIMPLEGRASP_RGB | SimpleGrasp | SimpleGrasp | RGB | 3 | False | -- | 10 | smooth_l1 | agarre_inteligente/config/exp1_1_simplegrasp_rgb.yaml | 3 | agarre_inteligente/experiments/EXP1.1_SIMPLEGRASP_RGB/best_epoch_summary.csv | auxiliar |
-| EXP1.2_SIMPLEGRASP_RGBD | SimpleGrasp | SimpleGrasp | RGB-D | 4 | True | moderate | 10 | smooth_l1 | agarre_inteligente/config/exp1_2_simplegrasp_rgbd.yaml | 3 | agarre_inteligente/experiments/EXP1.2_SIMPLEGRASP_RGBD/best_epoch_summary.csv | auxiliar |
-| EXP_METHOD_V2_RGB | SimpleGraspCNN | SimpleCNN | RGB | 3 | False | -- | 10 | grasp_loss | agarre_inteligente/config/exp_methodology_v2.yaml | 0 | no localizado | experimental metodologico configurado |
-| EXP_TEMPLATE | SimpleGraspCNN | SimpleCNN | RGB | 3 | False | -- | 10 | smooth_l1 | agarre_inteligente/config/default.yaml | 0 | no localizado | plantilla |
+| experimento | modelo_config | clase_real | modalidad | canales | augmentation | epocas | criterio | estado |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `EXP1_SIMPLE_RGB` | `SimpleGraspCNN` | `SimpleCNN` | RGB | 3 | no | 10 | `smooth_l1` | oficial |
+| `EXP2_SIMPLE_RGBD` | `SimpleGraspCNN` | `SimpleCNN` | RGB-D | 4 | si | 10 | `smooth_l1` | oficial |
+| `EXP3_RESNET18_RGB_AUGMENT` | `ResNet18Grasp` | `ResNetGrasp` | RGB | 3 | si | 50 | `smooth_l1` | principal |
+| `EXP4_RESNET18_RGBD` | `ResNet18Grasp` | `ResNetGrasp` | RGB-D | 4 | no | 50 | `smooth_l1` | oficial |
+
+Los experimentos `EXP1.1` y `EXP1.2` se incluyen en el articulo como bloque complementario de una variante ligera posterior. Su funcion es ampliar la trazabilidad de modelos ligeros, no reemplazar el nucleo comparativo `EXP1..EXP4`.
 
 ## Resultados
 
-| experimento | modelo | modalidad | estado | success | IoU | error angular | val_loss |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| EXP1.1_SIMPLEGRASP_RGB | SimpleGrasp | RGB | auxiliar | 0.3646 +/- 0.1014 | 0.2477 +/- 0.0808 | 14.5377 +/- 1.5389 | 0.0336 +/- 0.0024 |
-| EXP1.2_SIMPLEGRASP_RGBD | SimpleGrasp | RGB-D | auxiliar | 0.4143 +/- 0.0404 | 0.3079 +/- 0.0517 | 17.1200 +/- 0.2046 | 0.0334 +/- 0.0006 |
-| EXP1_SIMPLE_RGB | SimpleGraspCNN | RGB | oficial | 0.2741 +/- 0.0539 | 0.2254 +/- 0.0608 | 17.1910 +/- 1.6834 | 0.0321 +/- 0.0010 |
-| EXP2_SIMPLE_RGBD | SimpleGraspCNN | RGB-D | oficial | 0.3805 +/- 0.0063 | 0.3169 +/- 0.0041 | 17.8730 +/- 0.4418 | 0.0320 +/- 0.0002 |
-| EXP3_RESNET18_RGB_AUGMENT | ResNet18Grasp | RGB | final | 0.6801 +/- 0.0300 | 0.4010 +/- 0.0057 | 10.6071 +/- 1.4451 | 0.0297 +/- 0.0008 |
-| EXP4_RESNET18_RGBD | ResNet18Grasp | RGB-D | oficial | 0.6492 +/- 0.0125 | 0.3879 +/- 0.0182 | 11.4260 +/- 0.6538 | 0.0283 +/- 0.0008 |
+| experimento | modelo | modalidad | success | IoU | error angular | val_loss |
+| --- | --- | --- | --- | --- | --- | --- |
+| `EXP1_SIMPLE_RGB` | `SimpleGraspCNN` | RGB | 0,2741 +/- 0,0440 | 0,2254 +/- 0,0496 | 17,1910 +/- 1,3745 | 0,0321 +/- 0,0008 |
+| `EXP2_SIMPLE_RGBD` | `SimpleGraspCNN` | RGB-D | 0,3805 +/- 0,0051 | 0,3169 +/- 0,0033 | 17,8730 +/- 0,3608 | 0,0320 +/- 0,0001 |
+| `EXP3_RESNET18_RGB_AUGMENT` | `ResNet18Grasp` | RGB | 0,6801 +/- 0,0245 | 0,4010 +/- 0,0046 | 10,6071 +/- 1,1800 | 0,0297 +/- 0,0007 |
+| `EXP4_RESNET18_RGBD` | `ResNet18Grasp` | RGB-D | 0,6492 +/- 0,0102 | 0,3879 +/- 0,0148 | 11,4260 +/- 0,5339 | 0,0283 +/- 0,0006 |
 
-El mejor resultado medio entre los experimentos ejecutados corresponde a `EXP3_RESNET18_RGB_AUGMENT` con `val_success` 0.6801. En el bloque oficial del TFM, el caso final documentado para inferencia es `EXP3_RESNET18_RGB_AUGMENT`.
+El mejor resultado medio corresponde a `EXP3_RESNET18_RGB_AUGMENT`, con `val_success` de 0,6801. La arquitectura residual mejora de forma clara a la CNN ligera en las modalidades evaluadas. En ResNet, la configuracion RGB con augmentation supera en success e IoU a la alternativa RGB-D sin augmentation, aunque `EXP4` mantiene la menor perdida de validacion. En la CNN ligera, RGB-D con augmentation mejora el success frente a RGB, pero no reduce el error angular medio.
+
+Como bloque complementario, `EXP1.1_SIMPLEGRASP_RGB` y `EXP1.2_SIMPLEGRASP_RGBD` permiten contextualizar una variante ligera posterior:
+
+| experimento | modelo | modalidad | success | IoU | error angular | val_loss |
+| --- | --- | --- | --- | --- | --- | --- |
+| `EXP1.1_SIMPLEGRASP_RGB` | `SimpleGrasp` | RGB | 0,3646 +/- 0,1014 | 0,2477 +/- 0,0808 | 14,5377 +/- 1,5389 | 0,0336 +/- 0,0024 |
+| `EXP1.2_SIMPLEGRASP_RGBD` | `SimpleGrasp` | RGB-D | 0,4143 +/- 0,0404 | 0,3079 +/- 0,0517 | 17,1200 +/- 0,2046 | 0,0334 +/- 0,0006 |
+
+Estos resultados no cambian la conclusion principal: la arquitectura residual sigue aportando el salto de rendimiento mas claro. Su valor editorial esta en mostrar que el estudio conserva trazabilidad sobre variantes ligeras posteriores sin mezclar su lectura con el bloque oficial.
+
+Estos resultados muestran que la profundidad y el aumento de datos no deben tratarse como mejoras universales. Su efecto depende de la arquitectura y de la metrica usada para interpretar el rendimiento.
 
 ## Discusion
 
-Los resultados indican que la familia ResNet-18 proporciona una mejora clara frente a la CNN ligera oficial. La variante RGB con augmentation (`EXP3`) supera a la configuracion RGB-D de ResNet (`EXP4`) en success medio, aunque `EXP4` conserva un `val_loss` competitivo. En la CNN ligera, RGB-D con augmentation (`EXP2`) mejora a RGB sin augmentation (`EXP1`), lo que sugiere que la utilidad de profundidad y augmentation depende de arquitectura y protocolo.
+El estudio deja tres aprendizajes principales. Primero, la capacidad representacional de ResNet-18 aporta una ventaja clara sobre la CNN ligera bajo el protocolo evaluado. Segundo, RGB-D no domina automaticamente: puede ayudar a la arquitectura ligera, pero no supera a RGB con augmentation en la configuracion residual. Tercero, la comparacion solo es defendible porque se conserva la trazabilidad entre configuraciones, semillas, metricas por epoca y resumenes agregados.
 
-El articulo debe explicar que `SimpleGraspCNN` es un nombre de configuracion: la clase real en el codigo actual es `SimpleCNN`. Tambien debe separar los resultados oficiales de `EXP1..EXP4` de `EXP1.1/EXP1.2`, que implementan la arquitectura ligera teorica `SimpleGrasp`.
+La aportacion metodologica es tan importante como el resultado numerico. El estudio convierte un conjunto de entrenamientos en una comparacion auditable: se sabe que se compara, como se entreno, que metrica selecciona la mejor epoca y que limites afectan a la interpretacion. Esta claridad permite discutir precision, geometria del grasp y eficiencia sin sobredimensionar conclusiones.
+
+## Aplicabilidad funcional
+
+El modelo principal (`EXP3_RESNET18_RGB_AUGMENT`) queda identificado como candidato razonable para inferencia funcional cuando se prioriza `val_success`. Esta integracion aplicada funciona como cierre practico: muestra que la comparacion puede conectarse con un flujo de ejecucion, pero no sustituye una evaluacion fisica sistematica ni desplaza el foco experimental.
 
 ## Limitaciones
 
-- Dataset Cornell y validacion offline; no demuestra generalizacion universal.
-- Tres semillas por experimento; analisis estadistico limitado.
-- Metricas oficiales historicas no usan la variante orientada posterior.
-- Integracion robotica funcional en simulacion; no se documenta validacion fisica en robot real.
-- La profundidad no produce una mejora uniforme en todos los modelos.
+- La evaluacion principal se realiza sobre Cornell; no demuestra generalizacion universal.
+- Cada configuracion dispone de tres semillas, suficientes para trazabilidad comparativa pero limitadas para inferencia estadistica fuerte.
+- Las metricas oficiales proceden del evaluador historico; la variante con IoU orientada debe evaluarse en un bloque separado.
+- La comparacion RGB/RGB-D esta condicionada por preprocesamiento, arquitectura y augmentation.
+- La validacion funcional final es evidencia de aplicabilidad, no prueba de rendimiento fisico real.
 
 ## Conclusiones
 
-El proyecto ofrece una comparacion reproducible y trazable de modelos CNN para prediccion de agarres 2D/2.5D. La mejor configuracion oficial es `ResNet18Grasp` RGB con augmentation. La infraestructura conserva codigo, configuraciones, metricas, checkpoints e integracion ROS 2 suficientes para construir un articulo centrado en reproducibilidad experimental e integracion aplicada.
+Este articulo presenta un estudio reproducible sobre grasping 2D/2.5D en entornos no estructurados mediante comparacion controlada de arquitecturas CNN. Bajo el protocolo oficial, `ResNet18Grasp` con RGB y augmentation obtiene el mejor rendimiento medio, mientras que la CNN ligera aporta una baseline interpretable. El valor del trabajo reside en la combinacion de rigor experimental, lectura comparativa y cierre funcional: una base seria para extender la evaluacion hacia metricas orientadas, nuevos datasets, mas semillas y validacion fisica.
 
 ## Trabajo futuro
 
-- Evaluar con IoU orientada y perdida angular periodica de forma oficial.
-- Ampliar datasets y protocolos de validacion.
-- Validar en robot fisico o con mayor diversidad de escenas simuladas.
-- Comparar con modelos densos de mapas de calidad/angulo/apertura.
-- Reducir latencia y tamano de modelos para ejecucion embarcada.
+- Reentrenar el bloque oficial con perdida angular periodica e IoU orientada.
+- Extender la comparacion a Jacquard, GraspNet, Acronym u otros datasets.
+- Incluir arquitecturas densas que predigan mapas de calidad, angulo y apertura.
+- Ampliar semillas y realizar ablations especificas de augmentation y profundidad.
+- Incorporar analisis cualitativo de aciertos y fallos con ejemplos visuales seleccionados.
+- Validar la configuracion seleccionada en escenarios fisicos o simulaciones mas diversas.
 
-## Referencias preliminares
+## Referencias
 
-Pendiente de completar con bibliografia formal. Candidatas: Cornell Grasping Dataset; GGCNN; Dex-Net; Jacquard; GraspNet; MoveIt 2; ROS 2; ResNet.
+[1] I. Lenz, H. Lee, and A. Saxena, "Deep learning for detecting robotic grasps," *The International Journal of Robotics Research*, vol. 34, no. 4-5, pp. 705-724, 2015. doi: 10.1177/0278364914549607.
+
+[2] D. Morrison, P. Corke, and J. Leitner, "Closing the Loop for Robotic Grasping: A Real-time, Generative Grasp Synthesis Approach," in *Robotics: Science and Systems XIV*, 2018. doi: 10.15607/RSS.2018.XIV.021.
+
+[3] A. Depierre, E. Dellandrea, and L. Chen, "Jacquard: A Large Scale Dataset for Robotic Grasp Detection," in *2018 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)*, 2018, pp. 3511-3516. doi: 10.1109/IROS.2018.8593950.
+
+[4] J. Mahler, J. Liang, S. Niyaz, M. Laskey, R. Doan, X. Liu, J. Aparicio Ojea, and K. Goldberg, "Dex-Net 2.0: Deep Learning to Plan Robust Grasps with Synthetic Point Clouds and Analytic Grasp Metrics," in *Robotics: Science and Systems XIII*, 2017. doi: 10.15607/RSS.2017.XIII.058.
+
+[5] H.-S. Fang, C. Wang, M. Gou, and C. Lu, "GraspNet-1Billion: A Large-Scale Benchmark for General Object Grasping," in *Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)*, 2020, pp. 11444-11453. doi: 10.1109/CVPR42600.2020.01146.
+
+[6] K. He, X. Zhang, S. Ren, and J. Sun, "Deep Residual Learning for Image Recognition," in *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)*, 2016, pp. 770-778. doi: 10.1109/CVPR.2016.90.
+
+[7] J. Pineau, P. Vincent-Lamarre, K. Sinha, V. Lariviere, A. Beygelzimer, F. d'Alche-Buc, E. Fox, and H. Larochelle, "Improving Reproducibility in Machine Learning Research (A Report from the NeurIPS 2019 Reproducibility Program)," *Journal of Machine Learning Research*, vol. 22, no. 164, pp. 1-20, 2021.
+
+[8] O. E. Gundersen and S. Kjensmo, "State of the Art: Reproducibility in Artificial Intelligence," in *Proceedings of the AAAI Conference on Artificial Intelligence*, vol. 32, no. 1, pp. 1644-1651, 2018. doi: 10.1609/aaai.v32i1.11503.

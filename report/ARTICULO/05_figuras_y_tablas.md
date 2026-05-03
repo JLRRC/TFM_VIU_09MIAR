@@ -1,44 +1,57 @@
-<!-- generado-articulo-tfm -->
-
 # Figuras y tablas
 
-## Figuras generadas para el articulo
+## Figuras esenciales para el articulo
 
-| archivo | representa | fuente | experimento_modelo | apta_articulo | retoque |
-| --- | --- | --- | --- | --- | --- |
-| curvas_loss_EXP1.1_SIMPLEGRASP_RGB.png | Curvas train_loss y val_loss por seed. | agarre_inteligente/experiments/*/seed_*/metrics.csv | EXP1.1_SIMPLEGRASP_RGB | si, si se simplifica visualmente segun limite de paginas | posible reduccion a paneles agregados |
-| curvas_loss_EXP1.2_SIMPLEGRASP_RGBD.png | Curvas train_loss y val_loss por seed. | agarre_inteligente/experiments/*/seed_*/metrics.csv | EXP1.2_SIMPLEGRASP_RGBD | si, si se simplifica visualmente segun limite de paginas | posible reduccion a paneles agregados |
-| curvas_loss_EXP1_SIMPLE_RGB.png | Curvas train_loss y val_loss por seed. | agarre_inteligente/experiments/*/seed_*/metrics.csv | EXP1_SIMPLE_RGB | si, si se simplifica visualmente segun limite de paginas | posible reduccion a paneles agregados |
-| curvas_loss_EXP2_SIMPLE_RGBD.png | Curvas train_loss y val_loss por seed. | agarre_inteligente/experiments/*/seed_*/metrics.csv | EXP2_SIMPLE_RGBD | si, si se simplifica visualmente segun limite de paginas | posible reduccion a paneles agregados |
-| curvas_loss_EXP3_RESNET18_RGB_AUGMENT.png | Curvas train_loss y val_loss por seed. | agarre_inteligente/experiments/*/seed_*/metrics.csv | EXP3_RESNET18_RGB_AUGMENT | si, si se simplifica visualmente segun limite de paginas | posible reduccion a paneles agregados |
-| curvas_loss_EXP4_RESNET18_RGBD.png | Curvas train_loss y val_loss por seed. | agarre_inteligente/experiments/*/seed_*/metrics.csv | EXP4_RESNET18_RGBD | si, si se simplifica visualmente segun limite de paginas | posible reduccion a paneles agregados |
-| evolucion_val_success_todos.png | Media por epoca de val_success para experimentos con metricas disponibles. | agarre_inteligente/experiments/*/seed_*/metrics.csv | EXP1..EXP4 + EXP1.1/EXP1.2 si hay metricas | si | revisar densidad de leyenda |
-| evolucion_val_iou_todos.png | Media por epoca de val_iou para experimentos con metricas disponibles. | agarre_inteligente/experiments/*/seed_*/metrics.csv | EXP1..EXP4 + EXP1.1/EXP1.2 si hay metricas | si | revisar densidad de leyenda |
-| evolucion_val_angle_todos.png | Media por epoca de val_angle_deg para experimentos con metricas disponibles. | agarre_inteligente/experiments/*/seed_*/metrics.csv | EXP1..EXP4 + EXP1.1/EXP1.2 si hay metricas | si | revisar densidad de leyenda |
-| best_epoch_success_barras.png | Media y desviacion por seed de val_success_mean. | best_epoch_summary.csv por experimento | todos los experimentos ejecutados | si | posible acortar nombres de experimentos |
-| best_epoch_iou_barras.png | Media y desviacion por seed de val_iou_mean. | best_epoch_summary.csv por experimento | todos los experimentos ejecutados | si | posible acortar nombres de experimentos |
-| best_epoch_angle_barras.png | Media y desviacion por seed de val_angle_deg_mean. | best_epoch_summary.csv por experimento | todos los experimentos ejecutados | si | posible acortar nombres de experimentos |
-| best_epoch_loss_barras.png | Media y desviacion por seed de val_loss_mean. | best_epoch_summary.csv por experimento | todos los experimentos ejecutados | si | posible acortar nombres de experimentos |
-| comparacion_modalidad_success.png | Comparacion de success final entre modelo ligero y ResNet18 por modalidad. | report/tables/cap5/Tabla_5-4 y best_epoch_summary oficiales | EXP1..EXP4 | si | no imprescindible |
-| latencia_inferencia_log.png | Latencia media CPU/CUDA para batch 1. | report/tables/cap5/Tabla_5-3_medicion_de_latencia_de_inferencia_por_experimento_y_dispositivo.csv | EXP1..EXP4 | si | quizas separar CPU y CUDA si el venue exige legibilidad en B/N |
-| tamano_modelo_parametros.png | Numero de parametros por checkpoint medido en benchmark. | Tabla de latencia capitulo 5 | EXP1..EXP4 | si | no imprescindible |
-| delta_pre_post_retrain_success.png | Diferencia de val_success entre snapshot previo y resultados validados. | report/metrics/aggregated/chapter5_pre_vs_post_retrain_comparison.csv | EXP1..EXP4 | solo si se explica como control de reproducibilidad, no como resultado principal | decidir si incluir o dejar en material suplementario |
+| archivo | papel en el articulo | motivo |
+| --- | --- | --- |
+| `best_epoch_success_barras.png` | Figura principal. | Da el gancho cuantitativo: `EXP3_RESNET18_RGB_AUGMENT` destaca en success medio. |
+| `best_epoch_iou_barras.png` | Figura de precision geometrica. | Complementa success con solapamiento de rectangulos. |
+| `best_epoch_angle_barras.png` | Figura de precision angular. | Refuerza la lectura geometrica del grasp. |
+| `comparacion_modalidad_success.png` | Figura interpretativa. | Ayuda a contar RGB vs RGB-D y arquitectura ligera vs residual. |
 
-## Tablas nuevas generadas
+## Tablas esenciales
 
-- `recursos/tablas/inventario_modelos.csv`: modelos implementados y referencias legacy.
-- `recursos/tablas/inventario_experimentos.csv`: configs y experimentos ejecutados/localizados.
-- `recursos/tablas/resultados_best_epoch_por_seed.csv`: resultados por seed en best epoch.
-- `recursos/tablas/resumen_metricas_por_experimento.csv`: medias y desviaciones por experimento.
-- `recursos/tablas/latencia_inferencia_cap5.csv`: copia curada de la tabla de latencia del capitulo 5.
-- `recursos/tablas/comparativa_modalidad_simplecnn_resnet18.csv`: comparativa oficial por modalidad.
+- Tabla cuantitativa `EXP1..EXP4`: success, IoU, error angular y `val_loss`.
+- Tabla metodologica: modelo, modalidad, augmentation, epocas, criterio y estado.
+- Tabla de eficiencia: latencia CPU/CUDA, parametros y tamano, si el limite de paginas lo permite.
 
-## Figuras existentes reutilizables
+## Figuras de apoyo
 
-- `report/figures/cap5/Ilustracion_5-10_exito_final_de_agarre_en_validacion_agregado_por_experimento.png`
-- `report/figures/cap5/Ilustracion_5-11_iou_medio_final_en_validacion_agregado_por_experimento.png`
-- `report/figures/cap5/Ilustracion_5-12_error_angular_medio_final_en_validacion_agregado_por_experimento.png`
-- `report/figures/cap5/Ilustracion_5-17_resultado_de_inferencia_del_modelo_exp3_resnet18_rgb_augment_sobre_la_imagen_sim.png`
-- `report/figures/cap5/Ilustracion_5-18_evidencia_funcional_adicional_del_pipeline_percepcion_publicacion_consumo_en_ros.png`
+| archivo | uso recomendado |
+| --- | --- |
+| `evolucion_val_success_todos.png` | Mostrar dinamica de aprendizaje si hay espacio. |
+| `evolucion_val_iou_todos.png` | Apoyo para comportamiento geometrico por epoca. |
+| `evolucion_val_angle_todos.png` | Apoyo para estabilidad angular por epoca. |
+| `best_epoch_loss_barras.png` | Matizar que menor perdida no siempre implica mayor success. |
+| `curvas_loss_EXP3_RESNET18_RGB_AUGMENT.png` | Evidenciar estabilidad del mejor modelo. |
+| `curvas_loss_EXP4_RESNET18_RGBD.png` | Comparar contra la segunda configuracion fuerte. |
 
-No se han copiado esas figuras para evitar duplicar artefactos pesados; estan inventariadas como fuentes reutilizables.
+## Figuras de apoyo y auditoria
+
+| archivo | criterio |
+| --- | --- |
+| `curvas_loss_EXP1_SIMPLE_RGB.png` | Util para trazabilidad, poco atractiva como figura principal. |
+| `curvas_loss_EXP2_SIMPLE_RGBD.png` | Figura de apoyo si se discute la CNN ligera oficial. |
+| `curvas_loss_EXP1.1_SIMPLEGRASP_RGB.png` | Puede usarse en el bloque complementario de `EXP1.1/EXP1.2`. |
+| `curvas_loss_EXP1.2_SIMPLEGRASP_RGBD.png` | Puede usarse en el bloque complementario de `EXP1.1/EXP1.2`. |
+| `delta_pre_post_retrain_success.png` | Solo tiene sentido si se explica como control de reproducibilidad. |
+
+## Figuras de eficiencia y aplicabilidad
+
+| archivo | uso recomendado |
+| --- | --- |
+| `latencia_inferencia_log.png` | Breve apoyo sobre eficiencia; no debe desplazar el foco experimental. |
+| `tamano_modelo_parametros.png` | Util para trade-off de complejidad, preferiblemente junto a latencia. |
+
+## Figuras con gancho para congreso
+
+1. `best_epoch_success_barras.png`: comunica rapidamente el resultado principal.
+2. `comparacion_modalidad_success.png`: convierte el articulo en una historia sobre decisiones experimentales.
+3. `best_epoch_angle_barras.png`: muestra que no solo importa acertar, sino acertar geometricamente.
+4. Evidencia visual de inferencia/integracion funcional, si se incorpora desde figuras externas inventariadas, debe ocupar un cierre breve.
+
+## Piezas pendientes o deseables
+
+- Analisis cualitativo de aciertos y fallos: falta seleccionar ejemplos visuales concretos si se quiere incluir.
+- Figura combinada success + IoU + error angular: podria mejorar legibilidad frente a tres graficas separadas.
+- Tabla compacta de eficiencia: recomendable si el articulo discute aplicabilidad funcional.
