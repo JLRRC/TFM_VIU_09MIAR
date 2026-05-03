@@ -101,6 +101,15 @@ from .pick_object.ensure_gripper_open import (
     EnsureGripperOpenContext,
     ensure_gripper_open_for_moveit as _ensure_gripper_open_for_moveit_pure,
 )
+from .pick_object.carry_coherence import (
+    CarryCoherenceContext,
+    assert_carry_coherence_after_lift as _assert_carry_coherence_after_lift_pure,
+)
+from .pick_object.strict_pre_lift_contact import (
+    StrictPreLiftContactContext,
+    StrictPreLiftContactState,
+    ensure_strict_pre_lift_contact as _ensure_strict_pre_lift_contact_pure,
+)
 
 
 _PICK_OBJECT_GRIPPER_GEOMETRY = load_gripper_geometry()
@@ -1858,153 +1867,34 @@ def run_pick_object(panel) -> None:
                     require_reached=home_start_require_reached,
                 )
 
+            # F3-step5bis-a: cuerpo de _assert_carry_coherence_after_lift
+            # extraído a pick_object/carry_coherence.py.
             def _assert_carry_coherence_after_lift(
-                require_state_override: Optional[bool] = None,
-                timeout_override: Optional[float] = None,
-                max_dist_override: Optional[float] = None,
-                min_consecutive_override: Optional[int] = None,
-                gate_label: str = "after_lift",
+                require_state_override=None,
+                timeout_override=None,
+                max_dist_override=None,
+                min_consecutive_override=None,
+                gate_label: str = "carry_gate",
             ) -> None:
-                enabled = _get_pick_object_params().carry_gate_enable
-                if not enabled:
-                    return
-                try:
-                    timeout_sec = _get_pick_object_params().carry_gate_timeout_sec
-                except Exception:
-                    timeout_sec = 1.4
-                try:
-                    sample_dt = _get_pick_object_params().carry_gate_sample_dt_sec
-                except Exception:
-                    sample_dt = 0.08
-                try:
-                    max_dist_m = _get_pick_object_params().carry_gate_max_dist_m
-                except Exception:
-                    max_dist_m = 0.18
-                try:
-                    min_consecutive = _get_pick_object_params().carry_gate_min_consecutive
-                except Exception:
-                    min_consecutive = 2
-                require_state = _get_pick_object_params().carry_gate_require_state
-                if require_state_override is not None:
-                    require_state = bool(require_state_override)
-                if timeout_override is not None:
-                    timeout_sec = float(timeout_override)
-                if max_dist_override is not None:
-                    max_dist_m = float(max_dist_override)
-                if min_consecutive_override is not None:
-                    min_consecutive = int(min_consecutive_override)
-
-                timeout_sec = max(0.2, timeout_sec)
-                sample_dt = max(0.03, sample_dt)
-                max_dist_m = max(0.02, max_dist_m)
-                min_consecutive = max(1, min_consecutive)
-
-                deadline = time.time() + timeout_sec
-                consecutive_ok = 0
-                best_dist = float("inf")
-                last_dist = float("inf")
-                last_state = "none"
-                wait_log_ts = 0.0
-
-                panel._emit_log(
-                    f"[PICK_OBJ][CARRY_GATE] start phase={gate_label} timeout={timeout_sec:.2f}s "
-                    f"max_dist={max_dist_m:.3f} min_ok={min_consecutive} "
-                    f"require_state={str(require_state).lower()}"
+                _cc_ctx = CarryCoherenceContext(
+                    panel=panel,
+                    read_tcp_in_frame=_read_tcp_in_frame,
+                    base_frame=base_frame,
+                    world_frame=world_frame,
+                    measured_ee_frame=measured_ee_frame,
+                    obj_name=obj_name,
+                    get_pick_object_params=_get_pick_object_params,
+                    log_moveit_panel_trace=_log_moveit_panel_trace,
+                )
+                _assert_carry_coherence_after_lift_pure(
+                    _cc_ctx,
+                    require_state_override=require_state_override,
+                    timeout_override=timeout_override,
+                    max_dist_override=max_dist_override,
+                    min_consecutive_override=min_consecutive_override,
+                    gate_label=gate_label,
                 )
 
-                while time.time() < deadline:
-                    tcp_base, _tcp_tf = _read_tcp_in_frame(
-                        base_frame,
-                        measured_ee_frame,
-                        timeout_sec=min(0.2, sample_dt * 1.5),
-                    )
-                    obj_state = get_object_state(obj_name)
-                    obj_world = None
-                    obj_source = "none"
-                    # During carry validation the logical object state can keep the
-                    # last table pose for a short time after attach. Prefer live
-                    # pose feeds and leave state_tracking as a last-resort fallback.
-                    if getattr(panel, "_ros_worker_started", False) and getattr(panel, "ros_worker", None) is not None:
-                        try:
-                            pose_map, _pose_ts = panel.ros_worker.pose_snapshot()
-                            live_pose = (pose_map or {}).get(obj_name)
-                            if live_pose is not None and len(live_pose) >= 3:
-                                obj_world = (
-                                    float(live_pose[0]),
-                                    float(live_pose[1]),
-                                    float(live_pose[2]),
-                                )
-                                obj_source = "pose_snapshot"
-                        except Exception:
-                            pass
-                    if obj_world is None:
-                        obj_world = (get_object_positions() or {}).get(obj_name)
-                        if obj_world is not None:
-                            obj_source = "store"
-                    if obj_world is None:
-                        if obj_state and getattr(obj_state, "position", None):
-                            obj_world = tuple(obj_state.position)
-                            obj_source = "state_tracking"
-                    if tcp_base is None or obj_world is None:
-                        consecutive_ok = 0
-                        time.sleep(sample_dt)
-                        continue
-
-                    obj_base, _ = transform_point_to_frame(
-                        (float(obj_world[0]), float(obj_world[1]), float(obj_world[2])),
-                        base_frame,
-                        source_frame=world_frame,
-                        timeout_sec=min(0.2, sample_dt * 1.5),
-                    )
-                    if obj_base is None:
-                        consecutive_ok = 0
-                        time.sleep(sample_dt)
-                        continue
-
-                    dx = float(obj_base[0]) - float(tcp_base[0])
-                    dy = float(obj_base[1]) - float(tcp_base[1])
-                    dz = float(obj_base[2]) - float(tcp_base[2])
-                    dist = math.sqrt((dx * dx) + (dy * dy) + (dz * dz))
-                    best_dist = min(best_dist, dist)
-                    last_dist = dist
-
-                    state_ok = True
-                    if obj_state is not None:
-                        last_state = str(getattr(obj_state, "logical_state", "none"))
-                        if require_state:
-                            state_ok = obj_state.logical_state in (
-                                ObjectLogicalState.CARRIED,
-                                ObjectLogicalState.GRASPED,
-                            )
-
-                    if dist <= max_dist_m and state_ok:
-                        consecutive_ok += 1
-                    else:
-                        consecutive_ok = 0
-
-                    now = time.time()
-                    if (now - wait_log_ts) >= 0.45:
-                        panel._emit_log(
-                            f"[PICK_OBJ][CARRY_GATE] phase={gate_label} dist={dist:.3f} best={best_dist:.3f} "
-                            f"max={max_dist_m:.3f} state={last_state} src={obj_source} ok_count={consecutive_ok}/{min_consecutive}"
-                        )
-                        wait_log_ts = now
-
-                    if consecutive_ok >= min_consecutive:
-                        panel._emit_log(
-                            f"[PICK_OBJ][CARRY_GATE] ok phase={gate_label} dist={dist:.3f} best={best_dist:.3f} state={last_state}"
-                        )
-                        return
-                    time.sleep(sample_dt)
-
-                panel._emit_log(
-                    f"[PICK_OBJ][ABORT] carry_coherence_failed phase={gate_label} "
-                    f"dist={last_dist:.3f} best={best_dist:.3f} max={max_dist_m:.3f} "
-                    f"state={last_state}"
-                )
-                raise RuntimeError(
-                    f"carry_coherence_failed_{gate_label} dist={last_dist:.3f} best={best_dist:.3f} max={max_dist_m:.3f}"
-                )
 
             # F3-step4c: cuerpo de _ensure_gripper_open_for_moveit extraído
             # a pick_object/ensure_gripper_open.py. Wrapper de 11 LOC.
@@ -2088,143 +1978,26 @@ def run_pick_object(panel) -> None:
                 if not state["ok"]:
                     raise RuntimeError(f"gripper_close_command_failed_{str(reason).lower()}")
 
+            # F3-step5bis-b: cuerpo de _ensure_strict_pre_lift_contact extraído
+            # a pick_object/strict_pre_lift_contact.py. Wrapper preserva la
+            # nonlocal var ``last_metrics`` vía StrictPreLiftContactState
+            # mutable construido fresh por call (state inicial None).
             def _ensure_strict_pre_lift_contact(grasp_pose_live: dict, grasp_delay_live: float) -> None:
-                if not strict_physics_mode:
-                    return
-                enabled = _get_pick_object_params().strict_contact_gate_enable
-                if not enabled:
-                    return
-                try:
-                    settle_sec = _get_pick_object_params().strict_contact_settle_sec
-                except Exception:
-                    settle_sec = 0.7
-                try:
-                    min_blocked_opening_m = _get_pick_object_params().strict_min_blocked_opening_m
-                except Exception:
-                    min_blocked_opening_m = 0.050
-                try:
-                    max_blocked_opening_m = _get_pick_object_params().strict_max_blocked_opening_m
-                except Exception:
-                    max_blocked_opening_m = 0.850
-                try:
-                    min_effort_abs = _get_pick_object_params().strict_min_effort_abs
-                except Exception:
-                    min_effort_abs = 0.0
-                try:
-                    max_regrasp = _get_pick_object_params().strict_regrasp_max
-                except Exception:
-                    max_regrasp = 1
-                try:
-                    regrasp_step_m = _get_pick_object_params().strict_regrasp_step_m
-                except Exception:
-                    regrasp_step_m = 0.004
-                try:
-                    regrasp_floor_margin_m = _get_pick_object_params().strict_regrasp_floor_margin_m
-                except Exception:
-                    regrasp_floor_margin_m = 0.008
-
-                settle_sec = max(0.2, settle_sec)
-                max_regrasp = max(0, min(max_regrasp, 3))
-                regrasp_step_m = max(0.001, regrasp_step_m)
-                min_z = float(table_top_base) + max(0.004, regrasp_floor_margin_m)
-                last_metrics = None
-
-                def _wait_for_contact_signal(attempt_idx: int) -> bool:
-                    nonlocal last_metrics
-                    deadline = time.time() + settle_sec
-                    best_opening = None
-                    best_effort = None
-                    saw_joint_state = False
-                    while time.time() < deadline:
-                        metrics = _read_gripper_contact_metrics()
-                        last_metrics = metrics
-                        saw_joint_state = saw_joint_state or bool(metrics.get("has_joint_state"))
-                        opening_m = metrics.get("opening_m")
-                        effort_abs = metrics.get("effort_abs_max")
-                        if opening_m is not None:
-                            best_opening = float(opening_m) if best_opening is None else max(best_opening, float(opening_m))
-                        if effort_abs is not None:
-                            best_effort = float(effort_abs) if best_effort is None else max(best_effort, float(effort_abs))
-                        opening_ok = (
-                            opening_m is not None
-                            and float(opening_m) >= min_blocked_opening_m
-                            and float(opening_m) <= max_blocked_opening_m
-                        )
-                        effort_ok = (
-                            min_effort_abs > 0.0
-                            and effort_abs is not None
-                            and float(effort_abs) >= min_effort_abs
-                        )
-                        if opening_ok or effort_ok:
-                            panel._emit_log(
-                                f"[PICK_OBJ][STRICT_CONTACT] ok attempt={attempt_idx} "
-                                f"opening_m={0.0 if opening_m is None else float(opening_m):.4f} "
-                                f"min_opening_m={min_blocked_opening_m:.4f} "
-                                f"max_opening_m={max_blocked_opening_m:.4f} "
-                                f"effort_abs={0.0 if effort_abs is None else float(effort_abs):.4f} "
-                                f"min_effort_abs={min_effort_abs:.4f}"
-                            )
-                            return True
-                        time.sleep(0.05)
-                    if not saw_joint_state:
-                        panel._emit_log(
-                            "[PICK_OBJ][STRICT_CONTACT] joint_state unavailable; skipping pre-lift contact gate"
-                        )
-                        return True
-                    panel._emit_log(
-                        f"[PICK_OBJ][STRICT_CONTACT] no_contact attempt={attempt_idx} "
-                        f"opening_m={0.0 if best_opening is None else float(best_opening):.4f} "
-                        f"min_opening_m={min_blocked_opening_m:.4f} "
-                        f"max_opening_m={max_blocked_opening_m:.4f} "
-                        f"effort_abs={0.0 if best_effort is None else float(best_effort):.4f} "
-                        f"min_effort_abs={min_effort_abs:.4f}"
-                    )
-                    return False
-
-                for attempt_idx in range(0, max_regrasp + 1):
-                    if _wait_for_contact_signal(attempt_idx):
-                        return
-                    if attempt_idx >= max_regrasp:
-                        break
-                    cur_pos = grasp_pose_live.get("position", (bx, by, bz))
-                    cur_x = float(cur_pos[0])
-                    cur_y = float(cur_pos[1])
-                    cur_z = float(cur_pos[2])
-                    next_z = max(min_z, cur_z - regrasp_step_m)
-                    if next_z >= (cur_z - 1e-4):
-                        panel._emit_log(
-                            f"[PICK_OBJ][STRICT_CONTACT] regrasp blocked cur_z={cur_z:.3f} min_z={min_z:.3f}"
-                        )
-                        break
-                    panel._emit_log(
-                        f"[PICK_OBJ][STRICT_CONTACT] retry attempt={attempt_idx + 1}/{max_regrasp} "
-                        f"reopen=true regrasp_z={next_z:.3f} prev_z={cur_z:.3f}"
-                    )
-                    _ensure_gripper_open_for_moveit(reason=f"STRICT_REGRASP_{attempt_idx + 1}")
-                    regrasp_pose = dict(grasp_pose_live)
-                    regrasp_pose["position"] = (cur_x, cur_y, next_z)
-                    _run_moveit_step(
-                        f"STRICT_GRASP_NUDGE_{attempt_idx + 1}",
-                        regrasp_pose,
-                        min(0.25, float(grasp_delay_live)),
-                    )
-                    grasp_pose_live["position"] = (cur_x, cur_y, next_z)
-                    _close_gripper_sync(reason=f"STRICT_REGRASP_{attempt_idx + 1}")
-                    time.sleep(0.35)
-
-                opening_txt = "0.0000"
-                effort_txt = "0.0000"
-                if last_metrics is not None:
-                    if last_metrics.get("opening_m") is not None:
-                        opening_txt = f"{float(last_metrics['opening_m']):.4f}"
-                    if last_metrics.get("effort_abs_max") is not None:
-                        effort_txt = f"{float(last_metrics['effort_abs_max']):.4f}"
-                raise RuntimeError(
-                    "strict_pre_lift_contact_failed "
-                    f"opening_m={opening_txt} min_opening_m={min_blocked_opening_m:.4f} "
-                    f"max_opening_m={max_blocked_opening_m:.4f} "
-                    f"effort_abs={effort_txt} min_effort_abs={min_effort_abs:.4f}"
+                _splc_ctx = StrictPreLiftContactContext(
+                    panel=panel,
+                    close_gripper_sync=_close_gripper_sync,
+                    ensure_gripper_open_for_moveit=_ensure_gripper_open_for_moveit,
+                    read_gripper_contact_metrics=_read_gripper_contact_metrics,
+                    run_moveit_step=_run_moveit_step,
+                    strict_physics_mode=strict_physics_mode,
+                    table_top_base=table_top_base,
+                    get_pick_object_params=_get_pick_object_params,
                 )
+                _splc_state = StrictPreLiftContactState()
+                _ensure_strict_pre_lift_contact_pure(
+                    _splc_ctx, _splc_state, grasp_pose_live, grasp_delay_live,
+                )
+
 
             def _ensure_strict_probe_carry(grasp_pose_live: dict, grasp_delay_live: float) -> None:
                 if not strict_physics_mode:
