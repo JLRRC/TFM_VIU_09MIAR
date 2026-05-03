@@ -67,6 +67,19 @@ class PlanToPoseServer(Node):
         self.declare_parameter("bridge_result_topic", "/desired_grasp/result")
         self.declare_parameter("bridge_base_frame", "base_link")
         self.declare_parameter("bridge_result_timeout_sec", 60.0)
+        # B-iter3 (2026-05-03): modo MOVEIT_DIRECT — bypassa el bridge al
+        # panel y llama directamente a /move_action de MoveIt 2.
+        # Valores: "STUB", "REAL_BRIDGE", "MOVEIT_DIRECT".
+        # Backwards compat: si mode="" (default) y use_real_bridge=true,
+        # mode efectivo = "REAL_BRIDGE"; si use_real_bridge=false, "STUB".
+        self.declare_parameter("mode", "")
+        self.declare_parameter("moveit_action_name", "/move_action")
+        self.declare_parameter("moveit_group_name", "manipulator")
+        self.declare_parameter("moveit_planner_id", "")
+        self.declare_parameter("moveit_planning_time_sec", 5.0)
+        self.declare_parameter("moveit_position_tol_m", 0.005)
+        self.declare_parameter("moveit_orientation_tol_rad", 0.05)
+        self.declare_parameter("moveit_result_timeout_sec", 30.0)
 
         self._action_name = str(
             self.get_parameter("action_name").value or "/orchestrator/plan_to_pose"
@@ -88,6 +101,37 @@ class PlanToPoseServer(Node):
         self._bridge_result_timeout = float(
             self.get_parameter("bridge_result_timeout_sec").value
         )
+
+        # B-iter3: resolución del modo efectivo.
+        _raw_mode = str(self.get_parameter("mode").value or "").strip().upper()
+        if _raw_mode in {"STUB", "REAL_BRIDGE", "MOVEIT_DIRECT"}:
+            self._mode = _raw_mode
+        else:
+            self._mode = "REAL_BRIDGE" if self._use_real_bridge else "STUB"
+
+        self._moveit_action_name = str(
+            self.get_parameter("moveit_action_name").value or "/move_action"
+        ).strip() or "/move_action"
+        self._moveit_group_name = str(
+            self.get_parameter("moveit_group_name").value or "manipulator"
+        ).strip() or "manipulator"
+        self._moveit_planner_id = str(
+            self.get_parameter("moveit_planner_id").value or ""
+        ).strip()
+        self._moveit_planning_time = float(
+            self.get_parameter("moveit_planning_time_sec").value
+        )
+        self._moveit_position_tol = float(
+            self.get_parameter("moveit_position_tol_m").value
+        )
+        self._moveit_orientation_tol = float(
+            self.get_parameter("moveit_orientation_tol_rad").value
+        )
+        self._moveit_result_timeout = float(
+            self.get_parameter("moveit_result_timeout_sec").value
+        )
+        # ActionClient para /move_action (lazy init en _execute_moveit_direct).
+        self._moveit_action_client = None
 
         self._cb_group = ReentrantCallbackGroup()
         self._action_server = ActionServer(
@@ -111,7 +155,7 @@ class PlanToPoseServer(Node):
         self._bridge_pending_text: Optional[str] = None
         self._next_request_id = 0
 
-        if self._use_real_bridge:
+        if self._mode == "REAL_BRIDGE":
             self._bridge_pose_pub = self.create_publisher(
                 PoseStamped, self._bridge_pose_topic, 10
             )
@@ -123,18 +167,26 @@ class PlanToPoseServer(Node):
                 callback_group=self._cb_group,
             )
 
-        mode = "REAL_BRIDGE" if self._use_real_bridge else "STUB"
         self.get_logger().info(
-            f"[PLAN_TO_POSE] ready, action={self._action_name} mode={mode} "
+            f"[PLAN_TO_POSE] ready, action={self._action_name} mode={self._mode} "
             f"planning={self._planning_steps} executing={self._executing_steps} "
             f"step_delay={self._step_delay}s"
         )
-        if self._use_real_bridge:
+        if self._mode == "REAL_BRIDGE":
             self.get_logger().info(
                 f"[PLAN_TO_POSE] bridge pose_topic={self._bridge_pose_topic} "
                 f"result_topic={self._bridge_result_topic} "
                 f"base_frame={self._bridge_base_frame} "
                 f"result_timeout={self._bridge_result_timeout:.1f}s"
+            )
+        elif self._mode == "MOVEIT_DIRECT":
+            self.get_logger().info(
+                f"[PLAN_TO_POSE] moveit_direct action={self._moveit_action_name} "
+                f"group={self._moveit_group_name} planner='{self._moveit_planner_id}' "
+                f"planning_time={self._moveit_planning_time:.1f}s "
+                f"pos_tol={self._moveit_position_tol:.4f}m "
+                f"ori_tol={self._moveit_orientation_tol:.3f}rad "
+                f"result_timeout={self._moveit_result_timeout:.1f}s"
             )
 
     # ------------------------------------------------------------------
@@ -181,12 +233,14 @@ class PlanToPoseServer(Node):
             self._publish_feedback(goal_handle, fb)
             time.sleep(max(0.0, self._step_delay))
 
-        # Ejecutar:
-        # - Si use_real_bridge=true: publica PoseStamped a /desired_grasp
-        #   con frame_id codificado y espera result correlando UUID.
-        # - Si false: stub de la lógica pura.
+        # Ejecutar según modo:
+        #  - STUB: lógica pura (instantáneo, success).
+        #  - REAL_BRIDGE: publica PoseStamped a /desired_grasp y espera panel.
+        #  - MOVEIT_DIRECT (B-iter3): cliente directo a /move_action de MoveIt.
         duration = time.monotonic() - start_mono
-        if self._use_real_bridge:
+        if self._mode == "MOVEIT_DIRECT":
+            outcome = self._execute_moveit_direct(parsed, start_mono)
+        elif self._mode == "REAL_BRIDGE":
             outcome = self._execute_real_bridge(parsed, start_mono)
         else:
             outcome = execute_stub(parsed, duration_sec=duration)
@@ -341,6 +395,122 @@ class PlanToPoseServer(Node):
         return PlanToPoseResult(
             success=ok,
             reason=reason or ("ok" if ok else "bridge_unknown"),
+            final_xyz=goal.target_xyz,
+            final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+            duration_sec=time.monotonic() - start_mono,
+            attempts=1,
+        )
+
+    # ------------------------------------------------------------------
+    # B-iter3 (2026-05-03) — modo MOVEIT_DIRECT
+    # ------------------------------------------------------------------
+
+    def _execute_moveit_direct(
+        self, goal: PlanToPoseGoal, start_mono: float
+    ) -> PlanToPoseResult:
+        """Llama directamente a /move_action de MoveIt 2 (sin bridge al panel).
+
+        Flujo:
+          1. Construye MoveGroup.Goal con PositionConstraint + OrientationConstraint
+             sobre ee_frame del request.
+          2. wait_for_server / send_goal / wait result (event-based).
+          3. Decodifica MoveItErrorCodes.val a (success, reason).
+        """
+        from rclpy.action import ActionClient as _ActionClient
+        from moveit_msgs.action import MoveGroup
+        from .plan_to_pose_logic import normalize_quat
+        from .plan_to_pose_moveit_direct import (
+            build_move_group_goal,
+            parse_move_group_result,
+        )
+
+        if self._moveit_action_client is None:
+            self._moveit_action_client = _ActionClient(
+                self, MoveGroup, self._moveit_action_name,
+                callback_group=self._cb_group,
+            )
+
+        # Wait for server (timeout corto para no bloquear pick si MoveIt no listo).
+        if not self._moveit_action_client.wait_for_server(timeout_sec=3.0):
+            return PlanToPoseResult(
+                success=False,
+                reason=f"moveit_action_server_unavailable:{self._moveit_action_name}",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=0,
+            )
+
+        mg_goal = build_move_group_goal(
+            goal.target_xyz,
+            goal.target_quat_xyzw,
+            ee_frame=goal.ee_frame,
+            base_frame=self._bridge_base_frame,
+            group_name=self._moveit_group_name,
+            planner_id=self._moveit_planner_id,
+            planning_time_sec=self._moveit_planning_time,
+            position_tol_m=self._moveit_position_tol,
+            orientation_tol_rad=self._moveit_orientation_tol,
+        )
+
+        self.get_logger().info(
+            "[PLAN_TO_POSE][MOVEIT_DIRECT] sending goal "
+            f"target=({goal.target_xyz[0]:.3f},{goal.target_xyz[1]:.3f},{goal.target_xyz[2]:.3f}) "
+            f"ee_frame={goal.ee_frame} group={self._moveit_group_name}"
+        )
+
+        send_future = self._moveit_action_client.send_goal_async(mg_goal)
+        send_event = threading.Event()
+        send_future.add_done_callback(lambda _f: send_event.set())
+        send_event.wait(timeout=3.0)
+        if not send_future.done():
+            return PlanToPoseResult(
+                success=False,
+                reason="moveit_goal_send_timeout",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=1,
+            )
+
+        gh = send_future.result()
+        if gh is None or not getattr(gh, "accepted", False):
+            return PlanToPoseResult(
+                success=False,
+                reason="moveit_goal_rejected",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=1,
+            )
+
+        result_future = gh.get_result_async()
+        result_event = threading.Event()
+        result_future.add_done_callback(lambda _f: result_event.set())
+        result_event.wait(timeout=float(max(1.0, self._moveit_result_timeout)))
+        if not result_future.done():
+            return PlanToPoseResult(
+                success=False,
+                reason=f"moveit_result_timeout:{self._moveit_result_timeout:.1f}s",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=1,
+            )
+
+        wrapper = result_future.result()
+        ok, reason = parse_move_group_result(wrapper)
+        if ok:
+            self.get_logger().info(
+                f"[PLAN_TO_POSE][MOVEIT_DIRECT] success reason={reason}"
+            )
+        else:
+            self.get_logger().warning(
+                f"[PLAN_TO_POSE][MOVEIT_DIRECT] failed reason={reason}"
+            )
+        return PlanToPoseResult(
+            success=ok,
+            reason=reason,
             final_xyz=goal.target_xyz,
             final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
             duration_sec=time.monotonic() - start_mono,
