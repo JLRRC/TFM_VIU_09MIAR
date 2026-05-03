@@ -251,7 +251,10 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # and_validate 224). Removido de baseline T15.
     # F3-step8: NUEVA fn pura > 200 (cuerpo legacy de parsing 1:1).
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py::UR5MoveItBridge._init_parse_parameters_and_validate": 224,
-    "ur5_qt_panel/ur5_qt_panel/panel_ui_state.py::apply_ui_state": 375,
+    # F3-step11 (a..e) (2026-05-03): apply_ui_state bajó de 375 → 193 LOC con
+    # 5 sub-helpers (_apply_ui_state_launchers 83 + _camera_and_release 41 +
+    # _pick_buttons 56 + _tfm_buttons 56 + _nav_and_finalize 72). Removido de
+    # baseline (T15 cumplido).
     "ur5_bringup/launch/ur5_stack.launch.py::generate_launch_description": 350,
     # F3-step10a/b (2026-05-03): build_step_window bajó de 346 → 186 LOC con
     # 2 sub-helpers (_build_step_runtime_section 111 + _build_step_pipeline_
