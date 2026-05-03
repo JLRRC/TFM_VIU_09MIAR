@@ -236,7 +236,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # Otros gigantes históricos.
     "ur5_tools/ur5_tools/moveit_bridge/executor.py::ExecutorMixin._execute_joint_trajectory_action": 1343,
     "ur5_qt_panel/ur5_qt_panel/panel_main_ui.py::build_main_ui": 733,
-    "ur5_qt_panel/ur5_qt_panel/panel_v2.py::ControlPanelV2.__init__": 538,  # F3-step6: -140 LOC (2 sub-helpers _init_*)
+    # F3-step6 + step6-bis/ter/quater/v (2026-05-03): ControlPanelV2.__init__
+    # bajó de 678 → 177 LOC con 6 sub-helpers _init_*. Removido de la
+    # baseline (T15 cumplido para esta función).
     "ur5_tools/ur5_tools/moveit_bridge/moveit_py_planner.py::MoveItPyPlannerMixin._plan_with_moveit_py": 557,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py::execute_tfm_world_grasp": 462,
     "ur5_qt_panel/ur5_qt_panel/panel_trace_callbacks.py::_refresh_trace_data": 438,

@@ -590,10 +590,13 @@ class ControlPanelV2(
         self._debug_logs_enabled = bool(DEBUG_LOGS_TO_STDOUT)
         self._panel_logger = _PanelLogger(self)
 
-    def __init__(self):
-        super().__init__()
-        self._init_step_machinery_state()
-        self._init_process_and_gz_state()
+
+    def _init_subsystems_signals_and_system_state(self) -> None:
+        """F3-step6-bis: bloque de inicialización extraído de __init__.
+
+        Wiring de subsistemas (camera_ctrl/tf_monitor/state_evaluator/physics)
+        + TFM module + camera_required + system_state + signals (~85 LOC).
+        """
         self._camera_ctrl = CameraController(self)
         self._tf_monitor = TFMonitor(self)
         self._state_evaluator = PanelStateEvaluator()
@@ -679,6 +682,14 @@ class ControlPanelV2(
         self.signal_trace_ready.connect(self._on_trace_ready)
         self.signal_schedule_home_offset.connect(self._schedule_home_offset_retry)
         self.signal_close_panel.connect(self.close)
+
+
+    def _init_publishers_and_drop_state(self) -> None:
+        """F3-step6-ter: bloque de inicialización extraído de __init__.
+
+        Continuación de signal connections + watchdog timer + publishers ROS
+        + drop hold state + pose info caches (~90 LOC).
+        """
         self._emit_log(
             f"[STARTUP] camera_required={self._camera_required} "
             f"PANEL_CAMERA_REQUIRED={_camera_required_label(CAMERA_REQUIRED)} "
@@ -769,6 +780,14 @@ class ControlPanelV2(
         self._robot_test_cleanup_retries = 0
         self._robot_test_cleanup_topic = ""
         self._fall_test_last_log = 0.0
+
+
+    def _init_feature_flags_and_caches(self) -> None:
+        """F3-step6-quater: bloque de inicialización extraído de __init__.
+
+        Feature flags (_started_*, _detach_*, ..._cache, ..._logged) y
+        caches misceláneos (~110 LOC).
+        """
         self._detach_feature_checked = False
         self._detach_feature_available = False
         self._detach_feature_logged = False
@@ -879,6 +898,13 @@ class ControlPanelV2(
         self._camera_depth_topic = ""
         self._camera_depth_required_env = _get_panel_ui_params().camera_require_depth
         self._camera_fault_since = 0.0
+
+
+    def _init_misc_state_and_widgets(self) -> None:
+        """F3-step6-v: bloque final de inicialización extraído de __init__.
+
+        Estado misceláneo + flags + widgets iniciales (~80 LOC).
+        """
         self._camera_fault_active = False
         self._camera_fault_reason = ""
         self._camera_fault_age_sec = max(CAMERA_READY_MAX_AGE_SEC + 0.5, _env_float("PANEL_CAMERA_FAULT_AGE_SEC", 4.0))
@@ -959,6 +985,15 @@ class ControlPanelV2(
         self._tfm_infer_pending_request_id: str = ""
         self._tfm_execute_pending_request_id: str = ""
         self._tfm_canonical_ctx: Optional[Dict[str, object]] = None
+
+    def __init__(self):
+        super().__init__()
+        self._init_step_machinery_state()
+        self._init_process_and_gz_state()
+        self._init_subsystems_signals_and_system_state()
+        self._init_publishers_and_drop_state()
+        self._init_feature_flags_and_caches()
+        self._init_misc_state_and_widgets()
         self._pick_object_grasp_override: Optional[Dict[str, object]] = None
         self._pick_object_worker_started = False
         self._marker_pub = None
