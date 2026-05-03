@@ -184,6 +184,57 @@ class UR5MoveItBridge(
         self.declare_parameter("controller_expected_goal_time_sec", 12.0)
 
 
+    def _init_parse_sim_time_and_compatibility(self, *, allow_unsafe_sim_time: bool) -> None:
+        """F3-step22a: ajustes sim_time + moveit_py + force_fjt_direct.
+
+        Si use_sim_time=True pero allow_unsafe=False, fuerza moveit_py_use_sim_
+        time=False para evitar crash qos_overrides./clock. Si use_sim_time=True
+        pero moveit_py_use_sim_time=False, auto-activa force_fjt_direct_for_
+        walltime_sim y ajusta request_timeout_sec a max(90s, exec+retry_cushion).
+        """
+        if self._use_sim_time and self._moveit_py_use_sim_time and not allow_unsafe_sim_time:
+            self.get_logger().warning(
+                "moveit_py_use_sim_time=true solicitado con use_sim_time=true; "
+                "forzando false para evitar crash qos_overrides./clock.subscription.durability "
+                "(set allow_unsafe_moveit_py_sim_time=true bajo tu responsabilidad)."
+            )
+            self._moveit_py_use_sim_time = False
+        if self._use_sim_time and not self._moveit_py_use_sim_time:
+            if not self._force_fjt_direct_for_walltime_sim:
+                self._force_fjt_direct_for_walltime_sim = True
+                self.get_logger().warning(
+                    "use_sim_time=true pero moveit_py_use_sim_time=false; "
+                    "auto-activando force_fjt_direct_for_walltime_sim para evitar "
+                    "abort/timeout falsos en execute y delegar la ejecucion al "
+                    "action server FollowJointTrajectory."
+                )
+            else:
+                self.get_logger().warning(
+                    "use_sim_time=true pero moveit_py_use_sim_time=false; "
+                    "usando force_fjt_direct_for_walltime_sim para evitar "
+                    "validacion temporal inconsistente en execute."
+                )
+            controller_goal_time_sec = max(
+                0.0,
+                float(self._controller_expected_goal_time_sec),
+                float(self._controller_goal_time_tolerance_sec),
+            )
+            retry_cushion_sec = max(
+                30.0,
+                (2.0 * controller_goal_time_sec) + 10.0,
+            )
+            min_request_timeout = max(
+                90.0,
+                float(self._execute_timeout_sec) + retry_cushion_sec,
+            )
+            if float(self._request_timeout_sec) < min_request_timeout:
+                self._request_timeout_sec = float(min_request_timeout)
+                self.get_logger().warning(
+                    "ajustando request_timeout_sec para cubrir planificacion + "
+                    "FollowJointTrajectory en dominio temporal mixto: "
+                    f"request_timeout_sec={self._request_timeout_sec:.1f}"
+                )
+
     def _init_parse_parameters_and_validate(self) -> None:
         """F3-step8b: parsing y validación de params extraído de __init__.
 
@@ -339,48 +390,7 @@ class UR5MoveItBridge(
         allow_unsafe_sim_time = bool(
             self.get_parameter("allow_unsafe_moveit_py_sim_time").value
         )
-        if self._use_sim_time and self._moveit_py_use_sim_time and not allow_unsafe_sim_time:
-            self.get_logger().warning(
-                "moveit_py_use_sim_time=true solicitado con use_sim_time=true; "
-                "forzando false para evitar crash qos_overrides./clock.subscription.durability "
-                "(set allow_unsafe_moveit_py_sim_time=true bajo tu responsabilidad)."
-            )
-            self._moveit_py_use_sim_time = False
-        if self._use_sim_time and not self._moveit_py_use_sim_time:
-            if not self._force_fjt_direct_for_walltime_sim:
-                self._force_fjt_direct_for_walltime_sim = True
-                self.get_logger().warning(
-                    "use_sim_time=true pero moveit_py_use_sim_time=false; "
-                    "auto-activando force_fjt_direct_for_walltime_sim para evitar "
-                    "abort/timeout falsos en execute y delegar la ejecucion al "
-                    "action server FollowJointTrajectory."
-                )
-            else:
-                self.get_logger().warning(
-                    "use_sim_time=true pero moveit_py_use_sim_time=false; "
-                    "usando force_fjt_direct_for_walltime_sim para evitar "
-                    "validacion temporal inconsistente en execute."
-                )
-            controller_goal_time_sec = max(
-                0.0,
-                float(self._controller_expected_goal_time_sec),
-                float(self._controller_goal_time_tolerance_sec),
-            )
-            retry_cushion_sec = max(
-                30.0,
-                (2.0 * controller_goal_time_sec) + 10.0,
-            )
-            min_request_timeout = max(
-                90.0,
-                float(self._execute_timeout_sec) + retry_cushion_sec,
-            )
-            if float(self._request_timeout_sec) < min_request_timeout:
-                self._request_timeout_sec = float(min_request_timeout)
-                self.get_logger().warning(
-                    "ajustando request_timeout_sec para cubrir planificacion + "
-                    "FollowJointTrajectory en dominio temporal mixto: "
-                    f"request_timeout_sec={self._request_timeout_sec:.1f}"
-                )
+        self._init_parse_sim_time_and_compatibility(allow_unsafe_sim_time=allow_unsafe_sim_time)
         self.get_logger().info(
             "Bridge config: "
             f"rev={_BRIDGE_CODE_REV} "

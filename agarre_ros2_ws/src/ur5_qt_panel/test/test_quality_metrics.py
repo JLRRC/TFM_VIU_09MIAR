@@ -252,7 +252,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # con 2 sub-helpers (_init_declare_parameters 48 + _init_parse_parameters_
     # and_validate 224). Removido de baseline T15.
     # F3-step8: NUEVA fn pura > 200 (cuerpo legacy de parsing 1:1).
-    "ur5_tools/ur5_tools/ur5_moveit_bridge.py::UR5MoveItBridge._init_parse_parameters_and_validate": 224,
+    # F3-step22 (2026-05-03): _init_parse_parameters_and_validate bajó de
+    # 224 → 183 LOC con _init_parse_sim_time_and_compatibility (50 LOC).
+    # Removido de baseline (T15 cumplido).
     # F3-step11 (a..e) (2026-05-03): apply_ui_state bajó de 375 → 193 LOC con
     # 5 sub-helpers (_apply_ui_state_launchers 83 + _camera_and_release 41 +
     # _pick_buttons 56 + _tfm_buttons 56 + _nav_and_finalize 72). Removido de
@@ -291,7 +293,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3-step13a/b (2026-05-03): start_gazebo bajó de 237 → 120 LOC con
     # 2 sub-helpers (_spawn_gz_gui_client 57 + _prepare_gz_runtime_assets 80).
     # Removido de baseline (T15 cumplido).
-    "ur5_qt_panel/ur5_qt_panel/pick_demo/internal_helpers.py::_select_pick_demo_cycle_object_reference": 231,
+    # F3-step23 (2026-05-03): _select_pick_demo_cycle_object_reference bajó
+    # de 231 → 189 LOC con _select_compute_stable_promotion_status (76 LOC).
+    # Removido de baseline (T15 cumplido).
     # F3-step18a (2026-05-03): tfm_infer bajó de 219 → 118 LOC con
     # _tfm_infer_run_script_mode (127 LOC, branch sin tfm_module). Removido
     # de baseline (T15 cumplido).

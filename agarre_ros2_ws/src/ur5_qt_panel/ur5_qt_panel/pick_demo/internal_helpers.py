@@ -470,6 +470,84 @@ def _resolve_live_object_base(
     return result
 
 
+def _select_compute_stable_promotion_status(
+    panel,
+    object_name: str,
+    *,
+    world_result: dict | None,
+    snapshot_world,
+    stable_world,
+    stable_age_sec,
+    max_promoted_stable_age_sec: float,
+    require_object_on_table: bool,
+    resolve_base_fn,
+    get_state_fn,
+    is_on_table_fn,
+    trace_fn,
+):
+    """F3-step23a: calcula promoted_reject_reasons + on_table_ok + stable_base
+    + stable_logical_state para _select_pick_demo_cycle_object_reference (~70 LOC).
+    """
+    promoted_reject_reasons: list[str] = []
+    if stable_world is None:
+        promoted_reject_reasons.append("stable_world_unavailable")
+    if stable_age_sec is None:
+        promoted_reject_reasons.append("stable_age_unknown")
+    else:
+        try:
+            if float(stable_age_sec) > float(max_promoted_stable_age_sec):
+                promoted_reject_reasons.append("stable_age_exceeded")
+        except Exception:
+            promoted_reject_reasons.append("stable_age_invalid")
+
+    stable_logical_state = "none"
+    try:
+        stable_state = get_state_fn(object_name)
+    except Exception:
+        stable_state = None
+    if stable_state is not None:
+        logical_state = getattr(stable_state, "logical_state", None)
+        stable_logical_state = str(getattr(logical_state, "value", "none") or "none")
+        if logical_state in (ObjectLogicalState.SPAWNED, ObjectLogicalState.RELEASED):
+            promoted_reject_reasons.append("state_not_stable_for_promotion")
+
+    on_table_ok = True
+    if require_object_on_table:
+        on_table_pose = stable_world if stable_world is not None else snapshot_world
+        try:
+            on_table_ok = bool(is_on_table_fn(on_table_pose)) if on_table_pose is not None else False
+        except Exception:
+            on_table_ok = False
+        if not on_table_ok and stable_logical_state == "ON_TABLE":
+            on_table_ok = True
+        if not on_table_ok:
+            promoted_reject_reasons.append("object_not_on_table")
+
+    stable_base = None
+    if stable_world is not None:
+        stable_candidate_world_result = {
+            "world": stable_world,
+            "source": "stable_cache_promoted_candidate",
+            "reason": "stable_candidate",
+            "snapshot_world": (world_result or {}).get("snapshot_world"),
+            "snapshot_age_sec": (world_result or {}).get("snapshot_age_sec"),
+            "stable_world": stable_world,
+            "stable_age_sec": stable_age_sec,
+            "divergence_m": (world_result or {}).get("divergence_m"),
+        }
+        stable_base_result = resolve_base_fn(
+            panel,
+            object_name,
+            world_result=stable_candidate_world_result,
+            trace_fn=trace_fn,
+        )
+        stable_base = _pick_demo_tuple3((stable_base_result or {}).get("base"))
+        if stable_base is None:
+            promoted_reject_reasons.append("stable_base_transform_unavailable")
+
+    return promoted_reject_reasons, on_table_ok, stable_base, stable_logical_state
+
+
 def _select_pick_demo_cycle_object_reference(
     panel,
     object_name: str,
@@ -555,64 +633,22 @@ def _select_pick_demo_cycle_object_reference(
                 stable_age_sec = float(panel_age)
         except Exception:
             stable_age_sec = None
-    stable_base = None
-    stable_state = None
-    stable_logical_state = "none"
-    promoted_reject_reasons = []
-
-    if stable_world is None:
-        promoted_reject_reasons.append("stable_world_unavailable")
-    if stable_age_sec is None:
-        promoted_reject_reasons.append("stable_age_unknown")
-    else:
-        try:
-            if float(stable_age_sec) > float(max_promoted_stable_age_sec):
-                promoted_reject_reasons.append("stable_age_exceeded")
-        except Exception:
-            promoted_reject_reasons.append("stable_age_invalid")
-
-    try:
-        stable_state = get_state_fn(object_name)
-    except Exception:
-        stable_state = None
-    if stable_state is not None:
-        logical_state = getattr(stable_state, "logical_state", None)
-        stable_logical_state = str(getattr(logical_state, "value", "none") or "none")
-        if logical_state in (ObjectLogicalState.SPAWNED, ObjectLogicalState.RELEASED):
-            promoted_reject_reasons.append("state_not_stable_for_promotion")
-
-    on_table_ok = True
-    if require_object_on_table:
-        on_table_pose = stable_world if stable_world is not None else snapshot_world
-        try:
-            on_table_ok = bool(is_on_table_fn(on_table_pose)) if on_table_pose is not None else False
-        except Exception:
-            on_table_ok = False
-        if not on_table_ok and stable_logical_state == "ON_TABLE":
-            on_table_ok = True
-        if not on_table_ok:
-            promoted_reject_reasons.append("object_not_on_table")
-
-    if stable_world is not None:
-        stable_candidate_world_result = {
-            "world": stable_world,
-            "source": "stable_cache_promoted_candidate",
-            "reason": "stable_candidate",
-            "snapshot_world": (world_result or {}).get("snapshot_world"),
-            "snapshot_age_sec": (world_result or {}).get("snapshot_age_sec"),
-            "stable_world": stable_world,
-            "stable_age_sec": stable_age_sec,
-            "divergence_m": (world_result or {}).get("divergence_m"),
-        }
-        stable_base_result = resolve_base_fn(
+    promoted_reject_reasons, on_table_ok, stable_base, stable_logical_state = (
+        _select_compute_stable_promotion_status(
             panel,
             object_name,
-            world_result=stable_candidate_world_result,
+            world_result=world_result,
+            snapshot_world=snapshot_world,
+            stable_world=stable_world,
+            stable_age_sec=stable_age_sec,
+            max_promoted_stable_age_sec=max_promoted_stable_age_sec,
+            require_object_on_table=require_object_on_table,
+            resolve_base_fn=resolve_base_fn,
+            get_state_fn=get_state_fn,
+            is_on_table_fn=is_on_table_fn,
             trace_fn=trace_fn,
         )
-        stable_base = _pick_demo_tuple3((stable_base_result or {}).get("base"))
-        if stable_base is None:
-            promoted_reject_reasons.append("stable_base_transform_unavailable")
+    )
 
     selected_stable_divergence_m = _dist3(selected_base, stable_base)
     if (
