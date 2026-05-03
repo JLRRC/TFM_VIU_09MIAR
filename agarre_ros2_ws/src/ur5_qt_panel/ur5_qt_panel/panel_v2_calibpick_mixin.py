@@ -8,7 +8,15 @@ F14-step15 — wrappers thin de calibración, pick demo, slider, joint queries, 
 
 from __future__ import annotations
 
-
+# F3-step6 fix (2026-05-03): los aliases _ca y _om eran usados sin import
+# en este módulo. Antes el panel arrancaba "por suerte" en algunos paths
+# que nunca llegaban a invocar los wrappers; F3-step6 movió
+# self._load_joint_limits() al sub-helper _init_subsystems_signals_and_
+# system_state(), que SÍ se ejecuta siempre en __init__, exponiendo el
+# bug latente. Fix: importar los aliases aquí (mismos nombres que en
+# panel_v2.py para mantener consistencia con la docstring del módulo).
+from . import panel_calib_actions as _ca
+from . import panel_object_mgmt as _om
 
 
 class PanelV2CalibPickMixin:

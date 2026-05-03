@@ -10,6 +10,13 @@ from __future__ import annotations
 
 from . import panel_trace_callbacks as _tc
 from . import panel_tfm_science as _ts
+# F3-step6 fix (2026-05-03): los wrappers _build_trace_group / _build_
+# science_group invocaban build_trace_group / build_science_group sin
+# import. Antes el panel arrancaba "por suerte" porque el mixin se
+# importaba en panel_v2.py donde estos nombres SÍ están en module scope,
+# pero al instanciar la clase la búsqueda se hace en el module scope
+# del mixin, donde faltaban. Fix: importar explícitamente aquí.
+from .panel_trace_ui import build_trace_group, build_science_group  # noqa: F401
 
 
 class PanelV2TfmScienceTraceMixin:
