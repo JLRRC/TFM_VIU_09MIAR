@@ -151,6 +151,14 @@ class PickContext:
     object_name: str = ""
     drop_xyz_world: tuple = (0.0, 0.0, 0.0)
     object_pose_world_hint: Optional[tuple] = None
+    # B-iter5 (2026-05-03): snapshot inicial capturado durante INITIAL_SNAPSHOT.
+    # Permanecen None hasta que la fase INITIAL_SNAPSHOT corra exitosamente.
+    # Las fases siguientes (APPROACH/GRASP/etc) pueden consumir estos valores
+    # en lugar de re-resolver TF/joint_state cada vez (fuente única de verdad
+    # del estado al inicio del ciclo).
+    initial_tcp_pose_base: Optional[tuple] = None       # (x,y,z,qx,qy,qz,qw) en base_link
+    initial_joint_positions: Optional[tuple] = None      # tuple de 6 floats (rad)
+    initial_object_pose_world: Optional[tuple] = None    # (x,y,z,qx,qy,qz,qw) en world
     current_phase: PickPhase = PickPhase.IDLE
     detail: str = ""
     history: List[PickPhase] = field(default_factory=list)

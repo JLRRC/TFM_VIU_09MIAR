@@ -95,6 +95,16 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         self._discovery_timeout: float = 2.0
         self._call_timeout: float = 10.0
         self._resources = OrchestratorLifecycleResources()
+        # B-iter5 (2026-05-03): TF buffer + JointState cache para INITIAL_SNAPSHOT real.
+        # Init en on_configure (con node ya inicializado).
+        self._tf_buffer = None
+        self._tf_listener = None
+        self._joint_state_cache = None
+        self._joint_state_sub = None
+        self._snapshot_base_frame: str = "base_link"
+        self._snapshot_tcp_frame: str = "rg2_tcp"
+        self._snapshot_tf_timeout: float = 0.5
+        self._snapshot_require_object_pose: bool = True
         self.get_logger().info(
             "[ORCHESTRATOR_LC] instantiated (UNCONFIGURED) — "
             "use `ros2 lifecycle set <node> configure` para inicializar"
@@ -110,6 +120,11 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             self.declare_parameter("use_stubs", True)
             self.declare_parameter("service_discovery_timeout_sec", 2.0)
             self.declare_parameter("service_call_timeout_sec", 10.0)
+            # B-iter5: params del INITIAL_SNAPSHOT real.
+            self.declare_parameter("snapshot_base_frame", "base_link")
+            self.declare_parameter("snapshot_tcp_frame", "rg2_tcp")
+            self.declare_parameter("snapshot_tf_timeout_sec", 0.5)
+            self.declare_parameter("snapshot_require_object_pose", True)
         except Exception:
             # Re-configure scenario: parameters already declared, skip.
             pass
@@ -118,9 +133,42 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             self.get_parameter("service_discovery_timeout_sec").value
         )
         self._call_timeout = float(self.get_parameter("service_call_timeout_sec").value)
+        self._snapshot_base_frame = str(
+            self.get_parameter("snapshot_base_frame").value or "base_link"
+        )
+        self._snapshot_tcp_frame = str(
+            self.get_parameter("snapshot_tcp_frame").value or "rg2_tcp"
+        )
+        self._snapshot_tf_timeout = float(
+            self.get_parameter("snapshot_tf_timeout_sec").value
+        )
+        self._snapshot_require_object_pose = bool(
+            self.get_parameter("snapshot_require_object_pose").value
+        )
         self._service_map = PhaseServiceMap()
         self._client_cache = {}
         self._cancel_requested = False
+        # B-iter5: inicializa TF buffer + JointState subscription para snapshot real.
+        try:
+            from sensor_msgs.msg import JointState
+            from tf2_ros import Buffer, TransformListener
+            self._tf_buffer = Buffer()
+            self._tf_listener = TransformListener(self._tf_buffer, self)
+            self._joint_state_cache = None
+            self._joint_state_sub = self.create_subscription(
+                JointState,
+                "/joint_states",
+                self._on_joint_state,
+                10,
+                callback_group=self._cb_group,
+            )
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[ORCHESTRATOR_LC] snapshot infra init failed: "
+                f"{type(exc).__name__}: {exc} (INITIAL_SNAPSHOT degradará a scaffold)"
+            )
+            self._tf_buffer = None
+            self._joint_state_sub = None
         self._action_server = ActionServer(
             self,
             PickPlace,
@@ -344,6 +392,14 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         if self._use_stubs:
             time.sleep(_PHASE_DELAY_SEC)
             return True, f"{phase.value}_stub_ok"
+        # B-iter5: INITIAL_SNAPSHOT real (intercepta antes del dispatch genérico).
+        if phase == PickPhase.INITIAL_SNAPSHOT:
+            try:
+                return self._capture_initial_snapshot_real(ctx)
+            except Exception as exc:
+                return False, (
+                    f"initial_snapshot_exception:{type(exc).__name__}:{exc}"
+                )
         try:
             return self._dispatch_phase_service(phase, ctx)
         except Exception as exc:
@@ -362,6 +418,87 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             call_timeout_sec=self._call_timeout,
         )
         return dispatch_phase(dctx, phase, ctx)
+
+    # ------------------------------------------------------------------
+    # B-iter5 (2026-05-03) — INITIAL_SNAPSHOT real
+    # ------------------------------------------------------------------
+
+    def _on_joint_state(self, msg) -> None:
+        """Cachea el último JointState para el snapshot."""
+        self._joint_state_cache = msg
+
+    def _capture_initial_snapshot_real(self, ctx: PickContext) -> tuple[bool, str]:
+        """Captura TF + joint_state + object_pose y muta el ctx con los valores.
+
+        Llamado desde _execute_phase cuando dst=INITIAL_SNAPSHOT y
+        use_stubs=False. Si la infra de snapshot no se inicializó (TF/JointState
+        sub fallaron en on_configure), degrada a no-op (scaffold) y devuelve OK
+        para no bloquear el resto del FSM.
+        """
+        from .initial_snapshot import capture_initial_snapshot
+        from ur5_panel_interfaces.srv import ResolveObjectPoseWorld
+        from .service_clients import call_service_with_timeout
+
+        if self._tf_buffer is None or self._joint_state_sub is None:
+            # Infra no disponible — degrada a scaffold.
+            return True, "initial_snapshot:scaffold_fallback"
+
+        # Resolver object pose vía service caller (cached).
+        def _resolve(name: str):
+            req = ResolveObjectPoseWorld.Request()
+            req.object_name = name
+            r = call_service_with_timeout(
+                self,
+                ResolveObjectPoseWorld,
+                self._service_map.resolve_object_pose_world,
+                req,
+                discovery_timeout_sec=0.3,
+                call_timeout_sec=self._call_timeout,
+                client_cache=self._client_cache,
+            )
+            # call_service_with_timeout devuelve ServiceCallResult con .payload
+            # (la response real). Adaptamos para el helper.
+            payload = getattr(r, "payload", None)
+            if payload is None:
+                # Construimos un fake response con success=False para que el
+                # helper lo trate como error sin excepción.
+                from types import SimpleNamespace
+                return SimpleNamespace(
+                    success=False,
+                    detail=getattr(r, "reason", "service_unavailable"),
+                    pose_world=None,
+                )
+            return payload
+
+        result = capture_initial_snapshot(
+            object_name=ctx.object_name,
+            tf_lookup=self._tf_buffer.lookup_transform,
+            joint_state_msg=self._joint_state_cache,
+            resolve_object_pose=_resolve,
+            base_frame=self._snapshot_base_frame,
+            tcp_frame=self._snapshot_tcp_frame,
+            tf_timeout_sec=self._snapshot_tf_timeout,
+            require_object_pose=self._snapshot_require_object_pose,
+        )
+
+        # Mutar ctx con los capturados (aunque success=False, parciales sirven).
+        # PickContext es @dataclass mutable, los campos snapshot son Optional.
+        ctx.initial_tcp_pose_base = result.tcp_pose_base
+        ctx.initial_joint_positions = result.joint_positions
+        ctx.initial_object_pose_world = result.object_pose_world
+
+        if result.success:
+            self.get_logger().info(
+                f"[ORCHESTRATOR_LC][INITIAL_SNAPSHOT] {result.reason} "
+                f"tcp={result.tcp_pose_base} "
+                f"joints={result.joint_positions} "
+                f"object={result.object_pose_world}"
+            )
+        else:
+            self.get_logger().warning(
+                f"[ORCHESTRATOR_LC][INITIAL_SNAPSHOT] partial: {result.reason}"
+            )
+        return result.success, f"initial_snapshot:{result.reason}"
 
     def _publish_feedback(self, goal_handle, ctx: PickContext) -> None:
         snap = ctx.feedback_snapshot()
