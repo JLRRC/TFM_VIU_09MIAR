@@ -90,11 +90,15 @@ def _build_orchestrator_service_nodes(
     launch_tf_geometry_service,
     launch_object_pose_resolver,
     launch_plan_to_pose_server,
+    launch_pick_orchestrator_lifecycle=None,
+    pick_orchestrator_use_stubs=None,
 ):
-    """F3-step29b: tf_geometry_service + object_pose_resolver + plan_to_pose_server (~45 LOC).
+    """F3-step29b + F5-step8: tf_geometry_service + object_pose_resolver +
+    plan_to_pose_server + pick_orchestrator_lifecycle (~70 LOC).
 
-    Devuelve los 3 LifecycleNode/Node necesarios para el orchestrator real
-    (F5-step5/6a). Cada uno con auto_activate o gating equivalente.
+    Devuelve los 4 nodos necesarios para el orchestrator real. Cada uno
+    con auto_activate o gating equivalente. F5-step8 añade el lifecycle
+    node con auto_activate=True para que /pick_place esté siempre vivo.
     """
     tf_geometry_service = Node(
         package="ur5_tools",
@@ -132,7 +136,24 @@ def _build_orchestrator_service_nodes(
         ],
         condition=IfCondition(launch_plan_to_pose_server),
     )
-    return tf_geometry_service, object_pose_resolver, plan_to_pose_server_node
+    # F5-step8 (2026-05-03): pick_orchestrator_lifecycle auto-launch.
+    # Action server /pick_place + clientes a los 6 services orchestrator.
+    # Necesita configure+activate para aceptar goals; el lifecycle hace
+    # ambas transitions automáticas via auto_activate dentro del propio
+    # nodo (F9 pattern). Default true para que el dispatcher
+    # PANEL_PICK_DEMO_USE_ORCHESTRATOR=1 funcione fuera de la caja.
+    pick_orchestrator_node = Node(
+        package="tfm_orchestrator",
+        executable="pick_orchestrator_lifecycle",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"use_stubs": pick_orchestrator_use_stubs if pick_orchestrator_use_stubs is not None else False},
+            {"auto_activate": True},
+        ],
+        condition=IfCondition(launch_pick_orchestrator_lifecycle) if launch_pick_orchestrator_lifecycle is not None else None,
+    )
+    return tf_geometry_service, object_pose_resolver, plan_to_pose_server_node, pick_orchestrator_node
 
 
 def build_runtime_node_actions(
@@ -152,6 +173,8 @@ def build_runtime_node_actions(
     launch_tf_geometry_service: LaunchConfiguration,
     launch_object_pose_resolver: LaunchConfiguration,
     launch_plan_to_pose_server: LaunchConfiguration,
+    launch_pick_orchestrator_lifecycle: "LaunchConfiguration | None" = None,
+    pick_orchestrator_use_stubs: "LaunchConfiguration | None" = None,
     gz_delete_service: LaunchConfiguration,
     gz_spawn_service: LaunchConfiguration,
     attach_backend_mode: LaunchConfiguration,
@@ -285,17 +308,19 @@ def build_runtime_node_actions(
         condition=IfCondition(launch_moveit_bridge),
     )
 
-    tf_geometry_service, object_pose_resolver, plan_to_pose_server_node = (
+    tf_geometry_service, object_pose_resolver, plan_to_pose_server_node, pick_orchestrator_node = (
         _build_orchestrator_service_nodes(
             use_sim_time=use_sim_time,
             world_name=world_name,
             launch_tf_geometry_service=launch_tf_geometry_service,
             launch_object_pose_resolver=launch_object_pose_resolver,
             launch_plan_to_pose_server=launch_plan_to_pose_server,
+            launch_pick_orchestrator_lifecycle=launch_pick_orchestrator_lifecycle,
+            pick_orchestrator_use_stubs=pick_orchestrator_use_stubs,
         )
     )
 
-    return [
+    actions = [
         world_tf,
         world_tf_guard,
         system_state,
@@ -308,3 +333,6 @@ def build_runtime_node_actions(
         object_pose_resolver,
         plan_to_pose_server_node,
     ]
+    if launch_pick_orchestrator_lifecycle is not None:
+        actions.append(pick_orchestrator_node)
+    return actions

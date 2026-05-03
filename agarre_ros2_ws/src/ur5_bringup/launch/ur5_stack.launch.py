@@ -527,6 +527,14 @@ def _build_launch_arguments(world_default: str, gui_config_default: str) -> list
         DeclareLaunchArgument("launch_tf_geometry_service", default_value="true"),
         DeclareLaunchArgument("launch_object_pose_resolver", default_value="true"),
         DeclareLaunchArgument("launch_plan_to_pose_server", default_value="true"),
+        # F5-step8 (2026-05-03): pick_orchestrator_lifecycle auto-launch.
+        # Action server /pick_place. Default true para que dispatcher
+        # PANEL_PICK_DEMO_USE_ORCHESTRATOR=1 funcione sin pasos manuales.
+        DeclareLaunchArgument("launch_pick_orchestrator_lifecycle", default_value="true"),
+        # use_stubs=false → orchestrator real (necesita services vivos).
+        # use_stubs=true → orchestrator stub (no usa services externos,
+        # 9 fases simuladas en 1.6s; útil para tests sin Gazebo).
+        DeclareLaunchArgument("pick_orchestrator_use_stubs", default_value="false"),
         DeclareLaunchArgument("launch_scene_sync", default_value="true"),
         DeclareLaunchArgument("launch_system_state", default_value="true"),
         DeclareLaunchArgument("launch_moveit", default_value="false"),
@@ -652,6 +660,12 @@ def generate_launch_description():
         ),
         launch_plan_to_pose_server=LaunchConfiguration(
             "launch_plan_to_pose_server"
+        ),
+        launch_pick_orchestrator_lifecycle=LaunchConfiguration(
+            "launch_pick_orchestrator_lifecycle"
+        ),
+        pick_orchestrator_use_stubs=LaunchConfiguration(
+            "pick_orchestrator_use_stubs"
         ),
         gz_delete_service=LaunchConfiguration("gz_delete_service"),
         gz_spawn_service=LaunchConfiguration("gz_spawn_service"),
