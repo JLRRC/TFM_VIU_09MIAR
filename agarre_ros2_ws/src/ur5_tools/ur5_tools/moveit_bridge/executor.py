@@ -50,6 +50,92 @@ from trajectory_msgs.msg import JointTrajectory
 class ExecutorMixin:
     """FollowJointTrajectory execution loop con retries y validación final."""
 
+    def _build_fjt_goal_with_tolerances(
+        self,
+        jt: JointTrajectory,
+        *,
+        path_tol_override_rad: float | None,
+        effective_goal_time_tol_sec: float,
+    ) -> tuple[Any, list[str], list[float]]:
+        goal = FollowJointTrajectory.Goal()
+        goal.trajectory = jt
+        joint_names: list[str] = []
+        target_joint_positions: list[float] = []
+        try:
+            joint_names = list(getattr(jt, "joint_names", []) or [])
+            target_joint_positions = list(getattr((list(getattr(jt, "points", []) or [])[-1]), "positions", []) or [])
+            path_tol = (
+                float(path_tol_override_rad)
+                if path_tol_override_rad is not None
+                else float(self._controller_path_tolerance_rad)
+            )
+            goal_tol = float(self._controller_goal_tolerance_rad)
+            goal_time_tol = float(effective_goal_time_tol_sec)
+            path_tol_floor = 0.05
+            if self._force_fjt_direct_for_walltime_sim:
+                path_tol_floor = max(
+                    path_tol_floor,
+                    self._env_float("PANEL_MOVEIT_BRIDGE_WRAP_PATH_TOL_RAD", 6.50),
+                )
+            if joint_names and path_tol >= 0.0:
+                goal.path_tolerance = [
+                    JointTolerance(name=str(jn), position=float(max(path_tol_floor, path_tol)))
+                    for jn in joint_names
+                ]
+            if joint_names and goal_tol >= 0.0:
+                goal.goal_tolerance = [
+                    JointTolerance(name=str(jn), position=float(max(0.05, goal_tol)))
+                    for jn in joint_names
+                ]
+            if goal_time_tol >= 0.0:
+                total = max(0.0, float(goal_time_tol))
+                sec = int(total)
+                nsec = int(round((total - sec) * 1_000_000_000.0))
+                if nsec >= 1_000_000_000:
+                    sec += 1
+                    nsec -= 1_000_000_000
+                goal.goal_time_tolerance.sec = sec
+                goal.goal_time_tolerance.nanosec = nsec
+        except Exception as tol_exc:
+            self.get_logger().warning(
+                "[BRIDGE_EXEC] no se pudieron fijar tolerancias FJT explicitas: "
+                f"{type(tol_exc).__name__}: {tol_exc}"
+            )
+        return goal, joint_names, target_joint_positions
+
+    def _maybe_scale_approach_replan_traj(
+        self,
+        jt: JointTrajectory,
+        *,
+        prepared_traj_sec: float,
+        phase_label_upper: str,
+        approach_replan_attempt: int,
+    ) -> tuple[JointTrajectory, float]:
+        if phase_label_upper != "APPROACH" or int(approach_replan_attempt) < 1:
+            return jt, prepared_traj_sec
+        approach_replan_min_traj_sec = max(
+            30.0,
+            self._env_float(
+                "PANEL_MOVEIT_BRIDGE_APPROACH_REPLAN_MIN_TRAJ_SEC",
+                45.0,
+            ),
+        )
+        if prepared_traj_sec + 1e-6 >= approach_replan_min_traj_sec:
+            return jt, prepared_traj_sec
+        replan_scale = max(
+            1.0,
+            float(approach_replan_min_traj_sec) / max(0.001, float(prepared_traj_sec)),
+        )
+        jt = self._scale_joint_trajectory_timing(jt, scale=replan_scale)
+        prepared_traj_sec = self._joint_trajectory_duration_sec(jt)
+        self.get_logger().warning(
+            "[BRIDGE_EXEC] approach replan trajectory duration raised "
+            f"attempt={int(approach_replan_attempt)} "
+            f"scale={replan_scale:.2f} min_traj_sec={float(approach_replan_min_traj_sec):.1f} "
+            f"prepared_traj_sec={float(prepared_traj_sec):.3f}"
+        )
+        return jt, prepared_traj_sec
+
     def _compute_effective_goal_time_tol_sec(
         self,
         *,
@@ -123,27 +209,12 @@ class ExecutorMixin:
             force_cold_start_hold=cold_start_first_goal,
         )
         prepared_traj_sec = self._joint_trajectory_duration_sec(jt)
-        if phase_label_upper == "APPROACH" and int(approach_replan_attempt) >= 1:
-            approach_replan_min_traj_sec = max(
-                30.0,
-                self._env_float(
-                    "PANEL_MOVEIT_BRIDGE_APPROACH_REPLAN_MIN_TRAJ_SEC",
-                    45.0,
-                ),
-            )
-            if prepared_traj_sec + 1e-6 < approach_replan_min_traj_sec:
-                replan_scale = max(
-                    1.0,
-                    float(approach_replan_min_traj_sec) / max(0.001, float(prepared_traj_sec)),
-                )
-                jt = self._scale_joint_trajectory_timing(jt, scale=replan_scale)
-                prepared_traj_sec = self._joint_trajectory_duration_sec(jt)
-                self.get_logger().warning(
-                    "[BRIDGE_EXEC] approach replan trajectory duration raised "
-                    f"attempt={int(approach_replan_attempt)} "
-                    f"scale={replan_scale:.2f} min_traj_sec={float(approach_replan_min_traj_sec):.1f} "
-                    f"prepared_traj_sec={float(prepared_traj_sec):.3f}"
-                )
+        jt, prepared_traj_sec = self._maybe_scale_approach_replan_traj(
+            jt,
+            prepared_traj_sec=prepared_traj_sec,
+            phase_label_upper=phase_label_upper,
+            approach_replan_attempt=approach_replan_attempt,
+        )
         prepared_timeout = self._fjt_timeout_for_trajectory(
             prepared_traj_sec,
             extra_margin_sec=8.0,
@@ -188,50 +259,11 @@ class ExecutorMixin:
         client = self._ensure_fjt_action_client()
         if client is None:
             return False, "fjt_action_client_unavailable", {"action": action_name}
-        goal = FollowJointTrajectory.Goal()
-        goal.trajectory = jt
-        try:
-            joint_names = list(getattr(jt, "joint_names", []) or [])
-            target_joint_positions = list(getattr((list(getattr(jt, "points", []) or [])[-1]), "positions", []) or [])
-            path_tol = (
-                float(path_tol_override_rad)
-                if path_tol_override_rad is not None
-                else float(self._controller_path_tolerance_rad)
-            )
-            goal_tol = float(self._controller_goal_tolerance_rad)
-            goal_time_tol = (
-                float(effective_goal_time_tol_sec)
-            )
-            path_tol_floor = 0.05
-            if self._force_fjt_direct_for_walltime_sim:
-                path_tol_floor = max(
-                    path_tol_floor,
-                    self._env_float("PANEL_MOVEIT_BRIDGE_WRAP_PATH_TOL_RAD", 6.50),
-                )
-            if joint_names and path_tol >= 0.0:
-                goal.path_tolerance = [
-                    JointTolerance(name=str(jn), position=float(max(path_tol_floor, path_tol)))
-                    for jn in joint_names
-                ]
-            if joint_names and goal_tol >= 0.0:
-                goal.goal_tolerance = [
-                    JointTolerance(name=str(jn), position=float(max(0.05, goal_tol)))
-                    for jn in joint_names
-                ]
-            if goal_time_tol >= 0.0:
-                total = max(0.0, float(goal_time_tol))
-                sec = int(total)
-                nsec = int(round((total - sec) * 1_000_000_000.0))
-                if nsec >= 1_000_000_000:
-                    sec += 1
-                    nsec -= 1_000_000_000
-                goal.goal_time_tolerance.sec = sec
-                goal.goal_time_tolerance.nanosec = nsec
-        except Exception as tol_exc:
-            self.get_logger().warning(
-                "[BRIDGE_EXEC] no se pudieron fijar tolerancias FJT explicitas: "
-                f"{type(tol_exc).__name__}: {tol_exc}"
-            )
+        goal, joint_names, target_joint_positions = self._build_fjt_goal_with_tolerances(
+            jt,
+            path_tol_override_rad=path_tol_override_rad,
+            effective_goal_time_tol_sec=effective_goal_time_tol_sec,
+        )
         feedback_lock = threading.Lock()
         feedback_state: dict[str, Any] = {
             "last_mono": 0.0,
