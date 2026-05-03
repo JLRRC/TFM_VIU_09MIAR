@@ -121,9 +121,11 @@ approach_coarse_gate_stable_samples: 2
 # Tolerancia Z del gate AC
 approach_coarse_gate_z_tol_m: 0.008
 # Tolerancia de distancia en handoff AC
-approach_coarse_handoff_dist_tol_m: 0.015
+# F7 (2026-05-04): bump 0.015→0.035 para absorber DH/SDF divergencia + lag TF
+# observados (live: tcp_obj_dist=0.029m, dz_obj=0.028m). Margen 6mm sobre observado.
+approach_coarse_handoff_dist_tol_m: 0.035
 # Tolerancia Z en handoff AC
-approach_coarse_handoff_dz_tol_m: 0.015
+approach_coarse_handoff_dz_tol_m: 0.035
 # Distancia máxima permitida para saltar AC
 approach_coarse_max_skip_m: 0.06
 # Tolerancia XY del handoff relajado AC

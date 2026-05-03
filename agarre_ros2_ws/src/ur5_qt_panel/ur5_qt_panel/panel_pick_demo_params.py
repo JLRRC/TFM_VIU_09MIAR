@@ -166,8 +166,8 @@ class PickDemoParams:
     approach_coarse_gate_settle_sec: float = 0.8  # PANEL_PICK_DEMO_APPROACH_COARSE_GATE_SETTLE_SEC
     approach_coarse_gate_stable_samples: int = 2  # PANEL_PICK_DEMO_APPROACH_COARSE_GATE_STABLE_SAMPLES
     approach_coarse_gate_z_tol_m: float = 0.008  # PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M
-    approach_coarse_handoff_dist_tol_m: float = 0.015  # PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DIST_TOL_M
-    approach_coarse_handoff_dz_tol_m: float = 0.015  # PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DZ_TOL_M
+    approach_coarse_handoff_dist_tol_m: float = 0.035  # PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DIST_TOL_M (F7 2026-05-04: 0.015→0.035)
+    approach_coarse_handoff_dz_tol_m: float = 0.035  # PANEL_PICK_DEMO_APPROACH_COARSE_HANDOFF_DZ_TOL_M (F7 2026-05-04: 0.015→0.035)
     approach_coarse_max_skip_m: float = 0.06  # PANEL_PICK_DEMO_APPROACH_COARSE_MAX_SKIP_M
     approach_coarse_relaxed_handoff_xy_tol_m: float = 0.01  # PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_HANDOFF_XY_TOL_M
     approach_coarse_relaxed_skip_pose_ok: bool = False  # PANEL_PICK_DEMO_APPROACH_COARSE_RELAXED_SKIP_POSE_OK
