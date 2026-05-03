@@ -67,6 +67,198 @@ def compute_step_history_metrics(panel: Any, row: Dict[str, object]) -> Dict[str
     }
 
 
+def _build_dh_tf_block(
+    *,
+    op_frame: str,
+    panel_tcp_world,
+    tf_tcp_world,
+    tool0_world,
+    rg2_base_world,
+    base_link_world,
+    target_world,
+    object_panel_world,
+    target_kind: str,
+    tcp_panel_vs_tf,
+    tcp_vs_target,
+    tcp_vs_object,
+    base_link_vs_expected,
+    tf_stats,
+    current_phase: str,
+) -> "RuntimeAuditBlock":
+    """F3-step17a: BLOQUE 1 DH/TF status + planned + runtime lines."""
+    status = "OK"
+    summary = "TCP operacional y frame global coherentes."
+    if op_frame != "rg2_pinch_center":
+        status = _worse_status(status, "ERROR")
+        summary = f"Frame operacional inesperado: {op_frame}."
+    if tf_tcp_world is None:
+        status = _worse_status(status, "STALE")
+        summary = "No hay TF live para rg2_pinch_center."
+    if _classify_pose_delta(tcp_panel_vs_tf) in {"AVISO", "ERROR"}:
+        status = _worse_status(status, _classify_pose_delta(tcp_panel_vs_tf))
+        summary = "El panel no coincide con el TCP real de TF."
+    if _classify_base_delta(base_link_vs_expected) == "ERROR":
+        status = _worse_status(status, "ERROR")
+        summary = "world -> base_link no coincide con el anclaje esperado."
+    planned = [
+        f"[URDF] Frame operacional esperado: rg2_pinch_center",
+        f"[PANEL] TCP panel world: {_fmt_vec(panel_tcp_world)}",
+        f"[PANEL] Target fase world: {_fmt_vec(target_world)}",
+        f"[PANEL] Objeto panel world: {_fmt_vec(object_panel_world)}",
+        f"[SEM] Tipo target: {target_kind}",
+    ]
+    runtime = [
+        f"[TF] TCP world -> rg2_pinch_center: {_fmt_vec(tf_tcp_world)}",
+        f"[TF] tool0 world: {_fmt_vec(tool0_world)}",
+        f"[TF] rg2_base_link world: {_fmt_vec(rg2_base_world)}",
+        f"[TF] base_link world: {_fmt_vec(base_link_world)}",
+        f"[CHECK] error TCP panel vs TF: {_fmt_delta(tcp_panel_vs_tf)}",
+        f"[CHECK] error TCP vs target: {_fmt_delta(tcp_vs_target)}{_pregrasp_note(current_phase, tcp_vs_target)}",
+        f"[CHECK] error TCP vs objeto: {_fmt_delta(tcp_vs_object)}{_pregrasp_note(current_phase, tcp_vs_object)}",
+        f"[TF] Frescura: tf_msgs={int(tf_stats[0])} tf_static={int(tf_stats[1])}",
+    ]
+    return RuntimeAuditBlock(
+        title="BLOQUE 1 - DH / TF",
+        planned_lines=planned,
+        runtime_lines=runtime,
+        status=status,
+        summary=summary,
+    )
+
+
+def _build_joints_control_block(
+    panel: Any,
+    *,
+    joint_positions: dict,
+    joint_age,
+    controller_map: dict,
+    controller_age,
+    current_phase: str,
+) -> "RuntimeAuditBlock":
+    """F3-step17b: BLOQUE 2 JOINTS/CONTROL status + planned + runtime lines."""
+    status = "OK"
+    summary = "Joint states y controladores listos."
+    inferred_state = _interpret_gripper_state(joint_positions, None)
+    if not joint_positions:
+        status = _worse_status(status, "ERROR")
+        summary = "No hay joints del RG2 en joint_states."
+    elif joint_age is not None and joint_age > 0.5:
+        status = _worse_status(status, "STALE")
+        summary = f"joint_states stale ({joint_age:.2f}s)."
+    elif inferred_state == "INTERMEDIA":
+        status = _worse_status(status, "AVISO")
+        summary = "La apertura del RG2 es intermedia o ambigua."
+    controller_states = {
+        "joint_state_broadcaster": _controller_state(controller_map, "joint_state_broadcaster"),
+        "joint_trajectory_controller": _controller_state(controller_map, "joint_trajectory_controller"),
+        "gripper_controller": _controller_state(controller_map, "gripper_controller"),
+    }
+    for state in controller_states.values():
+        if state and str(state).strip().lower() != "active":
+            status = _worse_status(status, "ERROR")
+            summary = "Hay controladores requeridos sin estado active."
+    if not any(controller_states.values()) and bool(getattr(panel, "_controllers_ok", False)) is False:
+        status = _worse_status(status, "STALE")
+        summary = str(getattr(panel, "_controllers_reason", "controladores sin diagnostico") or "controladores sin diagnostico")
+    planned = [
+        f"[PHASE] Pinza esperada por fase: {panel._step_phase_gripper_state(panel._step_effective_flow(), current_phase)}",
+        f"[PANEL] Pinza live panel: {panel._step_live_gripper_state()}",
+        f"[CFG] Umbrales cfg: open={float(GRIPPER_OPEN_RAD):.3f} rad | closed={float(GRIPPER_CLOSED_RAD):.3f} rad",
+    ]
+    runtime = [
+        f"[JOINTS] rg2_finger_joint1: {_fmt_scalar(joint_positions.get('rg2_finger_joint1'), unit=' rad')}",
+        f"[JOINTS] rg2_finger_joint2: {_fmt_scalar(joint_positions.get('rg2_finger_joint2'), unit=' rad')}",
+        f"[JOINTS] Apertura interpretada: {inferred_state}",
+        f"[JOINTS] Edad joint_states: {_fmt_age(joint_age)}",
+        f"[CTRL] joint_state_broadcaster: {controller_states['joint_state_broadcaster'] or 'sin dato'}",
+        f"[CTRL] joint_trajectory_controller: {controller_states['joint_trajectory_controller'] or 'sin dato'}",
+        f"[CTRL] gripper_controller: {controller_states['gripper_controller'] or 'sin dato'}",
+        f"[CTRL] Edad cache controladores: {_fmt_age(controller_age)} | fuente={getattr(panel, '_controller_state_source', '') or 'sin dato'}",
+    ]
+    return RuntimeAuditBlock(
+        title="BLOQUE 2 - JOINTS / CONTROL",
+        planned_lines=planned,
+        runtime_lines=runtime,
+        status=status,
+        summary=summary,
+    )
+
+
+def _build_sdf_gazebo_block(
+    *,
+    pose_count: int,
+    pose_age,
+    pose_entities: int,
+    pose_topic: str,
+    object_panel_world,
+    object_gazebo_world,
+    object_panel_vs_gazebo,
+    target_world,
+    target_vs_object,
+    target_kind: str,
+    target_note: str,
+    exec_world,
+    rg2_hand_world,
+    rg2_left_world,
+    rg2_right_world,
+) -> "RuntimeAuditBlock":
+    """F3-step17c: BLOQUE 3 SDF/GAZEBO status + planned + runtime lines."""
+    status = "OK"
+    summary = "Objeto y pose/info coherentes con el panel."
+    if pose_count <= 0:
+        status = _worse_status(status, "ERROR")
+        summary = "No llegan mensajes de pose/info."
+    elif pose_age is None or not math.isfinite(float(pose_age)):
+        status = _worse_status(status, "STALE")
+        summary = "Edad de pose/info no disponible."
+    elif float(pose_age) > float(POSE_INFO_MAX_AGE_SEC):
+        status = _worse_status(status, "STALE")
+        summary = f"pose/info stale ({float(pose_age):.2f}s)."
+    object_delta_status = _classify_object_delta(object_panel_vs_gazebo)
+    if object_delta_status in {"AVISO", "ERROR"}:
+        status = _worse_status(status, object_delta_status)
+        summary = "La pose del objeto en panel no coincide con Gazebo/pose_info."
+    target_xy_delta = _xy_mm(target_vs_object)
+    if target_kind == "OBJETO_MAS_CLEARANCE":
+        if target_xy_delta is not None and target_xy_delta > 20.0:
+            status = _worse_status(status, "ERROR")
+            summary = "APPROACH_COARSE pierde XY respecto al objeto."
+    elif target_kind == "CONTACTO_GRASP":
+        target_dist_mm = _dist_mm(target_vs_object)
+        if target_dist_mm is not None and target_dist_mm > 15.0:
+            status = _worse_status(status, "AVISO")
+            summary = "GRASP_DOWN_JOINT aun no cae cerca del objeto/contacto."
+    pose_info_state = "ok"
+    if pose_count <= 0:
+        pose_info_state = "sin_dato"
+    elif pose_age is None or not math.isfinite(float(pose_age)):
+        pose_info_state = "sin_edad"
+    elif float(pose_age) > float(POSE_INFO_MAX_AGE_SEC):
+        pose_info_state = "stale"
+    planned = [
+        f"[PANEL] Objeto panel world: {_fmt_vec(object_panel_world)}",
+        f"[PANEL] Target fase world: {_fmt_vec(target_world)}",
+        f"[PANEL] Exec enviado: {_fmt_vec(exec_world)}",
+        f"[SEM] {target_kind}: {target_note}",
+    ]
+    runtime = [
+        f"[GAZEBO] Objeto pose/info: {_fmt_vec(object_gazebo_world)}",
+        f"[CHECK] error objeto panel vs Gazebo: {_fmt_delta(object_panel_vs_gazebo)}",
+        f"[CHECK] error target vs objeto: {_fmt_delta(target_vs_object)}",
+        f"[SDF/TF] rg2_base_link: {_fmt_optional_semantic_frame(rg2_hand_world)}",
+        f"[SDF/TF] rg2_finger_link1: {_fmt_optional_semantic_frame(rg2_left_world)}",
+        f"[SDF/TF] rg2_finger_link2: {_fmt_optional_semantic_frame(rg2_right_world)}",
+        f"[GAZEBO] pose/info: topic={pose_topic or 'sin dato'} age={_fmt_age(pose_age)} entities={int(pose_entities)} state={pose_info_state}",
+    ]
+    return RuntimeAuditBlock(
+        title="BLOQUE 3 - SDF / GAZEBO",
+        planned_lines=planned,
+        runtime_lines=runtime,
+        status=status,
+        summary=summary,
+    )
+
+
 def build_runtime_audit_snapshot(panel: Any) -> RuntimeAuditSnapshot:
     current_phase = str(getattr(panel, "_step_current_phase", "") or "").strip().upper()
     op_frame = str(panel._step_operational_frame_name() or "rg2_pinch_center").strip() or "rg2_pinch_center"
@@ -116,153 +308,54 @@ def build_runtime_audit_snapshot(panel: Any) -> RuntimeAuditSnapshot:
         except Exception:
             pose_count, pose_age, pose_entities, pose_topic = 0, None, 0, ""
 
-    dh_tf_status = "OK"
-    dh_tf_summary = "TCP operacional y frame global coherentes."
-    if op_frame != "rg2_pinch_center":
-        dh_tf_status = _worse_status(dh_tf_status, "ERROR")
-        dh_tf_summary = f"Frame operacional inesperado: {op_frame}."
-    if tf_tcp_world is None:
-        dh_tf_status = _worse_status(dh_tf_status, "STALE")
-        dh_tf_summary = "No hay TF live para rg2_pinch_center."
-    if _classify_pose_delta(tcp_panel_vs_tf) in {"AVISO", "ERROR"}:
-        dh_tf_status = _worse_status(dh_tf_status, _classify_pose_delta(tcp_panel_vs_tf))
-        dh_tf_summary = "El panel no coincide con el TCP real de TF."
-    if _classify_base_delta(base_link_vs_expected) == "ERROR":
-        dh_tf_status = _worse_status(dh_tf_status, "ERROR")
-        dh_tf_summary = "world -> base_link no coincide con el anclaje esperado."
-
-    joints_status = "OK"
-    joints_summary = "Joint states y controladores listos."
-    inferred_state = _interpret_gripper_state(joint_positions, joint_state.get("inferred_state"))
-    if not joint_positions:
-        joints_status = _worse_status(joints_status, "ERROR")
-        joints_summary = "No hay joints del RG2 en joint_states."
-    elif joint_age is not None and joint_age > 0.5:
-        joints_status = _worse_status(joints_status, "STALE")
-        joints_summary = f"joint_states stale ({joint_age:.2f}s)."
-    elif inferred_state == "INTERMEDIA":
-        joints_status = _worse_status(joints_status, "AVISO")
-        joints_summary = "La apertura del RG2 es intermedia o ambigua."
-    controller_states = {
-        "joint_state_broadcaster": _controller_state(controller_map, "joint_state_broadcaster"),
-        "joint_trajectory_controller": _controller_state(controller_map, "joint_trajectory_controller"),
-        "gripper_controller": _controller_state(controller_map, "gripper_controller"),
-    }
-    for state in controller_states.values():
-        if state and str(state).strip().lower() != "active":
-            joints_status = _worse_status(joints_status, "ERROR")
-            joints_summary = "Hay controladores requeridos sin estado active."
-    if not any(controller_states.values()) and bool(getattr(panel, "_controllers_ok", False)) is False:
-        joints_status = _worse_status(joints_status, "STALE")
-        joints_summary = str(getattr(panel, "_controllers_reason", "controladores sin diagnostico") or "controladores sin diagnostico")
-
-    gazebo_status = "OK"
-    gazebo_summary = "Objeto y pose/info coherentes con el panel."
-    if pose_count <= 0:
-        gazebo_status = _worse_status(gazebo_status, "ERROR")
-        gazebo_summary = "No llegan mensajes de pose/info."
-    elif pose_age is None or not math.isfinite(float(pose_age)):
-        gazebo_status = _worse_status(gazebo_status, "STALE")
-        gazebo_summary = "Edad de pose/info no disponible."
-    elif float(pose_age) > float(POSE_INFO_MAX_AGE_SEC):
-        gazebo_status = _worse_status(gazebo_status, "STALE")
-        gazebo_summary = f"pose/info stale ({float(pose_age):.2f}s)."
-    object_delta_status = _classify_object_delta(object_panel_vs_gazebo)
-    if object_delta_status in {"AVISO", "ERROR"}:
-        gazebo_status = _worse_status(gazebo_status, object_delta_status)
-        gazebo_summary = "La pose del objeto en panel no coincide con Gazebo/pose_info."
-    target_xy_delta = _xy_mm(target_vs_object)
-    if target_kind == "OBJETO_MAS_CLEARANCE":
-        if target_xy_delta is not None and target_xy_delta > 20.0:
-            gazebo_status = _worse_status(gazebo_status, "ERROR")
-            gazebo_summary = "APPROACH_COARSE pierde XY respecto al objeto."
-    elif target_kind == "CONTACTO_GRASP":
-        target_dist_mm = _dist_mm(target_vs_object)
-        if target_dist_mm is not None and target_dist_mm > 15.0:
-            gazebo_status = _worse_status(gazebo_status, "AVISO")
-            gazebo_summary = "GRASP_DOWN_JOINT aun no cae cerca del objeto/contacto."
-
-    pose_info_state = "ok"
-    if pose_count <= 0:
-        pose_info_state = "sin_dato"
-    elif pose_age is None or not math.isfinite(float(pose_age)):
-        pose_info_state = "sin_edad"
-    elif float(pose_age) > float(POSE_INFO_MAX_AGE_SEC):
-        pose_info_state = "stale"
-
-    dh_tf_planned = [
-        f"[URDF] Frame operacional esperado: rg2_pinch_center",
-        f"[PANEL] TCP panel world: {_fmt_vec(panel_tcp_world)}",
-        f"[PANEL] Target fase world: {_fmt_vec(target_world)}",
-        f"[PANEL] Objeto panel world: {_fmt_vec(object_panel_world)}",
-        f"[SEM] Tipo target: {target_kind}",
-    ]
-    dh_tf_runtime = [
-        f"[TF] TCP world -> rg2_pinch_center: {_fmt_vec(tf_tcp_world)}",
-        f"[TF] tool0 world: {_fmt_vec(tool0_world)}",
-        f"[TF] rg2_base_link world: {_fmt_vec(rg2_base_world)}",
-        f"[TF] base_link world: {_fmt_vec(base_link_world)}",
-        f"[CHECK] error TCP panel vs TF: {_fmt_delta(tcp_panel_vs_tf)}",
-        f"[CHECK] error TCP vs target: {_fmt_delta(tcp_vs_target)}{_pregrasp_note(current_phase, tcp_vs_target)}",
-        f"[CHECK] error TCP vs objeto: {_fmt_delta(tcp_vs_object)}{_pregrasp_note(current_phase, tcp_vs_object)}",
-        f"[TF] Frescura: tf_msgs={int(tf_stats[0])} tf_static={int(tf_stats[1])}",
-    ]
-
-    joints_planned = [
-        f"[PHASE] Pinza esperada por fase: {panel._step_phase_gripper_state(panel._step_effective_flow(), current_phase)}",
-        f"[PANEL] Pinza live panel: {panel._step_live_gripper_state()}",
-        f"[CFG] Umbrales cfg: open={float(GRIPPER_OPEN_RAD):.3f} rad | closed={float(GRIPPER_CLOSED_RAD):.3f} rad",
-    ]
-    joints_runtime = [
-        f"[JOINTS] rg2_finger_joint1: {_fmt_scalar(joint_positions.get('rg2_finger_joint1'), unit=' rad')}",
-        f"[JOINTS] rg2_finger_joint2: {_fmt_scalar(joint_positions.get('rg2_finger_joint2'), unit=' rad')}",
-        f"[JOINTS] Apertura interpretada: {inferred_state}",
-        f"[JOINTS] Edad joint_states: {_fmt_age(joint_age)}",
-        f"[CTRL] joint_state_broadcaster: {controller_states['joint_state_broadcaster'] or 'sin dato'}",
-        f"[CTRL] joint_trajectory_controller: {controller_states['joint_trajectory_controller'] or 'sin dato'}",
-        f"[CTRL] gripper_controller: {controller_states['gripper_controller'] or 'sin dato'}",
-        f"[CTRL] Edad cache controladores: {_fmt_age(controller_age)} | fuente={getattr(panel, '_controller_state_source', '') or 'sin dato'}",
-    ]
-
-    gazebo_planned = [
-        f"[PANEL] Objeto panel world: {_fmt_vec(object_panel_world)}",
-        f"[PANEL] Target fase world: {_fmt_vec(target_world)}",
-        f"[PANEL] Exec enviado: {_fmt_vec(exec_world)}",
-        f"[SEM] {target_kind}: {target_note}",
-    ]
-    gazebo_runtime = [
-        f"[GAZEBO] Objeto pose/info: {_fmt_vec(object_gazebo_world)}",
-        f"[CHECK] error objeto panel vs Gazebo: {_fmt_delta(object_panel_vs_gazebo)}",
-        f"[CHECK] error target vs objeto: {_fmt_delta(target_vs_object)}",
-        f"[SDF/TF] rg2_base_link: {_fmt_optional_semantic_frame(rg2_hand_world)}",
-        f"[SDF/TF] rg2_finger_link1: {_fmt_optional_semantic_frame(rg2_left_world)}",
-        f"[SDF/TF] rg2_finger_link2: {_fmt_optional_semantic_frame(rg2_right_world)}",
-        f"[GAZEBO] pose/info: topic={pose_topic or 'sin dato'} age={_fmt_age(pose_age)} entities={int(pose_entities)} state={pose_info_state}",
-    ]
+    dh_tf_block = _build_dh_tf_block(
+        op_frame=op_frame,
+        panel_tcp_world=panel_tcp_world,
+        tf_tcp_world=tf_tcp_world,
+        tool0_world=tool0_world,
+        rg2_base_world=rg2_base_world,
+        base_link_world=base_link_world,
+        target_world=target_world,
+        object_panel_world=object_panel_world,
+        target_kind=target_kind,
+        tcp_panel_vs_tf=tcp_panel_vs_tf,
+        tcp_vs_target=tcp_vs_target,
+        tcp_vs_object=tcp_vs_object,
+        base_link_vs_expected=base_link_vs_expected,
+        tf_stats=tf_stats,
+        current_phase=current_phase,
+    )
+    joints_block = _build_joints_control_block(
+        panel,
+        joint_positions=joint_positions,
+        joint_age=joint_age,
+        controller_map=controller_map,
+        controller_age=controller_age,
+        current_phase=current_phase,
+    )
+    sdf_gazebo_block = _build_sdf_gazebo_block(
+        pose_count=pose_count,
+        pose_age=pose_age,
+        pose_entities=pose_entities,
+        pose_topic=pose_topic,
+        object_panel_world=object_panel_world,
+        object_gazebo_world=object_gazebo_world,
+        object_panel_vs_gazebo=object_panel_vs_gazebo,
+        target_world=target_world,
+        target_vs_object=target_vs_object,
+        target_kind=target_kind,
+        target_note=target_note,
+        exec_world=exec_world,
+        rg2_hand_world=rg2_hand_world,
+        rg2_left_world=rg2_left_world,
+        rg2_right_world=rg2_right_world,
+    )
 
     return RuntimeAuditSnapshot(
         blocks={
-            "dh_tf": RuntimeAuditBlock(
-                title="BLOQUE 1 - DH / TF",
-                planned_lines=dh_tf_planned,
-                runtime_lines=dh_tf_runtime,
-                status=dh_tf_status,
-                summary=dh_tf_summary,
-            ),
-            "joints_control": RuntimeAuditBlock(
-                title="BLOQUE 2 - JOINTS / CONTROL",
-                planned_lines=joints_planned,
-                runtime_lines=joints_runtime,
-                status=joints_status,
-                summary=joints_summary,
-            ),
-            "sdf_gazebo": RuntimeAuditBlock(
-                title="BLOQUE 3 - SDF / GAZEBO",
-                planned_lines=gazebo_planned,
-                runtime_lines=gazebo_runtime,
-                status=gazebo_status,
-                summary=gazebo_summary,
-            ),
+            "dh_tf": dh_tf_block,
+            "joints_control": joints_block,
+            "sdf_gazebo": sdf_gazebo_block,
         },
         metrics={
             "tcp_panel_world": panel_tcp_world,

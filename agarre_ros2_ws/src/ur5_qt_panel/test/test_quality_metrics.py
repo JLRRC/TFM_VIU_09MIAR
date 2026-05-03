@@ -287,7 +287,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # Removido de baseline (T15 cumplido).
     "ur5_qt_panel/ur5_qt_panel/pick_demo/internal_helpers.py::_select_pick_demo_cycle_object_reference": 231,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_inference.py::tfm_infer": 219,
-    "ur5_qt_panel/ur5_qt_panel/panel_runtime_pose_auditor.py::build_runtime_audit_snapshot": 213,
+    # F3-step17 (a/b/c) (2026-05-03): build_runtime_audit_snapshot bajó de
+    # 213 → 114 LOC con 3 sub-helpers (_build_dh_tf_block 57 + _build_joints_
+    # control_block 56 + _build_sdf_gazebo_block 73). Removido de baseline.
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py::UR5MoveItBridge._pose_callback": 210,
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py::UR5MoveItBridge._plan_worker": 207,
     # F3-step16 (2026-05-03): _on_remote_object_select_request bajó de 206 →
