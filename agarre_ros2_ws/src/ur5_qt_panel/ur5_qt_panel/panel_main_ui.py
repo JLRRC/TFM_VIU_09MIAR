@@ -40,7 +40,13 @@ from .panel_utils import load_home_pose, set_led
 from .panel_camera import CameraView
 from .cameras_tab import ObjectListPanel
 
-def build_main_ui(panel) -> None:
+
+def _build_main_ui_topbar_and_leds(panel) -> None:
+    """F3-step9: bloque inicial extraído de build_main_ui (~111 LOC).
+
+    Crea: botones top (STOP/START/EXIT/debug), combo step_mode, label status,
+    combo mundos/modos, bridge YAML/bag/MoveIt buttons + LEDs (sin estilo final).
+    """
     root = QWidget()
     main = QVBoxLayout()
     main.setContentsMargins(8, 8, 8, 8)
@@ -152,6 +158,10 @@ def build_main_ui(panel) -> None:
         panel.led_moveit_bridge,
     ):
         set_led(led, "off")
+
+
+def build_main_ui(panel) -> None:
+    _build_main_ui_topbar_and_leds(panel)
 
     # --- Sistema: labels para CPU/RAM/Load ---
     panel.sys_cpu_lbl = QLabel("CPU  --")
