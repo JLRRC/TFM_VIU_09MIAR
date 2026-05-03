@@ -93,38 +93,19 @@ def _live_joint_seed_or_none(panel) -> list[float] | None:
 # _evaluate_transport_stage_postcheck → moved to directo_gate_evaluator.py
 
 
-def _resolve_live_object_world(
+def _resolve_live_object_world_snapshot(
     panel,
     object_name: str,
     *,
-    trace_fn=None,
-    now_fn=None,
-    get_positions_fn=get_object_positions,
-    get_state_fn=get_object_state,
+    now_fn,
+    max_snapshot_age_sec: float,
+    trace_fn,
 ):
-    if trace_fn is None:
-        trace_fn = lambda _line: None
-    if now_fn is None:
-        now_fn = time.time
+    """F3-step24a: lee snapshot fresco de pose_info via ros_worker (~46 LOC).
 
-    max_snapshot_age_sec = _pick_demo_env_float(
-        "PANEL_PICK_DEMO_MAX_SNAPSHOT_AGE_SEC",
-        0.10,
-    )
-    max_stable_cache_age_sec = _pick_demo_env_float(
-        "PANEL_PICK_DEMO_MAX_STABLE_CACHE_AGE_SEC",
-        0.20,
-    )
-    divergence_tol_m = _pick_demo_env_float(
-        "PANEL_PICK_DEMO_OBJECT_SOURCE_DIVERGENCE_TOL_M",
-        0.150,
-        minimum=0.05,
-    )
-    allow_correlated_stable_fallback = _pick_demo_env_flag(
-        "PANEL_PICK_DEMO_ALLOW_CORRELATED_STABLE_FALLBACK",
-        True,
-    )
-
+    Devuelve (snapshot_world, snapshot_age_sec, snapshot_fresh, snapshot_reason).
+    Emite [LIVE_OBJ][SOURCE]/[AGE]/[REJECT] traces sobre la fuente snapshot.
+    """
     snapshot_world = None
     snapshot_age_sec = None
     snapshot_fresh = False
@@ -171,12 +152,29 @@ def _resolve_live_object_world(
             "[LIVE_OBJ][REJECT] "
             f"source=snapshot object={object_name} reason={snapshot_reason}"
         )
+    return snapshot_world, snapshot_age_sec, snapshot_fresh, snapshot_reason
 
-    state = None
+
+def _resolve_live_object_world_stable(
+    object_name: str,
+    *,
+    now_fn,
+    max_stable_cache_age_sec: float,
+    allow_correlated_stable_fallback: bool,
+    get_state_fn,
+    get_positions_fn,
+    trace_fn,
+):
+    """F3-step24b: lee stable cache de object_state + positions store (~50 LOC).
+
+    Devuelve (stable_world, stable_age_sec, stable_fresh, stable_reason).
+    Emite [LIVE_OBJ][SOURCE]/[CORRELATED]/[AGE]/[REJECT] sobre la fuente stable.
+    """
     stable_world = None
     stable_age_sec = None
     stable_fresh = False
     stable_reason = "stable_unavailable"
+    state = None
     try:
         state = get_state_fn(object_name)
     except Exception as exc:
@@ -227,6 +225,61 @@ def _resolve_live_object_world(
             "[LIVE_OBJ][REJECT] "
             f"source=stable_cache object={object_name} reason={stable_reason}"
         )
+    return stable_world, stable_age_sec, stable_fresh, stable_reason
+
+
+def _resolve_live_object_world(
+    panel,
+    object_name: str,
+    *,
+    trace_fn=None,
+    now_fn=None,
+    get_positions_fn=get_object_positions,
+    get_state_fn=get_object_state,
+):
+    if trace_fn is None:
+        trace_fn = lambda _line: None
+    if now_fn is None:
+        now_fn = time.time
+
+    max_snapshot_age_sec = _pick_demo_env_float(
+        "PANEL_PICK_DEMO_MAX_SNAPSHOT_AGE_SEC",
+        0.10,
+    )
+    max_stable_cache_age_sec = _pick_demo_env_float(
+        "PANEL_PICK_DEMO_MAX_STABLE_CACHE_AGE_SEC",
+        0.20,
+    )
+    divergence_tol_m = _pick_demo_env_float(
+        "PANEL_PICK_DEMO_OBJECT_SOURCE_DIVERGENCE_TOL_M",
+        0.150,
+        minimum=0.05,
+    )
+    allow_correlated_stable_fallback = _pick_demo_env_flag(
+        "PANEL_PICK_DEMO_ALLOW_CORRELATED_STABLE_FALLBACK",
+        True,
+    )
+
+    snapshot_world, snapshot_age_sec, snapshot_fresh, snapshot_reason = (
+        _resolve_live_object_world_snapshot(
+            panel,
+            object_name,
+            now_fn=now_fn,
+            max_snapshot_age_sec=max_snapshot_age_sec,
+            trace_fn=trace_fn,
+        )
+    )
+    stable_world, stable_age_sec, stable_fresh, stable_reason = (
+        _resolve_live_object_world_stable(
+            object_name,
+            now_fn=now_fn,
+            max_stable_cache_age_sec=max_stable_cache_age_sec,
+            allow_correlated_stable_fallback=allow_correlated_stable_fallback,
+            get_state_fn=get_state_fn,
+            get_positions_fn=get_positions_fn,
+            trace_fn=trace_fn,
+        )
+    )
 
     divergence_m = None
     if snapshot_fresh and stable_fresh and snapshot_world is not None and stable_world is not None:

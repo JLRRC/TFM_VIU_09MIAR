@@ -281,7 +281,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3-step7 (2026-05-03): RosWorker._thread_main bajó de 279 → 120 LOC
     # con sub-helper _thread_main_create_optional_subs_and_services (167 LOC).
     # Removido de baseline (T15 cumplido).
-    "ur5_qt_panel/ur5_qt_panel/pick_demo/internal_helpers.py::_resolve_live_object_world": 261,
+    # F3-step24a/b (2026-05-03): _resolve_live_object_world bajó de 261 →
+    # 179 LOC con 2 sub-helpers (_resolve_live_object_world_snapshot 60 +
+    # _resolve_live_object_world_stable 71). Removido de baseline.
     # F3-step4a (2026-05-03): _wait_moveit_result extraído ⇒ wrapper
     # < 200 LOC. Removido de la baseline.
     # F3-step20 (2026-05-03): _prepare_runtime bajó de 250 → 192 LOC con
