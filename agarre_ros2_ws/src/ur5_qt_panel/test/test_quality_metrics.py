@@ -283,7 +283,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3-step4a (2026-05-03): _wait_moveit_result extraído ⇒ wrapper
     # < 200 LOC. Removido de la baseline.
     "ur5_bringup/launch/ur5_stack.launch.py::_prepare_runtime": 250,
-    "ur5_qt_panel/ur5_qt_panel/step_window_refresh.py::_step_window_refresh": 249,
+    # F3-step19a/b (2026-05-03): _step_window_refresh bajó de 249 → 132 LOC
+    # con 2 sub-helpers (_step_window_refresh_history_table 75 + _mesh_align 48).
+    # Removido de baseline (T15 cumplido).
     # F3-step13a/b (2026-05-03): start_gazebo bajó de 237 → 120 LOC con
     # 2 sub-helpers (_spawn_gz_gui_client 57 + _prepare_gz_runtime_assets 80).
     # Removido de baseline (T15 cumplido).
