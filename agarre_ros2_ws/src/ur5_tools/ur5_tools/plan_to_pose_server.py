@@ -75,6 +75,11 @@ class PlanToPoseServer(Node):
         self.declare_parameter("mode", "")
         self.declare_parameter("moveit_action_name", "/move_action")
         self.declare_parameter("moveit_group_name", "manipulator")
+        # B-iter14 (2026-05-03): forzar el tip_link real del SRDF para
+        # las constraints de MoveIt. El ee_frame del goal (semántico)
+        # puede ser distinto (rg2_pinch_center) pero MoveIt requiere que
+        # las constraints apunten a un link del kinematic chain del group.
+        self.declare_parameter("moveit_tip_link_override", "rg2_tcp")
         self.declare_parameter("moveit_planner_id", "")
         self.declare_parameter("moveit_planning_time_sec", 5.0)
         self.declare_parameter("moveit_position_tol_m", 0.005)
@@ -117,6 +122,9 @@ class PlanToPoseServer(Node):
         ).strip() or "manipulator"
         self._moveit_planner_id = str(
             self.get_parameter("moveit_planner_id").value or ""
+        ).strip()
+        self._moveit_tip_link_override = str(
+            self.get_parameter("moveit_tip_link_override").value or ""
         ).strip()
         self._moveit_planning_time = float(
             self.get_parameter("moveit_planning_time_sec").value
@@ -441,10 +449,19 @@ class PlanToPoseServer(Node):
                 attempts=0,
             )
 
+        # B-iter14: si moveit_tip_link_override está set, usarlo para las
+        # constraints (debe ser tip_link del SRDF del group). El ee_frame
+        # del goal sigue siendo semántico (no se cambia el target — pero
+        # las constraints apuntan al link correcto del kinematic chain).
+        effective_ee_frame = (
+            self._moveit_tip_link_override
+            if self._moveit_tip_link_override
+            else goal.ee_frame
+        )
         mg_goal = build_move_group_goal(
             goal.target_xyz,
             goal.target_quat_xyzw,
-            ee_frame=goal.ee_frame,
+            ee_frame=effective_ee_frame,
             base_frame=self._bridge_base_frame,
             group_name=self._moveit_group_name,
             planner_id=self._moveit_planner_id,

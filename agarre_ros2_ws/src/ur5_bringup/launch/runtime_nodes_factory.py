@@ -143,6 +143,11 @@ def _build_orchestrator_service_nodes(
             {"mode": "MOVEIT_DIRECT"},
             {"moveit_action_name": "/move_action"},
             {"moveit_group_name": "manipulator"},
+            # B-iter14 (2026-05-03): tip_link del SRDF UR5+RG2 = rg2_tcp.
+            # El ee_frame del goal puede ser distinto (rg2_pinch_center
+            # semántico) pero las constraints de MoveIt deben apuntar al
+            # tip del kinematic chain del group.
+            {"moveit_tip_link_override": "rg2_tcp"},
             {"moveit_planning_time_sec": 10.0},
             {"moveit_position_tol_m": 0.02},
             {"moveit_orientation_tol_rad": 0.30},
