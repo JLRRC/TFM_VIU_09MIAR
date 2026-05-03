@@ -224,22 +224,40 @@ def dispatch_phase(
         Close as CloseSrv,
         Detach as DetachSrv,
         Open as OpenSrv,
-        SelectObject as SelectObjectSrv,
     )
 
     common = dispatch_ctx.common_service_kwargs()
 
     if phase == PickPhase.SELECT_OBJECT:
-        req = SelectObjectSrv.Request()
-        req.name = ctx.object_name
-        r = dispatch_ctx.service_caller(
-            dispatch_ctx.node,
-            SelectObjectSrv,
-            dispatch_ctx.service_map.select_object,
-            req,
-            **common,
-        )
-        return r.success, f"select_object:{r.reason}"
+        # B-iter1 (2026-05-03): SELECT_OBJECT ahora es INTERNAL-ONLY.
+        # El object_name ya viaja en el goal de PickPlace (ctx.object_name) y
+        # las fases siguientes (APPROACH/GRASP/etc) lo consumen directamente.
+        # Anteriormente esta fase llamaba `/panel/select_object` para notificar
+        # al panel UI, lo que creaba dependencia circular orchestrator↔panel
+        # y bloqueaba el path orchestrator cuando el panel estaba ocupado.
+        # Eliminada la llamada: el orchestrator es ahora INDEPENDIENTE del panel
+        # para el flujo pick. La selección visual del panel sigue disponible
+        # vía el botón Qt del panel (camino paralelo, no bloqueante).
+        name = str(ctx.object_name or "").strip()
+        if not name:
+            return False, "select_object:empty_object_name_in_goal"
+        return True, f"select_object:internal_ok:object={name}"
+
+    if phase == PickPhase.INITIAL_SNAPSHOT:
+        # B-iter2 (2026-05-03): INITIAL_SNAPSHOT explícitamente no-op a nivel
+        # dispatch. El propósito (capturar TCP/joints/objeto al inicio del
+        # ciclo) será implementado vía service ResolveObjectPoseWorld + TF
+        # client en una iteración futura. Hoy: marker semántico para timing
+        # y feedback estructurado al cliente.
+        name = str(ctx.object_name or "").strip()
+        return True, f"initial_snapshot:scaffold_ok:object={name or 'none'}"
+
+    if phase == PickPhase.HOME_INITIAL:
+        # B-iter2 (2026-05-03): HOME_INITIAL explícitamente no-op a nivel
+        # dispatch. La transición real a pose HOME se delegará a un
+        # JointTrajectoryAction directo (evitando la dependencia del
+        # panel) en una iteración futura. Hoy: marker semántico.
+        return True, "home_initial:scaffold_ok"
 
     if phase == PickPhase.APPROACH:
         # F5-step3: si no hay hint, intentar resolver pose del objeto vía

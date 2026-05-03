@@ -112,32 +112,74 @@ def _pick_ctx(name: str = "box_red", drop=(0.5, 0.0, 0.05)) -> PickContext:
 # ---------------------------------------------------------------------------
 
 
-def test_select_object_calls_select_object_service_with_object_name():
+def test_select_object_is_internal_only_no_service_call():
+    """B-iter1 (2026-05-03): SELECT_OBJECT NO llama al panel.
+
+    El object_name ya viaja en el goal de PickPlace; las fases siguientes
+    (APPROACH/GRASP/etc) consumen ctx.object_name directamente. Eliminada
+    la llamada a /panel/select_object que creaba dependencia circular
+    orchestrator↔panel.
+    """
     spec = _MockCallerSpec()
     dctx = _ctx_for(spec)
     ok, reason = dispatch_phase(dctx, PickPhase.SELECT_OBJECT, _pick_ctx("widget"))
     assert ok is True
-    assert reason.startswith("select_object:")
-    assert len(spec.recorded) == 1
-    rec = spec.recorded[0]
-    assert rec.kind == "service"
-    assert rec.msg_type_name == "SelectObject"
-    assert rec.name == "/panel/select_object"
-    assert rec.request.name == "widget"
-
-
-def test_select_object_propagates_failure():
-    spec = _MockCallerSpec(
-        service_results={
-            "/panel/select_object": ServiceCallResult(
-                success=False, reason="object_not_found"
-            )
-        }
+    assert reason == "select_object:internal_ok:object=widget"
+    assert len(spec.recorded) == 0, (
+        "SELECT_OBJECT no debe llamar a ningún service externo "
+        "(B-iter1: orchestrator independiente del panel)"
     )
+
+
+def test_select_object_rejects_empty_object_name():
+    spec = _MockCallerSpec()
     dctx = _ctx_for(spec)
-    ok, reason = dispatch_phase(dctx, PickPhase.SELECT_OBJECT, _pick_ctx("missing"))
+    ok, reason = dispatch_phase(dctx, PickPhase.SELECT_OBJECT, _pick_ctx(""))
     assert ok is False
-    assert "object_not_found" in reason
+    assert reason == "select_object:empty_object_name_in_goal"
+    assert len(spec.recorded) == 0
+
+
+def test_select_object_strips_whitespace_object_name():
+    spec = _MockCallerSpec()
+    dctx = _ctx_for(spec)
+    ok, reason = dispatch_phase(dctx, PickPhase.SELECT_OBJECT, _pick_ctx("  widget  "))
+    assert ok is True
+    assert reason == "select_object:internal_ok:object=widget"
+
+
+# ---------------------------------------------------------------------------
+# INITIAL_SNAPSHOT / HOME_INITIAL (B-iter2: no-op explícitos)
+# ---------------------------------------------------------------------------
+
+
+def test_initial_snapshot_is_explicit_noop_with_object_name():
+    """B-iter2: INITIAL_SNAPSHOT no llama services; emite marker semántico."""
+    spec = _MockCallerSpec()
+    dctx = _ctx_for(spec)
+    ok, reason = dispatch_phase(dctx, PickPhase.INITIAL_SNAPSHOT, _pick_ctx("widget"))
+    assert ok is True
+    assert reason == "initial_snapshot:scaffold_ok:object=widget"
+    assert len(spec.recorded) == 0
+
+
+def test_initial_snapshot_handles_empty_object_name():
+    spec = _MockCallerSpec()
+    dctx = _ctx_for(spec)
+    ok, reason = dispatch_phase(dctx, PickPhase.INITIAL_SNAPSHOT, _pick_ctx(""))
+    assert ok is True
+    assert reason == "initial_snapshot:scaffold_ok:object=none"
+    assert len(spec.recorded) == 0
+
+
+def test_home_initial_is_explicit_noop():
+    """B-iter2: HOME_INITIAL no llama services; emite marker semántico."""
+    spec = _MockCallerSpec()
+    dctx = _ctx_for(spec)
+    ok, reason = dispatch_phase(dctx, PickPhase.HOME_INITIAL, _pick_ctx())
+    assert ok is True
+    assert reason == "home_initial:scaffold_ok"
+    assert len(spec.recorded) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -341,20 +383,23 @@ def test_build_plan_to_pose_goal_for_transport_uses_drop_xyz():
 
 
 def test_initial_snapshot_is_noop():
+    """Histórico: F5-step1 garantizaba "no_op". B-iter2 (2026-05-03) cambió a
+    marker semántico explícito; el contrato esencial sigue: ok=True + no service calls."""
     spec = _MockCallerSpec()
     dctx = _ctx_for(spec)
     ok, reason = dispatch_phase(dctx, PickPhase.INITIAL_SNAPSHOT, _pick_ctx())
     assert ok is True
-    assert "no_op" in reason
+    assert reason.startswith("initial_snapshot:")
     assert spec.recorded == []
 
 
 def test_home_initial_is_noop():
+    """Histórico: ver comentario en test_initial_snapshot_is_noop."""
     spec = _MockCallerSpec()
     dctx = _ctx_for(spec)
     ok, reason = dispatch_phase(dctx, PickPhase.HOME_INITIAL, _pick_ctx())
     assert ok is True
-    assert "no_op" in reason
+    assert reason.startswith("home_initial:")
     assert spec.recorded == []
 
 

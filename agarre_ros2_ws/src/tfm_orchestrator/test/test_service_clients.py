@@ -225,9 +225,12 @@ def test_phase_service_map_defaults():
     assert m.gripper_close == "/gripper/close"
     assert m.attach == "/orchestrator/attach"
     assert m.detach == "/orchestrator/detach"
-    assert m.world_to_base == "/orchestrator/world_to_base"
+    # F5-step6c (2026-05-03): defaults alineados con services REALES del stack vivo:
+    #   world_to_base / approach_compute → tf_geometry_service (no orchestrator namespace)
+    #   select_object → /panel/select_object (deprecated en B-iter1: ya no se llama).
+    assert m.world_to_base == "/tf_geometry/world_to_base"
     assert m.select_object == "/panel/select_object"
-    assert m.approach_compute == "/orchestrator/compute_approach_pose"
+    assert m.approach_compute == "/tf_geometry/compute_approach_pose"
 
 
 def test_phase_service_map_from_dict_overrides():
