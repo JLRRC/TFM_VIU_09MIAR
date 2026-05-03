@@ -1,32 +1,52 @@
 # F5 — Plan de cierre (panel → cliente PickPlace puro)
 
-**Fecha**: 2026-05-03
-**HEAD de referencia**: `0b9566e`
-**Estado actual**: infraestructura completa; pendiente: borrado legacy + validación live.
+**Fecha**: 2026-05-03 (revisión post-Paso A live)
+**HEAD de referencia**: `0161198` (B-iter1+iter2 aplicado)
+**Tag**: `B-iter1-iter2-orchestrator-independent-20260503`
+**Estado actual**: orchestrator FUNCIONALMENTE independiente del panel para fases pre-APPROACH; pendiente validación live + extracción real de fases pesadas.
 
 ---
 
-## Resumen ejecutivo
+## CORRECCIÓN POST-PASO-A (2026-05-03 18:55)
 
-F5 está **arquitectónicamente cerrada**. Los 8 sub-pasos (F5-step1..8)
-han dejado el sistema en un estado donde:
+El audit anterior afirmaba que F5 estaba "arquitectónicamente cerrada". **La validación live demostró que era falso**:
 
-1. **El orchestrator es el path canónico** del botón "Agarre Objeto (Directo)".
-2. El panel YA llama por defecto a [`pick_demo_dispatcher.dispatch_pick_demo`](../src/ur5_qt_panel/ur5_qt_panel/pick_demo_dispatcher.py),
-   que envía goal a `/pick_place` (action server del orchestrator).
-3. El legacy `run_pick_demo` sólo se ejecuta si `USE_LEGACY_PICK_DEMO=1`
-   o `PANEL_PICK_DEMO_USE_ORCHESTRATOR=0` (rollback rápido).
-4. `pick_orchestrator_lifecycle_node` **auto-launched** en el stack
-   (commit `0ec810c`, F5-step8).
-5. `plan_to_pose_server` cableado con `use_real_bridge=true` (commit
-   `c63d6b2`, F5-step6d).
-6. 4 services reales en `gripper_attach_backend` (commit `c477cab`,
-   F5-step6b): `Open` / `Close` / `Attach` / `Detach`.
-7. `phase_dispatch.py` puro con paridad LifecycleNode ↔ Node legacy
-   (commit `9dc9c90`, F5-step1).
-8. `ResolveObjectPoseWorld.srv` + `object_pose_resolver_service`
-   LifecycleNode operativo (commits `4c76795`+`615513c`+`048c323`,
-   F5-step3..5).
+- `/pick_place` action funcionaba pero **TODAS las fases hasta SELECT_OBJECT eran STUBS** (delay + return ok).
+- `SELECT_OBJECT` (única fase con dispatch real anterior a B-iter1) **llamaba `/panel/select_object`** del propio panel — **dependencia circular**: panel → PickPlace → orchestrator → panel.
+- El service `/panel/pick_demo` del panel **NO usaba el dispatcher** sino que llamaba directamente a `run_pick_demo` legacy (bug en `panel_remote_callbacks.py:280,308`). Solo el botón Qt usaba el dispatcher.
+
+Test live realizado:
+```
+Goal: PickPlace{object: pick_demo, drop_xyz: (0.5,0,0.05), pose_hint: (-0.41,0,0.875)}
+Feedback: INITIAL_SNAPSHOT/HOME_INITIAL/SELECT_OBJECT (3 stubs ok, ~0.6s)
+Result: FAILED — detail: "select_object:service_unavailable:/panel/select_object"
+```
+
+## CAMBIO APLICADO (B-iter1+iter2, commit `0161198`)
+
+`phase_dispatch.dispatch_phase` ahora trata las 3 fases pre-APPROACH como
+INTERNAL-ONLY (no llama services externos):
+
+| Fase | Antes | Después |
+|------|-------|---------|
+| INITIAL_SNAPSHOT | fall-through "{phase}_no_op" | `"initial_snapshot:scaffold_ok:object={name}"` |
+| HOME_INITIAL | fall-through "{phase}_no_op" | `"home_initial:scaffold_ok"` |
+| SELECT_OBJECT | service call `/panel/select_object` | `"select_object:internal_ok:object={name}"` (sin service call) |
+
+5 tests nuevos cubren la nueva semántica. 168 tests pasan en suite tfm_orchestrator.
+
+---
+
+## Resumen ejecutivo (post-corrección)
+
+F5 está **PARCIALMENTE cerrada** tras B-iter1+iter2:
+
+1. ✅ Orchestrator action server `/pick_place` operativo (F5-step1..8)
+2. ✅ Orchestrator FUNCIONALMENTE independiente del panel para SELECT_OBJECT/INITIAL_SNAPSHOT/HOME_INITIAL (B-iter1+iter2)
+3. ✅ Fases reales (APPROACH/GRASP/LIFT/TRANSPORT/RELEASE) tienen dispatch real desde F5-step6
+4. ❌ **Las 3 fases pre-APPROACH son SCAFFOLDS** (no capturan estado real, no mueven a HOME): pendiente B-iter3+ con TF/joint_traj_action client real
+5. ❌ **El dispatcher del panel tiene bug**: el path service (`/panel/pick_demo`) llama legacy directo bypassando dispatch_pick_demo. Solo el botón Qt está OK.
+6. ❌ **`run_pick_demo` legacy NO migrado**: 8.038 LOC de lógica real (move_tcp_direct, grasp_align, lift, transport_replan, release) sigue 100% en panel. Migrar a orchestrator es trabajo de **30-50h**.
 
 ## Lo que sigue pendiente (TRABAJO INVASIVO)
 
