@@ -282,7 +282,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     "ur5_qt_panel/ur5_qt_panel/pick_demo/internal_helpers.py::_resolve_live_object_world": 261,
     # F3-step4a (2026-05-03): _wait_moveit_result extraído ⇒ wrapper
     # < 200 LOC. Removido de la baseline.
-    "ur5_bringup/launch/ur5_stack.launch.py::_prepare_runtime": 250,
+    # F3-step20 (2026-05-03): _prepare_runtime bajó de 250 → 192 LOC con
+    # _build_runtime_environment_actions (97 LOC, sólo el ensamblado de
+    # SetEnvironmentVariable + SetLaunchConfiguration). Removido de baseline.
     # F3-step19a/b (2026-05-03): _step_window_refresh bajó de 249 → 132 LOC
     # con 2 sub-helpers (_step_window_refresh_history_table 75 + _mesh_align 48).
     # Removido de baseline (T15 cumplido).

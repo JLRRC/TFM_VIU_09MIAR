@@ -85,6 +85,105 @@ def _env_float(name: str, default: float) -> float:
     return value
 
 
+def _build_runtime_environment_actions(
+    *,
+    ws_dir: str,
+    gz_partition: str,
+    resource_path: str,
+    plugin_path: str,
+    render_engine: str,
+    controllers_yaml: str,
+    panel_auto_bridge_eff: str,
+    managed_str: str,
+    camera_required_env: str,
+    fastdds_profile: str,
+    launch_moveit_eff: str,
+    moveit_mode: str,
+    panel_settings_yaml: str,
+    strict_physics_mode: bool,
+    runtime_yaml: str,
+    runtime_world: str,
+    world_name: str,
+    launch_ros2_control_eff: str,
+    launch_attach_backend_eff: str,
+    launch_scene_sync_eff: str,
+    moveit_start_ros2_control_eff: str,
+) -> List[object]:
+    """F3-step20: ensambla la lista completa de SetEnvironmentVariable +
+    SetLaunchConfiguration para _prepare_runtime (~80 LOC).
+    """
+    return [
+        SetEnvironmentVariable("WS_DIR", ws_dir),
+        SetEnvironmentVariable("GZ_PARTITION", gz_partition),
+        SetEnvironmentVariable("GZ_SIM_RESOURCE_PATH", resource_path),
+        SetEnvironmentVariable("GZ_SIM_SYSTEM_PLUGIN_PATH", plugin_path),
+        SetEnvironmentVariable("GZ_RENDER_ENGINE", render_engine),
+        SetEnvironmentVariable(
+            "__EGL_VENDOR_LIBRARY_FILENAMES",
+            "/usr/share/glvnd/egl_vendor.d/10_nvidia.json",
+        ),
+        SetEnvironmentVariable("UR5_CONTROLLERS_YAML", controllers_yaml),
+        SetEnvironmentVariable("UR5_CONTROLLERS_FILE", controllers_yaml),
+        SetEnvironmentVariable(
+            "PANEL_CONTROLLER_MANAGER", LaunchConfiguration("controller_manager")
+        ),
+        SetEnvironmentVariable("PANEL_AUTO_BRIDGE", panel_auto_bridge_eff),
+        SetEnvironmentVariable(
+            "PANEL_AUTO_BRIDGE_DELAY_MS",
+            LaunchConfiguration("panel_auto_bridge_delay_ms"),
+        ),
+        SetEnvironmentVariable("PANEL_MANAGED", managed_str),
+        SetEnvironmentVariable("PANEL_CAMERA_REQUIRED", camera_required_env),
+        SetEnvironmentVariable("USE_SIM_TIME", LaunchConfiguration("use_sim_time")),
+        *[
+            SetEnvironmentVariable(name, os.environ.get(name, default))
+            for name, default in PANEL_ENV_DEFAULTS
+        ],
+        SetEnvironmentVariable(
+            "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M",
+            "0.025",
+        ),
+        SetEnvironmentVariable("PANEL_MOVEIT_REQUIRED", launch_moveit_eff),
+        SetEnvironmentVariable("PANEL_MOVEIT_MODE", moveit_mode),
+        SetEnvironmentVariable("PANEL_SETTINGS_YAML", panel_settings_yaml),
+        SetEnvironmentVariable(
+            "STRICT_SELF_COLLISION",
+            "1" if strict_physics_mode else "0",
+        ),
+        SetEnvironmentVariable(
+            "PANEL_STRICT_PHYSICS_MODE",
+            "1" if strict_physics_mode else "0",
+        ),
+        SetEnvironmentVariable(
+            "RMW_IMPLEMENTATION", LaunchConfiguration("rmw_implementation")
+        ),
+        SetEnvironmentVariable("RMW_FASTRTPS_USE_SHM", "0"),
+        SetEnvironmentVariable("FASTRTPS_DEFAULT_PROFILES_FILE", fastdds_profile),
+        SetLaunchConfiguration("runtime_yaml", runtime_yaml),
+        SetLaunchConfiguration("controllers_file", controllers_yaml),
+        SetLaunchConfiguration("world_file", runtime_world),
+        SetLaunchConfiguration("world_name", world_name),
+        SetLaunchConfiguration(
+            "gz_delete_service",
+            f"/world/{world_name}/remove/blocking",
+        ),
+        SetLaunchConfiguration(
+            "gz_spawn_service",
+            f"/world/{world_name}/create/blocking",
+        ),
+        SetLaunchConfiguration("camera_required", camera_required_env),
+        SetLaunchConfiguration("panel_managed", managed_str),
+        SetLaunchConfiguration("launch_moveit", launch_moveit_eff),
+        SetLaunchConfiguration("panel_auto_bridge", panel_auto_bridge_eff),
+        SetLaunchConfiguration("launch_ros2_control", launch_ros2_control_eff),
+        SetLaunchConfiguration("launch_attach_backend", launch_attach_backend_eff),
+        SetLaunchConfiguration("launch_scene_sync", launch_scene_sync_eff),
+        SetLaunchConfiguration(
+            "moveit_start_ros2_control", moveit_start_ros2_control_eff
+        ),
+    ]
+
+
 def _prepare_runtime(context, *_args) -> List[object]:
     logger = get_logger("ur5_stack")
     ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
@@ -254,87 +353,29 @@ def _prepare_runtime(context, *_args) -> List[object]:
         headless=str(headless_mode).lower() in ("1", "true", "yes"),
         keep_cameras=keep_cameras,
     )
-    return [
-        SetEnvironmentVariable("WS_DIR", ws_dir),
-        SetEnvironmentVariable("GZ_PARTITION", gz_partition),
-        SetEnvironmentVariable("GZ_SIM_RESOURCE_PATH", resource_path),
-        SetEnvironmentVariable("GZ_SIM_SYSTEM_PLUGIN_PATH", plugin_path),
-        SetEnvironmentVariable("GZ_RENDER_ENGINE", render_engine),
-        SetEnvironmentVariable(
-            "__EGL_VENDOR_LIBRARY_FILENAMES",
-            "/usr/share/glvnd/egl_vendor.d/10_nvidia.json",
-        ),
-        SetEnvironmentVariable("UR5_CONTROLLERS_YAML", controllers_yaml),
-        SetEnvironmentVariable("UR5_CONTROLLERS_FILE", controllers_yaml),
-        SetEnvironmentVariable(
-            "PANEL_CONTROLLER_MANAGER", LaunchConfiguration("controller_manager")
-        ),
-        SetEnvironmentVariable(
-            "PANEL_AUTO_BRIDGE", panel_auto_bridge_eff
-        ),
-        SetEnvironmentVariable(
-            "PANEL_AUTO_BRIDGE_DELAY_MS",
-            LaunchConfiguration("panel_auto_bridge_delay_ms"),
-        ),
-        SetEnvironmentVariable("PANEL_MANAGED", managed_str),
-        SetEnvironmentVariable("PANEL_CAMERA_REQUIRED", camera_required_env),
-        SetEnvironmentVariable("USE_SIM_TIME", LaunchConfiguration("use_sim_time")),
-        *[
-            SetEnvironmentVariable(name, os.environ.get(name, default))
-            for name, default in PANEL_ENV_DEFAULTS
-        ],
-        SetEnvironmentVariable(
-            "PANEL_PICK_DEMO_GRASP_DOWN_UTIL_Z_ERR_TOL_M",
-            "0.025",  # hard-coded: shell env can override to stale 0.008
-        ),
-        # NOTA (2026-04-16): La negación de X e Y en la ruta DIRECT IK es CORRECTA y
-        # permanente. El solver DH usa base_link_inertia como raíz cinemática, que tiene
-        # una rotación Rz(π) respecto a base_link. Para convertir un target expresado en
-        # base_link al frame del modelo IK hay que negar X e Y — esto ocurre siempre en
-        # panel_pick_demo.py. No existe env var que lo controle; la variable
-        # PANEL_PICK_DEMO_DIRECT_IK_NEGATE_XY fue eliminada por ser letra muerta
-        # (nunca se leía en el código) y su comentario anterior era incorrecto.
-        SetEnvironmentVariable(
-            "PANEL_MOVEIT_REQUIRED", launch_moveit_eff
-        ),
-        SetEnvironmentVariable("PANEL_MOVEIT_MODE", moveit_mode),
-        SetEnvironmentVariable("PANEL_SETTINGS_YAML", panel_settings_yaml),
-        SetEnvironmentVariable(
-            "STRICT_SELF_COLLISION",
-            "1" if strict_physics_mode else "0",
-        ),
-        SetEnvironmentVariable(
-            "PANEL_STRICT_PHYSICS_MODE",
-            "1" if strict_physics_mode else "0",
-        ),
-        SetEnvironmentVariable(
-            "RMW_IMPLEMENTATION", LaunchConfiguration("rmw_implementation")
-        ),
-        SetEnvironmentVariable("RMW_FASTRTPS_USE_SHM", "0"),
-        SetEnvironmentVariable("FASTRTPS_DEFAULT_PROFILES_FILE", fastdds_profile),
-        SetLaunchConfiguration("runtime_yaml", runtime_yaml),
-        SetLaunchConfiguration("controllers_file", controllers_yaml),
-        SetLaunchConfiguration("world_file", runtime_world),
-        SetLaunchConfiguration("world_name", world_name),
-        SetLaunchConfiguration(
-            "gz_delete_service",
-            f"/world/{world_name}/remove/blocking",
-        ),
-        SetLaunchConfiguration(
-            "gz_spawn_service",
-            f"/world/{world_name}/create/blocking",
-        ),
-        SetLaunchConfiguration("camera_required", camera_required_env),
-        SetLaunchConfiguration("panel_managed", managed_str),
-        SetLaunchConfiguration("launch_moveit", launch_moveit_eff),
-        SetLaunchConfiguration("panel_auto_bridge", panel_auto_bridge_eff),
-        SetLaunchConfiguration("launch_ros2_control", launch_ros2_control_eff),
-        SetLaunchConfiguration("launch_attach_backend", launch_attach_backend_eff),
-        SetLaunchConfiguration("launch_scene_sync", launch_scene_sync_eff),
-        SetLaunchConfiguration(
-            "moveit_start_ros2_control", moveit_start_ros2_control_eff
-        ),
-    ]
+    return _build_runtime_environment_actions(
+        ws_dir=ws_dir,
+        gz_partition=gz_partition,
+        resource_path=resource_path,
+        plugin_path=plugin_path,
+        render_engine=render_engine,
+        controllers_yaml=controllers_yaml,
+        panel_auto_bridge_eff=panel_auto_bridge_eff,
+        managed_str=managed_str,
+        camera_required_env=camera_required_env,
+        fastdds_profile=fastdds_profile,
+        launch_moveit_eff=launch_moveit_eff,
+        moveit_mode=moveit_mode,
+        panel_settings_yaml=panel_settings_yaml,
+        strict_physics_mode=strict_physics_mode,
+        runtime_yaml=runtime_yaml,
+        runtime_world=runtime_world,
+        world_name=world_name,
+        launch_ros2_control_eff=launch_ros2_control_eff,
+        launch_attach_backend_eff=launch_attach_backend_eff,
+        launch_scene_sync_eff=launch_scene_sync_eff,
+        moveit_start_ros2_control_eff=moveit_start_ros2_control_eff,
+    )
 
 
 def _maybe_moveit(context, *_args) -> List[object]:
