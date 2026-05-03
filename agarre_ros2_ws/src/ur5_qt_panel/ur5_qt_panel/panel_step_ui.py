@@ -29,89 +29,16 @@ from PyQt5.QtWidgets import (
 from .panel_runtime_pose_auditor import runtime_status_style
 
 
-def build_step_window(panel) -> None:
-    """Build the STEP by STEP QDialog and attach all widgets as panel attributes."""
-    dlg = QDialog(panel)
-    dlg.setWindowTitle("STEP by STEP")
-    dlg.setModal(False)
-    dlg.setAttribute(Qt.WA_DeleteOnClose, False)
-    dlg.resize(980, 760)
+def _build_step_runtime_section(panel):
+    """F3-step10a: runtime section (Gazebo/TF) extraída de build_step_window.
 
-    root_layout = QVBoxLayout(dlg)
-    root_layout.setContentsMargins(0, 0, 0, 0)
-    root_layout.setSpacing(0)
+    Crea: lbl_runtime_title + lbl_runtime_help + runtime_group con 3 sub-bloques
+    (BLOQUE 1 DH/TF + BLOQUE 2 JOINTS/CONTROL + BLOQUE 3 SDF/GAZEBO). Cada
+    sub-bloque tiene status_lbl + summary_lbl + planned_lbl + runtime_lbl en
+    columnas PLANIFICADO/PANEL vs MEDIDO/RUNTIME.
 
-    scroll = QScrollArea(dlg)
-    scroll.setWidgetResizable(True)
-    scroll.setFrameShape(QAbstractScrollArea.NoFrame)
-    content = QWidget()
-    root_layout.addWidget(scroll)
-    scroll.setWidget(content)
-
-    layout = QVBoxLayout(content)
-    layout.setContentsMargins(12, 12, 12, 12)
-    layout.setSpacing(8)
-
-    lbl_title = QLabel("Control paso a paso")
-    lbl_title.setStyleSheet("font-weight:700;")
-    lbl_mode = QLabel("Flujo cargado: --")
-    lbl_phase = QLabel("Fase lista para iniciar: --")
-    lbl_current = QLabel("Fase en ejecución: --")
-    lbl_next = QLabel("Próxima fase bloqueada: --")
-    lbl_intent = QLabel("Objetivo de la fase: --")
-    lbl_decision = QLabel("Acción exacta al pulsar Iniciar: --")
-    lbl_target = QLabel("XYZ objetivo de la fase (world): --")
-    lbl_live_operational = QLabel("XYZ actual del TCP (world): --")
-    lbl_live_visual = QLabel("XYZ de referencia visual (world): --")
-    lbl_gripper_expected = QLabel("Pinza esperada en la fase seleccionada: --")
-    lbl_gripper_live = QLabel("Pinza live: --")
-    lbl_object = QLabel("Objeto activo (world): --")
-    lbl_start_pose = QLabel("Pose inicial del robot al lanzar la secuencia: --")
-    info_labels = [
-        lbl_mode,
-        lbl_phase,
-        lbl_current,
-        lbl_next,
-        lbl_intent,
-        lbl_decision,
-        lbl_target,
-        lbl_live_operational,
-        lbl_live_visual,
-        lbl_gripper_expected,
-        lbl_gripper_live,
-        lbl_object,
-        lbl_start_pose,
-    ]
-    for info_label in info_labels:
-        info_label.setWordWrap(True)
-
-    info_grid = QGridLayout()
-    info_grid.setHorizontalSpacing(20)
-    info_grid.setVerticalSpacing(6)
-    left_info_labels = [
-        lbl_mode,
-        lbl_phase,
-        lbl_current,
-        lbl_next,
-        lbl_intent,
-        lbl_decision,
-        lbl_target,
-    ]
-    right_info_labels = [
-        lbl_live_operational,
-        lbl_live_visual,
-        lbl_gripper_expected,
-        lbl_gripper_live,
-        lbl_object,
-        lbl_start_pose,
-    ]
-    for row, info_label in enumerate(left_info_labels):
-        info_grid.addWidget(info_label, row, 0)
-    for row, info_label in enumerate(right_info_labels):
-        info_grid.addWidget(info_label, row, 1)
-    info_grid.setColumnStretch(0, 1)
-    info_grid.setColumnStretch(1, 1)
-
+    Devuelve (lbl_runtime_title, lbl_runtime_help, runtime_group, runtime_blocks).
+    """
     lbl_runtime_title = QLabel("Verificacion runtime Gazebo/TF")
     lbl_runtime_title.setStyleSheet("font-weight:700;")
     lbl_runtime_help = QLabel(
@@ -211,6 +138,20 @@ def build_step_window(panel) -> None:
     _add_runtime_block("dh_tf", "BLOQUE 1 - DH / TF")
     _add_runtime_block("joints_control", "BLOQUE 2 - JOINTS / CONTROL")
     _add_runtime_block("sdf_gazebo", "BLOQUE 3 - SDF / GAZEBO")
+
+    return lbl_runtime_title, lbl_runtime_help, runtime_group, runtime_blocks
+
+
+def _build_step_pipeline_history_widgets(panel):
+    """F3-step10b: pipeline_table + history_table + cart_debug widgets.
+
+    Crea: lbl_pipeline_title + pipeline_table (5 cols) + lbl_pipeline_help +
+    lbl_history_title + lbl_history_frame_help + history_table (23 cols) +
+    btn_cart_debug + chk_cart_debug. Configura header resize policies +
+    no-edit + no-selection + AdjustToContents.
+
+    Devuelve dict con todos los widgets (caller los usa para layout y attrs).
+    """
     lbl_pipeline_title = QLabel("Pipeline completo")
     lbl_pipeline_title.setStyleSheet("font-weight:700;")
     pipeline_table = QTableWidget(0, 5)
@@ -247,9 +188,6 @@ def build_step_window(panel) -> None:
     )
     lbl_history_frame_help.setWordWrap(True)
     lbl_history_frame_help.setStyleSheet("color:#475569; font-size:12px;")
-    # Columnas: Fase | Pinza | Org(3) | TCP-TF(3) | Obj World(3) | Target(3) |
-    #           Exec(3) | D TCP-Obj | D Target-Obj | Err TCP-Exec |
-    #           Tipo Target | Razon | Estado  → total 23.
     history_table = QTableWidget(0, 23)
     history_table.setHorizontalHeaderLabels([
         "Fase", "Pinza",
@@ -284,6 +222,113 @@ def build_step_window(panel) -> None:
     chk_cart_debug.setChecked(False)
     chk_cart_debug.setToolTip("Activa para habilitar el depurador cartesiano manual.")
     chk_cart_debug.toggled.connect(btn_cart_debug.setEnabled)
+    return {
+        "lbl_pipeline_title": lbl_pipeline_title,
+        "pipeline_table": pipeline_table,
+        "lbl_pipeline_help": lbl_pipeline_help,
+        "lbl_history_title": lbl_history_title,
+        "lbl_history_frame_help": lbl_history_frame_help,
+        "history_table": history_table,
+        "btn_cart_debug": btn_cart_debug,
+        "chk_cart_debug": chk_cart_debug,
+    }
+
+
+def build_step_window(panel) -> None:
+    """Build the STEP by STEP QDialog and attach all widgets as panel attributes."""
+    dlg = QDialog(panel)
+    dlg.setWindowTitle("STEP by STEP")
+    dlg.setModal(False)
+    dlg.setAttribute(Qt.WA_DeleteOnClose, False)
+    dlg.resize(980, 760)
+
+    root_layout = QVBoxLayout(dlg)
+    root_layout.setContentsMargins(0, 0, 0, 0)
+    root_layout.setSpacing(0)
+
+    scroll = QScrollArea(dlg)
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QAbstractScrollArea.NoFrame)
+    content = QWidget()
+    root_layout.addWidget(scroll)
+    scroll.setWidget(content)
+
+    layout = QVBoxLayout(content)
+    layout.setContentsMargins(12, 12, 12, 12)
+    layout.setSpacing(8)
+
+    lbl_title = QLabel("Control paso a paso")
+    lbl_title.setStyleSheet("font-weight:700;")
+    lbl_mode = QLabel("Flujo cargado: --")
+    lbl_phase = QLabel("Fase lista para iniciar: --")
+    lbl_current = QLabel("Fase en ejecución: --")
+    lbl_next = QLabel("Próxima fase bloqueada: --")
+    lbl_intent = QLabel("Objetivo de la fase: --")
+    lbl_decision = QLabel("Acción exacta al pulsar Iniciar: --")
+    lbl_target = QLabel("XYZ objetivo de la fase (world): --")
+    lbl_live_operational = QLabel("XYZ actual del TCP (world): --")
+    lbl_live_visual = QLabel("XYZ de referencia visual (world): --")
+    lbl_gripper_expected = QLabel("Pinza esperada en la fase seleccionada: --")
+    lbl_gripper_live = QLabel("Pinza live: --")
+    lbl_object = QLabel("Objeto activo (world): --")
+    lbl_start_pose = QLabel("Pose inicial del robot al lanzar la secuencia: --")
+    info_labels = [
+        lbl_mode,
+        lbl_phase,
+        lbl_current,
+        lbl_next,
+        lbl_intent,
+        lbl_decision,
+        lbl_target,
+        lbl_live_operational,
+        lbl_live_visual,
+        lbl_gripper_expected,
+        lbl_gripper_live,
+        lbl_object,
+        lbl_start_pose,
+    ]
+    for info_label in info_labels:
+        info_label.setWordWrap(True)
+
+    info_grid = QGridLayout()
+    info_grid.setHorizontalSpacing(20)
+    info_grid.setVerticalSpacing(6)
+    left_info_labels = [
+        lbl_mode,
+        lbl_phase,
+        lbl_current,
+        lbl_next,
+        lbl_intent,
+        lbl_decision,
+        lbl_target,
+    ]
+    right_info_labels = [
+        lbl_live_operational,
+        lbl_live_visual,
+        lbl_gripper_expected,
+        lbl_gripper_live,
+        lbl_object,
+        lbl_start_pose,
+    ]
+    for row, info_label in enumerate(left_info_labels):
+        info_grid.addWidget(info_label, row, 0)
+    for row, info_label in enumerate(right_info_labels):
+        info_grid.addWidget(info_label, row, 1)
+    info_grid.setColumnStretch(0, 1)
+    info_grid.setColumnStretch(1, 1)
+
+    lbl_runtime_title, lbl_runtime_help, runtime_group, runtime_blocks = (
+        _build_step_runtime_section(panel)
+    )
+    pipeline_widgets = _build_step_pipeline_history_widgets(panel)
+    lbl_pipeline_title = pipeline_widgets["lbl_pipeline_title"]
+    pipeline_table = pipeline_widgets["pipeline_table"]
+    lbl_pipeline_help = pipeline_widgets["lbl_pipeline_help"]
+    lbl_history_title = pipeline_widgets["lbl_history_title"]
+    lbl_history_frame_help = pipeline_widgets["lbl_history_frame_help"]
+    history_table = pipeline_widgets["history_table"]
+    btn_cart_debug = pipeline_widgets["btn_cart_debug"]
+    chk_cart_debug = pipeline_widgets["chk_cart_debug"]
 
     layout.addWidget(lbl_title)
     layout.addLayout(info_grid)

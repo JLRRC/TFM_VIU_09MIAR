@@ -253,7 +253,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py::UR5MoveItBridge._init_parse_parameters_and_validate": 224,
     "ur5_qt_panel/ur5_qt_panel/panel_ui_state.py::apply_ui_state": 375,
     "ur5_bringup/launch/ur5_stack.launch.py::generate_launch_description": 350,
-    "ur5_qt_panel/ur5_qt_panel/panel_step_ui.py::build_step_window": 346,
+    # F3-step10a/b (2026-05-03): build_step_window bajó de 346 → 186 LOC con
+    # 2 sub-helpers (_build_step_runtime_section 111 + _build_step_pipeline_
+    # history_widgets 90). Removido de baseline (T15 cumplido).
     "ur5_tools/ur5_tools/moveit_bridge/geometry.py::GeometryMixin._compute_approach_ik_seeded": 341,
     "ur5_tools/ur5_tools/moveit_bridge/trajectory_prep.py::TrajectoryPrepMixin._prepare_joint_trajectory_for_controller": 339,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm.py::on_tfm_grasp_object_clicked": 318,
