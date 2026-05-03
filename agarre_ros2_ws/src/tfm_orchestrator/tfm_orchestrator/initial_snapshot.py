@@ -34,13 +34,60 @@ Tuple6 = Tuple[float, float, float, float, float, float]
 
 @dataclass(frozen=True)
 class InitialSnapshotResult:
-    """Resultado de la captura inicial."""
+    """Resultado de la captura inicial.
+
+    B-iter10: campos ``tcp_tf_age_sec`` y ``joint_state_age_sec`` opcionales
+    se rellenan si el caller proveyó ``now_provider`` y los msgs tenían
+    header.stamp. Permiten al caller invocar
+    ``pose_consistency.evaluate_pose_freshness_gate`` post-captura.
+    """
 
     success: bool
     reason: str
     tcp_pose_base: Optional[Tuple7] = None
     joint_positions: Optional[Tuple6] = None
     object_pose_world: Optional[Tuple7] = None
+    tcp_tf_age_sec: Optional[float] = None
+    joint_state_age_sec: Optional[float] = None
+
+
+def _stamp_to_seconds(stamp_msg: Any) -> Optional[float]:
+    """Convierte ``builtin_interfaces/Time`` (sec, nanosec) a float seconds.
+
+    Devuelve None si stamp_msg no expone los atributos esperados.
+    """
+    if stamp_msg is None:
+        return None
+    try:
+        sec = int(getattr(stamp_msg, "sec", 0))
+        nsec = int(getattr(stamp_msg, "nanosec", 0))
+        return float(sec) + float(nsec) / 1_000_000_000.0
+    except (TypeError, ValueError):
+        return None
+
+
+def compute_msg_age_sec(
+    msg_with_header: Any,
+    now_sec: Optional[float],
+) -> Optional[float]:
+    """Edad (s) de un msg ROS con .header.stamp dada la hora actual now_sec.
+
+    Devuelve None si:
+      - msg es None, o
+      - msg.header.stamp no tiene .sec/.nanosec, o
+      - now_sec es None.
+
+    Se permite age negativo (clock skew) — el caller decide qué hacer.
+    """
+    if msg_with_header is None or now_sec is None:
+        return None
+    header = getattr(msg_with_header, "header", None)
+    if header is None:
+        return None
+    stamp_sec = _stamp_to_seconds(getattr(header, "stamp", None))
+    if stamp_sec is None:
+        return None
+    return float(now_sec) - float(stamp_sec)
 
 
 def _transform_to_tuple7(transform_msg: Any) -> Optional[Tuple7]:
@@ -77,6 +124,28 @@ def _pose_msg_to_tuple7(pose_msg: Any) -> Optional[Tuple7]:
         )
     except (AttributeError, TypeError, ValueError):
         return None
+
+
+def _capture_tcp_with_msg(
+    tf_lookup: Callable[..., Any],
+    *,
+    base_frame: str,
+    tcp_frame: str,
+    timeout_sec: float,
+) -> Tuple[Optional[Tuple7], str, Any]:
+    """Variante interna que también devuelve el TransformStamped raw para
+    poder calcular age desde header.stamp."""
+    try:
+        from rclpy.duration import Duration
+        from rclpy.time import Time
+        timeout = Duration(seconds=float(timeout_sec))
+        ts = tf_lookup(base_frame, tcp_frame, Time(), timeout)
+    except Exception as exc:
+        return None, f"tf_lookup_exception:{type(exc).__name__}:{exc}", None
+    tup = _transform_to_tuple7(ts)
+    if tup is None:
+        return None, "tf_transform_unparseable", ts
+    return tup, "ok", ts
 
 
 def capture_tcp_pose_base(
@@ -169,6 +238,8 @@ def capture_initial_snapshot(
     tcp_frame: str = "rg2_tcp",
     tf_timeout_sec: float = 0.5,
     require_object_pose: bool = True,
+    now_sec: Optional[float] = None,
+    last_tf_lookup_msg: Any = None,
 ) -> InitialSnapshotResult:
     """Captura los 3 estados iniciales del ciclo pick.
 
@@ -193,10 +264,11 @@ def capture_initial_snapshot(
 
     # 1. TCP pose en base_link
     tcp_pose: Optional[Tuple7] = None
+    tcp_lookup_msg: Any = None
     if tf_lookup is None:
         reasons.append("tcp:no_tf_lookup_provided")
     else:
-        tcp_pose, tcp_reason = capture_tcp_pose_base(
+        tcp_pose, tcp_reason, tcp_lookup_msg = _capture_tcp_with_msg(
             tf_lookup,
             base_frame=base_frame,
             tcp_frame=tcp_frame,
@@ -237,6 +309,13 @@ def capture_initial_snapshot(
                 if require_object_pose:
                     reasons.append(f"object:resolver_failed:{detail}")
 
+    # B-iter10: calcular ages opcionales si el caller proveyó now_sec.
+    tcp_age_sec: Optional[float] = None
+    js_age_sec: Optional[float] = None
+    if now_sec is not None:
+        tcp_age_sec = compute_msg_age_sec(tcp_lookup_msg, now_sec)
+        js_age_sec = compute_msg_age_sec(joint_state_msg, now_sec)
+
     # Decisión de success.
     snapshot_ok = (
         tcp_pose is not None
@@ -254,4 +333,6 @@ def capture_initial_snapshot(
         tcp_pose_base=tcp_pose,
         joint_positions=joints,
         object_pose_world=object_pose,
+        tcp_tf_age_sec=tcp_age_sec,
+        joint_state_age_sec=js_age_sec,
     )

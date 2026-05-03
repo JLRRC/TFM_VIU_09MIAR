@@ -251,3 +251,79 @@ def test_capture_initial_snapshot_no_inputs_provided():
     assert "tcp:no_tf_lookup_provided" in result.reason
     assert "joints:joint_state_msg_none" in result.reason
     assert "object:no_resolver_provided" in result.reason
+
+
+# ---------------------------------------------------------------------------
+# B-iter10: ages (compute_msg_age_sec)
+# ---------------------------------------------------------------------------
+
+
+def _make_stamped_joint_state(stamp_sec, stamp_nsec=0):
+    """JointState con header.stamp set."""
+    js = _make_joint_state()
+    js.header = SimpleNamespace(stamp=SimpleNamespace(sec=stamp_sec, nanosec=stamp_nsec))
+    return js
+
+
+def test_compute_msg_age_sec_basic():
+    from tfm_orchestrator.initial_snapshot import compute_msg_age_sec
+    js = _make_stamped_joint_state(stamp_sec=100, stamp_nsec=500_000_000)
+    age = compute_msg_age_sec(js, now_sec=100.6)
+    assert age == pytest.approx(0.1, abs=1e-6)
+
+
+def test_compute_msg_age_returns_none_when_msg_none():
+    from tfm_orchestrator.initial_snapshot import compute_msg_age_sec
+    assert compute_msg_age_sec(None, now_sec=100.0) is None
+
+
+def test_compute_msg_age_returns_none_when_no_now():
+    from tfm_orchestrator.initial_snapshot import compute_msg_age_sec
+    js = _make_stamped_joint_state(100)
+    assert compute_msg_age_sec(js, now_sec=None) is None
+
+
+def test_compute_msg_age_returns_none_when_no_header():
+    from tfm_orchestrator.initial_snapshot import compute_msg_age_sec
+    js = _make_joint_state()  # sin header
+    assert compute_msg_age_sec(js, now_sec=100.0) is None
+
+
+def test_capture_initial_snapshot_includes_ages_when_now_provided():
+    """Verifica que el snapshot rellena tcp_tf_age_sec / joint_state_age_sec."""
+    def lookup(*a, **kw):
+        ts = _make_transform_stamped(0.0, 0.0, 0.5)
+        ts.header = SimpleNamespace(stamp=SimpleNamespace(sec=99, nanosec=900_000_000))
+        return ts
+
+    js = _make_stamped_joint_state(stamp_sec=99, stamp_nsec=950_000_000)
+
+    def resolve(name):
+        return _make_resolve_response()
+
+    result = capture_initial_snapshot(
+        object_name="pick_demo",
+        tf_lookup=lookup,
+        joint_state_msg=js,
+        resolve_object_pose=resolve,
+        now_sec=100.0,
+    )
+    assert result.success is True
+    assert result.tcp_tf_age_sec == pytest.approx(0.1, abs=1e-6)
+    assert result.joint_state_age_sec == pytest.approx(0.05, abs=1e-6)
+
+
+def test_capture_initial_snapshot_ages_none_when_no_now():
+    def lookup(*a, **kw):
+        return _make_transform_stamped(0.0, 0.0, 0.5)
+
+    result = capture_initial_snapshot(
+        object_name="",
+        tf_lookup=lookup,
+        joint_state_msg=_make_joint_state(),
+        resolve_object_pose=None,
+        require_object_pose=False,
+        # now_sec NO provisto
+    )
+    assert result.tcp_tf_age_sec is None
+    assert result.joint_state_age_sec is None

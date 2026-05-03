@@ -559,6 +559,13 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
                 )
             return payload
 
+        # B-iter10: now_sec en ROS time para que las ages calculadas sean
+        # consistentes con header.stamp de los msgs (use_sim_time aware).
+        try:
+            now_sec = self.get_clock().now().nanoseconds / 1_000_000_000.0
+        except Exception:
+            now_sec = None
+
         result = capture_initial_snapshot(
             object_name=ctx.object_name,
             tf_lookup=self._tf_buffer.lookup_transform,
@@ -568,6 +575,7 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             tcp_frame=self._snapshot_tcp_frame,
             tf_timeout_sec=self._snapshot_tf_timeout,
             require_object_pose=self._snapshot_require_object_pose,
+            now_sec=now_sec,
         )
 
         # Mutar ctx con los capturados (aunque success=False, parciales sirven).
@@ -576,18 +584,32 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         ctx.initial_joint_positions = result.joint_positions
         ctx.initial_object_pose_world = result.object_pose_world
 
+        # B-iter10: freshness gate informativo (no bloquea si stale, sólo
+        # adjunta reason). Para abortar en stale, set
+        # snapshot_require_fresh_sources=true (param futuro).
+        from .pose_consistency import evaluate_pose_freshness_gate
+
+        fresh_ok, fresh_reason = evaluate_pose_freshness_gate(
+            result.tcp_tf_age_sec,
+            result.joint_state_age_sec,
+        )
+        full_reason = f"initial_snapshot:{result.reason}|{fresh_reason}"
+
         if result.success:
-            self.get_logger().info(
+            level = self.get_logger().info if fresh_ok else self.get_logger().warning
+            level(
                 f"[ORCHESTRATOR_LC][INITIAL_SNAPSHOT] {result.reason} "
                 f"tcp={result.tcp_pose_base} "
                 f"joints={result.joint_positions} "
-                f"object={result.object_pose_world}"
+                f"object={result.object_pose_world} "
+                f"freshness={fresh_reason}"
             )
         else:
             self.get_logger().warning(
-                f"[ORCHESTRATOR_LC][INITIAL_SNAPSHOT] partial: {result.reason}"
+                f"[ORCHESTRATOR_LC][INITIAL_SNAPSHOT] partial: {result.reason} "
+                f"freshness={fresh_reason}"
             )
-        return result.success, f"initial_snapshot:{result.reason}"
+        return result.success, full_reason
 
     # ------------------------------------------------------------------
     # B-iter6 (2026-05-03) — HOME_INITIAL real
