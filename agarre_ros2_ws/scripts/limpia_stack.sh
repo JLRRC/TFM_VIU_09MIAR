@@ -102,6 +102,7 @@ pkill -TERM -f "ur5_stack.launch.py"                   2>/dev/null || true
 pkill -TERM -f "ur5_moveit_bringup"                    2>/dev/null || true
 # Panel Qt y nodos de inferencia
 pkill -TERM -f "ur5_qt_panel.*panel_v2|panel_v2\.py"   2>/dev/null || true
+pkill -TERM -f "ur5_qt_panel.*main_panel|main_panel\.py" 2>/dev/null || true
 pkill -TERM -f "grasp_inference"                       2>/dev/null || true
 # MoveIt 2
 pkill -TERM -f "move_group"                            2>/dev/null || true
@@ -115,6 +116,14 @@ pkill -TERM -f "spawner"                               2>/dev/null || true
 # Nodos auxiliares
 pkill -TERM -f "system_state_manager|release_objects_service" 2>/dev/null || true
 pkill -TERM -f "gripper_attach_backend"                2>/dev/null || true
+pkill -TERM -f "evidence_logger"                       2>/dev/null || true
+pkill -TERM -f "tf_probe|clock_probe"                  2>/dev/null || true
+# F5 (orchestrator + microservicios) — añadidos sprint B-iter1..14
+pkill -TERM -f "pick_orchestrator_lifecycle"           2>/dev/null || true
+pkill -TERM -f "pick_orchestrator_node\|tfm_orchestrator/pick_orchestrator\b" 2>/dev/null || true
+pkill -TERM -f "plan_to_pose_server"                   2>/dev/null || true
+pkill -TERM -f "object_pose_resolver_service"          2>/dev/null || true
+pkill -TERM -f "tf_geometry_service"                   2>/dev/null || true
 # Bridges y publishers
 pkill -TERM -f "gz_pose_bridge|gz_ros_control_guard|world_tf_publisher" 2>/dev/null || true
 pkill -TERM -f "ros_gz_bridge|parameter_bridge"        2>/dev/null || true
@@ -134,7 +143,9 @@ ros2 launch ur5_bringup|ur5_stack.launch.py|ur5_moveit_bringup|\
 ros2_control_node|controller_manager|controller_bootstrap|spawner|\
 move_group|ur5_moveit_bridge|ur5_moveit_py|\
 planning_scene_sync|gripper_attach_backend|release_objects_service|system_state_manager|\
-panel_v2\.py|ur5_qt_panel|grasp_inference" \
+panel_v2\.py|ur5_qt_panel|grasp_inference|main_panel|\
+pick_orchestrator|plan_to_pose_server|object_pose_resolver_service|\
+tf_geometry_service|evidence_logger|tf_probe|clock_probe" \
     >/dev/null 2>&1
 }
 
@@ -151,6 +162,7 @@ if _any_running; then
   pkill -KILL -f "ur5_stack.launch.py"                   2>/dev/null || true
   pkill -KILL -f "ur5_moveit_bringup"                    2>/dev/null || true
   pkill -KILL -f "ur5_qt_panel.*panel_v2|panel_v2\.py"   2>/dev/null || true
+  pkill -KILL -f "ur5_qt_panel.*main_panel|main_panel\.py" 2>/dev/null || true
   pkill -KILL -f "grasp_inference"                       2>/dev/null || true
   pkill -KILL -f "move_group"                            2>/dev/null || true
   pkill -KILL -f "ur5_moveit_bridge"                     2>/dev/null || true
@@ -161,6 +173,14 @@ if _any_running; then
   pkill -KILL -f "spawner"                               2>/dev/null || true
   pkill -KILL -f "system_state_manager|release_objects_service" 2>/dev/null || true
   pkill -KILL -f "gripper_attach_backend"                2>/dev/null || true
+  pkill -KILL -f "evidence_logger"                       2>/dev/null || true
+  pkill -KILL -f "tf_probe|clock_probe"                  2>/dev/null || true
+  # F5 (orchestrator + microservicios) — añadidos sprint B-iter1..14
+  pkill -KILL -f "pick_orchestrator_lifecycle"           2>/dev/null || true
+  pkill -KILL -f "pick_orchestrator_node\|tfm_orchestrator/pick_orchestrator\b" 2>/dev/null || true
+  pkill -KILL -f "plan_to_pose_server"                   2>/dev/null || true
+  pkill -KILL -f "object_pose_resolver_service"          2>/dev/null || true
+  pkill -KILL -f "tf_geometry_service"                   2>/dev/null || true
   pkill -KILL -f "gz_pose_bridge|gz_ros_control_guard|world_tf_publisher" 2>/dev/null || true
   pkill -KILL -f "ros_gz_bridge|parameter_bridge"        2>/dev/null || true
   pkill -KILL -f "robot_state_publisher"                 2>/dev/null || true
@@ -217,7 +237,9 @@ ps aux | grep -E \
 robot_state_publisher|world_tf_publisher|\
 move_group|ur5_moveit_bridge|controller_manager|\
 gripper_attach_backend|system_state_manager|\
-panel_v2|grasp_inference" \
+panel_v2|main_panel|grasp_inference|\
+pick_orchestrator|plan_to_pose_server|object_pose_resolver_service|\
+tf_geometry_service|evidence_logger" \
   | grep -v grep || true
 log "--- ros2 node list (timeout 5s, --no-daemon) ---"
 # --no-daemon: consulta la red DDS directamente, evita el daemon como proxy.
