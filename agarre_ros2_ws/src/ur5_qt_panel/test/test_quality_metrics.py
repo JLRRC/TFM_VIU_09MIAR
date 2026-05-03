@@ -235,7 +235,11 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     "ur5_qt_panel/ur5_qt_panel/pick_object/wait_moveit_result.py::wait_moveit_result": 263,
     # Otros gigantes históricos.
     "ur5_tools/ur5_tools/moveit_bridge/executor.py::ExecutorMixin._execute_joint_trajectory_action": 1343,
-    "ur5_qt_panel/ur5_qt_panel/panel_main_ui.py::build_main_ui": 733,
+    # F3-step9 + step9bis/ter/quater/quintus (2026-05-03): build_main_ui bajó
+    # de 733 → 44 LOC con 6 sub-helpers (_build_main_ui_topbar_and_leds 122 +
+    # _controls_status_row 130 + _camera_and_objects 98 + _manual_joints_and_
+    # info 98 + _info_grid 124 + _robot_baseline_and_tfm 175). Removido de
+    # baseline (T15 cumplido para esta función).
     # F3-step6 + step6-bis/ter/quater/v (2026-05-03): ControlPanelV2.__init__
     # bajó de 678 → 177 LOC con 6 sub-helpers _init_*. Removido de la
     # baseline (T15 cumplido para esta función).

@@ -297,10 +297,14 @@ def _build_main_ui_controls_status_row(panel, main, top) -> None:
     main.addLayout(controls_status_row)
 
 
-def build_main_ui(panel) -> None:
-    root, main, top = _build_main_ui_topbar_and_leds(panel)
-    _build_main_ui_controls_status_row(panel, main, top)
+def _build_main_ui_camera_and_objects(panel):
+    """F3-step9ter: cam_group + obj_panel + timers cámara extraídos.
 
+    Crea: panel.camera_topic_combo + 8 botones cámara + panel.camera_view +
+    panel.camera_info + panel.motion_lbl + 4 estados internos cámara +
+    2 QTimers (display 60ms, health 1200ms) + panel.obj_panel.
+    Devuelve cam_group (necesario para layout left_col).
+    """
     cam_group = QGroupBox("")
     cam_group.setFlat(True)
     cam_group.setStyleSheet("QGroupBox { margin:0; padding:0; }")
@@ -390,7 +394,17 @@ def build_main_ui(panel) -> None:
     panel.obj_panel = ObjectListPanel()
     panel.obj_panel.selected.connect(panel._on_object_clicked)
     panel.obj_panel.setFixedWidth(52)
+    return cam_group
 
+
+def _build_main_ui_manual_joints_and_info(panel):
+    """F3-step9quater: g_manual + manual_top + slider_grid + info_grid extraídos.
+
+    Crea: panel.btn_send_joints + joint_time + chk_auto_joints + btn_gripper +
+    panel.joint_sliders/value_labels/step_buttons (UR5_JOINT_NAMES sliders) +
+    info_grid (DOF UR5 + Pinza RG2 + TCP Panel + Dinámica) + panel.lbl_joint_states.
+    Devuelve g_manual (necesario para layout right_col).
+    """
     g_manual = QGroupBox("")
     g_manual.setFlat(True)
     g_manual.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
@@ -473,6 +487,24 @@ def build_main_ui(panel) -> None:
         slider_grid.addWidget(value_lbl, idx, 4)
     manual_layout.addLayout(slider_grid)
 
+    _build_main_ui_info_grid(panel, manual_layout)
+
+    panel.lbl_joint_states = QLabel("Joint states: esperando /joint_states ...")
+    panel.lbl_joint_states.setStyleSheet("color:#64748b; font-size:10px;")
+    manual_layout.addWidget(panel.lbl_joint_states)
+    manual_layout.addStretch(1)
+    g_manual.setLayout(manual_layout)
+    return g_manual
+
+
+def _build_main_ui_info_grid(panel, manual_layout) -> None:
+    """F3-step9quater-bis: info_grid (DOF + Pinza + TCP + Dinámica) extraído.
+
+    Crea: panel.dof_pos_labels/dof_vel_labels (6 joints UR5) +
+    panel.gripper_labels (2 joints + total) + panel.tcp_xyz_lbl/rpy_lbl/
+    live_xyz_lbl/live_rpy_lbl + panel.vel_norm_lbl/vel_max_lbl/eff_max_lbl.
+    Añade info_grid a manual_layout.
+    """
     info_grid = QGridLayout()
     info_grid.setHorizontalSpacing(6)
     info_grid.setVerticalSpacing(3)
@@ -590,14 +622,16 @@ def build_main_ui(panel) -> None:
 
     manual_layout.addLayout(info_grid)
 
-    panel.lbl_joint_states = QLabel("Joint states: esperando /joint_states ...")
-    panel.lbl_joint_states.setStyleSheet("color:#64748b; font-size:10px;")
-    manual_layout.addWidget(panel.lbl_joint_states)
-    manual_layout.addStretch(1)
-    g_manual.setLayout(manual_layout)
-    panel.trace_group = panel._build_trace_group()
-    panel.science_group = panel._build_science_group()
 
+def _build_main_ui_robot_baseline_and_tfm(panel):
+    """F3-step9quintus: g_robot con cols Baseline (Demo) y TFM extraídos.
+
+    Crea: btn_debug_motion + btn_home/table/basket + btn_pick_demo +
+    btn_pick_demo_approach + btn_pick_object + combo_tfm_experiment +
+    chk_tfm_use_depth/repro_mode/raw_output + btn_tfm_memoria_case/apply/
+    infer/visualize/reset/grasp_object + baseline_col + tfm_col.
+    Devuelve g_robot (necesario para layout left_col).
+    """
     g_robot = QGroupBox("")
     g_robot.setFlat(True)
     g_robot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
@@ -763,6 +797,17 @@ def build_main_ui(panel) -> None:
     robot_layout.addLayout(baseline_col, 1, 0)
     robot_layout.addLayout(tfm_col, 1, 1)
     g_robot.setLayout(robot_layout)
+    return g_robot
+
+
+def build_main_ui(panel) -> None:
+    root, main, top = _build_main_ui_topbar_and_leds(panel)
+    _build_main_ui_controls_status_row(panel, main, top)
+    cam_group = _build_main_ui_camera_and_objects(panel)
+    g_manual = _build_main_ui_manual_joints_and_info(panel)
+    panel.trace_group = panel._build_trace_group()
+    panel.science_group = panel._build_science_group()
+    g_robot = _build_main_ui_robot_baseline_and_tfm(panel)
 
     left_col = QVBoxLayout()
     left_col.setSpacing(4)
