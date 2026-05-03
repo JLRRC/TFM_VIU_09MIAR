@@ -44,6 +44,7 @@ setup(
             "clock_probe = ur5_tools.clock_probe:main",
             "jt_smoke_test = ur5_tools.jt_smoke_test:main",
             "tf_geometry_service = ur5_tools.tf_geometry_service:main",
+            "object_pose_resolver_service = ur5_tools.object_pose_resolver_service:main",
         ],
     },
 )
