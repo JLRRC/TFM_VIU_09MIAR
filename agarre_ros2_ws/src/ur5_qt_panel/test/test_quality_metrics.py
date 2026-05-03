@@ -266,7 +266,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # + _tfm_grasp_compute_width_and_preopen 44 + _tfm_grasp_run_pre_checks 98).
     # Removido de baseline (T15 cumplido).
     "ur5_tools/ur5_tools/gripper_attach_backend.py::GripperAttachBackend.__init__": 342,  # F5-step6b: +33 LOC (params + state nuevos para 4 services)
-    "ur5_qt_panel/ur5_qt_panel/panel_launchers.py::start_moveit_bridge": 287,
+    # F3-step14a/b (2026-05-03): start_moveit_bridge bajó de 287 → 100 LOC
+    # con 2 sub-helpers (_build_moveit_bridge_ros_args 101 + _verify_moveit_
+    # bridge_ready_async 36). Removido de baseline (T15 cumplido).
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py::execute_tfm_world_grasp.worker": 286,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_inference.py::handle_infer_result": 283,
     # F3-step7 (2026-05-03): RosWorker._thread_main bajó de 279 → 120 LOC

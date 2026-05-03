@@ -775,6 +775,147 @@ def stop_moveit(panel):
     panel.signal_moveit_state.emit("OFF", "manual")
     panel._refresh_controls()
 
+def _build_moveit_bridge_ros_args(panel, *, cm_path: str):
+    """F3-step14a: construye la lista de --ros-args -p k:=v para el bridge.
+
+    Lee 18+ env vars PANEL_MOVEIT_BRIDGE_* (timeouts, intervals, scales,
+    bool flags) con defaults canónicos, ensambla la lista de pares clave:=
+    valor compatible con ros2 run. Devuelve (ros_args, summary) — summary
+    es un dict serializable usado para emitir el log [MOVEIT][BRIDGE]
+    launch_param.
+    """
+    use_sim_time = _get_launchers_params().use_sim_time
+    bridge_moveit_py_sim_time = _get_launchers_params().moveit_bridge_sim_time
+    ros_args = [
+        "--ros-args",
+        "-p", "backend:=auto",
+        "-p", "base_frame:=base_link",
+        "-p", "ee_frame:=rg2_tcp",
+        "-p", "result_topic:=/desired_grasp/result",
+        "-p", f"controller_manager:={cm_path}",
+        "-p", f"use_sim_time:={'true' if use_sim_time else 'false'}",
+        "-p", "moveit_py_use_sim_time:=" + ("true" if bridge_moveit_py_sim_time else "false"),
+    ]
+    exec_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC")
+    req_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC")
+    min_plan_interval = _env_float_opt("PANEL_MOVEIT_BRIDGE_MIN_PLAN_INTERVAL_SEC")
+    stale_ttl = _env_float_opt("PANEL_MOVEIT_BRIDGE_STALE_REQUEST_TTL_SEC")
+    heartbeat_rate = _env_float_opt("PANEL_MOVEIT_BRIDGE_HEARTBEAT_RATE_HZ")
+    joint_state_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC")
+    joint_state_max_age = _env_float_opt("PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC")
+    force_fjt_direct = _env_flag("PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT", False)
+    unwrap_continuous = _env_flag("PANEL_MOVEIT_BRIDGE_UNWRAP_CONTINUOUS_JOINTS", False)
+    require_rid = _env_flag("PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID", True)
+    drop_pending = _env_flag("PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED", True)
+    dry_run_plan_only = _env_flag("PANEL_MOVEIT_BRIDGE_DRY_RUN", False)
+    if exec_timeout is None:
+        exec_timeout = 150.0
+    if req_timeout is None:
+        req_timeout = 180.0
+    ros_args.extend(["-p", f"execute_timeout_sec:={max(1.0, exec_timeout):.3f}"])
+    ros_args.extend(["-p", f"request_timeout_sec:={max(2.0, req_timeout):.3f}"])
+    if min_plan_interval is not None:
+        ros_args.extend(["-p", f"min_plan_interval_sec:={max(0.0, min_plan_interval):.3f}"])
+    if stale_ttl is not None:
+        ros_args.extend(["-p", f"stale_request_ttl_sec:={max(1.0, stale_ttl):.3f}"])
+    if heartbeat_rate is not None:
+        ros_args.extend(["-p", f"heartbeat_rate_hz:={max(0.2, heartbeat_rate):.3f}"])
+    if joint_state_timeout is None:
+        joint_state_timeout = 6.0
+    if joint_state_max_age is None:
+        joint_state_max_age = 2.5
+    ros_args.extend(["-p", f"joint_state_valid_timeout_sec:={max(0.2, joint_state_timeout):.3f}"])
+    ros_args.extend(["-p", f"joint_state_valid_max_age_sec:={max(0.1, joint_state_max_age):.3f}"])
+    ros_args.extend(["-p", f"require_request_id:={'true' if require_rid else 'false'}"])
+    ros_args.extend(["-p", "drop_pending_on_tagged_request:=" + ("true" if drop_pending else "false")])
+    ros_args.extend(["-p", "dry_run_plan_only:=" + ("true" if dry_run_plan_only else "false")])
+    ros_args.extend(["-p", "force_fjt_direct_for_walltime_sim:=" + ("true" if force_fjt_direct else "false")])
+    ros_args.extend(["-p", "unwrap_continuous_joints:=" + ("true" if unwrap_continuous else "false")])
+    path_constraint_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD")
+    if path_constraint_tol is None:
+        path_constraint_tol = 1.5
+    ros_args.extend(["-p", f"path_constraint_joint_tolerance_rad:={max(0.0, path_constraint_tol):.3f}"])
+    controller_goal_time_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TIME_TOL_SEC")
+    if controller_goal_time_tol is None:
+        controller_goal_time_tol = 30.0
+    ros_args.extend(["-p", f"controller_goal_time_tolerance_sec:={max(0.0, controller_goal_time_tol):.3f}"])
+    controller_expected_goal_time = _env_float_opt("PANEL_MOVEIT_BRIDGE_CONTROLLER_EXPECTED_GOAL_TIME_SEC")
+    if controller_expected_goal_time is None:
+        controller_expected_goal_time = max(30.0, float(controller_goal_time_tol))
+    ros_args.extend(["-p", f"controller_expected_goal_time_sec:={max(0.0, controller_expected_goal_time):.3f}"])
+    controller_path_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_CONTROLLER_PATH_TOL_RAD")
+    if controller_path_tol is not None:
+        ros_args.extend(["-p", f"controller_path_tolerance_rad:={max(0.0, controller_path_tol):.3f}"])
+    controller_goal_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TOL_RAD")
+    if controller_goal_tol is not None:
+        ros_args.extend(["-p", f"controller_goal_tolerance_rad:={max(0.0, controller_goal_tol):.3f}"])
+    vel_scale = _env_float_opt("PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE") or 0.35
+    accel_scale = _env_float_opt("PANEL_MOVEIT_BRIDGE_ACCEL_SCALE") or 0.35
+    ros_args.extend(["-p", f"max_velocity_scaling_factor:={max(0.05, min(1.0, vel_scale)):.2f}"])
+    ros_args.extend(["-p", f"max_acceleration_scaling_factor:={max(0.05, min(1.0, accel_scale)):.2f}"])
+    summary = {
+        "use_sim_time": use_sim_time,
+        "moveit_py_use_sim_time": bridge_moveit_py_sim_time,
+        "execute_timeout_sec": exec_timeout,
+        "request_timeout_sec": req_timeout,
+        "min_plan_interval_sec": min_plan_interval,
+        "stale_request_ttl_sec": stale_ttl,
+        "heartbeat_rate_hz": heartbeat_rate,
+        "joint_state_valid_timeout_sec": joint_state_timeout,
+        "joint_state_valid_max_age_sec": joint_state_max_age,
+        "require_request_id": require_rid,
+        "drop_pending_on_tagged_request": drop_pending,
+        "dry_run_plan_only": dry_run_plan_only,
+        "force_fjt_direct_for_walltime_sim": force_fjt_direct,
+        "unwrap_continuous_joints": unwrap_continuous,
+        "controller_path_tolerance_rad": controller_path_tol,
+        "controller_goal_tolerance_rad": controller_goal_tol,
+        "controller_goal_time_tolerance_sec": controller_goal_time_tol,
+        "controller_expected_goal_time_sec": controller_expected_goal_time,
+        "velocity_scaling": vel_scale,
+        "accel_scaling": accel_scale,
+    }
+    return ros_args, summary
+
+
+def _verify_moveit_bridge_ready_async(panel) -> None:
+    """F3-step14b: verifica que el bridge MoveIt está conectado tras lanzarlo.
+
+    12 reintentos x 0.4s. Comprueba pose_subs > 0 y result_pubs > 0 en
+    /desired_grasp + /desired_grasp/result. Aborta si el proceso muere.
+    Emite [MOVEIT][BRIDGE] verify/connected/WARN según resultado.
+    """
+    pose_topic = "/desired_grasp"
+    result_topic = "/desired_grasp/result"
+    max_retries = 12
+    for attempt in range(1, max_retries + 1):
+        if not panel._proc_alive(panel.moveit_bridge_proc):
+            panel._emit_log(
+                f"[MOVEIT][BRIDGE] verify failed attempt={attempt}/{max_retries} reason=process_not_alive"
+            )
+            return
+        if not panel._ros_worker_started:
+            panel._ensure_ros_worker_started()
+        if panel._ros_worker_started and panel.ros_worker.node_ready():
+            pose_subs = panel.ros_worker.topic_subscriber_count(pose_topic)
+            result_pubs = panel.ros_worker.topic_publisher_count(result_topic)
+            panel._emit_log(
+                "[MOVEIT][BRIDGE] verify "
+                f"attempt={attempt}/{max_retries} pose_subs={pose_subs} result_pubs={result_pubs} "
+                f"pose_topic={pose_topic} result_topic={result_topic}"
+            )
+            if pose_subs > 0 and result_pubs > 0:
+                panel._emit_log(
+                    f"[MOVEIT][BRIDGE] connected pose_subs={pose_subs} result_pubs={result_pubs}"
+                )
+                return
+        time.sleep(0.4)
+    panel._emit_log(
+        "[MOVEIT][BRIDGE] WARN no conectado tras reintentos "
+        f"pose_topic={pose_topic} result_topic={result_topic}"
+    )
+
+
 def start_moveit_bridge(panel):
     if panel._block_if_managed("Start MoveIt bridge"):
         return
@@ -820,188 +961,35 @@ def start_moveit_bridge(panel):
         bridge_log = os.path.join(LOG_DIR, "moveit_bridge.log")
         rotate_log(bridge_log)
         env = f"export ROS_LOG_DIR='{LOG_DIR}/ros' ; "
-        ros_args = [
-            "--ros-args",
-            "-p",
-            "backend:=auto",
-            "-p",
-            "base_frame:=base_link",
-            "-p",
-            "ee_frame:=rg2_tcp",
-            "-p",
-            "result_topic:=/desired_grasp/result",
-        ]
         try:
             cm_path = panel._controller_manager_path()
         except Exception:
             cm_path = "/controller_manager"
-        ros_args.extend(["-p", f"controller_manager:={cm_path}"])
-        use_sim_time = _get_launchers_params().use_sim_time
-        # F2-step2: PANEL_MOVEIT_BRIDGE_SIM_TIME canalizado. NOTA: el default
-        # histórico era "0" (False); el dataclass mantiene ese default. Con
-        # MoveItPy en sim-time en Jazzy puede abortar por qos_overrides./clock.
-        bridge_moveit_py_sim_time = _get_launchers_params().moveit_bridge_sim_time
-        ros_args.extend(["-p", f"use_sim_time:={'true' if use_sim_time else 'false'}"])
-        ros_args.extend(
-            [
-                "-p",
-                "moveit_py_use_sim_time:="
-                + ("true" if bridge_moveit_py_sim_time else "false"),
-            ]
-        )
-        # Runtime tuning knobs (no recompilar): set via env before launching bridge.
-        exec_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC")
-        req_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC")
-        min_plan_interval = _env_float_opt("PANEL_MOVEIT_BRIDGE_MIN_PLAN_INTERVAL_SEC")
-        stale_ttl = _env_float_opt("PANEL_MOVEIT_BRIDGE_STALE_REQUEST_TTL_SEC")
-        heartbeat_rate = _env_float_opt("PANEL_MOVEIT_BRIDGE_HEARTBEAT_RATE_HZ")
-        joint_state_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC")
-        joint_state_max_age = _env_float_opt("PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC")
-        force_fjt_direct = _env_flag("PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT", False)
-        unwrap_continuous = _env_flag(
-            "PANEL_MOVEIT_BRIDGE_UNWRAP_CONTINUOUS_JOINTS", False
-        )
-        require_rid = _env_flag("PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID", True)
-        drop_pending = _env_flag("PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED", True)
-        dry_run_plan_only = _env_flag("PANEL_MOVEIT_BRIDGE_DRY_RUN", False)
-        if exec_timeout is None:
-            exec_timeout = 150.0
-        if req_timeout is None:
-            req_timeout = 180.0
-        if exec_timeout is not None:
-            ros_args.extend(["-p", f"execute_timeout_sec:={max(1.0, exec_timeout):.3f}"])
-        if req_timeout is not None:
-            ros_args.extend(["-p", f"request_timeout_sec:={max(2.0, req_timeout):.3f}"])
-        if min_plan_interval is not None:
-            ros_args.extend(
-                ["-p", f"min_plan_interval_sec:={max(0.0, min_plan_interval):.3f}"]
-            )
-        if stale_ttl is not None:
-            ros_args.extend(["-p", f"stale_request_ttl_sec:={max(1.0, stale_ttl):.3f}"])
-        if heartbeat_rate is not None:
-            ros_args.extend(["-p", f"heartbeat_rate_hz:={max(0.2, heartbeat_rate):.3f}"])
-        if joint_state_timeout is None:
-            joint_state_timeout = 6.0
-        if joint_state_max_age is None:
-            joint_state_max_age = 2.5
-        ros_args.extend(
-            ["-p", f"joint_state_valid_timeout_sec:={max(0.2, joint_state_timeout):.3f}"]
-        )
-        ros_args.extend(
-            ["-p", f"joint_state_valid_max_age_sec:={max(0.1, joint_state_max_age):.3f}"]
-        )
-        ros_args.extend(["-p", f"require_request_id:={'true' if require_rid else 'false'}"])
-        ros_args.extend(
-            [
-                "-p",
-                "drop_pending_on_tagged_request:="
-                + ("true" if drop_pending else "false"),
-            ]
-        )
-        ros_args.extend(
-            [
-                "-p",
-                "dry_run_plan_only:="
-                + ("true" if dry_run_plan_only else "false"),
-            ]
-        )
-        ros_args.extend(
-            [
-                "-p",
-                "force_fjt_direct_for_walltime_sim:="
-                + ("true" if force_fjt_direct else "false"),
-            ]
-        )
-        ros_args.extend(
-            [
-                "-p",
-                "unwrap_continuous_joints:="
-                + ("true" if unwrap_continuous else "false"),
-            ]
-        )
-        path_constraint_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD")
-        if path_constraint_tol is None:
-            path_constraint_tol = 1.5
-        ros_args.extend(["-p", f"path_constraint_joint_tolerance_rad:={max(0.0, path_constraint_tol):.3f}"])
-        controller_goal_time_tol = _env_float_opt(
-            "PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TIME_TOL_SEC"
-        )
-        if controller_goal_time_tol is None:
-            controller_goal_time_tol = 30.0
-        ros_args.extend(
-            [
-                "-p",
-                "controller_goal_time_tolerance_sec:="
-                + f"{max(0.0, controller_goal_time_tol):.3f}",
-            ]
-        )
-        controller_expected_goal_time = _env_float_opt(
-            "PANEL_MOVEIT_BRIDGE_CONTROLLER_EXPECTED_GOAL_TIME_SEC"
-        )
-        if controller_expected_goal_time is None:
-            controller_expected_goal_time = max(30.0, float(controller_goal_time_tol))
-        ros_args.extend(
-            [
-                "-p",
-                "controller_expected_goal_time_sec:="
-                + f"{max(0.0, controller_expected_goal_time):.3f}",
-            ]
-        )
-        controller_path_tol = _env_float_opt(
-            "PANEL_MOVEIT_BRIDGE_CONTROLLER_PATH_TOL_RAD"
-        )
-        if controller_path_tol is not None:
-            ros_args.extend(
-                [
-                    "-p",
-                    "controller_path_tolerance_rad:="
-                    + f"{max(0.0, controller_path_tol):.3f}",
-                ]
-            )
-        controller_goal_tol = _env_float_opt(
-            "PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TOL_RAD"
-        )
-        if controller_goal_tol is not None:
-            ros_args.extend(
-                [
-                    "-p",
-                    "controller_goal_tolerance_rad:="
-                    + f"{max(0.0, controller_goal_tol):.3f}",
-                ]
-            )
-        # Conservative default scaling improves simulated tracking stability.
-        vel_scale = _env_float_opt("PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE")
-        if vel_scale is None:
-            vel_scale = 0.35
-        accel_scale = _env_float_opt("PANEL_MOVEIT_BRIDGE_ACCEL_SCALE")
-        if accel_scale is None:
-            accel_scale = 0.35
-        ros_args.extend(["-p", f"max_velocity_scaling_factor:={max(0.05, min(1.0, vel_scale)):.2f}"])
-        ros_args.extend(["-p", f"max_acceleration_scaling_factor:={max(0.05, min(1.0, accel_scale)):.2f}"])
+        ros_args, p = _build_moveit_bridge_ros_args(panel, cm_path=cm_path)
         panel._emit_log(
             "[MOVEIT][BRIDGE] launch_param "
             f"controller_manager={cm_path} "
-            f"use_sim_time={'true' if use_sim_time else 'false'} "
+            f"use_sim_time={'true' if p['use_sim_time'] else 'false'} "
             "base_frame=base_link "
             "ee_frame=rg2_tcp "
-            f"moveit_py_use_sim_time={'true' if bridge_moveit_py_sim_time else 'false'} "
-            f"execute_timeout_sec={exec_timeout if exec_timeout is not None else 'default'} "
-            f"request_timeout_sec={req_timeout if req_timeout is not None else 'default'} "
-            f"min_plan_interval_sec={min_plan_interval if min_plan_interval is not None else 'default'} "
-            f"stale_request_ttl_sec={stale_ttl if stale_ttl is not None else 'default'} "
-            f"heartbeat_rate_hz={heartbeat_rate if heartbeat_rate is not None else 'default'} "
-            f"joint_state_valid_timeout_sec={joint_state_timeout if joint_state_timeout is not None else 'default'} "
-            f"joint_state_valid_max_age_sec={joint_state_max_age if joint_state_max_age is not None else 'default'} "
-            f"require_request_id={'true' if require_rid else 'false'} "
-            f"drop_pending_on_tagged_request={'true' if drop_pending else 'false'} "
-            f"dry_run_plan_only={'true' if dry_run_plan_only else 'false'} "
-            f"force_fjt_direct_for_walltime_sim={'true' if force_fjt_direct else 'false'} "
-            f"unwrap_continuous_joints={'true' if unwrap_continuous else 'false'} "
-            f"controller_path_tolerance_rad={controller_path_tol if controller_path_tol is not None else 'default'} "
-            f"controller_goal_tolerance_rad={controller_goal_tol if controller_goal_tol is not None else 'default'} "
-            f"controller_goal_time_tolerance_sec={controller_goal_time_tol:.3f} "
-            f"controller_expected_goal_time_sec={controller_expected_goal_time:.3f} "
-            f"velocity_scaling={vel_scale:.2f} accel_scaling={accel_scale:.2f}"
+            f"moveit_py_use_sim_time={'true' if p['moveit_py_use_sim_time'] else 'false'} "
+            f"execute_timeout_sec={p['execute_timeout_sec']} "
+            f"request_timeout_sec={p['request_timeout_sec']} "
+            f"min_plan_interval_sec={p['min_plan_interval_sec'] if p['min_plan_interval_sec'] is not None else 'default'} "
+            f"stale_request_ttl_sec={p['stale_request_ttl_sec'] if p['stale_request_ttl_sec'] is not None else 'default'} "
+            f"heartbeat_rate_hz={p['heartbeat_rate_hz'] if p['heartbeat_rate_hz'] is not None else 'default'} "
+            f"joint_state_valid_timeout_sec={p['joint_state_valid_timeout_sec']} "
+            f"joint_state_valid_max_age_sec={p['joint_state_valid_max_age_sec']} "
+            f"require_request_id={'true' if p['require_request_id'] else 'false'} "
+            f"drop_pending_on_tagged_request={'true' if p['drop_pending_on_tagged_request'] else 'false'} "
+            f"dry_run_plan_only={'true' if p['dry_run_plan_only'] else 'false'} "
+            f"force_fjt_direct_for_walltime_sim={'true' if p['force_fjt_direct_for_walltime_sim'] else 'false'} "
+            f"unwrap_continuous_joints={'true' if p['unwrap_continuous_joints'] else 'false'} "
+            f"controller_path_tolerance_rad={p['controller_path_tolerance_rad'] if p['controller_path_tolerance_rad'] is not None else 'default'} "
+            f"controller_goal_tolerance_rad={p['controller_goal_tolerance_rad'] if p['controller_goal_tolerance_rad'] is not None else 'default'} "
+            f"controller_goal_time_tolerance_sec={p['controller_goal_time_tolerance_sec']:.3f} "
+            f"controller_expected_goal_time_sec={p['controller_expected_goal_time_sec']:.3f} "
+            f"velocity_scaling={p['velocity_scaling']:.2f} accel_scaling={p['accel_scaling']:.2f}"
         )
         cmd_core = with_line_buffer(
             " ".join(["ros2", "run", "ur5_tools", "ur5_moveit_bridge", *ros_args])
@@ -1022,37 +1010,7 @@ def start_moveit_bridge(panel):
             "node=ur5_moveit_bridge"
         )
         QTimer.singleShot(800, panel._clear_moveit_bridge_launching)
-        def _verify_bridge_ready() -> None:
-            pose_topic = "/desired_grasp"
-            result_topic = "/desired_grasp/result"
-            max_retries = 12
-            for attempt in range(1, max_retries + 1):
-                if not panel._proc_alive(panel.moveit_bridge_proc):
-                    panel._emit_log(
-                        f"[MOVEIT][BRIDGE] verify failed attempt={attempt}/{max_retries} reason=process_not_alive"
-                    )
-                    return
-                if not panel._ros_worker_started:
-                    panel._ensure_ros_worker_started()
-                if panel._ros_worker_started and panel.ros_worker.node_ready():
-                    pose_subs = panel.ros_worker.topic_subscriber_count(pose_topic)
-                    result_pubs = panel.ros_worker.topic_publisher_count(result_topic)
-                    panel._emit_log(
-                        "[MOVEIT][BRIDGE] verify "
-                        f"attempt={attempt}/{max_retries} pose_subs={pose_subs} result_pubs={result_pubs} "
-                        f"pose_topic={pose_topic} result_topic={result_topic}"
-                    )
-                    if pose_subs > 0 and result_pubs > 0:
-                        panel._emit_log(
-                            f"[MOVEIT][BRIDGE] connected pose_subs={pose_subs} result_pubs={result_pubs}"
-                        )
-                        return
-                time.sleep(0.4)
-            panel._emit_log(
-                "[MOVEIT][BRIDGE] WARN no conectado tras reintentos "
-                f"pose_topic={pose_topic} result_topic={result_topic}"
-            )
-        panel._run_async(_verify_bridge_ready)
+        panel._run_async(lambda: _verify_moveit_bridge_ready_async(panel))
     except Exception as exc:
         panel._set_status(f"Error lanzando MoveIt bridge: {exc}", error=True)
         set_led(panel.led_moveit_bridge, "error")
