@@ -70,6 +70,150 @@ class GeometryMixin:
             return None, f"transform_parse_failed:{frame_name}:{type(exc).__name__}:{exc}"
         return transform_np, f"transform_ok:{frame_name}"
 
+    def _eval_ik_seed_candidate(
+        self,
+        *,
+        robot_model,
+        seed_label: str,
+        seed_positions,
+        group_joint_names,
+        score_reference_map: dict,
+        seed_reference_label: str,
+        ik_tip: str,
+        tcp_target_pose,
+        T_base_ee_target,
+        T_model_tcp_target,
+        candidate_fk_tol_m: float,
+        candidate_max_joint_delta_rad: float,
+        candidate_sum_joint_delta_rad: float,
+        joint_delta_fn,
+    ):
+        """F3-step31a: evalua un candidato IK con un seed dado (~115 LOC).
+
+        Llama set_from_ik con el seed, normaliza wrap-around joints, evalua
+        FK error vs target + max/sum joint delta. Devuelve
+        (candidate_score, ik_state, solved_map) si valido, None si rechazado.
+        """
+        ik_state = MoveItRobotState(robot_model)
+        ik_state.set_joint_group_positions(self._group_name, seed_positions)
+        ik_state.update()
+        ok = ik_state.set_from_ik(
+            self._group_name,
+            tcp_target_pose,
+            ik_tip,
+            1.0,
+        )
+        if not ok:
+            self.get_logger().warning(
+                f"[APPROACH_IK_SEED] IK solve failed seed={seed_label} "
+                f"tip={ik_tip} target_frame={self._base_frame or 'base_link'} "
+                f"tcp_target_model=({T_model_tcp_target[0,3]:.3f},"
+                f"{T_model_tcp_target[1,3]:.3f},{T_model_tcp_target[2,3]:.3f})"
+            )
+            return None
+        ik_state.update()
+        solved = list(ik_state.get_joint_group_positions(self._group_name))
+        wrap_adjusted: list[str] = []
+        for jdx, jname in enumerate(group_joint_names):
+            if jname not in self._WRAPAROUND_JOINTS:
+                continue
+            ref_val = score_reference_map.get(jname)
+            if ref_val is None:
+                continue
+            raw_val = float(solved[jdx])
+            adjusted = raw_val + (
+                math.tau * round((float(ref_val) - raw_val) / math.tau)
+            )
+            if abs(adjusted - raw_val) > 1e-6:
+                solved[jdx] = adjusted
+                wrap_adjusted.append(f"{jname}:{raw_val:.3f}->{adjusted:.3f}")
+        if wrap_adjusted:
+            ik_state.set_joint_group_positions(
+                self._group_name,
+                np.asarray(solved, dtype=float),
+            )
+            ik_state.update()
+            self.get_logger().info(
+                "[APPROACH_IK_SEED] wrap-normalized continuous joints "
+                f"seed={seed_label} adjusted={','.join(wrap_adjusted)}"
+            )
+        solved_map = dict(zip(group_joint_names, solved))
+        T_model_base_candidate, base_candidate_detail = (
+            self._robot_state_frame_transform_matrix(ik_state, self._base_frame)
+        )
+        T_model_ee_candidate, ee_candidate_detail = (
+            self._robot_state_frame_transform_matrix(ik_state, self._ee_frame)
+        )
+        fk_err = float("inf")
+        fk_dx = float("nan")
+        fk_dy = float("nan")
+        fk_dz = float("nan")
+        if T_model_base_candidate is not None and T_model_ee_candidate is not None:
+            T_base_ee_candidate = (
+                np.linalg.inv(T_model_base_candidate) @ T_model_ee_candidate
+            )
+            fk_dx = float(T_base_ee_candidate[0, 3] - T_base_ee_target[0, 3])
+            fk_dy = float(T_base_ee_candidate[1, 3] - T_base_ee_target[1, 3])
+            fk_dz = float(T_base_ee_candidate[2, 3] - T_base_ee_target[2, 3])
+            fk_err = math.sqrt((fk_dx * fk_dx) + (fk_dy * fk_dy) + (fk_dz * fk_dz))
+        deltas: list[float] = []
+        for joint_name in group_joint_names:
+            delta = joint_delta_fn(score_reference_map, solved_map, joint_name)
+            if delta is not None:
+                deltas.append(float(delta))
+        max_delta = max(deltas) if deltas else float("inf")
+        sum_delta = sum(deltas) if deltas else float("inf")
+        elbow_val = solved_map.get("elbow_joint", None)
+        elbow_abs = abs(float(elbow_val)) if elbow_val is not None else float("inf")
+        branch_hint = (
+            "elbow_down_like"
+            if elbow_val is not None and elbow_abs <= (math.pi / 3)
+            else "elbow_wide"
+        )
+        joints_str = " ".join(
+            f"{name}={solved_map[name]:.3f}"
+            for name in group_joint_names
+            if name in solved_map
+        )
+        self.get_logger().info(
+            f"[APPROACH_IK_SEED] candidate seed={seed_label} "
+            f"score_ref={seed_reference_label} elbow="
+            f"{f'{elbow_val:.3f}' if elbow_val is not None else 'n/a'} "
+            f"branch={branch_hint} compared={len(deltas)} "
+            f"fk_err={fk_err:.3f} "
+            f"delta=({fk_dx:.3f},{fk_dy:.3f},{fk_dz:.3f}) "
+            f"max_delta={max_delta:.3f} sum_delta={sum_delta:.3f} {joints_str}"
+        )
+        if not math.isfinite(fk_err):
+            self.get_logger().warning(
+                f"[APPROACH_IK_SEED] rejecting seed={seed_label} "
+                f"reason=fk_unavailable base={base_candidate_detail} ee={ee_candidate_detail}"
+            )
+            return None
+        if fk_err > candidate_fk_tol_m:
+            self.get_logger().warning(
+                f"[APPROACH_IK_SEED] rejecting seed={seed_label} "
+                f"reason=fk_mismatch fk_err={fk_err:.3f} tol={candidate_fk_tol_m:.3f} "
+                f"delta=({fk_dx:.3f},{fk_dy:.3f},{fk_dz:.3f})"
+            )
+            return None
+        if max_delta > candidate_max_joint_delta_rad or sum_delta > candidate_sum_joint_delta_rad:
+            self.get_logger().warning(
+                f"[APPROACH_IK_SEED] rejecting seed={seed_label} "
+                f"reason=branch_too_far max_delta={max_delta:.3f} "
+                f"sum_delta={sum_delta:.3f} "
+                f"limits=({candidate_max_joint_delta_rad:.3f},{candidate_sum_joint_delta_rad:.3f})"
+            )
+            return None
+        candidate_score = (
+            fk_err,
+            max_delta,
+            sum_delta,
+            elbow_abs,
+            0 if seed_label == "current_state" else 1,
+        )
+        return candidate_score, ik_state, solved_map
+
     def _compute_approach_ik_seeded(
         self,
         target: PoseStamped,
@@ -248,137 +392,25 @@ class GeometryMixin:
             best_score: tuple[float, float, float, int] | None = None
             best_solved_map: dict[str, float] = {}
             for seed_label, seed_positions in seed_candidates:
-                ik_state = MoveItRobotState(robot_model)
-                ik_state.set_joint_group_positions(self._group_name, seed_positions)
-                ik_state.update()
-                ok = ik_state.set_from_ik(
-                    self._group_name,
-                    tcp_target_pose,
-                    ik_tip,
-                    1.0,
+                result = self._eval_ik_seed_candidate(
+                    robot_model=robot_model,
+                    seed_label=seed_label,
+                    seed_positions=seed_positions,
+                    group_joint_names=group_joint_names,
+                    score_reference_map=score_reference_map,
+                    seed_reference_label=seed_reference_label,
+                    ik_tip=ik_tip,
+                    tcp_target_pose=tcp_target_pose,
+                    T_base_ee_target=T_base_ee_target,
+                    T_model_tcp_target=T_model_tcp_target,
+                    candidate_fk_tol_m=candidate_fk_tol_m,
+                    candidate_max_joint_delta_rad=candidate_max_joint_delta_rad,
+                    candidate_sum_joint_delta_rad=candidate_sum_joint_delta_rad,
+                    joint_delta_fn=_joint_delta,
                 )
-                if not ok:
-                    self.get_logger().warning(
-                        f"[APPROACH_IK_SEED] IK solve failed seed={seed_label} "
-                        f"tip={ik_tip} target_frame={self._base_frame or 'base_link'} "
-                        f"tcp_target_model=({T_model_tcp_target[0,3]:.3f},"
-                        f"{T_model_tcp_target[1,3]:.3f},{T_model_tcp_target[2,3]:.3f})"
-                    )
+                if result is None:
                     continue
-                ik_state.update()
-                solved = list(ik_state.get_joint_group_positions(self._group_name))
-                # Wrap-aware normalization: re-express continuous joints within
-                # +/- pi of the score reference so an IK solution that happens
-                # to come back unwound (e.g. wrist_2 = ref + 2*pi) is treated as
-                # the equivalent short-path pose. Without this the seeded IK is
-                # rejected as branch_too_far and OMPL falls back to a pose goal
-                # that may pick the same unwound branch, forcing the controller
-                # to perform a full revolution.
-                wrap_adjusted: list[str] = []
-                for jdx, jname in enumerate(group_joint_names):
-                    if jname not in self._WRAPAROUND_JOINTS:
-                        continue
-                    ref_val = score_reference_map.get(jname)
-                    if ref_val is None:
-                        continue
-                    raw_val = float(solved[jdx])
-                    adjusted = raw_val + (
-                        math.tau * round((float(ref_val) - raw_val) / math.tau)
-                    )
-                    if abs(adjusted - raw_val) > 1e-6:
-                        solved[jdx] = adjusted
-                        wrap_adjusted.append(f"{jname}:{raw_val:.3f}->{adjusted:.3f}")
-                if wrap_adjusted:
-                    ik_state.set_joint_group_positions(
-                        self._group_name,
-                        np.asarray(solved, dtype=float),
-                    )
-                    ik_state.update()
-                    self.get_logger().info(
-                        "[APPROACH_IK_SEED] wrap-normalized continuous joints "
-                        f"seed={seed_label} adjusted={','.join(wrap_adjusted)}"
-                    )
-                solved_map = dict(zip(group_joint_names, solved))
-                T_model_base_candidate, base_candidate_detail = (
-                    self._robot_state_frame_transform_matrix(
-                        ik_state,
-                        self._base_frame,
-                    )
-                )
-                T_model_ee_candidate, ee_candidate_detail = (
-                    self._robot_state_frame_transform_matrix(
-                        ik_state,
-                        self._ee_frame,
-                    )
-                )
-                fk_err = float("inf")
-                fk_dx = float("nan")
-                fk_dy = float("nan")
-                fk_dz = float("nan")
-                if T_model_base_candidate is not None and T_model_ee_candidate is not None:
-                    T_base_ee_candidate = (
-                        np.linalg.inv(T_model_base_candidate) @ T_model_ee_candidate
-                    )
-                    fk_dx = float(T_base_ee_candidate[0, 3] - T_base_ee_target[0, 3])
-                    fk_dy = float(T_base_ee_candidate[1, 3] - T_base_ee_target[1, 3])
-                    fk_dz = float(T_base_ee_candidate[2, 3] - T_base_ee_target[2, 3])
-                    fk_err = math.sqrt((fk_dx * fk_dx) + (fk_dy * fk_dy) + (fk_dz * fk_dz))
-                deltas: list[float] = []
-                for joint_name in group_joint_names:
-                    delta = _joint_delta(score_reference_map, solved_map, joint_name)
-                    if delta is not None:
-                        deltas.append(float(delta))
-                max_delta = max(deltas) if deltas else float("inf")
-                sum_delta = sum(deltas) if deltas else float("inf")
-                elbow_val = solved_map.get("elbow_joint", None)
-                elbow_abs = abs(float(elbow_val)) if elbow_val is not None else float("inf")
-                branch_hint = (
-                    "elbow_down_like"
-                    if elbow_val is not None and elbow_abs <= (math.pi / 3)
-                    else "elbow_wide"
-                )
-                joints_str = " ".join(
-                    f"{name}={solved_map[name]:.3f}"
-                    for name in group_joint_names
-                    if name in solved_map
-                )
-                self.get_logger().info(
-                    f"[APPROACH_IK_SEED] candidate seed={seed_label} "
-                    f"score_ref={seed_reference_label} elbow="
-                    f"{f'{elbow_val:.3f}' if elbow_val is not None else 'n/a'} "
-                    f"branch={branch_hint} compared={len(deltas)} "
-                    f"fk_err={fk_err:.3f} "
-                    f"delta=({fk_dx:.3f},{fk_dy:.3f},{fk_dz:.3f}) "
-                    f"max_delta={max_delta:.3f} sum_delta={sum_delta:.3f} {joints_str}"
-                )
-                if not math.isfinite(fk_err):
-                    self.get_logger().warning(
-                        f"[APPROACH_IK_SEED] rejecting seed={seed_label} "
-                        f"reason=fk_unavailable base={base_candidate_detail} ee={ee_candidate_detail}"
-                    )
-                    continue
-                if fk_err > candidate_fk_tol_m:
-                    self.get_logger().warning(
-                        f"[APPROACH_IK_SEED] rejecting seed={seed_label} "
-                        f"reason=fk_mismatch fk_err={fk_err:.3f} tol={candidate_fk_tol_m:.3f} "
-                        f"delta=({fk_dx:.3f},{fk_dy:.3f},{fk_dz:.3f})"
-                    )
-                    continue
-                if max_delta > candidate_max_joint_delta_rad or sum_delta > candidate_sum_joint_delta_rad:
-                    self.get_logger().warning(
-                        f"[APPROACH_IK_SEED] rejecting seed={seed_label} "
-                        f"reason=branch_too_far max_delta={max_delta:.3f} "
-                        f"sum_delta={sum_delta:.3f} "
-                        f"limits=({candidate_max_joint_delta_rad:.3f},{candidate_sum_joint_delta_rad:.3f})"
-                    )
-                    continue
-                candidate_score = (
-                    fk_err,
-                    max_delta,
-                    sum_delta,
-                    elbow_abs,
-                    0 if seed_label == "current_state" else 1,
-                )
+                candidate_score, ik_state, solved_map = result
                 if best_score is None or candidate_score < best_score:
                     best_score = candidate_score
                     best_state = ik_state

@@ -75,39 +75,300 @@ def _resolve_trace_frames(panel, world_frame: str) -> Tuple[str, Optional[str]]:
                 break
     return effective_base, effective_ee
 
-def _refresh_trace_data(panel):
-    if panel._closing or not panel.trace_table or not panel._bridge_running:
-        return
-    if panel.chk_trace_freeze and panel.chk_trace_freeze.isChecked():
-        return
-    now = time.monotonic()
-    world_frame = panel._world_frame_last_first()
-    base_frame, ee_frame = panel._resolve_trace_frames(world_frame)
-    panel._log_tf_chain_once(world_frame, base_frame, ee_frame)
-    frames_text = f"Frames: world={world_frame} base={base_frame} ee={ee_frame or 'unavailable'}"
-    if panel.lbl_trace_frames:
-        panel.lbl_trace_frames.setText(frames_text)
+def _refresh_trace_data_resolve_tcp_pose(
+    panel,
+    *,
+    ee_frame,
+    base_frame: str,
+    world_frame: str,
+    now: float,
+):
+    """F3-step30c: resuelve TCP pose en base + world (~165 LOC).
 
+    Branch 1: ee_frame disponible → tf_get_tcp_in_base + opcional transform a
+    world. Actualiza tcp_live_xyz_lbl/rpy_lbl + panel._last_trace_tcp_*.
+    Branch 2: ee_frame no disponible → log warn + diagnostic + reset labels.
+    También calcula legacy_tcp_base/world_data (rg2_tcp frame separado).
+
+    Devuelve dict con todos los pose_data + tcp_source.
+    """
+    tcp_world_data = None
+    tcp_base_data = None
+    tcp_source = "tf2:UNAVAILABLE"
+    legacy_tcp_base_data = None
+    pinch_tcp_base_data = None
+    legacy_tcp_world_data = None
+    pinch_tcp_world_data = None
+    if ee_frame:
+        tcp_pose_base, _tcp_rpy, tcp_reason = tf_get_tcp_in_base(
+            base_frame=base_frame,
+            ee_frame=ee_frame,
+            timeout=0.08,
+            logger=panel._log_trace,
+        )
+        if tcp_pose_base is not None:
+            tcp_base_data = panel._pose_dict(
+                (float(tcp_pose_base.pose.position.x), float(tcp_pose_base.pose.position.y), float(tcp_pose_base.pose.position.z)),
+                (float(tcp_pose_base.pose.orientation.x), float(tcp_pose_base.pose.orientation.y), float(tcp_pose_base.pose.orientation.z), float(tcp_pose_base.pose.orientation.w)),
+                base_frame,
+            )
+            panel._last_trace_tcp_base = (
+                float(tcp_pose_base.pose.position.x),
+                float(tcp_pose_base.pose.position.y),
+                float(tcp_pose_base.pose.position.z),
+            )
+            panel._last_trace_tcp_ts = time.monotonic()
+            try:
+                _hdr = tcp_pose_base.header
+                panel._last_trace_tcp_tf_stamp_ns = (
+                    int(_hdr.stamp.sec) * 1_000_000_000 + int(_hdr.stamp.nanosec)
+                )
+            except Exception:
+                panel._last_trace_tcp_tf_stamp_ns = 0
+            panel._last_tcp_base_z = float(tcp_pose_base.pose.position.z)
+            panel._last_trace_tcp_rpy_deg = (
+                float(_tcp_rpy[0]),
+                float(_tcp_rpy[1]),
+                float(_tcp_rpy[2]),
+            ) if _tcp_rpy is not None and len(_tcp_rpy) >= 3 else None
+            if panel.tcp_live_xyz_lbl is not None:
+                panel.tcp_live_xyz_lbl.setText(
+                    f"{float(tcp_pose_base.pose.position.x):.3f}, "
+                    f"{float(tcp_pose_base.pose.position.y):.3f}, "
+                    f"{float(tcp_pose_base.pose.position.z):.3f}"
+                )
+            if panel.tcp_live_rpy_lbl is not None:
+                if panel._last_trace_tcp_rpy_deg is not None:
+                    panel.tcp_live_rpy_lbl.setText(
+                        f"{float(panel._last_trace_tcp_rpy_deg[0]):.1f}, "
+                        f"{float(panel._last_trace_tcp_rpy_deg[1]):.1f}, "
+                        f"{float(panel._last_trace_tcp_rpy_deg[2]):.1f}"
+                    )
+                else:
+                    panel.tcp_live_rpy_lbl.setText("--")
+            pinch_tcp_base_data = tcp_base_data
+            tcp_source = "tf2:ok"
+            helper = get_tf_helper()
+            world_tf_available = bool(
+                helper
+                and _can_transform_between(helper, base_frame, world_frame, timeout_sec=0.05)
+            )
+            if world_tf_available:
+                tcp_world_pose, world_reason = tf_transform_pose(
+                    tcp_pose_base,
+                    target_frame=world_frame,
+                    timeout=0.08,
+                )
+                if tcp_world_pose is not None:
+                    tcp_world_data = panel._pose_dict(
+                        (float(tcp_world_pose.pose.position.x), float(tcp_world_pose.pose.position.y), float(tcp_world_pose.pose.position.z)),
+                        (float(tcp_world_pose.pose.orientation.x), float(tcp_world_pose.pose.orientation.y), float(tcp_world_pose.pose.orientation.z), float(tcp_world_pose.pose.orientation.w)),
+                        world_frame,
+                    )
+                    panel._last_tcp_world_tf = tcp_world_data
+                    pinch_tcp_world_data = tcp_world_data
+        else:
+            panel._last_trace_tcp_base = None
+            panel._last_trace_tcp_ts = time.monotonic()
+            panel._last_trace_tcp_rpy_deg = None
+            if panel.tcp_live_xyz_lbl is not None:
+                panel.tcp_live_xyz_lbl.setText("--")
+            if panel.tcp_live_rpy_lbl is not None:
+                panel.tcp_live_rpy_lbl.setText("--")
+            tcp_source = f"tf2:base_lookup_failed:{tcp_reason}"
+        legacy_pose_base, _legacy_rpy, _legacy_reason = tf_get_tcp_in_base(
+            base_frame=base_frame,
+            ee_frame="rg2_tcp",
+            timeout=0.05,
+            logger=None,
+        )
+        if legacy_pose_base is not None:
+            legacy_tcp_base_data = panel._pose_dict(
+                (float(legacy_pose_base.pose.position.x), float(legacy_pose_base.pose.position.y), float(legacy_pose_base.pose.position.z)),
+                (float(legacy_pose_base.pose.orientation.x), float(legacy_pose_base.pose.orientation.y), float(legacy_pose_base.pose.orientation.z), float(legacy_pose_base.pose.orientation.w)),
+                base_frame,
+            )
+            helper = get_tf_helper()
+            if helper and _can_transform_between(helper, base_frame, world_frame, timeout_sec=0.05):
+                legacy_world_pose, _legacy_world_reason = tf_transform_pose(
+                    legacy_pose_base,
+                    target_frame=world_frame,
+                    timeout=0.08,
+                )
+                if legacy_world_pose is not None:
+                    legacy_tcp_world_data = panel._pose_dict(
+                        (float(legacy_world_pose.pose.position.x), float(legacy_world_pose.pose.position.y), float(legacy_world_pose.pose.position.z)),
+                        (float(legacy_world_pose.pose.orientation.x), float(legacy_world_pose.pose.orientation.y), float(legacy_world_pose.pose.orientation.z), float(legacy_world_pose.pose.orientation.w)),
+                        world_frame,
+                    )
+    else:
+        if now - panel._last_ee_warn_ts >= panel._ee_warn_period:
+            panel._log("[TRACE] EE frame unavailable (retrying)")
+            panel._last_ee_warn_ts = now
+        if panel._tf_ready_state and now - panel._last_ee_diag_ts >= panel._ee_warn_period:
+            helper = get_tf_helper()
+            frames = helper.list_frames() if helper else set()
+            candidates = [
+                f for f in sorted(frames)
+                if any(k in f.lower() for k in ("tool", "tcp", "ee", "flange", "wrist", "rg2", "hand", "ft"))
+            ]
+            sample = ", ".join(candidates[:8]) if candidates else "-"
+            panel._log(f"[TF] TF OK pero no hay EE transformable desde base_link. Candidatos={sample}. Bloqueando PICK.")
+            panel._last_ee_diag_ts = now
+        panel._last_trace_tcp_rpy_deg = None
+        if panel.tcp_live_xyz_lbl is not None:
+            panel.tcp_live_xyz_lbl.setText("--")
+        if panel.tcp_live_rpy_lbl is not None:
+            panel.tcp_live_rpy_lbl.setText("--")
+    return {
+        "tcp_world_data": tcp_world_data,
+        "tcp_base_data": tcp_base_data,
+        "tcp_source": tcp_source,
+        "legacy_tcp_base_data": legacy_tcp_base_data,
+        "pinch_tcp_base_data": pinch_tcp_base_data,
+        "legacy_tcp_world_data": legacy_tcp_world_data,
+        "pinch_tcp_world_data": pinch_tcp_world_data,
+    }
+
+
+def _refresh_trace_data_emit_audits(
+    panel,
+    *,
+    now: float,
+    world_frame: str,
+    base_frame: str,
+    ee_frame,
+    object_name: str,
+    object_source: str,
+    tcp_source: str,
+    object_world_data,
+    object_base_data,
+    tcp_world_data,
+    tcp_base_data,
+    legacy_tcp_base_data,
+    pinch_tcp_base_data,
+    legacy_tcp_world_data,
+    pinch_tcp_world_data,
+) -> None:
+    """F3-step30a: emite logs PANEL_TRACE + RG2 AUDIT TCP/COMPARE (~80 LOC).
+
+    Cada 1s emite [PICK][DIRECT][PANEL_TRACE] + [RG2][AUDIT][TCP] +
+    [RG2][AUDIT][COMPARE] con resúmenes y deltas de distancia.
+    """
+    if (now - float(panel._last_panel_trace_audit_ts or 0.0)) < 1.0:
+        return
+    panel._last_panel_trace_audit_ts = now
+    fk_tcp = panel._last_tcp_base
+    live_tcp = panel._last_trace_tcp_base
+
+    def _fmt_tuple(vec):
+        if not isinstance(vec, (list, tuple)) or len(vec) < 3:
+            return "--"
+        try:
+            return f"({float(vec[0]):.3f},{float(vec[1]):.3f},{float(vec[2]):.3f})"
+        except Exception:
+            return "--"
+
+    def _fmt_scalar(value):
+        if value is None:
+            return "--"
+        try:
+            return f"{float(value):.3f}"
+        except Exception:
+            return "--"
+
+    delta_txt = "--"
+    dist_txt = "--"
+    if fk_tcp is not None and live_tcp is not None:
+        ddx = float(fk_tcp[0]) - float(live_tcp[0])
+        ddy = float(fk_tcp[1]) - float(live_tcp[1])
+        ddz = float(fk_tcp[2]) - float(live_tcp[2])
+        dist = math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz)
+        delta_txt = f"({ddx:.3f},{ddy:.3f},{ddz:.3f})"
+        dist_txt = f"{dist:.3f}"
+    panel._emit_log(
+        "[PICK][DIRECT][PANEL_TRACE] "
+        f"world_frame={world_frame} base_frame={base_frame} ee_frame={ee_frame or 'none'} "
+        f"selected_object={object_name or 'none'} "
+        f"object_source={object_source} object_pose_base={panel._format_pose_summary('obj', object_base_data)} "
+        f"tcp_live_source={tcp_source} tcp_live_base={panel._format_pose_summary('tcp_live', tcp_base_data)} "
+        f"tcp_panel_fk_base={_fmt_tuple(panel._last_tcp_base)} "
+        f"tcp_panel_fk_rpy_deg={_fmt_tuple(panel._last_tcp_rpy_deg)} "
+        f"tcp_live_rpy_deg={_fmt_tuple(panel._last_trace_tcp_rpy_deg)} "
+        f"panel_live_delta={delta_txt} panel_live_dist_m={dist_txt} "
+        f"panel_fk_age_sec={max(0.0, now - float(panel._last_tcp_fk_ts or now)):.3f} "
+        f"tcp_live_age_sec={max(0.0, now - float(panel._last_trace_tcp_ts or now)):.3f} "
+        f"object_age_sec={_fmt_scalar(panel._last_trace_object_age_sec)}"
+    )
+
+    def _pose_xyz(data):
+        if not isinstance(data, dict):
+            return None
+        pos = data.get("position")
+        if not isinstance(pos, (list, tuple)) or len(pos) < 3:
+            return None
+        try:
+            return (float(pos[0]), float(pos[1]), float(pos[2]))
+        except Exception:
+            return None
+
+    obj_base_xyz = _pose_xyz(object_base_data)
+    legacy_base_xyz = _pose_xyz(legacy_tcp_base_data)
+    pinch_base_xyz = _pose_xyz(pinch_tcp_base_data)
+    obj_world_xyz = _pose_xyz(object_world_data)
+    legacy_world_xyz = _pose_xyz(legacy_tcp_world_data)
+    pinch_world_xyz = _pose_xyz(pinch_tcp_world_data)
+
+    def _dist(a, b):
+        if a is None or b is None:
+            return None
+        dx = float(a[0]) - float(b[0])
+        dy = float(a[1]) - float(b[1])
+        dz = float(a[2]) - float(b[2])
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    legacy_vs_obj = _dist(legacy_base_xyz, obj_base_xyz)
+    pinch_vs_obj = _dist(pinch_base_xyz, obj_base_xyz)
+    legacy_vs_pinch = _dist(legacy_base_xyz, pinch_base_xyz)
+    panel._emit_log(
+        "[RG2][AUDIT][TCP] "
+        f"base_frame={base_frame} world_frame={world_frame} ee_effective={ee_frame or 'none'} "
+        f"panel_fk_tool0_base={_fmt_tuple(panel._last_tcp_base)} "
+        f"rg2_pinch_center_base={_fmt_tuple(pinch_base_xyz)} "
+        f"rg2_tcp_base={_fmt_tuple(legacy_base_xyz)} "
+        f"rg2_pinch_center_world={_fmt_tuple(pinch_world_xyz)} "
+        f"rg2_tcp_world={_fmt_tuple(legacy_world_xyz)}"
+    )
+    panel._emit_log(
+        "[RG2][AUDIT][COMPARE] "
+        f"selected_object={object_name or 'none'} "
+        f"object_base={_fmt_tuple(obj_base_xyz)} object_world={_fmt_tuple(obj_world_xyz)} "
+        f"rg2_pinch_center_base={_fmt_tuple(pinch_base_xyz)} rg2_tcp_base={_fmt_tuple(legacy_base_xyz)} "
+        f"dist_object_to_rg2_pinch_center_m={_fmt_scalar(pinch_vs_obj)} "
+        f"dist_object_to_rg2_tcp_m={_fmt_scalar(legacy_vs_obj)} "
+        f"dist_rg2_tcp_to_rg2_pinch_center_m={_fmt_scalar(legacy_vs_pinch)}"
+    )
+
+
+def _refresh_trace_data_resolve_object_pose(
+    panel,
+    *,
+    object_name: str,
+    world_frame: str,
+    base_frame: str,
+    pose_cache: dict,
+    pose_wall: float,
+    stable_world,
+):
+    """F3-step30b: resuelve object_world/base_data + object_source (~115 LOC).
+
+    Tres ramas: pose_cache (snapshot fresh + divergence check) /
+    stable_world only / not_found. Devuelve dict con {world_data, base_data,
+    source}.
+    """
     object_world_data = None
     object_base_data = None
     object_source = "pose_info+tf2:UNAVAILABLE"
-    object_name = str(panel._selected_object or PICK_DEMO_OBJECT_NAME)
-    pose_cache = {}
-    pose_wall = 0.0
-    stable_positions = get_object_positions() or {}
-    stable_world = None
-    if object_name:
-        try:
-            stable_world = tuple(float(v) for v in stable_positions.get(object_name, ())[:3]) if object_name in stable_positions else None
-        except Exception:
-            stable_world = None
-    if panel._ros_worker_started and panel.ros_worker.node_ready():
-        try:
-            pose_cache, pose_wall = panel.ros_worker.pose_snapshot()
-        except Exception as exc:
-            panel._log_trace_transform_warning(f"pose_snapshot: {exc}")
-            pose_cache = {}
-            pose_wall = 0.0
     if object_name and object_name in pose_cache:
         wx, wy, wz = pose_cache[object_name]
         from .panel_pick_demo_params import get_pick_demo_params as _gpd
@@ -146,17 +407,8 @@ def _refresh_trace_data(panel):
         )
         if base_pose is not None:
             object_base_data = panel._pose_dict(
-                (
-                    float(base_pose.pose.position.x),
-                    float(base_pose.pose.position.y),
-                    float(base_pose.pose.position.z),
-            ),
-                (
-                    float(base_pose.pose.orientation.x),
-                    float(base_pose.pose.orientation.y),
-                    float(base_pose.pose.orientation.z),
-                    float(base_pose.pose.orientation.w),
-            ),
+                (float(base_pose.pose.position.x), float(base_pose.pose.position.y), float(base_pose.pose.position.z)),
+                (float(base_pose.pose.orientation.x), float(base_pose.pose.orientation.y), float(base_pose.pose.orientation.z), float(base_pose.pose.orientation.w)),
                 base_frame,
             )
             panel._last_selected_world_pose = (float(wx), float(wy), float(wz), world_frame)
@@ -196,17 +448,8 @@ def _refresh_trace_data(panel):
         )
         if base_pose is not None:
             object_base_data = panel._pose_dict(
-                (
-                    float(base_pose.pose.position.x),
-                    float(base_pose.pose.position.y),
-                    float(base_pose.pose.position.z),
-                ),
-                (
-                    float(base_pose.pose.orientation.x),
-                    float(base_pose.pose.orientation.y),
-                    float(base_pose.pose.orientation.z),
-                    float(base_pose.pose.orientation.w),
-                ),
+                (float(base_pose.pose.position.x), float(base_pose.pose.position.y), float(base_pose.pose.position.z)),
+                (float(base_pose.pose.orientation.x), float(base_pose.pose.orientation.y), float(base_pose.pose.orientation.z), float(base_pose.pose.orientation.w)),
                 base_frame,
             )
             object_source = "stable_object_cache:no_pose_snapshot"
@@ -215,175 +458,65 @@ def _refresh_trace_data(panel):
     else:
         panel._last_trace_object_age_sec = None
         object_source = f"pose_info+tf2:not_found:{object_name}"
+    return object_world_data, object_base_data, object_source
 
-    tcp_world_data = None
-    tcp_base_data = None
-    tcp_source = "tf2:UNAVAILABLE"
-    legacy_tcp_base_data = None
-    pinch_tcp_base_data = None
-    legacy_tcp_world_data = None
-    pinch_tcp_world_data = None
-    if ee_frame:
-        tcp_pose_base, _tcp_rpy, tcp_reason = tf_get_tcp_in_base(
+
+def _refresh_trace_data(panel):
+    if panel._closing or not panel.trace_table or not panel._bridge_running:
+        return
+    if panel.chk_trace_freeze and panel.chk_trace_freeze.isChecked():
+        return
+    now = time.monotonic()
+    world_frame = panel._world_frame_last_first()
+    base_frame, ee_frame = panel._resolve_trace_frames(world_frame)
+    panel._log_tf_chain_once(world_frame, base_frame, ee_frame)
+    frames_text = f"Frames: world={world_frame} base={base_frame} ee={ee_frame or 'unavailable'}"
+    if panel.lbl_trace_frames:
+        panel.lbl_trace_frames.setText(frames_text)
+
+    object_name = str(panel._selected_object or PICK_DEMO_OBJECT_NAME)
+    pose_cache = {}
+    pose_wall = 0.0
+    stable_positions = get_object_positions() or {}
+    stable_world = None
+    if object_name:
+        try:
+            stable_world = tuple(float(v) for v in stable_positions.get(object_name, ())[:3]) if object_name in stable_positions else None
+        except Exception:
+            stable_world = None
+    if panel._ros_worker_started and panel.ros_worker.node_ready():
+        try:
+            pose_cache, pose_wall = panel.ros_worker.pose_snapshot()
+        except Exception as exc:
+            panel._log_trace_transform_warning(f"pose_snapshot: {exc}")
+            pose_cache = {}
+            pose_wall = 0.0
+    object_world_data, object_base_data, object_source = (
+        _refresh_trace_data_resolve_object_pose(
+            panel,
+            object_name=object_name,
+            world_frame=world_frame,
             base_frame=base_frame,
-            ee_frame=ee_frame,
-            timeout=0.08,
-            logger=panel._log_trace,
+            pose_cache=pose_cache,
+            pose_wall=pose_wall,
+            stable_world=stable_world,
         )
-        if tcp_pose_base is not None:
-            tcp_base_data = panel._pose_dict(
-                (
-                    float(tcp_pose_base.pose.position.x),
-                    float(tcp_pose_base.pose.position.y),
-                    float(tcp_pose_base.pose.position.z),
-            ),
-                (
-                    float(tcp_pose_base.pose.orientation.x),
-                    float(tcp_pose_base.pose.orientation.y),
-                    float(tcp_pose_base.pose.orientation.z),
-                    float(tcp_pose_base.pose.orientation.w),
-            ),
-                base_frame,
-            )
-            panel._last_trace_tcp_base = (
-                float(tcp_pose_base.pose.position.x),
-                float(tcp_pose_base.pose.position.y),
-                float(tcp_pose_base.pose.position.z),
-            )
-            panel._last_trace_tcp_ts = time.monotonic()
-            try:
-                _hdr = tcp_pose_base.header
-                panel._last_trace_tcp_tf_stamp_ns = (
-                    int(_hdr.stamp.sec) * 1_000_000_000 + int(_hdr.stamp.nanosec)
-                )
-            except Exception:
-                panel._last_trace_tcp_tf_stamp_ns = 0
-            panel._last_tcp_base_z = float(tcp_pose_base.pose.position.z)
-            panel._last_trace_tcp_rpy_deg = (
-                float(_tcp_rpy[0]),
-                float(_tcp_rpy[1]),
-                float(_tcp_rpy[2]),
-            ) if _tcp_rpy is not None and len(_tcp_rpy) >= 3 else None
-            if panel.tcp_live_xyz_lbl is not None:
-                panel.tcp_live_xyz_lbl.setText(
-                    f"{float(tcp_pose_base.pose.position.x):.3f}, "
-                    f"{float(tcp_pose_base.pose.position.y):.3f}, "
-                    f"{float(tcp_pose_base.pose.position.z):.3f}"
-                )
-            if panel.tcp_live_rpy_lbl is not None:
-                if panel._last_trace_tcp_rpy_deg is not None:
-                    panel.tcp_live_rpy_lbl.setText(
-                        f"{float(panel._last_trace_tcp_rpy_deg[0]):.1f}, "
-                        f"{float(panel._last_trace_tcp_rpy_deg[1]):.1f}, "
-                        f"{float(panel._last_trace_tcp_rpy_deg[2]):.1f}"
-                    )
-                else:
-                    panel.tcp_live_rpy_lbl.setText("--")
-            pinch_tcp_base_data = tcp_base_data
-            # FASE 1: tcp_source=ok en cuanto base->ee funciona.
-            # La transformación a world es OPCIONAL (solo diagnóstico).
-            tcp_source = "tf2:ok"
-            helper = get_tf_helper()
-            world_tf_available = bool(
-                helper
-                and _can_transform_between(
-                    helper, base_frame, world_frame, timeout_sec=0.05
-            )
-            )
-            if world_tf_available:
-                tcp_world_pose, world_reason = tf_transform_pose(
-                    tcp_pose_base,
-                    target_frame=world_frame,
-                    timeout=0.08,
-            )
-                if tcp_world_pose is not None:
-                    tcp_world_data = panel._pose_dict(
-                        (
-                            float(tcp_world_pose.pose.position.x),
-                            float(tcp_world_pose.pose.position.y),
-                            float(tcp_world_pose.pose.position.z),
-                        ),
-                        (
-                            float(tcp_world_pose.pose.orientation.x),
-                            float(tcp_world_pose.pose.orientation.y),
-                            float(tcp_world_pose.pose.orientation.z),
-                            float(tcp_world_pose.pose.orientation.w),
-                        ),
-                        world_frame,
-                    )
-                    panel._last_tcp_world_tf = tcp_world_data
-                    pinch_tcp_world_data = tcp_world_data
-        else:
-            panel._last_trace_tcp_base = None
-            panel._last_trace_tcp_ts = time.monotonic()
-            panel._last_trace_tcp_rpy_deg = None
-            if panel.tcp_live_xyz_lbl is not None:
-                panel.tcp_live_xyz_lbl.setText("--")
-            if panel.tcp_live_rpy_lbl is not None:
-                panel.tcp_live_rpy_lbl.setText("--")
-            tcp_source = f"tf2:base_lookup_failed:{tcp_reason}"
-        legacy_pose_base, _legacy_rpy, _legacy_reason = tf_get_tcp_in_base(
-            base_frame=base_frame,
-            ee_frame="rg2_tcp",
-            timeout=0.05,
-            logger=None,
-        )
-        if legacy_pose_base is not None:
-            legacy_tcp_base_data = panel._pose_dict(
-                (
-                    float(legacy_pose_base.pose.position.x),
-                    float(legacy_pose_base.pose.position.y),
-                    float(legacy_pose_base.pose.position.z),
-                ),
-                (
-                    float(legacy_pose_base.pose.orientation.x),
-                    float(legacy_pose_base.pose.orientation.y),
-                    float(legacy_pose_base.pose.orientation.z),
-                    float(legacy_pose_base.pose.orientation.w),
-                ),
-                base_frame,
-            )
-            helper = get_tf_helper()
-            if helper and _can_transform_between(helper, base_frame, world_frame, timeout_sec=0.05):
-                legacy_world_pose, _legacy_world_reason = tf_transform_pose(
-                    legacy_pose_base,
-                    target_frame=world_frame,
-                    timeout=0.08,
-                )
-                if legacy_world_pose is not None:
-                    legacy_tcp_world_data = panel._pose_dict(
-                        (
-                            float(legacy_world_pose.pose.position.x),
-                            float(legacy_world_pose.pose.position.y),
-                            float(legacy_world_pose.pose.position.z),
-                        ),
-                        (
-                            float(legacy_world_pose.pose.orientation.x),
-                            float(legacy_world_pose.pose.orientation.y),
-                            float(legacy_world_pose.pose.orientation.z),
-                            float(legacy_world_pose.pose.orientation.w),
-                        ),
-                        world_frame,
-                    )
-    else:
-        if now - panel._last_ee_warn_ts >= panel._ee_warn_period:
-            panel._log("[TRACE] EE frame unavailable (retrying)")
-            panel._last_ee_warn_ts = now
-        if panel._tf_ready_state and now - panel._last_ee_diag_ts >= panel._ee_warn_period:
-            helper = get_tf_helper()
-            frames = helper.list_frames() if helper else set()
-            candidates = [
-                f for f in sorted(frames)
-                if any(k in f.lower() for k in ("tool", "tcp", "ee", "flange", "wrist", "rg2", "hand", "ft"))
-            ]
-            sample = ", ".join(candidates[:8]) if candidates else "-"
-            panel._log(f"[TF] TF OK pero no hay EE transformable desde base_link. Candidatos={sample}. Bloqueando PICK.")
-            panel._last_ee_diag_ts = now
-        panel._last_trace_tcp_rpy_deg = None
-        if panel.tcp_live_xyz_lbl is not None:
-            panel.tcp_live_xyz_lbl.setText("--")
-        if panel.tcp_live_rpy_lbl is not None:
-            panel.tcp_live_rpy_lbl.setText("--")
+    )
+
+    tcp_data = _refresh_trace_data_resolve_tcp_pose(
+        panel,
+        ee_frame=ee_frame,
+        base_frame=base_frame,
+        world_frame=world_frame,
+        now=now,
+    )
+    tcp_world_data = tcp_data["tcp_world_data"]
+    tcp_base_data = tcp_data["tcp_base_data"]
+    tcp_source = tcp_data["tcp_source"]
+    legacy_tcp_base_data = tcp_data["legacy_tcp_base_data"]
+    pinch_tcp_base_data = tcp_data["pinch_tcp_base_data"]
+    legacy_tcp_world_data = tcp_data["legacy_tcp_world_data"]
+    pinch_tcp_world_data = tcp_data["pinch_tcp_world_data"]
 
     panel._check_tcp_source_mismatch(now)
 
@@ -425,93 +558,24 @@ def _refresh_trace_data(panel):
         object_source=object_source,
         tcp_source=tcp_source,
     )
-    if (now - float(panel._last_panel_trace_audit_ts or 0.0)) >= 1.0:
-        panel._last_panel_trace_audit_ts = now
-        fk_tcp = panel._last_tcp_base
-        live_tcp = panel._last_trace_tcp_base
-        def _fmt_tuple(vec: Optional[Tuple[float, ...]]) -> str:
-            if not isinstance(vec, (list, tuple)) or len(vec) < 3:
-                return "--"
-            try:
-                return (
-                    f"({float(vec[0]):.3f},{float(vec[1]):.3f},{float(vec[2]):.3f})"
-                )
-            except Exception:
-                return "--"
-        def _fmt_scalar(value: Optional[float]) -> str:
-            if value is None:
-                return "--"
-            try:
-                return f"{float(value):.3f}"
-            except Exception:
-                return "--"
-        delta_txt = "--"
-        dist_txt = "--"
-        if fk_tcp is not None and live_tcp is not None:
-            ddx = float(fk_tcp[0]) - float(live_tcp[0])
-            ddy = float(fk_tcp[1]) - float(live_tcp[1])
-            ddz = float(fk_tcp[2]) - float(live_tcp[2])
-            dist = math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz)
-            delta_txt = f"({ddx:.3f},{ddy:.3f},{ddz:.3f})"
-            dist_txt = f"{dist:.3f}"
-        panel._emit_log(
-            "[PICK][DIRECT][PANEL_TRACE] "
-            f"world_frame={world_frame} base_frame={base_frame} ee_frame={ee_frame or 'none'} "
-            f"selected_object={object_name or 'none'} "
-            f"object_source={object_source} object_pose_base={panel._format_pose_summary('obj', object_base_data)} "
-            f"tcp_live_source={tcp_source} tcp_live_base={panel._format_pose_summary('tcp_live', tcp_base_data)} "
-            f"tcp_panel_fk_base={_fmt_tuple(panel._last_tcp_base)} "
-            f"tcp_panel_fk_rpy_deg={_fmt_tuple(panel._last_tcp_rpy_deg)} "
-            f"tcp_live_rpy_deg={_fmt_tuple(panel._last_trace_tcp_rpy_deg)} "
-            f"panel_live_delta={delta_txt} panel_live_dist_m={dist_txt} "
-            f"panel_fk_age_sec={max(0.0, now - float(panel._last_tcp_fk_ts or now)):.3f} "
-            f"tcp_live_age_sec={max(0.0, now - float(panel._last_trace_tcp_ts or now)):.3f} "
-            f"object_age_sec={_fmt_scalar(panel._last_trace_object_age_sec)}"
-        )
-        def _pose_xyz(data: Optional[Dict[str, object]]) -> Optional[Tuple[float, float, float]]:
-            if not isinstance(data, dict):
-                return None
-            pos = data.get("position")
-            if not isinstance(pos, (list, tuple)) or len(pos) < 3:
-                return None
-            try:
-                return (float(pos[0]), float(pos[1]), float(pos[2]))
-            except Exception:
-                return None
-        obj_base_xyz = _pose_xyz(object_base_data)
-        legacy_base_xyz = _pose_xyz(legacy_tcp_base_data)
-        pinch_base_xyz = _pose_xyz(pinch_tcp_base_data)
-        obj_world_xyz = _pose_xyz(object_world_data)
-        legacy_world_xyz = _pose_xyz(legacy_tcp_world_data)
-        pinch_world_xyz = _pose_xyz(pinch_tcp_world_data)
-        def _dist(a: Optional[Tuple[float, float, float]], b: Optional[Tuple[float, float, float]]) -> Optional[float]:
-            if a is None or b is None:
-                return None
-            dx = float(a[0]) - float(b[0])
-            dy = float(a[1]) - float(b[1])
-            dz = float(a[2]) - float(b[2])
-            return math.sqrt(dx * dx + dy * dy + dz * dz)
-        legacy_vs_obj = _dist(legacy_base_xyz, obj_base_xyz)
-        pinch_vs_obj = _dist(pinch_base_xyz, obj_base_xyz)
-        legacy_vs_pinch = _dist(legacy_base_xyz, pinch_base_xyz)
-        panel._emit_log(
-            "[RG2][AUDIT][TCP] "
-            f"base_frame={base_frame} world_frame={world_frame} ee_effective={ee_frame or 'none'} "
-            f"panel_fk_tool0_base={_fmt_tuple(panel._last_tcp_base)} "
-            f"rg2_pinch_center_base={_fmt_tuple(pinch_base_xyz)} "
-            f"rg2_tcp_base={_fmt_tuple(legacy_base_xyz)} "
-            f"rg2_pinch_center_world={_fmt_tuple(pinch_world_xyz)} "
-            f"rg2_tcp_world={_fmt_tuple(legacy_world_xyz)}"
-        )
-        panel._emit_log(
-            "[RG2][AUDIT][COMPARE] "
-            f"selected_object={object_name or 'none'} "
-            f"object_base={_fmt_tuple(obj_base_xyz)} object_world={_fmt_tuple(obj_world_xyz)} "
-            f"rg2_pinch_center_base={_fmt_tuple(pinch_base_xyz)} rg2_tcp_base={_fmt_tuple(legacy_base_xyz)} "
-            f"dist_object_to_rg2_pinch_center_m={_fmt_scalar(pinch_vs_obj)} "
-            f"dist_object_to_rg2_tcp_m={_fmt_scalar(legacy_vs_obj)} "
-            f"dist_rg2_tcp_to_rg2_pinch_center_m={_fmt_scalar(legacy_vs_pinch)}"
-        )
+    _refresh_trace_data_emit_audits(
+        panel,
+        now=now,
+        world_frame=world_frame,
+        base_frame=base_frame,
+        ee_frame=ee_frame,
+        object_name=object_name,
+        object_source=object_source,
+        tcp_source=tcp_source,
+        object_world_data=object_world_data,
+        object_base_data=object_base_data,
+        tcp_world_data=tcp_world_data,
+        tcp_base_data=tcp_base_data,
+        legacy_tcp_base_data=legacy_tcp_base_data,
+        pinch_tcp_base_data=pinch_tcp_base_data,
+        legacy_tcp_world_data=legacy_tcp_world_data,
+        pinch_tcp_world_data=pinch_tcp_world_data,
+    )
     panel._maybe_log_trace(now)
 
 def _log_trace_transform_warning(panel, message: str) -> None:

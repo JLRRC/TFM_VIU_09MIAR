@@ -251,7 +251,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # baseline (T15 cumplido para esta función).
     "ur5_tools/ur5_tools/moveit_bridge/moveit_py_planner.py::MoveItPyPlannerMixin._plan_with_moveit_py": 557,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py::execute_tfm_world_grasp": 462,
-    "ur5_qt_panel/ur5_qt_panel/panel_trace_callbacks.py::_refresh_trace_data": 438,
+    # F3-step30 (2026-05-03): _refresh_trace_data bajó 438→116 con 3 helpers
+    # (_refresh_trace_data_resolve_object_pose 109 + _resolve_tcp_pose 154 +
+    # _emit_audits 117). Removido de baseline.
     # F3-step8 (2026-05-03): UR5MoveItBridge.__init__ bajó de 416 → 158 LOC
     # con 2 sub-helpers (_init_declare_parameters 48 + _init_parse_parameters_
     # and_validate 224). Removido de baseline T15.
@@ -269,8 +271,8 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3-step10a/b (2026-05-03): build_step_window bajó de 346 → 186 LOC con
     # 2 sub-helpers (_build_step_runtime_section 111 + _build_step_pipeline_
     # history_widgets 90). Removido de baseline (T15 cumplido).
-    "ur5_tools/ur5_tools/moveit_bridge/geometry.py::GeometryMixin._compute_approach_ik_seeded": 341,
-    "ur5_tools/ur5_tools/moveit_bridge/trajectory_prep.py::TrajectoryPrepMixin._prepare_joint_trajectory_for_controller": 339,
+    "ur5_tools/ur5_tools/moveit_bridge/geometry.py::GeometryMixin._compute_approach_ik_seeded": 229,  # F3-step31a: -112 LOC con _eval_ik_seed_candidate (143 LOC)
+    "ur5_tools/ur5_tools/moveit_bridge/trajectory_prep.py::TrajectoryPrepMixin._prepare_joint_trajectory_for_controller": 283,  # F3-step32a/b: -56 LOC con 2 helpers
     # F3-step12 (a/b/c) (2026-05-03): on_tfm_grasp_object_clicked bajó de
     # 318 → 199 LOC con 3 sub-helpers (_tfm_grasp_compute_yaw_from_minor_axis 59
     # + _tfm_grasp_compute_width_and_preopen 44 + _tfm_grasp_run_pre_checks 98).

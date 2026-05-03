@@ -39,6 +39,92 @@ class TrajectoryPrepMixin:
     def _joint_trajectory_initial_segment_max_delta(jt: JointTrajectory) -> float:
         return joint_trajectory_initial_segment_max_delta(jt)
 
+    def _prepare_normalize_continuous_joints(
+        self,
+        *,
+        joint_names: list,
+        points: list,
+        current_map: dict,
+    ) -> dict:
+        """F3-step32a: normaliza wrap-around joints en puntos de la trayectoria.
+
+        Para cada punto, ajusta los WRAPAROUND_JOINTS por unwrap (continuous=True)
+        o normalize (auto). Devuelve adjusted_counts dict.
+        """
+        adjusted_counts: dict[str, int] = {}
+        references: dict[str, float] = {}
+        for jname in joint_names:
+            if jname in current_map:
+                references[jname] = current_map[jname]
+        explicit_unwrap = bool(getattr(self, "_unwrap_continuous_joints", False))
+        for point in points:
+            positions = list(getattr(point, "positions", []) or [])
+            if len(positions) != len(joint_names):
+                continue
+            adjusted_positions = list(positions)
+            for idx, jname in enumerate(joint_names):
+                if jname not in self._WRAPAROUND_JOINTS:
+                    continue
+                target = float(adjusted_positions[idx])
+                if explicit_unwrap:
+                    ref = references.get(jname)
+                    if ref is None:
+                        adjusted = self._normalize_joint_position(jname, target)
+                    else:
+                        adjusted = target + (math.tau * round((ref - target) / math.tau))
+                else:
+                    adjusted = self._normalize_joint_position(jname, target)
+                if abs(adjusted - target) > 1e-6:
+                    adjusted_counts[jname] = adjusted_counts.get(jname, 0) + 1
+                adjusted_positions[idx] = adjusted
+                references[jname] = adjusted
+            point.positions = tuple(adjusted_positions)
+        return adjusted_counts
+
+    def _prepare_emit_trajectory_preview(
+        self,
+        *,
+        points: list,
+        joint_names: list,
+    ) -> None:
+        """F3-step32b: emite log [BRIDGE_EXEC] preview de los 2 primeros puntos
+        de la trayectoria con pos+vel por joint para depuración (~33 LOC).
+        """
+        try:
+            preview_points = list(points[:2])
+            preview_lines: list[str] = []
+            for idx, point in enumerate(preview_points):
+                tfs = getattr(point, "time_from_start", None)
+                t_sec = (
+                    float(getattr(tfs, "sec", 0) or 0)
+                    + float(getattr(tfs, "nanosec", 0) or 0) / 1_000_000_000.0
+                ) if tfs is not None else 0.0
+                pos_vals = list(getattr(point, "positions", []) or [])
+                vel_vals = list(getattr(point, "velocities", []) or [])
+                pos_txt = ",".join(
+                    f"{jname}={float(pos_vals[jdx]):.3f}"
+                    for jdx, jname in enumerate(joint_names[: min(len(joint_names), len(pos_vals))])
+                )
+                vel_txt = "none"
+                if vel_vals:
+                    vel_txt = ",".join(
+                        f"{jname}={float(vel_vals[jdx]):.3f}"
+                        for jdx, jname in enumerate(joint_names[: min(len(joint_names), len(vel_vals))])
+                    )
+                preview_lines.append(
+                    f"p{idx}:t={t_sec:.3f}:pos[{pos_txt}]:vel[{vel_txt}]"
+                )
+            if preview_lines:
+                self.get_logger().info(
+                    "[BRIDGE_EXEC] controller trajectory preview "
+                    + " | ".join(preview_lines)
+                )
+        except Exception as preview_exc:
+            self.get_logger().warning(
+                "[BRIDGE_EXEC] no se pudo generar preview de trayectoria: "
+                f"{type(preview_exc).__name__}: {preview_exc}"
+            )
+
     def _prepare_joint_trajectory_for_controller(
         self,
         jt: JointTrajectory,
@@ -79,34 +165,11 @@ class TrajectoryPrepMixin:
                 for name, pos in zip(raw_names, raw_positions)
                 if str(name or "").strip()
             }
-            adjusted_counts: dict[str, int] = {}
-            references: dict[str, float] = {}
-            for jname in joint_names:
-                if jname in current_map:
-                    references[jname] = current_map[jname]
-            explicit_unwrap = bool(getattr(self, "_unwrap_continuous_joints", False))
-            for point in points:
-                positions = list(getattr(point, "positions", []) or [])
-                if len(positions) != len(joint_names):
-                    continue
-                adjusted_positions = list(positions)
-                for idx, jname in enumerate(joint_names):
-                    if jname not in self._WRAPAROUND_JOINTS:
-                        continue
-                    target = float(adjusted_positions[idx])
-                    if explicit_unwrap:
-                        ref = references.get(jname)
-                        if ref is None:
-                            adjusted = self._normalize_joint_position(jname, target)
-                        else:
-                            adjusted = target + (math.tau * round((ref - target) / math.tau))
-                    else:
-                        adjusted = self._normalize_joint_position(jname, target)
-                    if abs(adjusted - target) > 1e-6:
-                        adjusted_counts[jname] = adjusted_counts.get(jname, 0) + 1
-                    adjusted_positions[idx] = adjusted
-                    references[jname] = adjusted
-                point.positions = tuple(adjusted_positions)
+            adjusted_counts = self._prepare_normalize_continuous_joints(
+                joint_names=joint_names,
+                points=points,
+                current_map=current_map,
+            )
             if adjusted_counts:
                 details = ",".join(
                     f"{name}:{count}" for name, count in sorted(adjusted_counts.items())
@@ -343,40 +406,7 @@ class TrajectoryPrepMixin:
                         f"first_point_sec={short_goal_first_time_sec:.3f} "
                         f"initial_segment_max_delta={initial_segment_max_delta:.4f}"
                     )
-                try:
-                    preview_points = list(points[:2])
-                    preview_lines: list[str] = []
-                    for idx, point in enumerate(preview_points):
-                        tfs = getattr(point, "time_from_start", None)
-                        t_sec = (
-                            float(getattr(tfs, "sec", 0) or 0)
-                            + float(getattr(tfs, "nanosec", 0) or 0) / 1_000_000_000.0
-                        ) if tfs is not None else 0.0
-                        pos_vals = list(getattr(point, "positions", []) or [])
-                        vel_vals = list(getattr(point, "velocities", []) or [])
-                        pos_txt = ",".join(
-                            f"{jname}={float(pos_vals[jdx]):.3f}"
-                            for jdx, jname in enumerate(joint_names[: min(len(joint_names), len(pos_vals))])
-                        )
-                        vel_txt = "none"
-                        if vel_vals:
-                            vel_txt = ",".join(
-                                f"{jname}={float(vel_vals[jdx]):.3f}"
-                                for jdx, jname in enumerate(joint_names[: min(len(joint_names), len(vel_vals))])
-                            )
-                        preview_lines.append(
-                            f"p{idx}:t={t_sec:.3f}:pos[{pos_txt}]:vel[{vel_txt}]"
-                        )
-                    if preview_lines:
-                        self.get_logger().info(
-                            "[BRIDGE_EXEC] controller trajectory preview "
-                            + " | ".join(preview_lines)
-                        )
-                except Exception as preview_exc:
-                    self.get_logger().warning(
-                        "[BRIDGE_EXEC] no se pudo generar preview de trayectoria: "
-                        f"{type(preview_exc).__name__}: {preview_exc}"
-                    )
+                self._prepare_emit_trajectory_preview(points=points, joint_names=joint_names)
         return prepared
 
     def _extract_joint_trajectory_msg(self, trajectory) -> JointTrajectory | None:
