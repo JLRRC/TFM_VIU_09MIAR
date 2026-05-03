@@ -207,7 +207,7 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # (_local_joint_target_ok / _runtime_target_ok / _strict_refine_runtime_status /
     # _emit_strict_refine_runtime_log). Reducción < 200 requiere extraer las 4
     # nested como sub-helpers del módulo (F3-step3e-bis pendiente).
-    "ur5_qt_panel/ur5_qt_panel/pick_demo/joint_step.py::run_joint_step": 296,
+    "ur5_qt_panel/ur5_qt_panel/pick_demo/joint_step.py::run_joint_step": 259,  # F3-step28a/b: -50 LOC con 2 helpers (retry + grace)
     # F3-step3d (2026-05-03): run_grasp_down_conservative extracted to
     # pick_demo/grasp_down.py. 534 LOC = cuerpo legacy 1:1 con descenso
     # segmentado en waypoints intermedios + IK estricto + fallback preset.
@@ -229,7 +229,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # Removido de baseline (T15 cumplido).
     # F5-step5 (2026-05-03): el factory de runtime nodes creció +20 LOC
     # al añadir Node object_pose_resolver y su parámetro de gating.
-    "ur5_bringup/launch/runtime_nodes_factory.py::build_runtime_node_actions": 219,
+    # F3-step29 (2026-05-03): build_runtime_node_actions bajó 238→173 con 2
+    # helpers (_build_gripper_attach_backend_node 36 + _build_orchestrator_
+    # service_nodes 50). Removido de baseline.
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object": 3702,   # F3-step5bis-c: -88 más (moveit_bridge_path)
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object.worker": 2696,  # F3-step5bis-c: -88 más
     # F3-step4a/b/c (2026-05-03): 3 funciones grandes de panel_pick_object
@@ -261,7 +263,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # 5 sub-helpers (_apply_ui_state_launchers 83 + _camera_and_release 41 +
     # _pick_buttons 56 + _tfm_buttons 56 + _nav_and_finalize 72). Removido de
     # baseline (T15 cumplido).
-    "ur5_bringup/launch/ur5_stack.launch.py::generate_launch_description": 350,
+    # F3-step26 (2026-05-03): generate_launch_description bajó 369→158 con
+    # 3 helpers (_build_bridge_params 54 + _build_system_state_and_attach_extras 17 +
+    # _build_launch_arguments 62). Removido de baseline.
     # F3-step10a/b (2026-05-03): build_step_window bajó de 346 → 186 LOC con
     # 2 sub-helpers (_build_step_runtime_section 111 + _build_step_pipeline_
     # history_widgets 90). Removido de baseline (T15 cumplido).
@@ -271,7 +275,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # 318 → 199 LOC con 3 sub-helpers (_tfm_grasp_compute_yaw_from_minor_axis 59
     # + _tfm_grasp_compute_width_and_preopen 44 + _tfm_grasp_run_pre_checks 98).
     # Removido de baseline (T15 cumplido).
-    "ur5_tools/ur5_tools/gripper_attach_backend.py::GripperAttachBackend.__init__": 342,  # F5-step6b: +33 LOC (params + state nuevos para 4 services)
+    # F3-step27 (2026-05-03): GripperAttachBackend.__init__ bajó 342→7 con
+    # 3 sub-helpers (_init_declare_parameters 51 + _init_parse_parameters 117 +
+    # _init_state_pubs_subs_timers 162). Removido de baseline.
     # F3-step14a/b (2026-05-03): start_moveit_bridge bajó de 287 → 100 LOC
     # con 2 sub-helpers (_build_moveit_bridge_ros_args 101 + _verify_moveit_
     # bridge_ready_async 36). Removido de baseline (T15 cumplido).

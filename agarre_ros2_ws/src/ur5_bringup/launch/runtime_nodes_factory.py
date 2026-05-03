@@ -45,6 +45,96 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 
+def _build_gripper_attach_backend_node(
+    *,
+    use_sim_time,
+    attach_backend_mode,
+    attach_backend_max_pose_age_sec,
+    attach_backend_follow_rate_hz,
+    attach_backend_follow_break_dist_m,
+    attach_backend_max_dist_m,
+    attach_extras,
+    demo_transport_objects,
+    launch_attach_backend,
+):
+    """F3-step29a: ensambla el Node gripper_attach_backend con sus 11+ params (~35 LOC)."""
+    gripper_attach_backend_params: List[Dict[str, Any]] = [
+        {"use_sim_time": use_sim_time},
+        {"attach_mode": attach_backend_mode},
+        {"tcp_frame": "rg2_pinch_center"},
+        {"tool_anchor_prefix": "/gripper_anchor"},
+        {"max_pose_age_sec": attach_backend_max_pose_age_sec},
+        {"follow_rate_hz": attach_backend_follow_rate_hz},
+        {"follow_break_dist_m": attach_backend_follow_break_dist_m},
+        {"attach_max_dist_m": attach_backend_max_dist_m},
+        *attach_extras,
+        {"detachable_shadow_follow": False},
+    ]
+    if demo_transport_objects:
+        gripper_attach_backend_params.append(
+            {"demo_transport_objects": demo_transport_objects}
+        )
+    return Node(
+        package="ur5_tools",
+        executable="gripper_attach_backend",
+        output="screen",
+        parameters=gripper_attach_backend_params,
+        condition=IfCondition(launch_attach_backend),
+    )
+
+
+def _build_orchestrator_service_nodes(
+    *,
+    use_sim_time,
+    world_name,
+    launch_tf_geometry_service,
+    launch_object_pose_resolver,
+    launch_plan_to_pose_server,
+):
+    """F3-step29b: tf_geometry_service + object_pose_resolver + plan_to_pose_server (~45 LOC).
+
+    Devuelve los 3 LifecycleNode/Node necesarios para el orchestrator real
+    (F5-step5/6a). Cada uno con auto_activate o gating equivalente.
+    """
+    tf_geometry_service = Node(
+        package="ur5_tools",
+        executable="tf_geometry_service",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"world_frame": "world"},
+            {"base_frame": "base_link"},
+            {"tf_timeout_sec": 0.2},
+        ],
+        condition=IfCondition(launch_tf_geometry_service),
+    )
+    object_pose_resolver = Node(
+        package="ur5_tools",
+        executable="object_pose_resolver_service",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"world_name": world_name},
+            {"world_frame": "world"},
+            {"max_pose_age_sec": 1.5},
+            {"auto_activate": True},
+        ],
+        condition=IfCondition(launch_object_pose_resolver),
+    )
+    plan_to_pose_server_node = Node(
+        package="ur5_tools",
+        executable="plan_to_pose_server",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"action_name": "/orchestrator/plan_to_pose"},
+            {"step_delay_sec": 0.10},
+        ],
+        condition=IfCondition(launch_plan_to_pose_server),
+    )
+    return tf_geometry_service, object_pose_resolver, plan_to_pose_server_node
+
+
 def build_runtime_node_actions(
     *,
     use_sim_time: LaunchConfiguration,
@@ -153,38 +243,16 @@ def build_runtime_node_actions(
         condition=IfCondition(launch_release_service),
     )
 
-    gripper_attach_backend_params: List[Dict[str, Any]] = [
-        {"use_sim_time": use_sim_time},
-        {"attach_mode": attach_backend_mode},
-        {"tcp_frame": "rg2_pinch_center"},
-        {"tool_anchor_prefix": "/gripper_anchor"},
-        {"max_pose_age_sec": attach_backend_max_pose_age_sec},
-        {"follow_rate_hz": attach_backend_follow_rate_hz},
-        {"follow_break_dist_m": attach_backend_follow_break_dist_m},
-        # FIX-ATTACH-THRESHOLD: tighten from 0.15 m to 0.05 m so that the
-        # backend only attaches when the TCP is geometrically close
-        # to the object (~contact). 0.15 m allowed false grasps; 0.05 m
-        # requires the gripper to be within ~5 cm.
-        {"attach_max_dist_m": attach_backend_max_dist_m},
-        *attach_extras,
-        # detachable_shadow_follow=False: disables the physics-joint shadow
-        # path for non-demo-transport objects. pick_demo goes through
-        # demo_transport exclusively (demo_transport_objects check fires
-        # first in _on_gripper_attach), so this flag only affects other
-        # objects that use detachable_joint mode.
-        {"detachable_shadow_follow": False},
-    ]
-    if demo_transport_objects:
-        gripper_attach_backend_params.append(
-            {"demo_transport_objects": demo_transport_objects}
-        )
-
-    gripper_attach_backend = Node(
-        package="ur5_tools",
-        executable="gripper_attach_backend",
-        output="screen",
-        parameters=gripper_attach_backend_params,
-        condition=IfCondition(launch_attach_backend),
+    gripper_attach_backend = _build_gripper_attach_backend_node(
+        use_sim_time=use_sim_time,
+        attach_backend_mode=attach_backend_mode,
+        attach_backend_max_pose_age_sec=attach_backend_max_pose_age_sec,
+        attach_backend_follow_rate_hz=attach_backend_follow_rate_hz,
+        attach_backend_follow_break_dist_m=attach_backend_follow_break_dist_m,
+        attach_backend_max_dist_m=attach_backend_max_dist_m,
+        attach_extras=attach_extras,
+        demo_transport_objects=demo_transport_objects,
+        launch_attach_backend=launch_attach_backend,
     )
 
     planning_scene_sync = Node(
@@ -217,57 +285,14 @@ def build_runtime_node_actions(
         condition=IfCondition(launch_moveit_bridge),
     )
 
-    # F16 (2026-05-01): tf_geometry_service — microservicio dedicado que
-    # aloja /tf_geometry/world_to_base y /tf_geometry/compute_approach_pose.
-    # LifecycleNode con auto-activate. Centraliza cálculos TF que estaban
-    # duplicados entre world_tf_publisher, panel y panel_state_methods.
-    tf_geometry_service = Node(
-        package="ur5_tools",
-        executable="tf_geometry_service",
-        output="screen",
-        parameters=[
-            {"use_sim_time": use_sim_time},
-            {"world_frame": "world"},
-            {"base_frame": "base_link"},
-            {"tf_timeout_sec": 0.2},
-        ],
-        condition=IfCondition(launch_tf_geometry_service),
-    )
-
-    # F5-step5 (2026-05-03): object_pose_resolver_service — LifecycleNode
-    # con auto_activate. Suscribe al TFMessage de gz_pose_bridge y aloja
-    # /orchestrator/resolve_object_pose_world. Permite que el orchestrator
-    # (PickPlace.action) resuelva poses de objetos sin depender del hint
-    # del cliente (panel). Gating opt-in vía launch_object_pose_resolver.
-    object_pose_resolver = Node(
-        package="ur5_tools",
-        executable="object_pose_resolver_service",
-        output="screen",
-        parameters=[
-            {"use_sim_time": use_sim_time},
-            {"world_name": world_name},
-            {"world_frame": "world"},
-            {"max_pose_age_sec": 1.5},
-            {"auto_activate": True},
-        ],
-        condition=IfCondition(launch_object_pose_resolver),
-    )
-
-    # F5-step6a (2026-05-03): plan_to_pose_server — action server
-    # /orchestrator/plan_to_pose que el pick_orchestrator necesita en
-    # las fases APPROACH / LIFT / TRANSPORT. La versión actual es STUB
-    # (no usa MoveIt real); F6.6 conectará el bridge MoveIt vía
-    # use_real_bridge=True. Sin coste si no hay clientes invocando.
-    plan_to_pose_server_node = Node(
-        package="ur5_tools",
-        executable="plan_to_pose_server",
-        output="screen",
-        parameters=[
-            {"use_sim_time": use_sim_time},
-            {"action_name": "/orchestrator/plan_to_pose"},
-            {"step_delay_sec": 0.10},
-        ],
-        condition=IfCondition(launch_plan_to_pose_server),
+    tf_geometry_service, object_pose_resolver, plan_to_pose_server_node = (
+        _build_orchestrator_service_nodes(
+            use_sim_time=use_sim_time,
+            world_name=world_name,
+            launch_tf_geometry_service=launch_tf_geometry_service,
+            launch_object_pose_resolver=launch_object_pose_resolver,
+            launch_plan_to_pose_server=launch_plan_to_pose_server,
+        )
     )
 
     return [

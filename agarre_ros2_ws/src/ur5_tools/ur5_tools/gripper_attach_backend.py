@@ -182,9 +182,8 @@ class GripperAttachBackend(
     comportamiento de los launch existentes.
     """
 
-    def __init__(self) -> None:
-        super().__init__("gripper_attach_backend")
-        # F13 lifecycle: auto-activate por defecto preserva backward-compat.
+    def _init_declare_parameters(self) -> None:
+        """F3-step27a: declara los 40+ parámetros de GripperAttachBackend (~64 LOC)."""
         if not self.has_parameter("auto_activate"):
             self.declare_parameter("auto_activate", True)
         if not self.has_parameter("use_sim_time"):
@@ -218,15 +217,6 @@ class GripperAttachBackend(
         self.declare_parameter("startup_detach_max_attempts", 12)
         self.declare_parameter("startup_detach_period_sec", 0.5)
         self.declare_parameter("detachable_shadow_follow", True)
-        # FIX-ATTACH-ROUTES: pick_demo se saca de ambas listas de soft-attach.
-        # prefer_tool_anchor se salta TODAS las comprobaciones de distancia
-        # (_relay_tool_anchor_attach publica state=True sin verificar geometria).
-        # demo_transport usa respawn+teleport cinematico (agarre virtual, no fisico).
-        # Ambas listas quedan vacias por defecto para que pick_demo caiga en
-        # _activate_follow_attachment, que si hace cumplir attach_max_dist_m
-        # (ajustado a 0.05 m desde launch).
-        # Para reactivar cualquiera de los dos mecanismos en un objeto concreto:
-        #   ros2 launch ... prefer_tool_anchor_objects:=['box_blue']
         string_array_param = ParameterDescriptor(type=ParameterType.PARAMETER_STRING_ARRAY)
         self.declare_parameter("prefer_tool_anchor_objects", [""], string_array_param)
         self.declare_parameter("demo_transport_objects", [""], string_array_param)
@@ -235,10 +225,6 @@ class GripperAttachBackend(
         self.declare_parameter("demo_transport_respawn_sleep_sec", 0.08)
         self.declare_parameter("demo_transport_world_z_compensation_m", 0.065)
         self.declare_parameter("world_sdf", "")
-        # F5-step6b (2026-05-03): parámetros para los 4 services nuevos
-        # /gripper/open|close + /orchestrator/attach|detach. Defaults
-        # alineados con panel_settings (PANEL_GRIPPER_OPEN_RAD=0.0425,
-        # PANEL_GRIPPER_CLOSED_RAD=0.0, PANEL_GRIPPER_JOINT2_SIGN=1.0).
         self.declare_parameter("gripper_cmd_topic", "/gripper_controller/commands")
         self.declare_parameter("gripper_open_rad", 0.0425)
         self.declare_parameter("gripper_closed_rad", 0.0)
@@ -248,6 +234,8 @@ class GripperAttachBackend(
         self.declare_parameter("gripper_open_service", "/gripper/open")
         self.declare_parameter("gripper_close_service", "/gripper/close")
 
+    def _init_parse_parameters(self) -> None:
+        """F3-step27b: parsea los parámetros declarados a self._<attr> (~115 LOC)."""
         self._gripper_prefix = str(
             self.get_parameter("gripper_prefix").value or "/gripper"
         ).strip("/")
@@ -364,6 +352,8 @@ class GripperAttachBackend(
             candidate = os.path.join(self._ws_dir, "worlds", f"{self._world_name}.sdf")
             self._world_sdf = candidate if os.path.exists(candidate) else ""
 
+    def _init_state_pubs_subs_timers(self) -> None:
+        """F3-step27c: state init + qos + pubs/subs/timers (~135 LOC)."""
         self._qos = QoSProfile(
             depth=10,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -524,6 +514,14 @@ class GripperAttachBackend(
             f"pose_topic={self._pose_topic} joint_states_topic={self._joint_states_topic} "
             f"base_frame={self._base_frame} tcp_frame={self._tcp_frame}"
         )
+
+    def __init__(self) -> None:
+        super().__init__("gripper_attach_backend")
+        # F13 lifecycle: auto-activate por defecto preserva backward-compat.
+        # F3-step27 (2026-05-03): __init__ split en 3 sub-helpers.
+        self._init_declare_parameters()
+        self._init_parse_parameters()
+        self._init_state_pubs_subs_timers()
 
     def _drop_attached_target(
         self,

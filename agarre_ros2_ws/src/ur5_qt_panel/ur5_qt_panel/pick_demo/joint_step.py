@@ -43,6 +43,118 @@ class JointStepContext:
     should_apply_global_step_timeout_extra: Callable[[Any], bool]
 
 
+def _run_joint_step_basket_transport_grace(
+    ctx,
+    *,
+    label: str,
+    runtime_target_base,
+    runtime_target_tol_m,
+) -> bool:
+    """F3-step28b: ventana extra de gracia para fases basket_transport (~36 LOC).
+
+    Si _wait_for_demo_runtime_target_progress devuelve OK marca runtime_target
+    como accept_source y devuelve True. False si timeout/dist > tol.
+    """
+    extra_runtime_wait_sec = _pick_demo_env_float(
+        "PANEL_PICK_DEMO_TRANSPORT_RUNTIME_GRACE_SEC",
+        35.0,
+        minimum=0.0,
+    )
+    if extra_runtime_wait_sec <= 0.0:
+        return False
+    runtime_target_tol = float(
+        runtime_target_tol_m
+        if runtime_target_tol_m is not None
+        else ctx.direct_runtime_target_tol_m(label)
+    )
+    wait_fn = getattr(ctx.panel, "_wait_for_tcp_base_target", None)
+    runtime_grace = _wait_for_demo_runtime_target_progress(
+        ctx.panel,
+        label=label,
+        target_xyz=runtime_target_base,
+        timeout_sec=extra_runtime_wait_sec,
+        tol_xyz_m=runtime_target_tol,
+        live_tcp_base_fn=ctx.live_tcp_base,
+        fallback_wait_fn=wait_fn,
+        ee_frame=DIRECT_SOURCE_FRAME,
+    )
+    runtime_grace_ok = bool(runtime_grace.get("ok"))
+    runtime_grace_pos = ctx.tuple3(runtime_grace.get("pos"))
+    runtime_grace_dist = runtime_grace.get("dist_m")
+    ctx.panel._emit_log(
+        "[PICK][DIRECT][ROUTE] "
+        f"phase={label} runtime_transport_grace_ok={str(bool(runtime_grace_ok)).lower()} "
+        f"timeout_sec={extra_runtime_wait_sec:.1f} "
+        f"target_tol={runtime_target_tol:.3f} "
+        f"runtime_target_dist={ctx.fmt_scalar(runtime_grace_dist)} "
+        f"runtime_target_pos={ctx.fmt_vec(ctx.tuple3(runtime_grace_pos))} "
+        f"reason={runtime_grace.get('reason', 'unknown')} "
+        f"best_dist={ctx.fmt_scalar(runtime_grace.get('best_dist_m'))} "
+        f"elapsed_sec={ctx.fmt_scalar(runtime_grace.get('elapsed_sec'))}"
+    )
+    if runtime_grace_ok:
+        ctx.panel._pick_demo_last_joint_target_accept_source = "runtime_target"
+    return runtime_grace_ok
+
+
+def _run_joint_step_retry_for_recovery_labels(
+    ctx,
+    *,
+    label: str,
+    label_name: str,
+    joints,
+    effective_move_sec: float,
+    wait_timeout: float,
+    tol_rad: float,
+    runtime_target_base,
+    is_basket_transport_motion: bool,
+    is_basket_transport_stage: bool,
+    local_joint_target_ok_fn,
+    runtime_target_ok_fn,
+) -> bool:
+    """F3-step28a: retry/recovery del joint step para labels nominales (~38 LOC).
+
+    Para labels HOME/MESA/PICK_IMAGE/etc. o basket_transport_stage, reintenta
+    publish_joint_trajectory + wait con tol relajada. Si OK marca accept_source.
+    Devuelve True si el retry tuvo éxito (caller debe return), False si debe
+    raise el RuntimeError de timeout.
+    """
+    ctx.panel._emit_log(
+        f"[PICK][RECOVERY] {label} no alcanzado; reintentando una vez diffs={_joint_error_snapshot(ctx.panel, joints)}"
+    )
+    ok_retry, info_retry = ctx.panel._publish_joint_trajectory(joints, effective_move_sec)
+    if not ok_retry:
+        raise RuntimeError(f"{label} retry fallo: {info_retry}")
+    retry_timeout = max(wait_timeout, effective_move_sec + 4.0)
+    retry_tol = max(tol_rad, 0.10 if is_basket_transport_motion else 0.06)
+    if ctx.panel._wait_for_joint_target(joints, retry_timeout, tol_rad=retry_tol):
+        ctx.panel._pick_demo_last_joint_target_accept_source = "joint_wait_retry"
+        ctx.panel._emit_log(f"[PICK][RECOVERY] {label} alcanzado tras reintento")
+        return True
+    local_ok_after_retry, local_diffs_after_retry = local_joint_target_ok_fn(retry_tol)
+    runtime_ok_after_retry, runtime_info_after_retry = runtime_target_ok_fn()
+    has_runtime_target = ctx.tuple3(runtime_target_base) is not None
+    accept_via_runtime_target = bool(
+        is_basket_transport_motion
+        and has_runtime_target
+        and runtime_ok_after_retry
+    )
+    if local_ok_after_retry or accept_via_runtime_target:
+        ctx.panel._pick_demo_last_joint_target_accept_source = (
+            "runtime_target"
+            if (accept_via_runtime_target and not local_ok_after_retry)
+            else "local_joint_state"
+        )
+        ctx.panel._emit_log(
+            "[PICK][DIRECT][ROUTE] "
+            f"phase={label} joint_target_accept_after_retry_timeout=true "
+            f"source={'runtime_target' if (accept_via_runtime_target and not local_ok_after_retry) else 'local_joint_state'} "
+            f"diffs={local_diffs_after_retry} {runtime_info_after_retry}"
+        )
+        return True
+    return False
+
+
 def run_joint_step(
     ctx: JointStepContext,
     label,
@@ -273,81 +385,31 @@ def run_joint_step(
         )
         return
     if is_basket_transport_motion and runtime_target_base is not None and not runtime_ok_after_wait:
-        extra_runtime_wait_sec = _pick_demo_env_float(
-            "PANEL_PICK_DEMO_TRANSPORT_RUNTIME_GRACE_SEC",
-            35.0,
-            minimum=0.0,
-        )
-        wait_fn = getattr(ctx.panel, "_wait_for_tcp_base_target", None)
-        if extra_runtime_wait_sec > 0.0:
-            runtime_target_tol = float(
-                runtime_target_tol_m
-                if runtime_target_tol_m is not None
-                else ctx.direct_runtime_target_tol_m(label)
-            )
-            runtime_grace = _wait_for_demo_runtime_target_progress(
-                ctx.panel,
-                label=label,
-                target_xyz=runtime_target_base,
-                timeout_sec=extra_runtime_wait_sec,
-                tol_xyz_m=runtime_target_tol,
-                live_tcp_base_fn=ctx.live_tcp_base,
-                fallback_wait_fn=wait_fn,
-                ee_frame=DIRECT_SOURCE_FRAME,
-            )
-            runtime_grace_ok = bool(runtime_grace.get("ok"))
-            runtime_grace_pos = ctx.tuple3(runtime_grace.get("pos"))
-            runtime_grace_dist = runtime_grace.get("dist_m")
-            ctx.panel._emit_log(
-                "[PICK][DIRECT][ROUTE] "
-                f"phase={label} runtime_transport_grace_ok={str(bool(runtime_grace_ok)).lower()} "
-                f"timeout_sec={extra_runtime_wait_sec:.1f} "
-                f"target_tol={runtime_target_tol:.3f} "
-                f"runtime_target_dist={ctx.fmt_scalar(runtime_grace_dist)} "
-                f"runtime_target_pos={ctx.fmt_vec(ctx.tuple3(runtime_grace_pos))} "
-                f"reason={runtime_grace.get('reason', 'unknown')} "
-                f"best_dist={ctx.fmt_scalar(runtime_grace.get('best_dist_m'))} "
-                f"elapsed_sec={ctx.fmt_scalar(runtime_grace.get('elapsed_sec'))}"
-            )
-            if runtime_grace_ok:
-                ctx.panel._pick_demo_last_joint_target_accept_source = "runtime_target"
-                return
+        if _run_joint_step_basket_transport_grace(
+            ctx,
+            label=label,
+            runtime_target_base=runtime_target_base,
+            runtime_target_tol_m=runtime_target_tol_m,
+        ):
+            return
     if (
         label in {"HOME", "MESA", "PICK_IMAGE", "PICK_PRE_CLOSE_REF", "HOME_WITH_OBJECT", "CESTA", "CESTA_RELEASE", "HOME_FINAL"}
         or is_basket_transport_stage
     ):
-        ctx.panel._emit_log(
-            f"[PICK][RECOVERY] {label} no alcanzado; reintentando una vez diffs={_joint_error_snapshot(ctx.panel, joints)}"
-        )
-        ok_retry, info_retry = ctx.panel._publish_joint_trajectory(joints, effective_move_sec)
-        if not ok_retry:
-            raise RuntimeError(f"{label} retry fallo: {info_retry}")
-        retry_timeout = max(wait_timeout, effective_move_sec + 4.0)
-        retry_tol = max(tol_rad, 0.10 if is_basket_transport_motion else 0.06)
-        if ctx.panel._wait_for_joint_target(joints, retry_timeout, tol_rad=retry_tol):
-            ctx.panel._pick_demo_last_joint_target_accept_source = "joint_wait_retry"
-            ctx.panel._emit_log(f"[PICK][RECOVERY] {label} alcanzado tras reintento")
-            return
-        local_ok_after_retry, local_diffs_after_retry = _local_joint_target_ok(retry_tol)
-        runtime_ok_after_retry, runtime_info_after_retry = _runtime_target_ok()
-        has_runtime_target = ctx.tuple3(runtime_target_base) is not None
-        accept_via_runtime_target = bool(
-            is_basket_transport_motion
-            and has_runtime_target
-            and runtime_ok_after_retry
-        )
-        if local_ok_after_retry or accept_via_runtime_target:
-            ctx.panel._pick_demo_last_joint_target_accept_source = (
-                "runtime_target"
-                if (accept_via_runtime_target and not local_ok_after_retry)
-                else "local_joint_state"
-            )
-            ctx.panel._emit_log(
-                "[PICK][DIRECT][ROUTE] "
-                f"phase={label} joint_target_accept_after_retry_timeout=true "
-                f"source={'runtime_target' if (accept_via_runtime_target and not local_ok_after_retry) else 'local_joint_state'} "
-                f"diffs={local_diffs_after_retry} {runtime_info_after_retry}"
-            )
+        if _run_joint_step_retry_for_recovery_labels(
+            ctx,
+            label=label,
+            label_name=label_name,
+            joints=joints,
+            effective_move_sec=effective_move_sec,
+            wait_timeout=wait_timeout,
+            tol_rad=tol_rad,
+            runtime_target_base=runtime_target_base,
+            is_basket_transport_motion=is_basket_transport_motion,
+            is_basket_transport_stage=is_basket_transport_stage,
+            local_joint_target_ok_fn=_local_joint_target_ok,
+            runtime_target_ok_fn=_runtime_target_ok,
+        ):
             return
     raise RuntimeError(
         f"{label} no alcanzado (timeout) diffs={_joint_error_snapshot(ctx.panel, joints)}"

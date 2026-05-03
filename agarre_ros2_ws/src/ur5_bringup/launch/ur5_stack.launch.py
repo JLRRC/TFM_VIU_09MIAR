@@ -405,6 +405,145 @@ def _maybe_moveit(context, *_args) -> List[object]:
     ]
 
 
+def _build_bridge_params(use_sim_time):
+    """F3-step26a: ensambla bridge_params para ur5_moveit_bridge (~80 LOC).
+
+    Lee 16 env vars PANEL_MOVEIT_BRIDGE_* con clamp + default + devuelve
+    lista de dicts compatible con el ``parameters=[...]`` de Node.
+    """
+    bridge_exec_timeout = max(1.0, _env_float("PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC", 150.0))
+    bridge_request_timeout = max(2.0, _env_float("PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC", 180.0))
+    bridge_stale_request_ttl_sec = max(20.0, _env_float("PANEL_MOVEIT_BRIDGE_STALE_REQUEST_TTL_SEC", 120.0))
+    bridge_joint_state_timeout = max(0.2, _env_float("PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC", 6.0))
+    bridge_joint_state_max_age = max(0.1, _env_float("PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC", 2.5))
+    bridge_force_fjt_direct = _env_flag("PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT", False)
+    bridge_unwrap_continuous = _env_flag("PANEL_MOVEIT_BRIDGE_UNWRAP_CONTINUOUS_JOINTS", False)
+    bridge_require_request_id = _env_flag("PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID", True)
+    bridge_drop_pending = _env_flag("PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED", True)
+    bridge_dry_run = _env_flag("PANEL_MOVEIT_BRIDGE_DRY_RUN", False)
+    bridge_path_constraint_tol = max(0.0, _env_float("PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD", 0.35))
+    bridge_controller_goal_time_tol = max(0.0, _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TIME_TOL_SEC", 45.0))
+    bridge_controller_expected_goal_time = max(
+        0.0,
+        _env_float(
+            "PANEL_MOVEIT_BRIDGE_CONTROLLER_EXPECTED_GOAL_TIME_SEC",
+            max(45.0, bridge_controller_goal_time_tol),
+        ),
+    )
+    bridge_controller_path_tol = max(0.0, _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_PATH_TOL_RAD", 4.0))
+    bridge_controller_goal_tol = max(0.0, _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TOL_RAD", 0.20))
+    bridge_velocity_scale = max(0.05, min(1.0, _env_float("PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE", 0.30)))
+    bridge_accel_scale = max(0.05, min(1.0, _env_float("PANEL_MOVEIT_BRIDGE_ACCEL_SCALE", 0.30)))
+    return [
+        {"use_sim_time": use_sim_time},
+        {"backend": "auto"},
+        {"base_frame": "base_link"},
+        {"ee_frame": "rg2_tcp"},
+        {"result_topic": "/desired_grasp/result"},
+        {"controller_manager": LaunchConfiguration("controller_manager")},
+        {"execute_timeout_sec": bridge_exec_timeout},
+        {"request_timeout_sec": bridge_request_timeout},
+        {"stale_request_ttl_sec": bridge_stale_request_ttl_sec},
+        {"joint_state_valid_timeout_sec": bridge_joint_state_timeout},
+        {"joint_state_valid_max_age_sec": bridge_joint_state_max_age},
+        {"force_fjt_direct_for_walltime_sim": bridge_force_fjt_direct},
+        {"unwrap_continuous_joints": bridge_unwrap_continuous},
+        {"require_request_id": bridge_require_request_id},
+        {"drop_pending_on_tagged_request": bridge_drop_pending},
+        {"dry_run_plan_only": bridge_dry_run},
+        {"path_constraint_joint_tolerance_rad": bridge_path_constraint_tol},
+        {"controller_goal_time_tolerance_sec": bridge_controller_goal_time_tol},
+        {"controller_expected_goal_time_sec": bridge_controller_expected_goal_time},
+        {"controller_path_tolerance_rad": bridge_controller_path_tol},
+        {"controller_goal_tolerance_rad": bridge_controller_goal_tol},
+        {"max_velocity_scaling_factor": bridge_velocity_scale},
+        {"max_acceleration_scaling_factor": bridge_accel_scale},
+    ]
+
+
+def _build_system_state_and_attach_extras():
+    """F3-step26b: extras runtime para system_state_manager y attach_backend
+    (~36 LOC). Lee env vars con _resolve_runtime y devuelve tupla
+    (system_state_extras, attach_extras, demo_transport_objects).
+    """
+    system_state_extras = [
+        {"geometry_offset_tol_m": float(_resolve_runtime("SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M", "0.002"))},
+        {"geometry_pair_tol_m": float(_resolve_runtime("SYSTEM_STATE_GEOMETRY_PAIR_TOL_M", "0.001"))},
+        {"startup_timeout_sec": float(_resolve_runtime("SYSTEM_STATE_STARTUP_TIMEOUT_SEC", "15.0"))},
+    ]
+    demo_transport_objects_env = os.environ.get("ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS", "pick_demo")
+    demo_transport_objects = [v.strip() for v in demo_transport_objects_env.split(",") if v.strip()]
+    attach_extras = [
+        {"gz_service_timeout_ms": int(_resolve_runtime("ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS", "2000"))},
+        {"gz_cmd_timeout_sec": float(_resolve_runtime("ATTACH_BACKEND_GZ_CMD_TIMEOUT_SEC", "3.0"))},
+    ]
+    return system_state_extras, attach_extras, demo_transport_objects
+
+
+def _build_launch_arguments(world_default: str, gui_config_default: str) -> list:
+    """F3-step26c: ensambla la lista de DeclareLaunchArgument (~84 LOC).
+
+    Centraliza ~35 args que controlan el stack: world/headless/sim_time +
+    flags launch_* + attach_backend params + ros2_control + moveit + rmw.
+    """
+    return [
+        DeclareLaunchArgument("world_file", default_value=world_default),
+        DeclareLaunchArgument("headless", default_value="true"),
+        DeclareLaunchArgument("use_sim_time", default_value="true"),
+        DeclareLaunchArgument("launch_panel", default_value="true"),
+        DeclareLaunchArgument("launch_bridge", default_value="true"),
+        DeclareLaunchArgument("launch_gazebo", default_value="true"),
+        DeclareLaunchArgument("launch_rsp", default_value="true"),
+        DeclareLaunchArgument("launch_ros2_control", default_value="false"),
+        DeclareLaunchArgument("control_backend", default_value="gz_ros2_control"),
+        DeclareLaunchArgument("launch_world_tf", default_value="true"),
+        DeclareLaunchArgument("launch_release_service", default_value="true"),
+        DeclareLaunchArgument("launch_attach_backend", default_value="true"),
+        DeclareLaunchArgument(
+            "attach_backend_mode",
+            default_value=_resolve_runtime("ATTACH_BACKEND_MODE", "follow_tcp"),
+        ),
+        DeclareLaunchArgument(
+            "strict_physics_mode",
+            default_value=_resolve_runtime("STRICT_PHYSICS_MODE", "false"),
+        ),
+        DeclareLaunchArgument(
+            "attach_backend_max_pose_age_sec",
+            default_value=_resolve_runtime("ATTACH_BACKEND_MAX_POSE_AGE_SEC", "1.5"),
+        ),
+        DeclareLaunchArgument(
+            "attach_backend_follow_rate_hz",
+            default_value=_resolve_runtime("ATTACH_BACKEND_FOLLOW_RATE_HZ", "20.0"),
+        ),
+        DeclareLaunchArgument(
+            "attach_backend_follow_break_dist_m",
+            default_value=_resolve_runtime("ATTACH_BACKEND_FOLLOW_BREAK_DIST_M", "0.18"),
+        ),
+        DeclareLaunchArgument(
+            "attach_backend_max_dist_m",
+            default_value=_resolve_runtime("ATTACH_BACKEND_MAX_DIST_M", "0.08"),
+        ),
+        DeclareLaunchArgument("launch_moveit_bridge", default_value="true"),
+        DeclareLaunchArgument("launch_tf_geometry_service", default_value="true"),
+        DeclareLaunchArgument("launch_object_pose_resolver", default_value="true"),
+        DeclareLaunchArgument("launch_plan_to_pose_server", default_value="true"),
+        DeclareLaunchArgument("launch_scene_sync", default_value="true"),
+        DeclareLaunchArgument("launch_system_state", default_value="true"),
+        DeclareLaunchArgument("launch_moveit", default_value="false"),
+        DeclareLaunchArgument("moveit_mode", default_value="auto"),
+        DeclareLaunchArgument("camera_required", default_value="1"),
+        DeclareLaunchArgument("moveit_start_ros2_control", default_value="false"),
+        DeclareLaunchArgument("bootstrap_controllers", default_value="true"),
+        DeclareLaunchArgument("controller_manager", default_value="/controller_manager"),
+        DeclareLaunchArgument("panel_auto_bridge", default_value="0"),
+        DeclareLaunchArgument("panel_auto_bridge_delay_ms", default_value="1200"),
+        DeclareLaunchArgument("panel_managed", default_value="1"),
+        DeclareLaunchArgument("rmw_implementation", default_value="rmw_fastrtps_cpp"),
+        DeclareLaunchArgument("render_engine", default_value="ogre2"),
+        DeclareLaunchArgument("gui_config_file", default_value=gui_config_default),
+    ]
+
+
 def generate_launch_description():
     ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
     world_default = os.path.join(ws_dir, "worlds", "ur5_mesa_objetos.sdf")
@@ -487,138 +626,10 @@ def generate_launch_description():
         use_sim_time=use_sim_time,
     )
 
-    # F17: parámetros runtime calculados aquí porque dependen de
-    # _resolve_runtime / _env_float / _env_flag (closures sobre el
-    # diccionario YAML cargado al import). Se pasan a la factory como
-    # listas/dicts ya resueltos.
-    system_state_extras = [
-        {
-            "geometry_offset_tol_m": float(
-                _resolve_runtime("SYSTEM_STATE_GEOMETRY_OFFSET_TOL_M", "0.002")
-            )
-        },
-        {
-            "geometry_pair_tol_m": float(
-                _resolve_runtime("SYSTEM_STATE_GEOMETRY_PAIR_TOL_M", "0.001")
-            )
-        },
-        {
-            "startup_timeout_sec": float(
-                _resolve_runtime("SYSTEM_STATE_STARTUP_TIMEOUT_SEC", "15.0")
-            )
-        },
-    ]
-
-    demo_transport_objects_env = os.environ.get(
-        "ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS",
-        "pick_demo",
+    system_state_extras, attach_extras, demo_transport_objects = (
+        _build_system_state_and_attach_extras()
     )
-    demo_transport_objects = [
-        value.strip()
-        for value in demo_transport_objects_env.split(",")
-        if value.strip()
-    ]
-    attach_extras = [
-        {
-            "gz_service_timeout_ms": int(
-                _resolve_runtime("ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS", "2000")
-            )
-        },
-        {
-            "gz_cmd_timeout_sec": float(
-                _resolve_runtime("ATTACH_BACKEND_GZ_CMD_TIMEOUT_SEC", "3.0")
-            )
-        },
-    ]
-
-    # FIX-DESIRED-GRASP / FIX-VELOCITY-SCALING / etc.: parámetros del
-    # ur5_moveit_bridge, calculados a partir de env vars de
-    # start_panel_v2.sh con _env_float / _env_flag.
-    bridge_exec_timeout = max(
-        1.0, _env_float("PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC", 150.0)
-    )
-    bridge_request_timeout = max(
-        2.0, _env_float("PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC", 180.0)
-    )
-    bridge_stale_request_ttl_sec = max(
-        20.0,
-        _env_float("PANEL_MOVEIT_BRIDGE_STALE_REQUEST_TTL_SEC", 120.0),
-    )
-    bridge_joint_state_timeout = max(
-        0.2, _env_float("PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC", 6.0)
-    )
-    bridge_joint_state_max_age = max(
-        0.1, _env_float("PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC", 2.5)
-    )
-    bridge_force_fjt_direct = _env_flag(
-        "PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT", False
-    )
-    bridge_unwrap_continuous = _env_flag(
-        "PANEL_MOVEIT_BRIDGE_UNWRAP_CONTINUOUS_JOINTS", False
-    )
-    bridge_require_request_id = _env_flag(
-        "PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID", True
-    )
-    bridge_drop_pending = _env_flag(
-        "PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED", True
-    )
-    bridge_dry_run = _env_flag("PANEL_MOVEIT_BRIDGE_DRY_RUN", False)
-    bridge_path_constraint_tol = max(
-        0.0, _env_float("PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD", 0.35)
-    )
-    bridge_controller_goal_time_tol = max(
-        0.0,
-        _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TIME_TOL_SEC", 45.0),
-    )
-    bridge_controller_expected_goal_time = max(
-        0.0,
-        _env_float(
-            "PANEL_MOVEIT_BRIDGE_CONTROLLER_EXPECTED_GOAL_TIME_SEC",
-            max(45.0, bridge_controller_goal_time_tol),
-        ),
-    )
-    bridge_controller_path_tol = max(
-        0.0,
-        _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_PATH_TOL_RAD", 4.0),
-    )
-    bridge_controller_goal_tol = max(
-        0.0,
-        _env_float("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TOL_RAD", 0.20),
-    )
-    bridge_velocity_scale = max(
-        0.05,
-        min(1.0, _env_float("PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE", 0.30)),
-    )
-    bridge_accel_scale = max(
-        0.05,
-        min(1.0, _env_float("PANEL_MOVEIT_BRIDGE_ACCEL_SCALE", 0.30)),
-    )
-
-    bridge_params = [
-        {"use_sim_time": use_sim_time},
-        {"backend": "auto"},
-        {"base_frame": "base_link"},
-        {"ee_frame": "rg2_tcp"},
-        {"result_topic": "/desired_grasp/result"},
-        {"controller_manager": LaunchConfiguration("controller_manager")},
-        {"execute_timeout_sec": bridge_exec_timeout},
-        {"request_timeout_sec": bridge_request_timeout},
-        {"stale_request_ttl_sec": bridge_stale_request_ttl_sec},
-        {"joint_state_valid_timeout_sec": bridge_joint_state_timeout},
-        {"joint_state_valid_max_age_sec": bridge_joint_state_max_age},
-        {"force_fjt_direct_for_walltime_sim": bridge_force_fjt_direct},
-        {"unwrap_continuous_joints": bridge_unwrap_continuous},
-        {"require_request_id": bridge_require_request_id},
-        {"drop_pending_on_tagged_request": bridge_drop_pending},
-        {"dry_run_plan_only": bridge_dry_run},
-        {"path_constraint_joint_tolerance_rad": bridge_path_constraint_tol},
-        {"controller_goal_time_tolerance_sec": bridge_controller_goal_time_tol},
-        {"controller_expected_goal_time_sec": bridge_controller_expected_goal_time},
-        {"controller_path_tolerance_rad": bridge_controller_path_tol},
-        {"controller_goal_tolerance_rad": bridge_controller_goal_tol},
-        {"max_velocity_scaling_factor": bridge_velocity_scale},
-        {"max_acceleration_scaling_factor": bridge_accel_scale},
-    ]
+    bridge_params = _build_bridge_params(use_sim_time)
 
     runtime_actions = build_runtime_node_actions(
         use_sim_time=use_sim_time,
@@ -680,90 +691,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("world_file", default_value=world_default),
-            DeclareLaunchArgument("headless", default_value="true"),
-            DeclareLaunchArgument("use_sim_time", default_value="true"),
-            DeclareLaunchArgument("launch_panel", default_value="true"),
-            DeclareLaunchArgument("launch_bridge", default_value="true"),
-            DeclareLaunchArgument("launch_gazebo", default_value="true"),
-            DeclareLaunchArgument("launch_rsp", default_value="true"),
-            DeclareLaunchArgument("launch_ros2_control", default_value="false"),
-            DeclareLaunchArgument("control_backend", default_value="gz_ros2_control"),
-            DeclareLaunchArgument("launch_world_tf", default_value="true"),
-            DeclareLaunchArgument("launch_release_service", default_value="true"),
-            DeclareLaunchArgument("launch_attach_backend", default_value="true"),
-            DeclareLaunchArgument(
-                "attach_backend_mode",
-                default_value=_resolve_runtime("ATTACH_BACKEND_MODE", "follow_tcp"),
-            ),
-            DeclareLaunchArgument(
-                "strict_physics_mode",
-                default_value=_resolve_runtime("STRICT_PHYSICS_MODE", "false"),
-            ),
-            DeclareLaunchArgument(
-                "attach_backend_max_pose_age_sec",
-                default_value=_resolve_runtime("ATTACH_BACKEND_MAX_POSE_AGE_SEC", "1.5"),
-            ),
-            DeclareLaunchArgument(
-                "attach_backend_follow_rate_hz",
-                default_value=_resolve_runtime("ATTACH_BACKEND_FOLLOW_RATE_HZ", "20.0"),
-            ),
-            DeclareLaunchArgument(
-                "attach_backend_follow_break_dist_m",
-                default_value=_resolve_runtime("ATTACH_BACKEND_FOLLOW_BREAK_DIST_M", "0.18"),
-            ),
-            # FIX-ATTACH-THRESHOLD: max 3D distance (m) for backend to accept attach.
-            # Was 0.15 (default in gripper_attach_backend.py). Tightened for real
-            # contact, but 0.050 was too strict for the direct grasp and rejected a
-            # valid manual-like close at 0.0509 m. 0.080 accommodates small object
-            # movements during descent while remaining far below 0.150 false-grasp risk.
-            DeclareLaunchArgument(
-                "attach_backend_max_dist_m",
-                default_value=_resolve_runtime("ATTACH_BACKEND_MAX_DIST_M", "0.08"),
-            ),
-            # FIX-MOVEIT-BRIDGE: launch ur5_moveit_bridge so /desired_grasp has a real subscriber.
-            DeclareLaunchArgument("launch_moveit_bridge", default_value="true"),
-            # F16 (2026-05-01): tf_geometry_service nuevo microservicio.
-            # Default true — preserva backward-compat (aunque ningún
-            # consumidor lo usa todavía, su arranque es seguro: solo aloja
-            # los servicios sin efectos colaterales).
-            DeclareLaunchArgument(
-                "launch_tf_geometry_service", default_value="true"
-            ),
-            # F5-step5: object_pose_resolver_service. Default true para
-            # estar disponible cuando el orchestrator lo invoque sin hint
-            # del cliente. Sin efectos colaterales si no hay subs ni calls.
-            DeclareLaunchArgument(
-                "launch_object_pose_resolver", default_value="true"
-            ),
-            # F5-step6a (2026-05-03): plan_to_pose_server stub para que
-            # /orchestrator/plan_to_pose esté siempre disponible. Sin
-            # efectos colaterales si no hay clientes; el server queda
-            # idle esperando goals. Default true.
-            DeclareLaunchArgument(
-                "launch_plan_to_pose_server", default_value="true"
-            ),
-            DeclareLaunchArgument("launch_scene_sync", default_value="true"),
-            DeclareLaunchArgument("launch_system_state", default_value="true"),
-            DeclareLaunchArgument("launch_moveit", default_value="false"),
-            DeclareLaunchArgument("moveit_mode", default_value="auto"),
-            DeclareLaunchArgument("camera_required", default_value="1"),
-            DeclareLaunchArgument("moveit_start_ros2_control", default_value="false"),
-            DeclareLaunchArgument("bootstrap_controllers", default_value="true"),
-            DeclareLaunchArgument(
-                "controller_manager", default_value="/controller_manager"
-            ),
-            DeclareLaunchArgument("panel_auto_bridge", default_value="0"),
-            DeclareLaunchArgument("panel_auto_bridge_delay_ms", default_value="1200"),
-            DeclareLaunchArgument("panel_managed", default_value="1"),
-            DeclareLaunchArgument(
-                "rmw_implementation", default_value="rmw_fastrtps_cpp"
-            ),
-            DeclareLaunchArgument("render_engine", default_value="ogre2"),
-            DeclareLaunchArgument(
-                "gui_config_file",
-                default_value=gui_config_default,
-            ),
+            *_build_launch_arguments(world_default, gui_config_default),
             OpaqueFunction(function=_prepare_runtime),
             OpaqueFunction(function=_maybe_moveit),
             rsp_launch,
