@@ -11,6 +11,7 @@ from .panel_objects import bulk_update_object_positions, get_object_position, ge
 from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
 from .panel_pick_demo import run_pick_demo
+from .pick_demo_dispatcher import dispatch_pick_demo as _dispatch_pick_demo
 from .panel_utils import table_xy_to_pixel, world_xyz_to_pixel
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
 from .panel_objects import ObjectLogicalState, ObjectOwner
@@ -275,9 +276,16 @@ def _on_remote_pick_demo_request(panel, source: str) -> None:
                         str(reason_now or last_reason or "n/a"),
                     )
                     return
-                # Skip confirm dialog for remote invocations (headless context)
-                panel._emit_log("[PICK][REMOTE] Ejecutando pick_demo sin diálogo de confirmación")
-                run_pick_demo(panel)
+                # B-iter13 (2026-05-03): usa dispatcher canónico (default
+                # orchestrator) en lugar de llamar run_pick_demo legacy
+                # directo. Esto cierra el bug arquitectónico que hacía que
+                # el path service /panel/pick_demo SIEMPRE bypasse el
+                # dispatcher (descubierto en Paso A live de F5).
+                panel._emit_log(
+                    "[PICK][REMOTE] Ejecutando pick_demo sin diálogo de "
+                    "confirmación (vía dispatcher → orchestrator/legacy)"
+                )
+                _dispatch_pick_demo(panel)
                 ready_after, reason_after, waitable_after = panel._pick_demo_remote_ready_status()
                 _trace_remote_pick(
                     "after_run_pick_demo",
@@ -303,9 +311,12 @@ def _on_remote_pick_demo_request(panel, source: str) -> None:
         _ack(False, str(reason or "n/a"))
         return
 
-    # Skip confirm dialog for remote invocations (headless context)
-    panel._emit_log("[PICK][REMOTE] Ejecutando pick_demo sin diálogo de confirmación")
-    run_pick_demo(panel)
+    # B-iter13 (2026-05-03): dispatcher canónico (ver comentario arriba).
+    panel._emit_log(
+        "[PICK][REMOTE] Ejecutando pick_demo sin diálogo de "
+        "confirmación (vía dispatcher → orchestrator/legacy)"
+    )
+    _dispatch_pick_demo(panel)
     ready_after, reason_after, waitable_after = panel._pick_demo_remote_ready_status()
     _trace_remote_pick(
         "after_direct_run_pick_demo",
