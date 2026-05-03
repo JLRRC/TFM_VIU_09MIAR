@@ -14,6 +14,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/Detach.srv"
   "srv/WorldToBase.srv"
   "srv/ComputeApproachPose.srv"
+  "srv/ResolveObjectPoseWorld.srv"
   "action/PickPlace.action"
   "action/PlanToPose.action"
   DEPENDENCIES geometry_msgs

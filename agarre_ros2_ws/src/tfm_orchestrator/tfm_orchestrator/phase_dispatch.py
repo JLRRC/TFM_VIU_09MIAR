@@ -89,6 +89,10 @@ class PhaseDispatchContext:
         action_caller: inyectable para tests (default = real).
         approach_z_clearance_m: clearance vertical sobre la pose del objeto
             cuando el ctx tiene hint válido (F5-step2).
+        resolve_object_pose_discovery_timeout_sec: timeout corto para
+            sondar el service ``ResolveObjectPoseWorld`` (F5-step3). Si
+            el server no responde en este tiempo, dispatch_phase usa
+            placeholder en lugar de bloquear.
     """
 
     node: Any
@@ -101,6 +105,7 @@ class PhaseDispatchContext:
     service_caller: ServiceCallerFn = call_service_with_timeout
     action_caller: ActionCallerFn = call_action_with_timeout
     approach_z_clearance_m: float = _APPROACH_Z_CLEARANCE_M_DEFAULT
+    resolve_object_pose_discovery_timeout_sec: float = 0.3
 
     def common_service_kwargs(self) -> Dict[str, Any]:
         return dict(
@@ -237,8 +242,25 @@ def dispatch_phase(
         return r.success, f"select_object:{r.reason}"
 
     if phase == PickPhase.APPROACH:
+        # F5-step3: si no hay hint, intentar resolver pose del objeto vía
+        # service ResolveObjectPoseWorld. Si el server no está, fallback
+        # silencioso al placeholder (comportamiento F5-step2 previo).
+        ctx_with_pose = ctx
+        if is_no_hint(ctx.object_pose_world_hint) and ctx.object_name:
+            resolved = try_resolve_object_pose_world(
+                dispatch_ctx, ctx.object_name,
+            )
+            if resolved is not None:
+                ctx_with_pose = PickContext(
+                    object_name=ctx.object_name,
+                    drop_xyz_world=ctx.drop_xyz_world,
+                    object_pose_world_hint=resolved,
+                    current_phase=ctx.current_phase,
+                    detail=ctx.detail,
+                    history=list(ctx.history),
+                )
         goal = build_plan_to_pose_goal_for_approach(
-            ctx, z_clearance_m=dispatch_ctx.approach_z_clearance_m,
+            ctx_with_pose, z_clearance_m=dispatch_ctx.approach_z_clearance_m,
         )
         r = _call_plan_to_pose(dispatch_ctx, goal)
         return r.success, f"approach:{r.reason}"
@@ -317,3 +339,49 @@ def _call_plan_to_pose(
         goal,
         **dispatch_ctx.common_action_kwargs(),
     )
+
+
+def try_resolve_object_pose_world(
+    dispatch_ctx: PhaseDispatchContext,
+    object_name: str,
+) -> Optional[tuple]:
+    """F5-step3: intenta resolver pose world del objeto vía service.
+
+    Llama a ``ResolveObjectPoseWorld`` con timeout corto. Si el server
+    no aparece (no implementado todavía) o devuelve success=False, vuelve
+    None — el caller debe usar fallback (placeholder).
+
+    Devuelve tuple(7) ``(x, y, z, qx, qy, qz, qw)`` si OK, None si no.
+    Importante: NO levanta excepciones — siempre devuelve None ante
+    cualquier error, lo que mantiene el flujo de la fase APPROACH
+    funcional aun sin el server real.
+    """
+    from ur5_panel_interfaces.srv import ResolveObjectPoseWorld
+
+    req = ResolveObjectPoseWorld.Request()
+    req.object_name = str(object_name or "").strip()
+    if not req.object_name:
+        return None
+
+    # Timeout corto para no bloquear cuando el server no está disponible
+    # — ese es el caso normal mientras F5-step4 (server real) no exista.
+    discovery_short = float(dispatch_ctx.resolve_object_pose_discovery_timeout_sec)
+    try:
+        result = dispatch_ctx.service_caller(
+            dispatch_ctx.node,
+            ResolveObjectPoseWorld,
+            dispatch_ctx.service_map.resolve_object_pose_world,
+            req,
+            discovery_timeout_sec=discovery_short,
+            call_timeout_sec=dispatch_ctx.call_timeout_sec,
+            client_cache=dispatch_ctx.client_cache,
+        )
+    except Exception:
+        return None
+
+    if not result.success:
+        return None
+    payload = result.payload
+    if payload is None:
+        return None
+    return pose_msg_to_tuple7(getattr(payload, "pose_world", None))

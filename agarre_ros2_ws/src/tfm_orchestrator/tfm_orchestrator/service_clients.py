@@ -167,6 +167,7 @@ class PhaseServiceMap:
 
     select_object: str = "/panel/select_object"
     approach_compute: str = "/orchestrator/compute_approach_pose"
+    resolve_object_pose_world: str = "/orchestrator/resolve_object_pose_world"
     gripper_open: str = "/gripper/open"
     gripper_close: str = "/gripper/close"
     attach: str = "/orchestrator/attach"

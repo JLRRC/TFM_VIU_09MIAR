@@ -40,6 +40,7 @@ from tfm_orchestrator.phase_dispatch import (  # noqa: E402
     build_plan_to_pose_goal_for_transport,
     dispatch_phase,
     pose_msg_to_tuple7,
+    try_resolve_object_pose_world,
 )
 from tfm_orchestrator.pick_fsm import PickContext, PickPhase  # noqa: E402
 from tfm_orchestrator.service_clients import (  # noqa: E402
@@ -145,17 +146,22 @@ def test_select_object_propagates_failure():
 
 
 def test_approach_calls_plan_to_pose_action():
+    """F5-step3: APPROACH sin hint dispara resolver + plan_to_pose.
+    El mock por defecto devuelve payload=None ⇒ resolver retorna None ⇒
+    plan_to_pose se llama con placeholder (pose neutra)."""
     spec = _MockCallerSpec()
     dctx = _ctx_for(spec)
     ok, reason = dispatch_phase(dctx, PickPhase.APPROACH, _pick_ctx())
     assert ok is True
     assert reason.startswith("approach:")
-    assert len(spec.recorded) == 1
-    rec = spec.recorded[0]
+    # 2 calls: resolver (service) + plan_to_pose (action).
+    assert len(spec.recorded) == 2
+    assert spec.recorded[0].kind == "service"
+    assert spec.recorded[0].msg_type_name == "ResolveObjectPoseWorld"
+    rec = spec.recorded[1]
     assert rec.kind == "action"
     assert rec.msg_type_name == "PlanToPose"
     assert rec.name == "/orchestrator/plan_to_pose"
-    # Goal del approach: pose neutra + ee_frame correcto + no cartesian.
     assert rec.request.ee_frame == "rg2_pinch_center"
     assert rec.request.cartesian is False
 
@@ -454,3 +460,149 @@ def test_pose_msg_to_tuple7_pose_returns_seven_tuple():
 def test_pose_msg_to_tuple7_invalid_object_returns_none():
     assert pose_msg_to_tuple7("not_a_pose") is None
     assert pose_msg_to_tuple7(object()) is None
+
+
+# ---------------------------------------------------------------------------
+# F5-step3: try_resolve_object_pose_world + APPROACH usa el resolver
+# ---------------------------------------------------------------------------
+
+
+def test_try_resolve_returns_none_when_object_name_empty():
+    spec = _MockCallerSpec()
+    dctx = _ctx_for(spec)
+    assert try_resolve_object_pose_world(dctx, "") is None
+    assert try_resolve_object_pose_world(dctx, "   ") is None
+
+
+def test_try_resolve_returns_none_when_service_fails():
+    """Server devuelve success=False ⇒ resolver devuelve None (fallback)."""
+    spec = _MockCallerSpec(
+        service_results={
+            "/orchestrator/resolve_object_pose_world": ServiceCallResult(
+                success=False, reason="object_not_in_gazebo"
+            )
+        }
+    )
+    dctx = _ctx_for(spec)
+    assert try_resolve_object_pose_world(dctx, "missing_object") is None
+
+
+def test_try_resolve_returns_tuple7_when_success():
+    """Server devuelve pose válida ⇒ resolver normaliza a tuple7."""
+    from geometry_msgs.msg import Pose, Point, Quaternion
+    from types import SimpleNamespace
+    payload = SimpleNamespace(
+        pose_world=Pose(
+            position=Point(x=0.4, y=0.1, z=0.03),
+            orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
+        ),
+        success=True,
+        detail="ok",
+    )
+    spec = _MockCallerSpec(
+        service_results={
+            "/orchestrator/resolve_object_pose_world": ServiceCallResult(
+                success=True, reason="ok", payload=payload,
+            )
+        }
+    )
+    dctx = _ctx_for(spec)
+    pose = try_resolve_object_pose_world(dctx, "box_red")
+    assert pose == (0.4, 0.1, 0.03, 0.0, 0.0, 0.0, 1.0)
+
+
+def test_try_resolve_returns_none_when_caller_raises():
+    """Excepción inesperada en el caller ⇒ resolver devuelve None."""
+    def _raising_caller(*_args, **_kwargs):
+        raise RuntimeError("simulated rclpy error")
+
+    dctx = PhaseDispatchContext(
+        node=object(),
+        service_map=PhaseServiceMap(),
+        client_cache={},
+        service_caller=_raising_caller,
+        action_caller=lambda *a, **k: ActionCallResult(success=True, reason="ok"),
+    )
+    assert try_resolve_object_pose_world(dctx, "box") is None
+
+
+def test_dispatch_approach_uses_resolver_when_no_hint():
+    """APPROACH sin hint ⇒ llama al resolver, recibe pose, usa esa pose
+    para el goal de PlanToPose con clearance Z."""
+    from geometry_msgs.msg import Pose, Point, Quaternion
+    from types import SimpleNamespace
+
+    resolved_payload = SimpleNamespace(
+        pose_world=Pose(
+            position=Point(x=0.6, y=-0.1, z=0.04),
+            orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
+        ),
+        success=True,
+        detail="resolved_from_gz",
+    )
+    spec = _MockCallerSpec(
+        service_results={
+            "/orchestrator/resolve_object_pose_world": ServiceCallResult(
+                success=True, reason="ok", payload=resolved_payload,
+            )
+        }
+    )
+    dctx = _ctx_for(spec)
+    # PickContext SIN hint (None).
+    ctx = PickContext(object_name="box_red", drop_xyz_world=(0.0, 0.0, 0.0))
+    ok, reason = dispatch_phase(dctx, PickPhase.APPROACH, ctx)
+    assert ok is True
+    assert reason.startswith("approach:")
+
+    # 2 calls: resolver + plan_to_pose.
+    kinds = [r.kind for r in spec.recorded]
+    assert kinds == ["service", "action"]
+    plan_goal = spec.recorded[1].request
+    # Z = pose.z (0.04) + clearance default 0.10 = 0.14.
+    assert plan_goal.target_pose_base.position.x == pytest.approx(0.6)
+    assert plan_goal.target_pose_base.position.y == pytest.approx(-0.1)
+    assert plan_goal.target_pose_base.position.z == pytest.approx(0.14)
+
+
+def test_dispatch_approach_falls_back_to_placeholder_when_resolver_fails():
+    """APPROACH sin hint y resolver falla ⇒ usa placeholder (pose 0,0,0)."""
+    spec = _MockCallerSpec(
+        service_results={
+            "/orchestrator/resolve_object_pose_world": ServiceCallResult(
+                success=False, reason="server_unavailable"
+            )
+        }
+    )
+    dctx = _ctx_for(spec)
+    ctx = PickContext(object_name="box_red", drop_xyz_world=(0.0, 0.0, 0.0))
+    ok, reason = dispatch_phase(dctx, PickPhase.APPROACH, ctx)
+    assert ok is True
+    # plan_to_pose se llama con placeholder porque resolver falló.
+    plan_goal = spec.recorded[-1].request
+    assert plan_goal.target_pose_base.position.x == 0.0
+    assert plan_goal.target_pose_base.position.y == 0.0
+    assert plan_goal.target_pose_base.position.z == 0.0
+
+
+def test_dispatch_approach_skips_resolver_when_hint_provided():
+    """Si el ctx YA tiene hint, no se invoca al resolver — sólo plan_to_pose."""
+    spec = _MockCallerSpec()
+    dctx = _ctx_for(spec)
+    ctx = _pick_ctx_with_hint(hint=(0.5, 0.0, 0.05))
+    ok, reason = dispatch_phase(dctx, PickPhase.APPROACH, ctx)
+    assert ok is True
+    # Sólo 1 call: plan_to_pose. NO resolver.
+    assert len(spec.recorded) == 1
+    assert spec.recorded[0].kind == "action"
+
+
+def test_dispatch_approach_skips_resolver_when_object_name_empty():
+    """Sin hint y sin object_name ⇒ no se invoca resolver, va a placeholder."""
+    spec = _MockCallerSpec()
+    dctx = _ctx_for(spec)
+    ctx = PickContext(object_name="", drop_xyz_world=(0.0, 0.0, 0.0))
+    ok, reason = dispatch_phase(dctx, PickPhase.APPROACH, ctx)
+    assert ok is True
+    # Sólo plan_to_pose con placeholder.
+    assert len(spec.recorded) == 1
+    assert spec.recorded[0].kind == "action"
