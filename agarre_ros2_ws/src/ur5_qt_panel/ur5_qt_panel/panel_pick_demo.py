@@ -182,6 +182,10 @@ from .pick_demo.grasp_down import (
     GraspDownContext,
     run_grasp_down_conservative as _run_grasp_down_conservative_pure,
 )
+from .pick_demo.joint_step import (
+    JointStepContext,
+    run_joint_step as _run_joint_step_pure,
+)
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -1108,6 +1112,9 @@ def run_pick_demo(panel) -> None:
                     wait_for_ui=True,
                 )
 
+            # F3-step3e: cuerpo de _run_joint_step extraído a
+            # pick_demo/joint_step.py. El wrapper construye JointStepContext
+            # y delega. Los 15 callsites legacy NO cambian (firma idéntica).
             def _run_joint_step(
                 label,
                 joints,
@@ -1119,302 +1126,36 @@ def run_pick_demo(panel) -> None:
                 move_sec_override=None,
                 apply_step_timeout_extra=True,
             ):
-                label_name = str(label or "").strip().upper()
-                _strict_refine_target_base = _tuple3(runtime_target_base)
-                _strict_refine_runtime_label = (
-                    label_name == "APPROACH_COARSE_REFINE"
-                    and _strict_refine_target_base is not None
+                _js_ctx = JointStepContext(
+                    panel=panel,
+                    live_tcp_base=_live_tcp_base,
+                    dist=_dist,
+                    append_trace=_append_trace,
+                    move_sec=move_sec,
+                    tuple3=_tuple3,
+                    fmt_vec=_fmt_vec,
+                    fmt_scalar=_fmt_scalar,
+                    get_pick_demo_params=_get_pick_demo_params,
+                    direct_runtime_target_tol_m=_direct_runtime_target_tol_m,
+                    iso_now=_iso_now,
+                    ur5_joint_names=UR5_JOINT_NAMES,
+                    angle_shortest_diff_rad=angle_shortest_diff_rad,
+                    get_global_step_timeout_extra=_get_global_step_timeout_extra,
+                    should_apply_global_step_timeout_extra=_should_apply_global_step_timeout_extra,
                 )
-                _strict_refine_runtime_tol = (
-                    float(
-                        runtime_target_tol_m
-                        if runtime_target_tol_m is not None
-                        else _direct_runtime_target_tol_m(label)
-                    )
-                    if _strict_refine_runtime_label
-                    else None
-                )
-                panel._pick_demo_last_joint_target_accept_source = None
-
-                def _local_joint_target_ok(local_tol_rad: float):
-                    snapshot = dict(getattr(panel, "_last_joint_positions", {}) or {})
-                    if not snapshot:
-                        return False, "no_local_joint_state"
-                    parts = []
-                    for idx, name in enumerate(UR5_JOINT_NAMES):
-                        if idx >= len(joints):
-                            break
-                        curr = snapshot.get(name)
-                        if curr is None:
-                            parts.append(f"{name}=n/a")
-                            return False, " ".join(parts)
-                        diff = abs(angle_shortest_diff_rad(curr, joints[idx]))
-                        parts.append(f"{name}={diff:.3f}")
-                        if diff > float(local_tol_rad):
-                            return False, " ".join(parts)
-                    return True, " ".join(parts)
-
-                def _runtime_target_ok() -> tuple[bool, str]:
-                    target_base_3 = _tuple3(runtime_target_base)
-                    if target_base_3 is None:
-                        return True, "runtime_target=none"
-                    tcp_base_3 = _tuple3(_live_tcp_base())
-                    if tcp_base_3 is None:
-                        return False, "runtime_target=tcp_unavailable"
-                    tol_m = float(
-                        runtime_target_tol_m
-                        if runtime_target_tol_m is not None
-                        else _direct_runtime_target_tol_m(label)
-                    )
-                    dist_m = _dist(tcp_base_3, target_base_3)
-                    if dist_m is None:
-                        return False, "runtime_target=dist_unavailable"
-                    return bool(float(dist_m) <= tol_m), f"runtime_target_dist={float(dist_m):.3f}/{tol_m:.3f}"
-
-                def _strict_refine_runtime_status():
-                    if not _strict_refine_runtime_label:
-                        return None
-                    tcp_base_3 = _tuple3(_live_tcp_base())
-                    if tcp_base_3 is None:
-                        return {
-                            "target_ok": False,
-                            "accept_result": False,
-                            "dist_m": None,
-                            "z_error_m": None,
-                            "tcp_base": None,
-                        }
-                    dist_m = _dist(tcp_base_3, _strict_refine_target_base)
-                    z_error_m = abs(
-                        float(tcp_base_3[2]) - float(_strict_refine_target_base[2])
-                    )
-                    target_ok = bool(
-                        dist_m is not None
-                        and math.isfinite(float(dist_m))
-                        and float(dist_m) <= float(_strict_refine_runtime_tol)
-                    )
-                    accept_result = bool(
-                        target_ok
-                        and math.isfinite(float(z_error_m))
-                        and float(z_error_m) <= float(_strict_refine_runtime_tol)
-                    )
-                    return {
-                        "target_ok": target_ok,
-                        "accept_result": accept_result,
-                        "dist_m": float(dist_m) if dist_m is not None else None,
-                        "z_error_m": float(z_error_m),
-                        "tcp_base": _tuple3(tcp_base_3),
-                    }
-
-                def _emit_strict_refine_runtime_log(stage: str, joint_target_ok: bool):
-                    state = _strict_refine_runtime_status()
-                    if state is None:
-                        return None
-                    panel._emit_log(
-                        "[PICK][DIRECT][COARSE_REFINE_EXEC] "
-                        f"stage={stage} "
-                        "label=APPROACH_COARSE_REFINE "
-                        f"refine_joint_target_ok={str(bool(joint_target_ok)).lower()} "
-                        f"refine_runtime_target_ok={str(bool(state.get('target_ok'))).lower()} "
-                        f"refine_runtime_target_dist={_fmt_scalar(state.get('dist_m'))} "
-                        f"refine_runtime_target_pos={_fmt_vec(state.get('tcp_base'))} "
-                        f"refine_runtime_z_error={_fmt_scalar(state.get('z_error_m'))} "
-                        f"refine_execution_accept_result={str(bool(state.get('accept_result'))).lower()}"
-                    )
-                    return state
-
-                panel._emit_log(f"[PICK] Paso joint: {label}" + (" [FORCE_SEND]" if force_send else ""))
-                local_ok_before, local_diffs_before = _local_joint_target_ok(tol_rad)
-                runtime_ok_before, runtime_info_before = _runtime_target_ok()
-                if local_ok_before and not force_send:
-                    _strict_refine_before = _emit_strict_refine_runtime_log(
-                        "before_publish",
-                        local_ok_before,
-                    )
-                    if runtime_ok_before and (
-                        not _strict_refine_runtime_label
-                        or bool((_strict_refine_before or {}).get("accept_result"))
-                    ):
-                        panel._pick_demo_last_joint_target_accept_source = "local_joint_state"
-                        panel._emit_log(
-                            "[PICK][DIRECT][ROUTE] "
-                            f"phase={label} joint_target_already_satisfied=true "
-                            f"source=local_joint_state diffs={local_diffs_before} {runtime_info_before}"
-                        )
-                        return
-                    panel._emit_log(
-                        "[PICK][DIRECT][ROUTE] "
-                        f"phase={label} joint_target_already_satisfied=false "
-                        "reason=runtime_target_not_reached "
-                        f"source=local_joint_state diffs={local_diffs_before} {runtime_info_before}"
-                    )
-                elif local_ok_before and force_send:
-                    panel._emit_log(
-                        "[PICK][DIRECT][ROUTE] "
-                        f"phase={label} force_send=true skipping_early_exit "
-                        f"diffs={local_diffs_before} {runtime_info_before}"
-                    )
-                effective_move_sec = float(
-                    move_sec
-                    if move_sec_override is None
-                    else max(0.5, float(move_sec_override))
-                )
-                ok, info = panel._publish_joint_trajectory(
+                return _run_joint_step_pure(
+                    _js_ctx,
+                    label,
                     joints,
-                    effective_move_sec,
-                    prefer_action=_strict_refine_runtime_label,
+                    timeout_sec=timeout_sec,
+                    tol_rad=tol_rad,
+                    runtime_target_base=runtime_target_base,
+                    runtime_target_tol_m=runtime_target_tol_m,
+                    force_send=force_send,
+                    move_sec_override=move_sec_override,
+                    apply_step_timeout_extra=apply_step_timeout_extra,
                 )
-                if _strict_refine_runtime_label:
-                    panel._emit_log(
-                        "[PICK][DIRECT][ROUTE] "
-                        f"phase=APPROACH_COARSE_REFINE trajectory_dispatch={info} "
-                        f"prefer_action={str(bool(_strict_refine_runtime_label)).lower()}"
-                    )
-                if not ok:
-                    raise RuntimeError(f"{label} fallo: {info}")
-                try:
-                    _step_extra = _get_pick_demo_params().step_timeout_extra_sec
-                except Exception:
-                    _step_extra = 0.0
-                is_basket_transport_stage = _is_demo_basket_transport_stage(label_name)
-                is_basket_transport_motion = _is_demo_basket_transport_motion(label_name)
-                apply_global_step_timeout_extra = _should_apply_global_step_timeout_extra(
-                    label_name,
-                    requested=apply_step_timeout_extra,
-                )
-                if (
-                    apply_step_timeout_extra
-                    and not apply_global_step_timeout_extra
-                    and _step_extra > 0.0
-                ):
-                    panel._emit_log(
-                        "[PICK][DIRECT][ROUTE] "
-                        f"phase={label} step_timeout_extra_skipped={_step_extra:.1f} "
-                        "reason=basket_transport_motion"
-                    )
-                wait_timeout = _joint_step_wait_timeout(
-                    timeout_sec,
-                    effective_move_sec=effective_move_sec,
-                    step_timeout_extra_sec=_step_extra,
-                    apply_step_timeout_extra=apply_global_step_timeout_extra,
-                )
-                joint_wait_ok = panel._wait_for_joint_target(joints, wait_timeout, tol_rad=tol_rad)
-                if joint_wait_ok and not _strict_refine_runtime_label:
-                    panel._pick_demo_last_joint_target_accept_source = "joint_wait"
-                    return
-                if joint_wait_ok and _strict_refine_runtime_label:
-                    panel._pick_demo_last_joint_target_accept_source = "joint_wait"
-                    _emit_strict_refine_runtime_log("after_joint_wait", True)
-                local_ok_after_wait, local_diffs_after_wait = _local_joint_target_ok(max(tol_rad, 0.02))
-                runtime_ok_after_wait, runtime_info_after_wait = _runtime_target_ok()
-                _strict_refine_after_wait = _emit_strict_refine_runtime_log(
-                    "after_wait_timeout",
-                    local_ok_after_wait,
-                )
-                if _strict_refine_runtime_label:
-                    if bool((_strict_refine_after_wait or {}).get("accept_result")):
-                        panel._pick_demo_last_joint_target_accept_source = "runtime_target"
-                        panel._emit_log(
-                            "[PICK][DIRECT][ROUTE] "
-                            "phase=APPROACH_COARSE_REFINE "
-                            "refine_execution_accept_after_wait_timeout=true "
-                            f"diffs={local_diffs_after_wait} {runtime_info_after_wait}"
-                        )
-                        return
-                    panel._emit_log(
-                        "[PICK][DIRECT][ROUTE] "
-                        "phase=APPROACH_COARSE_REFINE "
-                        "refine_execution_accept_after_wait_timeout=false "
-                        "action=defer_to_move_tcp_direct_runtime_settle"
-                    )
-                    return
-                if local_ok_after_wait and runtime_ok_after_wait:
-                    panel._pick_demo_last_joint_target_accept_source = "local_joint_state"
-                    panel._emit_log(
-                        "[PICK][DIRECT][ROUTE] "
-                        f"phase={label} joint_target_accept_after_wait_timeout=true "
-                        f"source=local_joint_state diffs={local_diffs_after_wait} {runtime_info_after_wait}"
-                    )
-                    return
-                if is_basket_transport_motion and runtime_target_base is not None and not runtime_ok_after_wait:
-                    extra_runtime_wait_sec = _pick_demo_env_float(
-                        "PANEL_PICK_DEMO_TRANSPORT_RUNTIME_GRACE_SEC",
-                        35.0,
-                        minimum=0.0,
-                    )
-                    wait_fn = getattr(panel, "_wait_for_tcp_base_target", None)
-                    if extra_runtime_wait_sec > 0.0:
-                        runtime_target_tol = float(
-                            runtime_target_tol_m
-                            if runtime_target_tol_m is not None
-                            else _direct_runtime_target_tol_m(label)
-                        )
-                        runtime_grace = _wait_for_demo_runtime_target_progress(
-                            panel,
-                            label=label,
-                            target_xyz=runtime_target_base,
-                            timeout_sec=extra_runtime_wait_sec,
-                            tol_xyz_m=runtime_target_tol,
-                            live_tcp_base_fn=_live_tcp_base,
-                            fallback_wait_fn=wait_fn,
-                            ee_frame=DIRECT_SOURCE_FRAME,
-                        )
-                        runtime_grace_ok = bool(runtime_grace.get("ok"))
-                        runtime_grace_pos = _tuple3(runtime_grace.get("pos"))
-                        runtime_grace_dist = runtime_grace.get("dist_m")
-                        panel._emit_log(
-                            "[PICK][DIRECT][ROUTE] "
-                            f"phase={label} runtime_transport_grace_ok={str(bool(runtime_grace_ok)).lower()} "
-                            f"timeout_sec={extra_runtime_wait_sec:.1f} "
-                            f"target_tol={runtime_target_tol:.3f} "
-                            f"runtime_target_dist={_fmt_scalar(runtime_grace_dist)} "
-                            f"runtime_target_pos={_fmt_vec(_tuple3(runtime_grace_pos))} "
-                            f"reason={runtime_grace.get('reason', 'unknown')} "
-                            f"best_dist={_fmt_scalar(runtime_grace.get('best_dist_m'))} "
-                            f"elapsed_sec={_fmt_scalar(runtime_grace.get('elapsed_sec'))}"
-                        )
-                        if runtime_grace_ok:
-                            panel._pick_demo_last_joint_target_accept_source = "runtime_target"
-                            return
-                if (
-                    label in {"HOME", "MESA", "PICK_IMAGE", "PICK_PRE_CLOSE_REF", "HOME_WITH_OBJECT", "CESTA", "CESTA_RELEASE", "HOME_FINAL"}
-                    or is_basket_transport_stage
-                ):
-                    panel._emit_log(
-                        f"[PICK][RECOVERY] {label} no alcanzado; reintentando una vez diffs={_joint_error_snapshot(panel, joints)}"
-                    )
-                    ok_retry, info_retry = panel._publish_joint_trajectory(joints, effective_move_sec)
-                    if not ok_retry:
-                        raise RuntimeError(f"{label} retry fallo: {info_retry}")
-                    retry_timeout = max(wait_timeout, effective_move_sec + 4.0)
-                    retry_tol = max(tol_rad, 0.10 if is_basket_transport_motion else 0.06)
-                    if panel._wait_for_joint_target(joints, retry_timeout, tol_rad=retry_tol):
-                        panel._pick_demo_last_joint_target_accept_source = "joint_wait_retry"
-                        panel._emit_log(f"[PICK][RECOVERY] {label} alcanzado tras reintento")
-                        return
-                    local_ok_after_retry, local_diffs_after_retry = _local_joint_target_ok(retry_tol)
-                    runtime_ok_after_retry, runtime_info_after_retry = _runtime_target_ok()
-                    has_runtime_target = _tuple3(runtime_target_base) is not None
-                    accept_via_runtime_target = bool(
-                        is_basket_transport_motion
-                        and has_runtime_target
-                        and runtime_ok_after_retry
-                    )
-                    if local_ok_after_retry or accept_via_runtime_target:
-                        panel._pick_demo_last_joint_target_accept_source = (
-                            "runtime_target"
-                            if (accept_via_runtime_target and not local_ok_after_retry)
-                            else "local_joint_state"
-                        )
-                        panel._emit_log(
-                            "[PICK][DIRECT][ROUTE] "
-                            f"phase={label} joint_target_accept_after_retry_timeout=true "
-                            f"source={'runtime_target' if (accept_via_runtime_target and not local_ok_after_retry) else 'local_joint_state'} "
-                            f"diffs={local_diffs_after_retry} {runtime_info_after_retry}"
-                        )
-                        return
-                raise RuntimeError(
-                    f"{label} no alcanzado (timeout) diffs={_joint_error_snapshot(panel, joints)}"
-                )
+
 
             def _live_object_world():
                 lock_name = str(getattr(panel, "_pick_target_lock_name", "") or target_object_name)
