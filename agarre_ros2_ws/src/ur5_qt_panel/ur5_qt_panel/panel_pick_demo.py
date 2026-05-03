@@ -386,6 +386,136 @@ def _close_only(panel) -> None:
     panel._command_gripper(True, log_action="PICK", force=True)
 
 
+# F3-step2: _resolve_direct_execution_target promovido del closure
+# _move_tcp_direct (118 LOC fuera de la fn gigante de 1284 LOC).
+# Convierte un objetivo TCP en base_link al objetivo equivalente para
+# tool0 (donde IK numérico de UR5 actua), aplicando:
+#   * Negación X/Y por la rotación Rz(π) entre base_link y
+#     base_link_inertia (frame raíz de ur_description).
+#   * Compensación del offset rg2_pinch_center→tool0 vía R_tool0.
+#   * Validación de "no offset env override" (kill-switches).
+#   * Validación de canonicalidad del offset (delta < 2mm).
+def _resolve_direct_execution_target(
+    panel,
+    tcp_target_base,
+    tool_rot,
+    *,
+    tool_rot_source: str,
+) -> dict:
+    # DIRECT keeps rg2_pinch_center as the operational grasp semantics.
+    # Numeric UR5 IK still solves in tool0, so the only allowed
+    # conversion lives here as a fixed, traceable transform.
+    env_xyz = str(
+        os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_XYZ", "") or ""
+    ).strip()
+    env_value = os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "")
+    local_offset = None
+    offset_source = None
+    if env_xyz:
+        panel._emit_log(
+            "[PICK][DIRECT][OFFSET_ABORT] "
+            "reason=runtime_env_offset_forbidden "
+            "offset_source=env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_XYZ"
+        )
+        raise RuntimeError("direct_runtime_offset_env_forbidden_xyz")
+    if local_offset is None and str(env_value).strip():
+        panel._emit_log(
+            "[PICK][DIRECT][OFFSET_ABORT] "
+            "reason=runtime_env_offset_forbidden "
+            "offset_source=env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M"
+        )
+        raise RuntimeError("direct_runtime_offset_env_forbidden_m")
+    if local_offset is None:
+        pose_tool0_tcp, _pose_err = get_pose(
+            DIRECT_EXECUTION_FRAME,
+            DIRECT_SOURCE_FRAME,
+            timeout_sec=0.25,
+        )
+        if pose_tool0_tcp:
+            try:
+                px, py, pz = pose_tool0_tcp["position"]
+                local_offset = (float(px), float(py), float(pz))
+                offset_source = f"tf:{DIRECT_EXECUTION_FRAME}<-{DIRECT_SOURCE_FRAME}"
+            except Exception:
+                local_offset = None
+    if local_offset is None:
+        local_offset = tuple(_DIRECT_TOOL0_TO_SOURCE_OFFSET)
+        offset_source = "urdf:rg2_pinch_center_joint"
+    canonical_offset = tuple(float(v) for v in _DIRECT_TOOL0_TO_SOURCE_OFFSET)
+    canonical_offset_delta_m = math.sqrt(
+        sum(
+            (float(local_offset[idx]) - float(canonical_offset[idx])) ** 2
+            for idx in range(3)
+        )
+    )
+    if canonical_offset_delta_m > 0.002:
+        panel._emit_log(
+            "[PICK][DIRECT][OFFSET_ABORT] "
+            f"reason=non_canonical_offset offset_source={offset_source} "
+            f"offset_local={_fmt_vec(local_offset)} "
+            f"canonical_offset={_fmt_vec(canonical_offset)} "
+            f"offset_delta_m={canonical_offset_delta_m:.4f}/0.0020"
+        )
+        raise RuntimeError(
+            f"direct_runtime_offset_non_canonical delta_m={canonical_offset_delta_m:.4f}"
+        )
+    tcp_offset_m = float(
+        math.sqrt(
+            (float(local_offset[0]) ** 2)
+            + (float(local_offset[1]) ** 2)
+            + (float(local_offset[2]) ** 2)
+        )
+    )
+    # The UR5 URDF kinematic chain roots at base_link_inertia, which has a
+    # fixed Rz(π) rotation relative to base_link (standard ur_description).
+    # fk_ur5() returns positions in base_link_inertia frame.  To express a
+    # runtime target given in base_link into this model frame, negate X and Y.
+    # This negation is ALWAYS required and is NOT controlled by any env var.
+    target_model = (
+        -float(tcp_target_base[0]),
+        -float(tcp_target_base[1]),
+        float(tcp_target_base[2]),
+    )
+    offset_vector = (
+        float(tool_rot[0, 0]) * float(local_offset[0])
+        + float(tool_rot[0, 1]) * float(local_offset[1])
+        + float(tool_rot[0, 2]) * float(local_offset[2]),
+        float(tool_rot[1, 0]) * float(local_offset[0])
+        + float(tool_rot[1, 1]) * float(local_offset[1])
+        + float(tool_rot[1, 2]) * float(local_offset[2]),
+        float(tool_rot[2, 0]) * float(local_offset[0])
+        + float(tool_rot[2, 1]) * float(local_offset[1])
+        + float(tool_rot[2, 2]) * float(local_offset[2]),
+    )
+    # operational grasp frame = tool0 + (R_tool0 * local_offset); solve tool0 target.
+    execution_target_tool0 = (
+        float(target_model[0]) - float(offset_vector[0]),
+        float(target_model[1]) - float(offset_vector[1]),
+        float(target_model[2]) - float(offset_vector[2]),
+    )
+    execution_target_tool0_base = (
+        -float(execution_target_tool0[0]),
+        -float(execution_target_tool0[1]),
+        float(execution_target_tool0[2]),
+    )
+    return {
+        "source_frame": DIRECT_SOURCE_FRAME,
+        "source_pose": _tuple3(tcp_target_base),
+        "target_model": _tuple3(target_model),
+        "execution_frame": DIRECT_EXECUTION_FRAME,
+        "execution_pose": _tuple3(execution_target_tool0),
+        "execution_pose_base": _tuple3(execution_target_tool0_base),
+        "offset_local": _tuple3(local_offset),
+        "offset_vector": _tuple3(offset_vector),
+        "offset_m": float(tcp_offset_m),
+        "offset_source": str(offset_source or "unknown"),
+        "offset_mode": "fixed_subtract",
+        "tool_rot_source": str(tool_rot_source or "unknown"),
+        "model_frame_note": "base_link_to_base_link_inertia_rz_pi",
+        "ik_mode": DIRECT_EXECUTION_IK_MODE,
+    }
+
+
 _RUN_PICK_DEMO_INVOCATION_COUNT = 0
 
 
@@ -3393,124 +3523,7 @@ def run_pick_demo(panel) -> None:
                 force_send: bool = False,
                 transport_replan_remaining: int | None = None,
             ) -> dict:
-                def _resolve_direct_execution_target(
-                    tcp_target_base,
-                    tool_rot,
-                    *,
-                    tool_rot_source: str,
-                ) -> dict:
-                    # DIRECT keeps rg2_pinch_center as the operational grasp semantics.
-                    # Numeric UR5 IK still solves in tool0, so the only allowed
-                    # conversion lives here as a fixed, traceable transform.
-                    env_xyz = str(
-                        os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_XYZ", "") or ""
-                    ).strip()
-                    env_value = os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "")
-                    local_offset = None
-                    offset_source = None
-                    if env_xyz:
-                        panel._emit_log(
-                            "[PICK][DIRECT][OFFSET_ABORT] "
-                            "reason=runtime_env_offset_forbidden "
-                            "offset_source=env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_XYZ"
-                        )
-                        raise RuntimeError("direct_runtime_offset_env_forbidden_xyz")
-                    if local_offset is None and str(env_value).strip():
-                        panel._emit_log(
-                            "[PICK][DIRECT][OFFSET_ABORT] "
-                            "reason=runtime_env_offset_forbidden "
-                            "offset_source=env:PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M"
-                        )
-                        raise RuntimeError("direct_runtime_offset_env_forbidden_m")
-                    if local_offset is None:
-                        pose_tool0_tcp, _pose_err = get_pose(
-                            DIRECT_EXECUTION_FRAME,
-                            DIRECT_SOURCE_FRAME,
-                            timeout_sec=0.25,
-                        )
-                        if pose_tool0_tcp:
-                            try:
-                                px, py, pz = pose_tool0_tcp["position"]
-                                local_offset = (float(px), float(py), float(pz))
-                                offset_source = f"tf:{DIRECT_EXECUTION_FRAME}<-{DIRECT_SOURCE_FRAME}"
-                            except Exception:
-                                local_offset = None
-                    if local_offset is None:
-                        local_offset = tuple(_DIRECT_TOOL0_TO_SOURCE_OFFSET)
-                        offset_source = "urdf:rg2_pinch_center_joint"
-                    canonical_offset = tuple(float(v) for v in _DIRECT_TOOL0_TO_SOURCE_OFFSET)
-                    canonical_offset_delta_m = math.sqrt(
-                        sum(
-                            (float(local_offset[idx]) - float(canonical_offset[idx])) ** 2
-                            for idx in range(3)
-                        )
-                    )
-                    if canonical_offset_delta_m > 0.002:
-                        panel._emit_log(
-                            "[PICK][DIRECT][OFFSET_ABORT] "
-                            f"reason=non_canonical_offset offset_source={offset_source} "
-                            f"offset_local={_fmt_vec(local_offset)} "
-                            f"canonical_offset={_fmt_vec(canonical_offset)} "
-                            f"offset_delta_m={canonical_offset_delta_m:.4f}/0.0020"
-                        )
-                        raise RuntimeError(
-                            f"direct_runtime_offset_non_canonical delta_m={canonical_offset_delta_m:.4f}"
-                        )
-                    tcp_offset_m = float(
-                        math.sqrt(
-                            (float(local_offset[0]) ** 2)
-                            + (float(local_offset[1]) ** 2)
-                            + (float(local_offset[2]) ** 2)
-                        )
-                    )
-                    # The UR5 URDF kinematic chain roots at base_link_inertia, which has a
-                    # fixed Rz(π) rotation relative to base_link (standard ur_description).
-                    # fk_ur5() returns positions in base_link_inertia frame.  To express a
-                    # runtime target given in base_link into this model frame, negate X and Y.
-                    # This negation is ALWAYS required and is NOT controlled by any env var.
-                    target_model = (
-                        -float(tcp_target_base[0]),
-                        -float(tcp_target_base[1]),
-                        float(tcp_target_base[2]),
-                    )
-                    offset_vector = (
-                        float(tool_rot[0, 0]) * float(local_offset[0])
-                        + float(tool_rot[0, 1]) * float(local_offset[1])
-                        + float(tool_rot[0, 2]) * float(local_offset[2]),
-                        float(tool_rot[1, 0]) * float(local_offset[0])
-                        + float(tool_rot[1, 1]) * float(local_offset[1])
-                        + float(tool_rot[1, 2]) * float(local_offset[2]),
-                        float(tool_rot[2, 0]) * float(local_offset[0])
-                        + float(tool_rot[2, 1]) * float(local_offset[1])
-                        + float(tool_rot[2, 2]) * float(local_offset[2]),
-                    )
-                    # operational grasp frame = tool0 + (R_tool0 * local_offset); solve tool0 target.
-                    execution_target_tool0 = (
-                        float(target_model[0]) - float(offset_vector[0]),
-                        float(target_model[1]) - float(offset_vector[1]),
-                        float(target_model[2]) - float(offset_vector[2]),
-                    )
-                    execution_target_tool0_base = (
-                        -float(execution_target_tool0[0]),
-                        -float(execution_target_tool0[1]),
-                        float(execution_target_tool0[2]),
-                    )
-                    return {
-                        "source_frame": DIRECT_SOURCE_FRAME,
-                        "source_pose": _tuple3(tcp_target_base),
-                        "target_model": _tuple3(target_model),
-                        "execution_frame": DIRECT_EXECUTION_FRAME,
-                        "execution_pose": _tuple3(execution_target_tool0),
-                        "execution_pose_base": _tuple3(execution_target_tool0_base),
-                        "offset_local": _tuple3(local_offset),
-                        "offset_vector": _tuple3(offset_vector),
-                        "offset_m": float(tcp_offset_m),
-                        "offset_source": str(offset_source or "unknown"),
-                        "offset_mode": "fixed_subtract",
-                        "tool_rot_source": str(tool_rot_source or "unknown"),
-                        "model_frame_note": "base_link_to_base_link_inertia_rz_pi",
-                        "ik_mode": DIRECT_EXECUTION_IK_MODE,
-                    }
+                # F3-step2: _resolve_direct_execution_target promovido a module-level.
 
                 tcp_base = _live_tcp_base()
                 if tcp_base is None:
@@ -3614,6 +3627,7 @@ def run_pick_demo(panel) -> None:
                     _append_trace(_ik_tol_log)
                 ik_target_rot = execution_rot
                 execution_semantics = _resolve_direct_execution_target(
+                    panel,
                     target_tcp_runtime_3,
                     execution_rot,
                     tool_rot_source=execution_rot_source,

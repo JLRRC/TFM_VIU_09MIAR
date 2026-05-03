@@ -133,7 +133,7 @@ LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
     # F3-step1.4 (2026-05-03): +23 LOC por cadena _seed_devs/max/sum
     # (constante _TWO_PI_R + 3 helpers IK) y _close_only(panel)
     # promovidos a module-level. run_pick_demo y worker bajaron -7 LOC.
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   10518,  # F3-step1.4: +23 LOC (seed_devs+close_only)
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   10532,  # F3-step2: +14 LOC (-117 def local, +131 module-level con docs)
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  4614,
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py":          2149,
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py":        1763,
@@ -199,8 +199,8 @@ MAX_LOC_PER_FUNCTION_GLOBAL = 200
 # completo por orden de prioridad de refactor (las top-3 son F3-step1).
 LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3 step1 — el monolito que decide el TFM (drift hacia abajo).
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo": 10094,  # F3-step1.4: -7 LOC (seed_devs cadena + _close_only)
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo.worker": 9821,  # F3-step1.4: -7 LOC
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo": 9978,   # F3-step2: -116 LOC (_resolve_direct_execution_target fuera)
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo.worker": 9705,  # F3-step2: -116 LOC
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object": 4518,
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object.worker": 3512,
     # Otros gigantes históricos.
