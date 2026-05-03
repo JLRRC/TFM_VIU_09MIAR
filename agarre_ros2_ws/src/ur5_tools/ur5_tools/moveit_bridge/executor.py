@@ -49,6 +49,37 @@ from trajectory_msgs.msg import JointTrajectory
 
 class ExecutorMixin:
     """FollowJointTrajectory execution loop con retries y validación final."""
+
+    def _compute_effective_goal_time_tol_sec(
+        self,
+        *,
+        goal_time_override_sec: float | None,
+        phase_label_upper: str,
+        approach_replan_attempt: int,
+    ) -> float:
+        effective = (
+            float(goal_time_override_sec)
+            if goal_time_override_sec is not None
+            else float(self._controller_goal_time_tolerance_sec)
+        )
+        if phase_label_upper == "APPROACH":
+            effective = max(
+                effective,
+                self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_APPROACH_GOAL_TIME_TOL_SEC",
+                    75.0,
+                ),
+            )
+            if int(approach_replan_attempt) >= 1:
+                effective = max(
+                    effective,
+                    self._env_float(
+                        "PANEL_MOVEIT_BRIDGE_APPROACH_REPLAN_GOAL_TIME_TOL_SEC",
+                        120.0,
+                    ),
+                )
+        return float(effective)
+
     def _execute_joint_trajectory_action(
         self,
         jt: JointTrajectory,
@@ -75,27 +106,11 @@ class ExecutorMixin:
                 600.0,  # FIX: aumentado de 120 a 600s para sim con RTF bajo
             )
         )
-        effective_goal_time_tol_sec = (
-            float(goal_time_override_sec)
-            if goal_time_override_sec is not None
-            else float(self._controller_goal_time_tolerance_sec)
+        effective_goal_time_tol_sec = self._compute_effective_goal_time_tol_sec(
+            goal_time_override_sec=goal_time_override_sec,
+            phase_label_upper=phase_label_upper,
+            approach_replan_attempt=approach_replan_attempt,
         )
-        if phase_label_upper == "APPROACH":
-            effective_goal_time_tol_sec = max(
-                effective_goal_time_tol_sec,
-                self._env_float(
-                    "PANEL_MOVEIT_BRIDGE_APPROACH_GOAL_TIME_TOL_SEC",
-                    75.0,
-                ),
-            )
-            if int(approach_replan_attempt) >= 1:
-                effective_goal_time_tol_sec = max(
-                    effective_goal_time_tol_sec,
-                    self._env_float(
-                        "PANEL_MOVEIT_BRIDGE_APPROACH_REPLAN_GOAL_TIME_TOL_SEC",
-                        120.0,
-                    ),
-                )
         if retry_on_tolerance_violation and self._force_fjt_direct_for_walltime_sim:
             pre_scale = 2.0
             jt = self._scale_joint_trajectory_timing(jt, scale=pre_scale)
