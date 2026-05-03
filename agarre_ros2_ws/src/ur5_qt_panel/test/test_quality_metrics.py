@@ -277,7 +277,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # < 200 LOC. Removido de la baseline.
     "ur5_bringup/launch/ur5_stack.launch.py::_prepare_runtime": 250,
     "ur5_qt_panel/ur5_qt_panel/step_window_refresh.py::_step_window_refresh": 249,
-    "ur5_qt_panel/ur5_qt_panel/panel_launchers.py::start_gazebo": 237,
+    # F3-step13a/b (2026-05-03): start_gazebo bajó de 237 → 120 LOC con
+    # 2 sub-helpers (_spawn_gz_gui_client 57 + _prepare_gz_runtime_assets 80).
+    # Removido de baseline (T15 cumplido).
     "ur5_qt_panel/ur5_qt_panel/pick_demo/internal_helpers.py::_select_pick_demo_cycle_object_reference": 231,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_inference.py::tfm_infer": 219,
     "ur5_qt_panel/ur5_qt_panel/panel_runtime_pose_auditor.py::build_runtime_audit_snapshot": 213,

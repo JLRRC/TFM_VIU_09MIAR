@@ -197,6 +197,147 @@ def stop_world_tf_publisher(panel) -> None:
     panel.world_tf_proc = None
     panel._started_world_tf = False
 
+def _spawn_gz_gui_client(panel, *, env: str, gz_gui_log: str) -> None:
+    """F3-step13a: lanza el cliente GUI gz sim -g como proceso separado.
+
+    Espera PANEL_GZ_GUI_DELAY_SEC (default 2s), resuelve gui_config opcional,
+    aplica safe-render env si PANEL_GZ_GUI_SAFE_RENDER (default True), spawn
+    process group con preexec_fn=os.setsid + monitor de salida que tail-ea
+    los últimos 80 líneas y reporta error si rc no es 0/-15.
+    """
+    gui_delay_sec = max(0.1, _env_float_opt("PANEL_GZ_GUI_DELAY_SEC") or 2.0)
+    gui_config = _resolve_gui_config_path(panel.ws_dir)
+    panel._emit_log(
+        "[GZ][GUI] launching separate client "
+        f"delay={gui_delay_sec:.1f}s config={gui_config or 'default'}"
+    )
+    time.sleep(gui_delay_sec)
+    gui_cmd_core = "gz sim -g"
+    if gui_config:
+        gui_cmd_core += f" --gui-config {shlex.quote(gui_config)}"
+    gui_safe_env = ""
+    if _env_flag("PANEL_GZ_GUI_SAFE_RENDER", True):
+        gui_safe_env = (
+            "export LIBGL_ALWAYS_SOFTWARE=${LIBGL_ALWAYS_SOFTWARE:-1}; "
+            "export QT_QUICK_BACKEND=${QT_QUICK_BACKEND:-software}; "
+            "export QSG_RENDER_LOOP=${QSG_RENDER_LOOP:-basic}; "
+        )
+    gui_cmd = bash_preamble(panel.ws_dir) + env + log_to_file(
+        gui_safe_env + with_line_buffer(gui_cmd_core),
+        gz_gui_log,
+        None,
+    )
+    panel.gz_gui_proc = subprocess.Popen(
+        ["bash", "-lc", gui_cmd],
+        preexec_fn=os.setsid,
+    )
+
+    def monitor_gui():
+        rc = panel.gz_gui_proc.wait()
+        panel._emit_log(f"[GZ][GUI] exited rc={rc} (log: {gz_gui_log})")
+        try:
+            tail = subprocess.run(
+                ["bash", "-lc", f"tail -n 80 {shlex.quote(gz_gui_log)}"],
+                text=True,
+                capture_output=True,
+                timeout=2.0,
+            )
+            if tail.stdout:
+                for line in tail.stdout.splitlines():
+                    panel._emit_log(f"[GZ][GUI][LOG] {line}")
+        except Exception as exc:
+            _log_exception("tail gz gui log", exc)
+        if rc not in (0, -15):
+            panel._ui_set_status(
+                "Gazebo servidor activo; GUI cerrada inesperadamente",
+                error=True,
+            )
+
+    panel._run_async(monitor_gui)
+
+
+def _prepare_gz_runtime_assets(panel, *, world: str, mode: str):
+    """F3-step13b: prepara assets runtime para Gazebo (modelo, mundo, env).
+
+    Verifica controllers_yaml, copia ur5_rg2 a runtime + sustituye
+    $(env UR5_CONTROLLERS_YAML) y <parameters> en model.sdf, construye env
+    GZ_PARTITION/RESOURCE_PATH/GZ_LOG_LEVEL/IGN_LOGGER_LEVEL, opcionalmente
+    elimina cámaras del mundo si mode!=gui y not keep_cameras, sustituye
+    uri ur5_rg2 al runtime path. Devuelve (runtime_world, env, render_engine,
+    gz_log, gz_gui_log) o None si falla algo crítico (controllers yaml).
+    """
+    ensure_dir(LOG_DIR)
+    gz_log = os.path.join(LOG_DIR, "gz_server.log")
+    gz_gui_log = os.path.join(LOG_DIR, "gz_gui.log")
+    rotate_log(gz_log)
+    rotate_log(gz_gui_log)
+    runtime_models_root = os.path.join(LOG_DIR, "gz_models")
+    runtime_ur5_model = os.path.join(runtime_models_root, "ur5_rg2")
+    controllers_yaml = UR5_CONTROLLERS_YAML
+    if not os.path.isfile(controllers_yaml):
+        panel._ui_set_status("No se encontró ur5_controllers.yaml", error=True)
+        panel.signal_set_led.emit(panel.led_gz, "error")
+        return None
+    try:
+        ensure_dir(runtime_ur5_model)
+        shutil.copytree(os.path.join(MODELS_DIR, "ur5_rg2"), runtime_ur5_model, dirs_exist_ok=True)
+        model_sdf = os.path.join(runtime_ur5_model, "model.sdf")
+        if os.path.isfile(model_sdf):
+            with open(model_sdf, "r", encoding="utf-8") as f:
+                sdf_text = f.read()
+            sdf_text = sdf_text.replace("$(env UR5_CONTROLLERS_YAML)", controllers_yaml)
+            sdf_text = re.sub(
+                r"<parameters>\\s*--params-file\\s+[^<]+</parameters>",
+                f"<parameters>{controllers_yaml}</parameters>",
+                sdf_text,
+                flags=re.DOTALL,
+            )
+            with open(model_sdf, "w", encoding="utf-8") as f:
+                f.write(sdf_text)
+    except Exception as exc:
+        _log_exception("prepare runtime model", exc)
+    render_engine = _get_launchers_params().gz_render_engine
+    env = (
+        build_gz_env(panel.gz_partition)
+        + f"export GZ_SIM_RESOURCE_PATH='{runtime_models_root}:{MODELS_DIR}:{WORLDS_DIR}:${{GZ_SIM_RESOURCE_PATH:-}}' ; "
+        "export GZ_LOG_LEVEL=error; export IGN_LOGGER_LEVEL=error; export QT_LOGGING_RULES='qt.qml.*=false'; "
+    )
+    runtime_world = world
+    try:
+        if os.path.isfile(world):
+            with open(world, "r", encoding="utf-8") as f:
+                world_text = f.read()
+            _lp_cam = _get_launchers_params()
+            keep_cameras = _lp_cam.keep_cameras or _lp_cam.camera_required
+            if mode != "gui" and not keep_cameras:
+                world_text = re.sub(
+                    r"<plugin\s+filename=['\"]gz-sim-sensors-system['\"][\s\S]*?</plugin>",
+                    "",
+                    world_text,
+                    flags=re.DOTALL,
+                )
+                for cam_name in (
+                    "camera_overhead",
+                    "camera_north",
+                    "camera_south",
+                    "camera_east",
+                    "camera_west",
+                ):
+                    pattern = rf"<model\s+name=['\"]{cam_name}['\"]>.*?</model>"
+                    world_text = re.sub(pattern, "", world_text, flags=re.DOTALL)
+            world_text = world_text.replace(
+                "<uri>model://ur5_rg2</uri>",
+                f"<uri>file://{runtime_ur5_model}</uri>",
+            )
+            runtime_world = os.path.join(LOG_DIR, "world_runtime.sdf")
+            with open(runtime_world, "w", encoding="utf-8") as f:
+                f.write(world_text)
+    except Exception as exc:
+        _log_exception("prepare runtime world", exc)
+        runtime_world = world
+    return runtime_world, env, render_engine, gz_log, gz_gui_log
+
+
 def start_gazebo(panel):
     if panel._block_if_managed("Start Gazebo"):
         return
@@ -239,81 +380,14 @@ def start_gazebo(panel):
         _log_exception("write GZ_PARTITION_FILE", exc)
 
     def worker():
-        ensure_dir(LOG_DIR)
-        gz_log = os.path.join(LOG_DIR, "gz_server.log")
-        gz_gui_log = os.path.join(LOG_DIR, "gz_gui.log")
-        rotate_log(gz_log)
-        rotate_log(gz_gui_log)
-        runtime_models_root = os.path.join(LOG_DIR, "gz_models")
-        runtime_ur5_model = os.path.join(runtime_models_root, "ur5_rg2")
-        controllers_yaml = UR5_CONTROLLERS_YAML
-        if not os.path.isfile(controllers_yaml):
-            panel._ui_set_status("No se encontró ur5_controllers.yaml", error=True)
-            panel.signal_set_led.emit(panel.led_gz, "error")
+        mode = panel._effective_mode()
+        prepared = _prepare_gz_runtime_assets(panel, world=world, mode=mode)
+        if prepared is None:
             panel._gz_launching = False
             panel._gz_launch_start = 0.0
             panel.signal_refresh_controls.emit()
             return
-        try:
-            ensure_dir(runtime_ur5_model)
-            shutil.copytree(os.path.join(MODELS_DIR, "ur5_rg2"), runtime_ur5_model, dirs_exist_ok=True)
-            model_sdf = os.path.join(runtime_ur5_model, "model.sdf")
-            if os.path.isfile(model_sdf):
-                with open(model_sdf, "r", encoding="utf-8") as f:
-                    sdf_text = f.read()
-                sdf_text = sdf_text.replace("$(env UR5_CONTROLLERS_YAML)", controllers_yaml)
-                sdf_text = re.sub(
-                    r"<parameters>\\s*--params-file\\s+[^<]+</parameters>",
-                    f"<parameters>{controllers_yaml}</parameters>",
-                    sdf_text,
-                    flags=re.DOTALL,
-                )
-                with open(model_sdf, "w", encoding="utf-8") as f:
-                    f.write(sdf_text)
-        except Exception as exc:
-            _log_exception("prepare runtime model", exc)
-        # F2-step2: GZ_RENDER_ENGINE canalizado.
-        render_engine = _get_launchers_params().gz_render_engine
-        env = (
-            build_gz_env(panel.gz_partition)
-            + f"export GZ_SIM_RESOURCE_PATH='{runtime_models_root}:{MODELS_DIR}:{WORLDS_DIR}:${{GZ_SIM_RESOURCE_PATH:-}}' ; "
-            "export GZ_LOG_LEVEL=error; export IGN_LOGGER_LEVEL=error; export QT_LOGGING_RULES='qt.qml.*=false'; "
-        )
-        mode = panel._effective_mode()
-        runtime_world = world
-        try:
-            if os.path.isfile(world):
-                with open(world, "r", encoding="utf-8") as f:
-                    world_text = f.read()
-                # F2-step2: PANEL_KEEP_CAMERAS / PANEL_CAMERA_REQUIRED en dataclass.
-                _lp_cam = _get_launchers_params()
-                keep_cameras = _lp_cam.keep_cameras or _lp_cam.camera_required
-                if mode != "gui" and not keep_cameras:
-                    world_text = re.sub(
-                        r"<plugin\s+filename=['\"]gz-sim-sensors-system['\"][\s\S]*?</plugin>",
-                        "",
-                        world_text,
-                        flags=re.DOTALL,
-                    )
-                    for cam_name in (
-                        "camera_overhead",
-                        "camera_north",
-                        "camera_south",
-                        "camera_east",
-                        "camera_west",
-                    ):
-                        pattern = rf"<model\s+name=['\"]{cam_name}['\"]>.*?</model>"
-                        world_text = re.sub(pattern, "", world_text, flags=re.DOTALL)
-                world_text = world_text.replace(
-                    "<uri>model://ur5_rg2</uri>",
-                    f"<uri>file://{runtime_ur5_model}</uri>",
-                )
-                runtime_world = os.path.join(LOG_DIR, "world_runtime.sdf")
-                with open(runtime_world, "w", encoding="utf-8") as f:
-                    f.write(world_text)
-        except Exception as exc:
-            _log_exception("prepare runtime world", exc)
-            runtime_world = world
+        runtime_world, env, render_engine, gz_log, gz_gui_log = prepared
         if mode == "gui":
             cmd_core = with_line_buffer(
                 "gz sim -s -r --headless-rendering "
@@ -360,58 +434,7 @@ def start_gazebo(panel):
             panel._run_async(monitor)
             if mode == "gui":
                 panel.gz_gui_proc = None
-                gui_delay_sec = max(
-                    0.1,
-                    _env_float_opt("PANEL_GZ_GUI_DELAY_SEC") or 2.0,
-                )
-                gui_config = _resolve_gui_config_path(panel.ws_dir)
-                panel._emit_log(
-                    "[GZ][GUI] launching separate client "
-                    f"delay={gui_delay_sec:.1f}s config={gui_config or 'default'}"
-                )
-                time.sleep(gui_delay_sec)
-                gui_cmd_core = "gz sim -g"
-                if gui_config:
-                    gui_cmd_core += f" --gui-config {shlex.quote(gui_config)}"
-                gui_safe_env = ""
-                if _env_flag("PANEL_GZ_GUI_SAFE_RENDER", True):
-                    gui_safe_env = (
-                        "export LIBGL_ALWAYS_SOFTWARE=${LIBGL_ALWAYS_SOFTWARE:-1}; "
-                        "export QT_QUICK_BACKEND=${QT_QUICK_BACKEND:-software}; "
-                        "export QSG_RENDER_LOOP=${QSG_RENDER_LOOP:-basic}; "
-                    )
-                gui_cmd = bash_preamble(panel.ws_dir) + env + log_to_file(
-                    gui_safe_env + with_line_buffer(gui_cmd_core),
-                    gz_gui_log,
-                    None,
-                )
-                panel.gz_gui_proc = subprocess.Popen(
-                    ["bash", "-lc", gui_cmd],
-                    preexec_fn=os.setsid,
-                )
-
-                def monitor_gui():
-                    rc = panel.gz_gui_proc.wait()
-                    panel._emit_log(f"[GZ][GUI] exited rc={rc} (log: {gz_gui_log})")
-                    try:
-                        tail = subprocess.run(
-                            ["bash", "-lc", f"tail -n 80 {shlex.quote(gz_gui_log)}"],
-                            text=True,
-                            capture_output=True,
-                            timeout=2.0,
-                        )
-                        if tail.stdout:
-                            for line in tail.stdout.splitlines():
-                                panel._emit_log(f"[GZ][GUI][LOG] {line}")
-                    except Exception as exc:
-                        _log_exception("tail gz gui log", exc)
-                    if rc not in (0, -15):
-                        panel._ui_set_status(
-                            "Gazebo servidor activo; GUI cerrada inesperadamente",
-                            error=True,
-                        )
-
-                panel._run_async(monitor_gui)
+                _spawn_gz_gui_client(panel, env=env, gz_gui_log=gz_gui_log)
             panel._started_gazebo = True
             panel._gz_running = True
             panel._gz_world_name = read_world_name(world) or GZ_WORLD
@@ -435,6 +458,7 @@ def start_gazebo(panel):
     panel._run_async(worker)
     # Programar ajuste automático de joint2 tras bridge (no en arranque de Gazebo)
     panel._auto_joint2_move_done = False
+
 
 
 
