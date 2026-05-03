@@ -133,7 +133,7 @@ LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
     # F3-step1.4 (2026-05-03): +23 LOC por cadena _seed_devs/max/sum
     # (constante _TWO_PI_R + 3 helpers IK) y _close_only(panel)
     # promovidos a module-level. run_pick_demo y worker bajaron -7 LOC.
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   8671,   # F3-step37: -77 más (_wait_runtime_tcp_stable fuera)
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   8623,   # F3-step38: -48 más (_publish_direct_debug_markers fuera)
 
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  3823,   # F3-step5bis-c: -84 más (moveit_bridge_path body fuera con callables-as-args)
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py":          2149,

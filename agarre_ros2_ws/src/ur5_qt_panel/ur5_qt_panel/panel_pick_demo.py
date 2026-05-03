@@ -133,6 +133,9 @@ from .pick_demo.marker_helpers import (
     make_sphere_marker as _make_sphere_marker_pure,
     make_arrow_marker as _make_arrow_marker_pure,
 )
+from .pick_demo.debug_markers import (
+    publish_direct_debug_markers as _publish_direct_debug_markers_pure,
+)
 from .pick_demo.metrics import (
     alignment_metrics_base as _alignment_metrics_base,
     compute_pose_consistency_metrics as _compute_pose_consistency_metrics_pure,
@@ -1834,6 +1837,7 @@ def run_pick_demo(panel) -> None:
                 target_semantic_world=None,
                 target_exec_tool0_world=None,
             ) -> None:
+                # F3-step38: cuerpo extraído a pick_demo.debug_markers.publish_direct_debug_markers.
                 pub = _direct_debug_marker_pub()
                 if pub is None or MarkerArray is None:
                     return
@@ -1847,70 +1851,18 @@ def run_pick_demo(panel) -> None:
                     world_frame_local = str(WORLD_FRAME or "world").strip() or "world"
                 live_pinch_world = _pose_position(world_frame_local, DIRECT_SOURCE_FRAME, timeout_sec=0.10)
                 live_tool0_world = _pose_position(world_frame_local, DIRECT_EXECUTION_FRAME, timeout_sec=0.10)
-                marker_array = MarkerArray()
-                markers = [
-                    _direct_make_sphere_marker(
-                        ns="directo/object_frozen",
-                        marker_id=1,
-                        frame_id=world_frame_local,
-                        xyz=object_frozen_world,
-                        rgba=(1.0, 1.0, 0.0, 0.90),
-                    ),
-                    _direct_make_sphere_marker(
-                        ns="directo/object_fresh",
-                        marker_id=2,
-                        frame_id=world_frame_local,
-                        xyz=object_fresh_world,
-                        rgba=(0.0, 1.0, 1.0, 0.90),
-                    ),
-                    _direct_make_sphere_marker(
-                        ns="directo/target_semantic_rg2_pinch_center",
-                        marker_id=3,
-                        frame_id=world_frame_local,
-                        xyz=target_semantic_world,
-                        rgba=(1.0, 0.0, 1.0, 0.90),
-                    ),
-                    _direct_make_sphere_marker(
-                        ns="directo/target_exec_tool0",
-                        marker_id=4,
-                        frame_id=world_frame_local,
-                        xyz=target_exec_tool0_world,
-                        rgba=(0.35, 0.70, 1.0, 0.90),
-                    ),
-                    _direct_make_sphere_marker(
-                        ns="directo/live_rg2_pinch_center",
-                        marker_id=5,
-                        frame_id=world_frame_local,
-                        xyz=live_pinch_world,
-                        rgba=(0.0, 1.0, 0.0, 0.90),
-                    ),
-                    _direct_make_sphere_marker(
-                        ns="directo/live_tool0",
-                        marker_id=6,
-                        frame_id=world_frame_local,
-                        xyz=live_tool0_world,
-                        rgba=(1.0, 0.0, 0.0, 0.90),
-                    ),
-                    _direct_make_arrow_marker(
-                        ns="directo/live_tool0_to_pinch",
-                        marker_id=10,
-                        frame_id=world_frame_local,
-                        start_xyz=live_tool0_world,
-                        end_xyz=live_pinch_world,
-                        rgba=(1.0, 1.0, 1.0, 0.95),
-                    ),
-                    _direct_make_arrow_marker(
-                        ns="directo/target_exec_to_semantic",
-                        marker_id=11,
-                        frame_id=world_frame_local,
-                        start_xyz=target_exec_tool0_world,
-                        end_xyz=target_semantic_world,
-                        rgba=(1.0, 1.0, 1.0, 0.95),
-                    ),
-                ]
-                marker_array.markers = [marker for marker in markers if marker is not None]
-                if marker_array.markers:
-                    pub.publish(marker_array)
+                _publish_direct_debug_markers_pure(
+                    pub,
+                    MarkerArray,
+                    frame_id=world_frame_local,
+                    stamp=_direct_debug_stamp(panel),
+                    live_pinch_world=_tuple3(live_pinch_world),
+                    live_tool0_world=_tuple3(live_tool0_world),
+                    object_frozen_world=_tuple3(object_frozen_world),
+                    object_fresh_world=_tuple3(object_fresh_world),
+                    target_semantic_world=_tuple3(target_semantic_world),
+                    target_exec_tool0_world=_tuple3(target_exec_tool0_world),
+                )
 
             def _emit_direct_visual_snapshot(
                 *,
