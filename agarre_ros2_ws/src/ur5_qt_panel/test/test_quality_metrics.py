@@ -242,14 +242,18 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     "ur5_tools/ur5_tools/moveit_bridge/moveit_py_planner.py::MoveItPyPlannerMixin._plan_with_moveit_py": 557,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py::execute_tfm_world_grasp": 462,
     "ur5_qt_panel/ur5_qt_panel/panel_trace_callbacks.py::_refresh_trace_data": 438,
-    "ur5_tools/ur5_tools/ur5_moveit_bridge.py::UR5MoveItBridge.__init__": 416,
+    # F3-step8 (2026-05-03): UR5MoveItBridge.__init__ bajó de 416 → 158 LOC
+    # con 2 sub-helpers (_init_declare_parameters 48 + _init_parse_parameters_
+    # and_validate 224). Removido de baseline T15.
+    # F3-step8: NUEVA fn pura > 200 (cuerpo legacy de parsing 1:1).
+    "ur5_tools/ur5_tools/ur5_moveit_bridge.py::UR5MoveItBridge._init_parse_parameters_and_validate": 224,
     "ur5_qt_panel/ur5_qt_panel/panel_ui_state.py::apply_ui_state": 375,
     "ur5_bringup/launch/ur5_stack.launch.py::generate_launch_description": 350,
     "ur5_qt_panel/ur5_qt_panel/panel_step_ui.py::build_step_window": 346,
     "ur5_tools/ur5_tools/moveit_bridge/geometry.py::GeometryMixin._compute_approach_ik_seeded": 341,
     "ur5_tools/ur5_tools/moveit_bridge/trajectory_prep.py::TrajectoryPrepMixin._prepare_joint_trajectory_for_controller": 339,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm.py::on_tfm_grasp_object_clicked": 318,
-    "ur5_tools/ur5_tools/gripper_attach_backend.py::GripperAttachBackend.__init__": 309,
+    "ur5_tools/ur5_tools/gripper_attach_backend.py::GripperAttachBackend.__init__": 342,  # F5-step6b: +33 LOC (params + state nuevos para 4 services)
     "ur5_qt_panel/ur5_qt_panel/panel_launchers.py::start_moveit_bridge": 287,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py::execute_tfm_world_grasp.worker": 286,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_inference.py::handle_infer_result": 283,

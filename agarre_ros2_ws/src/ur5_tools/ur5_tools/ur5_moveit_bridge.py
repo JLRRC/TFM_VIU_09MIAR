@@ -133,11 +133,13 @@ class UR5MoveItBridge(
         else:
             self.get_logger().info(message)
 
-    def __init__(self) -> None:
-        super().__init__("ur5_moveit_bridge")
-        # F13 lifecycle: auto-activate por defecto preserva backward-compat.
-        if not self.has_parameter("auto_activate"):
-            self.declare_parameter("auto_activate", True)
+
+    def _init_declare_parameters(self) -> None:
+        """F3-step8: bloque de declare_parameter() extraído de __init__.
+
+        Declara los 42 parámetros ROS del bridge MoveIt. Sin cambios
+        de comportamiento — sólo separación visual.
+        """
         self.declare_parameter("backend", "auto")
         self.declare_parameter("move_group", "manipulator")
         self.declare_parameter("base_frame", "base_link")
@@ -180,8 +182,15 @@ class UR5MoveItBridge(
         self.declare_parameter("controller_goal_tolerance_rad", -1.0)
         self.declare_parameter("controller_goal_time_tolerance_sec", -1.0)
         self.declare_parameter("controller_expected_goal_time_sec", 12.0)
-        if not self.has_parameter("use_sim_time"):
-            self.declare_parameter("use_sim_time", True)
+
+
+    def _init_parse_parameters_and_validate(self) -> None:
+        """F3-step8b: parsing y validación de params extraído de __init__.
+
+        Lee los 42+ parámetros declarados (backend, frames, topics, timeouts,
+        controller_*, max_*_scaling, etc.) + ajustes runtime + log inicial.
+        ~218 LOC. Sin nested defs, sin nonlocal — código secuencial.
+        """
 
         self._backend_pref = read_str_param(self, "backend", "auto").strip().lower()
         self._group_name = read_str_param(self, "move_group", "manipulator")
@@ -400,6 +409,16 @@ class UR5MoveItBridge(
             f"controller_expected_goal_time={self._controller_expected_goal_time_sec:.3f}s"
         )
 
+
+    def __init__(self) -> None:
+        super().__init__("ur5_moveit_bridge")
+        # F13 lifecycle: auto-activate por defecto preserva backward-compat.
+        if not self.has_parameter("auto_activate"):
+            self.declare_parameter("auto_activate", True)
+        self._init_declare_parameters()
+        if not self.has_parameter("use_sim_time"):
+            self.declare_parameter("use_sim_time", True)
+        self._init_parse_parameters_and_validate()
         self._backend = None
         self._moveit_py = None
         self._planning_component = None
