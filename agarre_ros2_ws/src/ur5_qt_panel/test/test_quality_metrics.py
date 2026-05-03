@@ -135,7 +135,7 @@ LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
     # promovidos a module-level. run_pick_demo y worker bajaron -7 LOC.
     "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   8985,   # F3-step3e: -259 LOC (_run_joint_step body fuera) — bajo 9k
 
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  3907,   # F3-step4abc + step5bis-ab: -707 LOC (5 fns extraídas)
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  3823,   # F3-step5bis-c: -84 más (moveit_bridge_path body fuera con callables-as-args)
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py":          2149,
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py":        1763,
 }
@@ -228,8 +228,8 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F5-step5 (2026-05-03): el factory de runtime nodes creció +20 LOC
     # al añadir Node object_pose_resolver y su parámetro de gating.
     "ur5_bringup/launch/runtime_nodes_factory.py::build_runtime_node_actions": 219,
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object": 3790,   # F3-step5bis-a/b: -381 más (carry_coherence + strict_pre_lift_contact)
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object.worker": 2784,  # F3-step5bis-a/b: -381 más
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object": 3702,   # F3-step5bis-c: -88 más (moveit_bridge_path)
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object.worker": 2696,  # F3-step5bis-c: -88 más
     # F3-step4a/b/c (2026-05-03): 3 funciones grandes de panel_pick_object
     # extraídas a pick_object/<modulo>.py con dataclass + función pura.
     "ur5_qt_panel/ur5_qt_panel/pick_object/wait_moveit_result.py::wait_moveit_result": 263,

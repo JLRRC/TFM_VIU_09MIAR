@@ -110,6 +110,10 @@ from .pick_object.strict_pre_lift_contact import (
     StrictPreLiftContactState,
     ensure_strict_pre_lift_contact as _ensure_strict_pre_lift_contact_pure,
 )
+from .pick_object.moveit_bridge_path import (
+    MoveItBridgePathContext,
+    ensure_moveit_bridge_path_main_body as _ensure_moveit_bridge_path_main_body_pure,
+)
 
 
 _PICK_OBJECT_GRIPPER_GEOMETRY = load_gripper_geometry()
@@ -1449,108 +1453,20 @@ def run_pick_object(panel) -> None:
                     return
                 raise RuntimeError("MoveItBridge no recuperado tras reinicio (pose_subs/result_pubs)")
 
-            if not panel._ros_worker_started:
-                panel._ensure_ros_worker_started()
-            if not panel.ros_worker.node_ready():
-                raise RuntimeError("ROS node no listo para MoveIt bridge")
-            panel.ros_worker.subscribe_moveit_bridge_heartbeat(moveit_hb_topic)
-            subs, result_pubs, result_subs, hb_age, hb_recent = _read_bridge_topics()
-            hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
-            panel._emit_log(
-                f"[PICK_OBJ][MOVEIT][PLAN] topics pose_subs={subs} result_pubs={result_pubs} result_subs={result_subs} "
-                f"pose_topic={topic} result_topic={moveit_result_topic} "
-                f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
+            # F3-step5bis-c: cuerpo principal (~100 LOC) extraído a
+            # pick_object/moveit_bridge_path.py. Las 4 nested defs
+            # permanecen aquí porque sus kwargs homónimos colisionarían
+            # con free vars del closure padre. Se inyectan al ctx como
+            # callables.
+            _mbp_ctx = MoveItBridgePathContext(
+                panel=panel,
+                moveit_hb_topic=moveit_hb_topic,
+                moveit_result_topic=moveit_result_topic,
+                read_bridge_topics_fn=_read_bridge_topics,
+                wait_bridge_match_fn=_wait_bridge_match,
+                restart_moveit_bridge_and_wait_fn=_restart_moveit_bridge_and_wait,
             )
-            if subs <= 0 or result_pubs <= 0:
-                bridge_alive = bool(panel._proc_alive(getattr(panel, "moveit_bridge_proc", None)))
-                bridge_detected = False
-                try:
-                    bridge_detected = bool(panel._moveit_bridge_detected())
-                except Exception:
-                    bridge_detected = False
-                if bridge_alive or bridge_detected or hb_recent:
-                    panel._emit_log(
-                        "[PICK_OBJ][MOVEIT][PLAN] bridge_match_warmup "
-                        f"pose_subs={subs} result_pubs={result_pubs} bridge_alive={str(bridge_alive).lower()} "
-                        f"bridge_detected={str(bool(bridge_detected)).lower()}"
-                    )
-                    matched, subs, result_pubs, result_subs, hb_age, hb_recent = _wait_bridge_match(
-                        timeout_sec=1.8,
-                        log_tag="bridge_match_warmup_check",
-                    )
-                    if matched:
-                        hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
-                        panel._emit_log(
-                            f"[PICK_OBJ][MOVEIT][PLAN] bridge_match_warmup_ok pose_subs={subs} result_pubs={result_pubs} "
-                            f"result_subs={result_subs} hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
-                        )
-                if subs <= 0 or result_pubs <= 0:
-                    if not bridge_alive and not bridge_detected and not hb_recent:
-                        _restart_moveit_bridge_and_wait(cold_start=True)
-                    else:
-                        panel._emit_log(
-                            "[PICK_OBJ][MOVEIT][PLAN] bridge_path_missing "
-                            f"pose_subs={subs} result_pubs={result_pubs}; attempting_recover=true"
-                        )
-                        _restart_moveit_bridge_and_wait(cold_start=False)
-                    bridge_recovered = True
-                    subs, result_pubs, result_subs, hb_age, hb_recent = _read_bridge_topics()
-                    hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
-                    panel._emit_log(
-                        f"[PICK_OBJ][MOVEIT][PLAN] topics_after_recover pose_subs={subs} result_pubs={result_pubs} "
-                        f"result_subs={result_subs} pose_topic={topic} result_topic={moveit_result_topic} "
-                        f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
-                    )
-                    if subs <= 0:
-                        msg = f"MoveItBridge NO conectado: {topic} sin subscriptores"
-                        panel._emit_log(f"[PICK_OBJ][ABORT] {msg}")
-                        raise RuntimeError(msg)
-            if not panel.ros_worker.subscribe_moveit_result(moveit_result_topic):
-                msg = f"No se pudo suscribir a {moveit_result_topic}"
-                panel._emit_log(f"[PICK_OBJ][ABORT] {msg}")
-                raise RuntimeError(msg)
-            result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
-            result_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
-            if result_subs <= 0:
-                result_wait_deadline = time.time() + 1.5
-                while time.time() < result_wait_deadline:
-                    result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
-                    result_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
-                    if result_pubs > 0 and result_subs > 0:
-                        break
-                    time.sleep(0.10)
-            panel._emit_log(
-                f"[PICK_OBJ][MOVEIT][PLAN] result_path result_pubs={result_pubs} result_subs={result_subs} "
-                f"topic={moveit_result_topic}"
-            )
-            if result_pubs <= 0:
-                msg = f"MoveIt bridge sin publisher en {moveit_result_topic}"
-                panel._emit_log(f"[PICK_OBJ][ABORT] {msg}")
-                raise RuntimeError(msg)
-            if bridge_recovered:
-                hb_deadline = time.time() + 2.5
-                while time.time() < hb_deadline:
-                    hb_age = panel.ros_worker.moveit_bridge_heartbeat_age()
-                    hb_recent = panel.ros_worker.has_recent_moveit_bridge_heartbeat(1.2)
-                    if hb_recent:
-                        hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
-                        panel._emit_log(
-                            "[PICK_OBJ][MOVEIT][PLAN] bridge_recover_warmup "
-                            f"heartbeat_ready=true hb_age={hb_age_txt}"
-                        )
-                        # After a stop/start cycle the first volatile result can be lost if
-                        # we publish immediately. Give DDS matching a short settle window.
-                        time.sleep(0.35)
-                        break
-                    time.sleep(0.10)
-                else:
-                    hb_age = panel.ros_worker.moveit_bridge_heartbeat_age()
-                    hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
-                    panel._emit_log(
-                        "[PICK_OBJ][MOVEIT][PLAN] bridge_recover_warmup "
-                        f"heartbeat_timeout hb_age={hb_age_txt}"
-                    )
-            return bridge_recovered
+            return _ensure_moveit_bridge_path_main_body_pure(_mbp_ctx, topic)
 
         # F3-step4a: cuerpo de _wait_moveit_result extraído a
         # pick_object/wait_moveit_result.py. El wrapper construye
