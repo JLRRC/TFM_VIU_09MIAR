@@ -436,6 +436,208 @@ def ensure_selected_object_in_store(panel, name: str, *, reason: str) -> bool:
     )
     return bool(ok)
 
+def _handle_infer_compute_alignment_2d(panel) -> Optional[Dict[str, object]]:
+    """F3-step15a: calcula y registra alignment 2D entre grasp inferido y Cornell ref.
+
+    Si hay panel._last_grasp_px y panel._last_cornell_ref, calcula deltas px,
+    distancia, tamaños, y emite log [TFM] infer_align_2d. Devuelve dict con
+    pred/ref/delta/dist o None si no hay datos suficientes.
+    """
+    if not (panel._last_grasp_px and panel._last_cornell_ref):
+        return None
+    pred_cx = float(panel._last_grasp_px.get("cx", 0.0) or 0.0)
+    pred_cy = float(panel._last_grasp_px.get("cy", 0.0) or 0.0)
+    ref_cx = float(panel._last_cornell_ref.get("cx", 0.0) or 0.0)
+    ref_cy = float(panel._last_cornell_ref.get("cy", 0.0) or 0.0)
+    delta_x_px = pred_cx - ref_cx
+    delta_y_px = pred_cy - ref_cy
+    dist_px = math.hypot(delta_x_px, delta_y_px)
+    alignment_2d = {
+        "selected": str(panel._selected_object or ""),
+        "pred_cx": pred_cx,
+        "pred_cy": pred_cy,
+        "ref_cx": ref_cx,
+        "ref_cy": ref_cy,
+        "delta_x_px": delta_x_px,
+        "delta_y_px": delta_y_px,
+        "dist_px": dist_px,
+        "pred_w": float(panel._last_grasp_px.get("w", 0.0) or 0.0),
+        "pred_h": float(panel._last_grasp_px.get("h", 0.0) or 0.0),
+        "ref_w": float(panel._last_cornell_ref.get("w", 0.0) or 0.0),
+        "ref_h": float(panel._last_cornell_ref.get("h", 0.0) or 0.0),
+    }
+    panel._audit_append(
+        "logs/infer.log",
+        "[TFM] infer_align_2d "
+        f"selected={panel._selected_object or 'none'} "
+        f"pred=({pred_cx:.2f},{pred_cy:.2f}) "
+        f"ref=({ref_cx:.2f},{ref_cy:.2f}) "
+        f"delta=({delta_x_px:.2f},{delta_y_px:.2f}) dist_px={dist_px:.2f} "
+        f"size_pred=({float(panel._last_grasp_px.get('w', 0.0) or 0.0):.2f},{float(panel._last_grasp_px.get('h', 0.0) or 0.0):.2f}) "
+        f"size_ref=({float(panel._last_cornell_ref.get('w', 0.0) or 0.0):.2f},{float(panel._last_cornell_ref.get('h', 0.0) or 0.0):.2f})",
+    )
+    return alignment_2d
+
+
+def _handle_infer_write_audit(
+    panel,
+    *,
+    result: Dict[str, object],
+    infer_selection_policy: str,
+    infer_postprocess_policy: str,
+    infer_ckpt_path: str,
+    infer_experiment: str,
+    infer_seed: object,
+    infer_model_info: dict,
+    grasp_rect_publish_ok: bool,
+    overlay_refresh_ok: bool,
+    alignment_2d: Optional[Dict[str, object]],
+) -> None:
+    """F3-step15b: serializa audit_payload completo a artifacts/grasp_last.json
+    y emite [TFM] infer_end OK con todas las métricas (perf, topics, frame_info,
+    artifacts, alignment_2d).
+    """
+    audit_payload = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "session": panel._infer_session_id,
+        "status": "OK",
+        "source": panel._last_grasp_source,
+        "experiment": {
+            "selection_policy": infer_selection_policy,
+            "postprocess_policy": infer_postprocess_policy,
+            "checkpoint_path": infer_ckpt_path,
+            "experiment": infer_experiment,
+            "seed": infer_seed,
+            "model": panel._exp_info.get("model", "--"),
+            "modality": panel._exp_info.get("modality", "--"),
+            "model_info": infer_model_info,
+        },
+        "visual_grasp": {
+            "topic": panel._grasp_rect_topic,
+            "msg_type": "std_msgs/msg/Float32MultiArray",
+            "publish_ok": bool(grasp_rect_publish_ok),
+        },
+        "executable_grasp": {
+            "pose_topic": MOVEIT_POSE_TOPIC,
+            "cartesian_topic": MOVEIT_CARTESIAN_POSE_TOPIC,
+            "result_topic": "/desired_grasp/result",
+        },
+        "grasp": panel._last_grasp_px,
+        "grasp_base": panel._last_grasp_base,
+        "grasp_rect_publish_ok": bool(grasp_rect_publish_ok),
+        "grasp_rect_topic": panel._grasp_rect_topic,
+        "frame": panel._last_grasp_frame,
+        "cornell": panel._last_cornell,
+        "alignment_2d": alignment_2d,
+        "cornell_reason": panel._last_cornell_reason,
+        "perf": {
+            "infer_ms": panel._perf_infer_ms,
+            "total_ms": panel._perf_total_ms,
+        },
+        "frame_info": {
+            "w": int(result.get("frame_w", 0) or 0),
+            "h": int(result.get("frame_h", 0) or 0),
+            "ts": panel._last_infer_frame_ts or result.get("frame_ts"),
+        },
+        "artifacts": {
+            "image_path": panel._last_infer_image_path or None,
+            "grasp_path": panel._last_infer_output_path or None,
+            "overlay_path": panel._last_infer_overlay_path or None,
+        },
+    }
+    panel._audit_write_json("artifacts/grasp_last.json", audit_payload)
+    panel._audit_append(
+        "logs/infer.log",
+        f"[TFM] infer_end session={panel._infer_session_id} status=OK "
+        f"infer_ms={panel._perf_infer_ms:.2f} total_ms={panel._perf_total_ms:.2f} "
+        f"visual_topic={panel._grasp_rect_topic} executable_topic={MOVEIT_POSE_TOPIC} "
+        f"frame_ts={panel._last_infer_frame_ts:.6f} "
+        f"grasp_rect_publish_ok={str(bool(grasp_rect_publish_ok)).lower()} "
+        f"overlay_refresh_ok={str(bool(overlay_refresh_ok)).lower()} "
+        f"overlay={panel._last_infer_overlay_path or 'none'} "
+        f"grasp={panel._last_grasp_px} cornell={panel._last_cornell} "
+        f"cornell_reason={panel._last_cornell_reason!r}",
+    )
+
+
+def _handle_infer_log_postprocess_adjustments(
+    panel,
+    *,
+    angle_adjusted: bool,
+    center_adjusted: bool,
+    size_adjusted: bool,
+    postprocess_enabled: bool,
+    raw_pred: dict,
+    pred: dict,
+    ref_for_size: Optional[dict],
+    roi: Optional[tuple],
+) -> None:
+    """F3-step15c: emite logs de ajustes postprocess (angle/center/size) +
+    construye panel._last_tfm_postprocess_note + log [TFM] postprocess(_disabled).
+    Aplica ajuste por ajuste con su [TFM] infer_*_adjust line correspondiente.
+    """
+    if angle_adjusted and ref_for_size:
+        panel._audit_append(
+            "logs/infer.log",
+            "[TFM] infer_angle_adjust "
+            f"selected={panel._selected_object or 'none'} roi={tuple(roi)} shape={OBJECT_SHAPES.get(panel._selected_object or '', 'unknown')} "
+            f"pred_angle_raw={float(raw_pred.get('angle_deg', 0.0) or 0.0):.2f} "
+            f"pred_angle_adj={float(pred.get('angle_deg', 0.0) or 0.0):.2f} "
+            f"ref_angle={float(ref_for_size.get('angle_deg', 0.0) or 0.0):.2f}",
+        )
+    if center_adjusted and ref_for_size:
+        panel._audit_append(
+            "logs/infer.log",
+            "[TFM] infer_center_adjust "
+            f"selected={panel._selected_object or 'none'} roi={tuple(roi)} "
+            f"pred_center_raw=({float(raw_pred.get('cx', 0.0) or 0.0):.2f},{float(raw_pred.get('cy', 0.0) or 0.0):.2f}) "
+            f"pred_center_adj=({float(pred.get('cx', 0.0) or 0.0):.2f},{float(pred.get('cy', 0.0) or 0.0):.2f}) "
+            f"ref_center=({float(ref_for_size.get('cx', 0.0) or 0.0):.2f},{float(ref_for_size.get('cy', 0.0) or 0.0):.2f})",
+        )
+    if size_adjusted and ref_for_size:
+        panel._audit_append(
+            "logs/infer.log",
+            "[TFM] infer_size_adjust "
+            f"selected={panel._selected_object or 'none'} roi={tuple(roi)} "
+            f"pred_size_raw=({float(raw_pred.get('w', 0.0) or 0.0):.2f},{float(raw_pred.get('h', 0.0) or 0.0):.2f}) "
+            f"ref_size=({float(ref_for_size.get('w', 0.0) or 0.0):.2f},{float(ref_for_size.get('h', 0.0) or 0.0):.2f})",
+        )
+    adjustments: List[str] = []
+    if angle_adjusted:
+        adjustments.append("angle")
+    if center_adjusted:
+        adjustments.append("center")
+    if size_adjusted:
+        adjustments.append("size")
+    if adjustments:
+        panel._last_tfm_postprocess_note = f"ajustes panel: {', '.join(adjustments)}"
+        panel._emit_log(
+            "[TFM] postprocess "
+            f"adjustments={','.join(adjustments)} "
+            f"selected={panel._selected_object or 'none'}"
+        )
+        panel._audit_append(
+            "logs/infer.log",
+            "[TFM] infer_postprocess "
+            f"adjustments={','.join(adjustments)} "
+            f"selected={panel._selected_object or 'none'}",
+        )
+    else:
+        if postprocess_enabled:
+            panel._last_tfm_postprocess_note = "sin ajustes panel"
+        else:
+            panel._last_tfm_postprocess_note = "postproceso desactivado (predicción raw)"
+            panel._emit_log(
+                "[TFM] postprocess disabled "
+                f"selected={panel._selected_object or 'none'} mode=raw"
+            )
+            panel._audit_append(
+                "logs/infer.log",
+                "[TFM] infer_postprocess "
+                f"adjustments=none selected={panel._selected_object or 'none'} mode=raw_disabled",
+            )
+
+
 def handle_infer_result(panel, result: Dict[str, object]) -> None:
     panel._tfm_infer_inflight = False
     if not result.get("ok"):
@@ -526,24 +728,6 @@ def handle_infer_result(panel, result: Dict[str, object]) -> None:
         )
         pred, center_adjusted = reconcile_inferred_grasp_center(pred, ref_for_size, roi=tuple(roi))
         pred, size_adjusted = reconcile_inferred_grasp_size(pred, ref_for_size, roi=tuple(roi))
-    if angle_adjusted and ref_for_size:
-        panel._audit_append(
-            "logs/infer.log",
-            "[TFM] infer_angle_adjust "
-            f"selected={panel._selected_object or 'none'} roi={tuple(roi)} shape={OBJECT_SHAPES.get(panel._selected_object or '', 'unknown')} "
-            f"pred_angle_raw={float(raw_pred.get('angle_deg', 0.0) or 0.0):.2f} "
-            f"pred_angle_adj={float(pred.get('angle_deg', 0.0) or 0.0):.2f} "
-            f"ref_angle={float(ref_for_size.get('angle_deg', 0.0) or 0.0):.2f}",
-        )
-    if center_adjusted and ref_for_size:
-        panel._audit_append(
-            "logs/infer.log",
-            "[TFM] infer_center_adjust "
-            f"selected={panel._selected_object or 'none'} roi={tuple(roi)} "
-            f"pred_center_raw=({float(raw_pred.get('cx', 0.0) or 0.0):.2f},{float(raw_pred.get('cy', 0.0) or 0.0):.2f}) "
-            f"pred_center_adj=({float(pred.get('cx', 0.0) or 0.0):.2f},{float(pred.get('cy', 0.0) or 0.0):.2f}) "
-            f"ref_center=({float(ref_for_size.get('cx', 0.0) or 0.0):.2f},{float(ref_for_size.get('cy', 0.0) or 0.0):.2f})",
-        )
     panel._last_grasp_px = {
         "cx": float(pred.get("cx", 0.0)),
         "cy": float(pred.get("cy", 0.0)),
@@ -551,48 +735,17 @@ def handle_infer_result(panel, result: Dict[str, object]) -> None:
         "h": float(pred.get("h", 0.0)),
         "angle_deg": float(pred.get("angle_deg", 0.0)),
     }
-    if size_adjusted and ref_for_size:
-        panel._audit_append(
-            "logs/infer.log",
-            "[TFM] infer_size_adjust "
-            f"selected={panel._selected_object or 'none'} roi={tuple(roi)} "
-            f"pred_size_raw=({float(raw_pred.get('w', 0.0) or 0.0):.2f},{float(raw_pred.get('h', 0.0) or 0.0):.2f}) "
-            f"ref_size=({float(ref_for_size.get('w', 0.0) or 0.0):.2f},{float(ref_for_size.get('h', 0.0) or 0.0):.2f})",
-        )
-    adjustments: List[str] = []
-    if angle_adjusted:
-        adjustments.append("angle")
-    if center_adjusted:
-        adjustments.append("center")
-    if size_adjusted:
-        adjustments.append("size")
-    if adjustments:
-        panel._last_tfm_postprocess_note = f"ajustes panel: {', '.join(adjustments)}"
-        panel._emit_log(
-            "[TFM] postprocess "
-            f"adjustments={','.join(adjustments)} "
-            f"selected={panel._selected_object or 'none'}"
-        )
-        panel._audit_append(
-            "logs/infer.log",
-            "[TFM] infer_postprocess "
-            f"adjustments={','.join(adjustments)} "
-            f"selected={panel._selected_object or 'none'}",
-        )
-    else:
-        if postprocess_enabled:
-            panel._last_tfm_postprocess_note = "sin ajustes panel"
-        else:
-            panel._last_tfm_postprocess_note = "postproceso desactivado (predicción raw)"
-            panel._emit_log(
-                "[TFM] postprocess disabled "
-                f"selected={panel._selected_object or 'none'} mode=raw"
-            )
-            panel._audit_append(
-                "logs/infer.log",
-                "[TFM] infer_postprocess "
-                f"adjustments=none selected={panel._selected_object or 'none'} mode=raw_disabled",
-            )
+    _handle_infer_log_postprocess_adjustments(
+        panel,
+        angle_adjusted=angle_adjusted,
+        center_adjusted=center_adjusted,
+        size_adjusted=size_adjusted,
+        postprocess_enabled=postprocess_enabled,
+        raw_pred=raw_pred,
+        pred=pred,
+        ref_for_size=ref_for_size,
+        roi=roi,
+    )
     panel._last_grasp_source = "infer_model"
     panel._last_grasp_frame = panel.camera_topic or "image"
     panel._last_grasp_update_ts = _runtime_time()
@@ -622,99 +775,19 @@ def handle_infer_result(panel, result: Dict[str, object]) -> None:
     else:
         panel._set_status("TFM: grasp inferido", error=False)
         infer_message = "grasp inferido"
-    alignment_2d = None
-    if panel._last_grasp_px and panel._last_cornell_ref:
-        pred_cx = float(panel._last_grasp_px.get("cx", 0.0) or 0.0)
-        pred_cy = float(panel._last_grasp_px.get("cy", 0.0) or 0.0)
-        ref_cx = float(panel._last_cornell_ref.get("cx", 0.0) or 0.0)
-        ref_cy = float(panel._last_cornell_ref.get("cy", 0.0) or 0.0)
-        delta_x_px = pred_cx - ref_cx
-        delta_y_px = pred_cy - ref_cy
-        dist_px = math.hypot(delta_x_px, delta_y_px)
-        alignment_2d = {
-            "selected": str(panel._selected_object or ""),
-            "pred_cx": pred_cx,
-            "pred_cy": pred_cy,
-            "ref_cx": ref_cx,
-            "ref_cy": ref_cy,
-            "delta_x_px": delta_x_px,
-            "delta_y_px": delta_y_px,
-            "dist_px": dist_px,
-            "pred_w": float(panel._last_grasp_px.get("w", 0.0) or 0.0),
-            "pred_h": float(panel._last_grasp_px.get("h", 0.0) or 0.0),
-            "ref_w": float(panel._last_cornell_ref.get("w", 0.0) or 0.0),
-            "ref_h": float(panel._last_cornell_ref.get("h", 0.0) or 0.0),
-        }
-        panel._audit_append(
-            "logs/infer.log",
-            "[TFM] infer_align_2d "
-            f"selected={panel._selected_object or 'none'} "
-            f"pred=({pred_cx:.2f},{pred_cy:.2f}) "
-            f"ref=({ref_cx:.2f},{ref_cy:.2f}) "
-            f"delta=({delta_x_px:.2f},{delta_y_px:.2f}) dist_px={dist_px:.2f} "
-            f"size_pred=({float(panel._last_grasp_px.get('w', 0.0) or 0.0):.2f},{float(panel._last_grasp_px.get('h', 0.0) or 0.0):.2f}) "
-            f"size_ref=({float(panel._last_cornell_ref.get('w', 0.0) or 0.0):.2f},{float(panel._last_cornell_ref.get('h', 0.0) or 0.0):.2f})",
-        )
-    audit_payload = {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "session": panel._infer_session_id,
-        "status": "OK",
-        "source": panel._last_grasp_source,
-        "experiment": {
-            "selection_policy": infer_selection_policy,
-            "postprocess_policy": infer_postprocess_policy,
-            "checkpoint_path": infer_ckpt_path,
-            "experiment": infer_experiment,
-            "seed": infer_seed,
-            "model": panel._exp_info.get("model", "--"),
-            "modality": panel._exp_info.get("modality", "--"),
-            "model_info": infer_model_info,
-        },
-        "visual_grasp": {
-            "topic": panel._grasp_rect_topic,
-            "msg_type": "std_msgs/msg/Float32MultiArray",
-            "publish_ok": bool(grasp_rect_publish_ok),
-        },
-        "executable_grasp": {
-            "pose_topic": MOVEIT_POSE_TOPIC,
-            "cartesian_topic": MOVEIT_CARTESIAN_POSE_TOPIC,
-            "result_topic": "/desired_grasp/result",
-        },
-        "grasp": panel._last_grasp_px,
-        "grasp_base": panel._last_grasp_base,
-        "grasp_rect_publish_ok": bool(grasp_rect_publish_ok),
-        "grasp_rect_topic": panel._grasp_rect_topic,
-        "frame": panel._last_grasp_frame,
-        "cornell": panel._last_cornell,
-        "alignment_2d": alignment_2d,
-        "cornell_reason": panel._last_cornell_reason,
-        "perf": {
-            "infer_ms": panel._perf_infer_ms,
-            "total_ms": panel._perf_total_ms,
-        },
-        "frame_info": {
-            "w": int(result.get("frame_w", 0) or 0),
-            "h": int(result.get("frame_h", 0) or 0),
-            "ts": panel._last_infer_frame_ts or result.get("frame_ts"),
-        },
-        "artifacts": {
-            "image_path": panel._last_infer_image_path or None,
-            "grasp_path": panel._last_infer_output_path or None,
-            "overlay_path": panel._last_infer_overlay_path or None,
-        },
-    }
-    panel._audit_write_json("artifacts/grasp_last.json", audit_payload)
-    panel._audit_append(
-        "logs/infer.log",
-        f"[TFM] infer_end session={panel._infer_session_id} status=OK "
-        f"infer_ms={panel._perf_infer_ms:.2f} total_ms={panel._perf_total_ms:.2f} "
-        f"visual_topic={panel._grasp_rect_topic} executable_topic={MOVEIT_POSE_TOPIC} "
-        f"frame_ts={panel._last_infer_frame_ts:.6f} "
-        f"grasp_rect_publish_ok={str(bool(grasp_rect_publish_ok)).lower()} "
-        f"overlay_refresh_ok={str(bool(overlay_refresh_ok)).lower()} "
-        f"overlay={panel._last_infer_overlay_path or 'none'} "
-        f"grasp={panel._last_grasp_px} cornell={panel._last_cornell} "
-        f"cornell_reason={panel._last_cornell_reason!r}",
+    alignment_2d = _handle_infer_compute_alignment_2d(panel)
+    _handle_infer_write_audit(
+        panel,
+        result=result,
+        infer_selection_policy=infer_selection_policy,
+        infer_postprocess_policy=infer_postprocess_policy,
+        infer_ckpt_path=infer_ckpt_path,
+        infer_experiment=infer_experiment,
+        infer_seed=infer_seed,
+        infer_model_info=infer_model_info,
+        grasp_rect_publish_ok=grasp_rect_publish_ok,
+        overlay_refresh_ok=overlay_refresh_ok,
+        alignment_2d=alignment_2d,
     )
     complete_pending_tfm_infer_request(panel, True, infer_message)
     if hasattr(panel, "btn_tfm_grasp_object"):
