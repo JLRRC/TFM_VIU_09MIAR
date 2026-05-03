@@ -20,9 +20,17 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool, Empty
+from std_msgs.msg import Bool, Empty, Float64MultiArray
 from tf2_msgs.msg import TFMessage
 from tf2_ros import Buffer, TransformListener
+
+# F5-step6b: services /gripper/open|close + /orchestrator/attach|detach
+from ur5_panel_interfaces.srv import (
+    Attach as AttachSrv,
+    Close as CloseSrv,
+    Detach as DetachSrv,
+    Open as OpenSrv,
+)
 
 try:
     from ros_gz_interfaces.msg import Entity as GzEntity
@@ -227,6 +235,18 @@ class GripperAttachBackend(
         self.declare_parameter("demo_transport_respawn_sleep_sec", 0.08)
         self.declare_parameter("demo_transport_world_z_compensation_m", 0.065)
         self.declare_parameter("world_sdf", "")
+        # F5-step6b (2026-05-03): parámetros para los 4 services nuevos
+        # /gripper/open|close + /orchestrator/attach|detach. Defaults
+        # alineados con panel_settings (PANEL_GRIPPER_OPEN_RAD=0.0425,
+        # PANEL_GRIPPER_CLOSED_RAD=0.0, PANEL_GRIPPER_JOINT2_SIGN=1.0).
+        self.declare_parameter("gripper_cmd_topic", "/gripper_controller/commands")
+        self.declare_parameter("gripper_open_rad", 0.0425)
+        self.declare_parameter("gripper_closed_rad", 0.0)
+        self.declare_parameter("gripper_joint2_sign", 1.0)
+        self.declare_parameter("orchestrator_attach_service", "/orchestrator/attach")
+        self.declare_parameter("orchestrator_detach_service", "/orchestrator/detach")
+        self.declare_parameter("gripper_open_service", "/gripper/open")
+        self.declare_parameter("gripper_close_service", "/gripper/close")
 
         self._gripper_prefix = str(
             self.get_parameter("gripper_prefix").value or "/gripper"
@@ -356,6 +376,27 @@ class GripperAttachBackend(
         self._tool_detach_pubs: Dict[str, object] = {}
         self._tool_attach_pubs: Dict[str, object] = {}
         self._drop_anchor_states: Dict[str, bool] = {}
+        # F5-step6b: publisher al gripper_controller para los services
+        # /gripper/open|close. Creado lazy en on_activate.
+        self._gripper_cmd_topic = str(
+            self.get_parameter("gripper_cmd_topic").value
+            or "/gripper_controller/commands"
+        ).strip()
+        self._gripper_open_rad = float(
+            self.get_parameter("gripper_open_rad").value
+        )
+        self._gripper_closed_rad = float(
+            self.get_parameter("gripper_closed_rad").value
+        )
+        self._gripper_joint2_sign = float(
+            self.get_parameter("gripper_joint2_sign").value
+        )
+        self._gripper_cmd_pub = None
+        # F5-step6b: handles a los 4 services creados en on_activate.
+        self._attach_srv = None
+        self._detach_srv = None
+        self._open_srv = None
+        self._close_srv = None
 
         self._subs = []
         for name in self._object_names:
@@ -957,19 +998,208 @@ class GripperAttachBackend(
     # Lifecycle transitions (F13 — observable, sin re-creación de recursos)
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # F5-step6b: services /gripper/open|close + /orchestrator/attach|detach
+    # ------------------------------------------------------------------
+
+    def _command_gripper_position(self, target_rad: float, *, label: str) -> tuple[bool, str]:
+        """Publica comando al gripper_controller (Float64MultiArray con 2 joints).
+
+        Devuelve (success, detail). Lazy-init del publisher si no existe.
+        """
+        if self._gripper_cmd_pub is None:
+            try:
+                self._gripper_cmd_pub = self.create_publisher(
+                    Float64MultiArray, self._gripper_cmd_topic, 10,
+                )
+            except Exception as exc:
+                msg = f"create_publisher_failed:{type(exc).__name__}:{exc}"
+                self.get_logger().error(
+                    f"[GRIPPER_SVC] {label} {msg} topic={self._gripper_cmd_topic}"
+                )
+                return False, msg
+        msg = Float64MultiArray()
+        msg.data = [float(target_rad), float(target_rad) * self._gripper_joint2_sign]
+        try:
+            self._gripper_cmd_pub.publish(msg)
+        except Exception as exc:
+            err = f"publish_failed:{type(exc).__name__}:{exc}"
+            self.get_logger().error(
+                f"[GRIPPER_SVC] {label} {err} topic={self._gripper_cmd_topic}"
+            )
+            return False, err
+        detail = (
+            f"target_rad={target_rad:.4f} joint2_sign={self._gripper_joint2_sign:.2f} "
+            f"topic={self._gripper_cmd_topic}"
+        )
+        self.get_logger().info(f"[GRIPPER_SVC] {label} ok {detail}")
+        return True, detail
+
+    def _on_open_service(self, _request, response):
+        """Handler /gripper/open (Open.srv): publica gripper_open_rad."""
+        ok, detail = self._command_gripper_position(
+            self._gripper_open_rad, label="OPEN",
+        )
+        response.success = ok
+        response.message = detail
+        return response
+
+    def _on_close_service(self, _request, response):
+        """Handler /gripper/close (Close.srv): publica gripper_closed_rad."""
+        ok, detail = self._command_gripper_position(
+            self._gripper_closed_rad, label="CLOSE",
+        )
+        response.success = ok
+        response.message = detail
+        return response
+
+    def _on_attach_service(self, request, response):
+        """Handler /orchestrator/attach (Attach.srv): delega en _on_gripper_attach.
+
+        El response.method y response.tcp_obj_dist_m los proveemos best-effort
+        (la lógica interna actual no devuelve esos valores explícitamente;
+        usamos heurísticas seguras).
+        """
+        name = str(request.object_name or "").strip()
+        if not name:
+            response.success = False
+            response.message = "object_name_empty"
+            response.method = ""
+            response.tcp_obj_dist_m = 0.0
+            return response
+        # Calcular distancia TCP-objeto antes para reportarla.
+        tcp_obj_dist = 0.0
+        try:
+            obj_pose = self._lookup_pose(name)
+            tcp_pose = self._lookup_tcp_pose()
+            if obj_pose is not None and tcp_pose is not None:
+                tcp_obj_dist = math.sqrt(
+                    (obj_pose.x - tcp_pose.x) ** 2
+                    + (obj_pose.y - tcp_pose.y) ** 2
+                    + (obj_pose.z - tcp_pose.z) ** 2
+                )
+        except Exception:
+            pass
+        # Determinar método como en _on_gripper_attach.
+        if name in self._demo_transport_objects:
+            method = "demo_transport"
+        elif name in self._prefer_tool_anchor_objects:
+            method = "tool_anchor"
+        else:
+            method = "follow_tcp" if self._attach_mode == "follow_tcp" else "tool_anchor_relay"
+        try:
+            self._on_gripper_attach(
+                Empty(), name=name, src_topic="/orchestrator/attach",
+            )
+            response.success = True
+            response.message = "attach_dispatched"
+            response.method = method
+            response.tcp_obj_dist_m = float(tcp_obj_dist)
+            return response
+        except Exception as exc:
+            response.success = False
+            response.message = f"attach_exception:{type(exc).__name__}:{exc}"
+            response.method = method
+            response.tcp_obj_dist_m = float(tcp_obj_dist)
+            return response
+
+    def _on_detach_service(self, request, response):
+        """Handler /orchestrator/detach (Detach.srv): delega en _on_gripper_detach.
+
+        Si object_name es "" (vacío), libera todos los objetos actualmente
+        adheridos (contrato de Detach.srv).
+        """
+        name = str(request.object_name or "").strip()
+        targets = [name] if name else list(self._attached.keys())
+        detached_count = 0
+        errors = []
+        for target in targets:
+            try:
+                self._on_gripper_detach(
+                    Empty(), name=target, src_topic="/orchestrator/detach",
+                )
+                detached_count += 1
+            except Exception as exc:
+                errors.append(f"{target}:{type(exc).__name__}:{exc}")
+        response.detached_count = int(detached_count)
+        if errors:
+            response.success = False
+            response.message = "detach_errors:" + ",".join(errors)
+        else:
+            response.success = True
+            response.message = (
+                f"detached_all (count={detached_count})" if not name
+                else f"detached={name}"
+            )
+        return response
+
+    # ------------------------------------------------------------------
+    # Lifecycle callbacks
+    # ------------------------------------------------------------------
+
     def on_configure(self, _state) -> TransitionCallbackReturn:
         self.get_logger().info("[LIFECYCLE] GripperAttachBackend configured")
         return TransitionCallbackReturn.SUCCESS
 
     def on_activate(self, _state) -> TransitionCallbackReturn:
-        self.get_logger().info("[LIFECYCLE] GripperAttachBackend activated")
+        # F5-step6b: crear los 4 services en activate.
+        attach_name = str(self.get_parameter("orchestrator_attach_service").value)
+        detach_name = str(self.get_parameter("orchestrator_detach_service").value)
+        open_name = str(self.get_parameter("gripper_open_service").value)
+        close_name = str(self.get_parameter("gripper_close_service").value)
+        try:
+            self._attach_srv = self.create_service(
+                AttachSrv, attach_name, self._on_attach_service,
+            )
+            self._detach_srv = self.create_service(
+                DetachSrv, detach_name, self._on_detach_service,
+            )
+            self._open_srv = self.create_service(
+                OpenSrv, open_name, self._on_open_service,
+            )
+            self._close_srv = self.create_service(
+                CloseSrv, close_name, self._on_close_service,
+            )
+            self.get_logger().info(
+                "[LIFECYCLE] GripperAttachBackend activated — services up: "
+                f"{attach_name} | {detach_name} | {open_name} | {close_name}"
+            )
+        except Exception as exc:
+            self.get_logger().error(
+                f"[LIFECYCLE] failed to create orchestrator/gripper services: {exc}"
+            )
+            return TransitionCallbackReturn.FAILURE
         return TransitionCallbackReturn.SUCCESS
 
     def on_deactivate(self, _state) -> TransitionCallbackReturn:
+        # F5-step6b: destruir los 4 services + el publisher cmd.
+        for attr in ("_attach_srv", "_detach_srv", "_open_srv", "_close_srv"):
+            srv = getattr(self, attr, None)
+            if srv is not None:
+                try:
+                    self.destroy_service(srv)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
         self.get_logger().info("[LIFECYCLE] GripperAttachBackend deactivated")
         return TransitionCallbackReturn.SUCCESS
 
     def on_cleanup(self, _state) -> TransitionCallbackReturn:
+        # Cleanup también destruye los services + el publisher cmd.
+        for attr in ("_attach_srv", "_detach_srv", "_open_srv", "_close_srv"):
+            srv = getattr(self, attr, None)
+            if srv is not None:
+                try:
+                    self.destroy_service(srv)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        if self._gripper_cmd_pub is not None:
+            try:
+                self.destroy_publisher(self._gripper_cmd_pub)
+            except Exception:
+                pass
+            self._gripper_cmd_pub = None
         self.get_logger().info("[LIFECYCLE] GripperAttachBackend cleaned up")
         return TransitionCallbackReturn.SUCCESS
 
