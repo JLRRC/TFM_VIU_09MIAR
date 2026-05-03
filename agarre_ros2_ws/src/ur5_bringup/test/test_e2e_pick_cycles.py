@@ -68,8 +68,9 @@ FAIL_PATTERN = re.compile(
     r"carry_coherence_failed"
     r"|\[PICK_OBJ\]\[ABORT\]"
     r"|\[PICK\]\[DIRECT\]\[ABORT\]"
-    r"|Error en pick objeto"
+    r"|Error en pick (?:objeto|demo)"
     r"|\[PICK_OBJ\]\[FAIL_CLASS\]"
+    r"|APPROACH_COARSE_NOT_READY"
 )
 MOVEIT_READY_PATTERN = re.compile(r"\[PICK\]\[MOVEIT\]\[INIT\].*moveit_state=READY")
 ERROR_FATAL_PATTERN = re.compile(r"ERROR_FATAL")
