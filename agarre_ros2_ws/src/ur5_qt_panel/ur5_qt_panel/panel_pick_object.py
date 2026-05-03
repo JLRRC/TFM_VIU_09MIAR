@@ -89,6 +89,18 @@ from .pick_object.wait_helpers import (
     compute_wait_chunk_sec as _compute_wait_chunk_sec,
     format_wait_state_log as _fmt_wait_state_log,
 )
+from .pick_object.wait_moveit_result import (
+    WaitMoveItResultContext,
+    wait_moveit_result as _wait_moveit_result_pure,
+)
+from .pick_object.tf_distance_check import (
+    TfDistanceCheckContext,
+    tf_distance_check as _tf_distance_check_pure,
+)
+from .pick_object.ensure_gripper_open import (
+    EnsureGripperOpenContext,
+    ensure_gripper_open_for_moveit as _ensure_gripper_open_for_moveit_pure,
+)
 
 
 _PICK_OBJECT_GRIPPER_GEOMETRY = load_gripper_geometry()
@@ -1531,380 +1543,33 @@ def run_pick_object(panel) -> None:
                     )
             return bridge_recovered
 
+        # F3-step4a: cuerpo de _wait_moveit_result extraído a
+        # pick_object/wait_moveit_result.py. El wrapper construye
+        # WaitMoveItResultContext y delega. Los 14 callsites legacy NO
+        # cambian (firma idéntica).
         def _wait_moveit_result(label: str, since_wall: float, *, timeout_total: float = 12.0) -> dict:
-            timeout_total = max(0.5, float(timeout_total))
-            started = time.time()
-            deadline = started + timeout_total
-            raw = ""
-            ok = False
-            last_diag = 0.0
-            cursor_wall = since_wall
-            cursor_seq = int(getattr(_wait_moveit_result, "_since_seq", -1) or -1)
-            lost_pub_since = None
-            wait_extended = False
-            last_seen_request_id = -1
-            last_seen_request_uuid = ""
-            try:
-                _grace_raw = _get_pick_object_params().moveit_active_request_grace_sec
-            except Exception:
-                _grace_raw = None
-            active_request_grace_sec = _clamp_grace_window(_grace_raw, floor=10.0, default=90.0)
-            try:
-                _hb_raw = _get_pick_object_params().moveit_active_request_hb_sec
-            except Exception:
-                _hb_raw = None
-            hb_recent_window_sec = _clamp_grace_window(_hb_raw, floor=1.2, default=2.5)
-            # Contract matching: accept ONLY the expected request_id for this publish.
-            expected_request_id = int(getattr(_wait_moveit_result, "_expected_request_id", -1) or -1)
-            expected_stamp_ns = int(getattr(_wait_moveit_result, "_expected_stamp_ns", 0) or 0)
-            expected_request_uuid = str(getattr(_wait_moveit_result, "_expected_request_uuid", "") or "")
-            panel_request_id = int(getattr(_wait_moveit_result, "_panel_request_id", -1) or -1)
-            panel._emit_log(
-                _fmt_wait_state_log(
-                    state="enter",
-                    label=label,
-                    elapsed_sec=0.0,
-                    expected_id=expected_request_id,
-                    expected_uuid=expected_request_uuid,
-                    last_seen_id=last_seen_request_id,
-                    last_seen_uuid=last_seen_request_uuid,
-                )
+            _wmr_ctx = WaitMoveItResultContext(
+                panel=panel,
+                moveit_result_topic=moveit_result_topic,
             )
-            while time.time() < deadline:
-                wait_chunk = _compute_wait_chunk_sec(deadline, time.time())
-                ok, raw, _wall, _seq = panel.ros_worker.wait_for_moveit_result(
-                    since_wall=cursor_wall,
-                    since_seq=cursor_seq,
-                    timeout_sec=wait_chunk,
-                )
-                if ok:
-                    try:
-                        data = json.loads(raw)
-                    except Exception:
-                        cursor_wall = max(cursor_wall, _wall)
-                        cursor_seq = max(cursor_seq, int(_seq))
-                        continue
-                    req_id = int(data.get("request_id", -1) or -1)
-                    got_stamp_ns = int(data.get("target_stamp_ns", 0) or 0)
-                    got_uuid = str(data.get("request_uuid", "") or "")
-                    last_seen_request_id = req_id
-                    last_seen_request_uuid = got_uuid
-                    rcv_wall_us = int(time.time() * 1_000_000)
-                    pub_wall_us = int(getattr(_wait_moveit_result, "_pub_wall_us", 0) or 0)
-                    wall_us_delta = max(0, rcv_wall_us - pub_wall_us)
-                    panel._emit_log(
-                        f"[PICK_OBJ][RESULT_DIAGNOSTIC] label={label} got_request_id={req_id} "
-                        f"expected_request_id={expected_request_id} rcv_wall_us={rcv_wall_us} "
-                        f"pub_wall_us={pub_wall_us} delta_us={wall_us_delta} "
-                        f"got_uuid={got_uuid or 'n/a'} expected_uuid={expected_request_uuid or 'n/a'}"
-                    )
-                    panel._emit_log(
-                        f"[PANEL][RESULT_RX] label={label} got_request_id={req_id} "
-                        f"expected_request_id={expected_request_id} got_stamp={got_stamp_ns} "
-                        f"expected_stamp={expected_stamp_ns} got_uuid={got_uuid or 'n/a'} "
-                        f"expected_uuid={expected_request_uuid or 'n/a'}"
-                    )
-                    if expected_request_id >= 0 and req_id != expected_request_id:
-                        panel._emit_log(
-                            f"[PICK_OBJ][RX_RESULT] ts={time.time():.6f} req_id={req_id} "
-                            f"req_uuid={got_uuid or 'n/a'} success={str(bool(data.get('success', False))).lower()} "
-                            "match=false accepted=false reason=request_id_mismatch"
-                        )
-                        panel._emit_log(
-                            f"[PICK_OBJ][WAIT_RESULT] state=mismatch_id label={label} elapsed={time.time() - started:.1f}s "
-                            f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
-                            f"last_seen_id={req_id} last_seen_uuid={got_uuid or 'n/a'}"
-                        )
-                        panel._emit_log(
-                            f"[PICK_OBJ][MOVEIT][RESULT] {label} ignore_unmatched request_id={req_id} "
-                            f"expected_request_id={expected_request_id} target_stamp_ns={got_stamp_ns}"
-                        )
-                        cursor_wall = max(cursor_wall, _wall)
-                        cursor_seq = max(cursor_seq, int(_seq))
-                        continue
-                    if expected_request_uuid and got_uuid != expected_request_uuid:
-                        panel._emit_log(
-                            f"[PICK_OBJ][RX_RESULT] ts={time.time():.6f} req_id={req_id} "
-                            f"req_uuid={got_uuid or 'n/a'} success={str(bool(data.get('success', False))).lower()} "
-                            "match=false accepted=false reason=request_uuid_mismatch"
-                        )
-                        panel._emit_log(
-                            f"[PICK_OBJ][WAIT_RESULT] state=mismatch_uuid label={label} elapsed={time.time() - started:.1f}s "
-                            f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
-                            f"last_seen_id={req_id} last_seen_uuid={got_uuid or 'n/a'}"
-                        )
-                        panel._emit_log(
-                            f"[PICK_OBJ][RESULT_STALE] {label} ignore_unmatched_uuid got_uuid={got_uuid or 'n/a'} "
-                            f"expected_uuid={expected_request_uuid} request_id={req_id}"
-                        )
-                        cursor_wall = max(cursor_wall, _wall)
-                        cursor_seq = max(cursor_seq, int(_seq))
-                        continue
-                    raw = json.dumps(data, ensure_ascii=True)
-                    panel._emit_log(
-                        f"[PICK_OBJ][RX_RESULT] ts={time.time():.6f} req_id={req_id} "
-                        f"req_uuid={got_uuid or 'n/a'} success={str(bool(data.get('success', False))).lower()} "
-                        "match=true accepted=true reason=matched_expected"
-                    )
-                    break
-                now = time.time()
-                elapsed = now - started
-                result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
-                result_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
-                bridge_alive = bool(panel._proc_alive(getattr(panel, "moveit_bridge_proc", None)))
-                try:
-                    bridge_detected = bool(panel._moveit_bridge_detected())
-                except Exception:
-                    bridge_detected = False
-                hb_age = panel.ros_worker.moveit_bridge_heartbeat_age()
-                hb_recent = panel.ros_worker.has_recent_moveit_bridge_heartbeat(hb_recent_window_sec)
-                bridge_present = bool(bridge_alive or bridge_detected or hb_recent)
-                hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
-                if (now - last_diag) >= 2.0:
-                    panel._emit_log(
-                        f"[PICK_OBJ][MOVEIT][EXEC] {label} still_waiting elapsed={elapsed:.1f}s "
-                        f"timeout={max(0.0, deadline - started):.1f}s result_pubs={result_pubs} result_subs={result_subs} "
-                        f"bridge_alive={str(bridge_alive).lower()} bridge_detected={str(bridge_detected).lower()} "
-                        f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
-                    )
-                    panel._emit_log(
-                        f"[PICK_OBJ][WAIT_RESULT] state=still_waiting label={label} elapsed={elapsed:.1f}s "
-                        f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
-                        f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
-                    )
-                    last_diag = now
-                    if result_pubs <= 0:
-                        if lost_pub_since is None:
-                            lost_pub_since = now
-                        lost_age = now - float(lost_pub_since)
-                        # In stack launches where bridge is external to the panel process,
-                        # rely on node discovery/heartbeat as liveness signal as well.
-                        if (not bridge_present) and lost_age >= 1.5:
-                            raise RuntimeError(
-                                f"lost_result_publisher:{moveit_result_topic}:{label}:"
-                                f"lost_age={lost_age:.1f}s bridge_alive={str(bridge_alive).lower()} "
-                                f"bridge_detected={str(bridge_detected).lower()} "
-                                f"hb_recent={str(bool(hb_recent)).lower()}"
-                            )
-                    else:
-                        lost_pub_since = None
-                if (
-                    not ok
-                    and not wait_extended
-                    and now >= deadline
-                    and result_pubs > 0
-                    and result_subs > 0
-                    and bridge_present
-                ):
-                    old_timeout_total = max(0.0, deadline - started)
-                    deadline = now + active_request_grace_sec
-                    wait_extended = True
-                    panel._emit_log(
-                        f"[PICK_OBJ][MOVEIT][EXEC] {label} extend_wait old_timeout={old_timeout_total:.1f}s "
-                        f"new_timeout={max(0.0, deadline - started):.1f}s "
-                        f"grace={active_request_grace_sec:.1f}s bridge_alive={str(bridge_alive).lower()} "
-                        f"bridge_detected={str(bridge_detected).lower()} "
-                        f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt} "
-                        f"request_id={panel_request_id} expected_request_id={expected_request_id}"
-                    )
-                    continue
-            if not ok:
-                elapsed = time.time() - started
-                result_pubs = panel.ros_worker.topic_publisher_count(moveit_result_topic)
-                result_subs = panel.ros_worker.topic_subscriber_count(moveit_result_topic)
-                bridge_alive = bool(panel._proc_alive(getattr(panel, "moveit_bridge_proc", None)))
-                try:
-                    bridge_detected = bool(panel._moveit_bridge_detected())
-                except Exception:
-                    bridge_detected = False
-                hb_age = panel.ros_worker.moveit_bridge_heartbeat_age()
-                hb_recent = panel.ros_worker.has_recent_moveit_bridge_heartbeat(hb_recent_window_sec)
-                bridge_present = bool(bridge_alive or bridge_detected or hb_recent)
-                hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
-                lost_age_txt = (
-                    "n/a"
-                    if lost_pub_since is None
-                    else f"{max(0.0, time.time() - float(lost_pub_since)):.1f}s"
-                )
-                if result_pubs > 0 and result_subs > 0 and bridge_present:
-                    panel._emit_log(
-                        f"[PICK_OBJ][WAIT_RESULT] state=timeout_active_request label={label} elapsed={elapsed:.1f}s "
-                        f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
-                        f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
-                    )
-                    raise RuntimeError(
-                        f"result_timeout_active_request:{moveit_result_topic}:{label}:"
-                        f"elapsed={elapsed:.1f}s pubs={result_pubs} subs={result_subs} "
-                        f"bridge_alive={str(bridge_alive).lower()} bridge_detected={str(bridge_detected).lower()} "
-                        f"hb_recent={str(bool(hb_recent)).lower()} "
-                        f"hb_age={hb_age_txt} wait_extended={str(bool(wait_extended)).lower()} "
-                        f"since_seq={cursor_seq} panel_request_id={panel_request_id} "
-                        f"expected_request_id={expected_request_id} expected_stamp_ns={expected_stamp_ns} "
-                        f"expected_uuid={expected_request_uuid or 'n/a'}"
-                    )
-                panel._emit_log(
-                    f"[PICK_OBJ][WAIT_RESULT] state=timeout_lost_publisher label={label} elapsed={elapsed:.1f}s "
-                    f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
-                    f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
-                )
-                raise RuntimeError(
-                    f"lost_result_publisher:{moveit_result_topic}:{label}:"
-                    f"elapsed={elapsed:.1f}s pubs={result_pubs} subs={result_subs} "
-                    f"lost_pub_age={lost_age_txt} since_seq={cursor_seq} "
-                    f"panel_request_id={panel_request_id} expected_request_id={expected_request_id} "
-                    f"expected_stamp_ns={expected_stamp_ns} expected_uuid={expected_request_uuid or 'n/a'}"
-                )
-            try:
-                data = json.loads(raw)
-            except Exception as exc:
-                raise RuntimeError(f"resultado MoveIt inválido ({exc})") from exc
-            plan_ok = bool(data.get("plan_ok", False))
-            exec_ok = bool(data.get("exec_ok", False))
-            success = bool(data.get("success", False))
-            message = str(data.get("message") or "")
-            ee_link_moveit = str(data.get("ee_link") or "")
-            req_id = int(data.get("request_id", -1) or -1)
-            stamp_ns = int(data.get("target_stamp_ns", 0) or 0)
-            panel._emit_log(
-                f"[PICK_OBJ][MOVEIT][PLAN] {label} plan_ok={str(plan_ok).lower()} "
-                f"ee_link={ee_link_moveit or 'n/a'} msg={message or 'n/a'}"
+            return _wait_moveit_result_pure(
+                _wmr_ctx, label, since_wall, timeout_total=timeout_total,
             )
-            panel._emit_log(
-                f"[PICK_OBJ][MOVEIT][EXEC] {label} exec_ok={str(exec_ok).lower()} "
-                f"success={str(success).lower()} result_topic={moveit_result_topic}"
-            )
-            panel._emit_log(
-                f"[PICK_OBJ][MOVEIT][RESULT] {label} request_id={req_id} target_stamp_ns={stamp_ns} "
-                f"success={str(success).lower()} plan_ok={str(plan_ok).lower()} "
-                f"exec_ok={str(exec_ok).lower()} msg={message or 'n/a'}"
-            )
-            panel._emit_log(
-                f"[PICK_OBJ][WAIT_RESULT] state=success label={label} elapsed={time.time() - started:.1f}s "
-                f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
-                f"last_seen_id={req_id} last_seen_uuid={got_uuid or 'n/a'}"
-            )
-            return data
 
-        def _tf_distance_check(
-            *,
-            label: str,
-            pose_data: dict,
-            tol_m: float,
-            ee_frame: str,
-        ) -> dict:
-            frame_id = str(pose_data.get("frame", BASE_FRAME or "base_link"))
-            position = pose_data.get("position", (0.0, 0.0, 0.0))
-            target = (float(position[0]), float(position[1]), float(position[2]))
-            timeout_pos_reach = max(
-                2.0, float(getattr(panel, "_pick_tf_reach_timeout_sec", 8.0) or 8.0)
+
+        # F3-step4b: cuerpo de _tf_distance_check extraído a
+        # pick_object/tf_distance_check.py. Wrapper de 11 LOC.
+        def _tf_distance_check(*, label, pose_data, tol_m, ee_frame):
+            _tdc_ctx = TfDistanceCheckContext(
+                panel=panel,
+                base_frame=BASE_FRAME or "base_link",
+                world_frame=WORLD_FRAME or "world",
             )
-            timeout_tf_fresh = 2.0
-            max_tf_age_sec = 0.80
-            deadline = time.time() + timeout_pos_reach
-            fresh_deadline = time.time() + timeout_tf_fresh
-            wait_log_ts = 0.0
-            last_diag: Optional[dict] = None
-            best_dist = float("inf")
-            best_dist_ts = 0.0
-            saw_fresh = False
-            while time.time() <= deadline:
-                tcp, tf_msg = _read_tcp_in_frame(frame_id, ee_frame)
-                if tcp is None:
-                    time.sleep(0.08)
-                    continue
-                dx = target[0] - tcp[0]
-                dy = target[1] - tcp[1]
-                dz = target[2] - tcp[2]
-                dist = (dx * dx + dy * dy + dz * dz) ** 0.5
-                tf_stamp = "n/a"
-                tf_stamp_ns = 0
-                try:
-                    stamp = tf_msg.header.stamp  # type: ignore[attr-defined]
-                    tf_stamp = f"{int(stamp.sec)}.{int(stamp.nanosec):09d}"
-                    tf_stamp_ns = int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
-                except Exception:
-                    tf_stamp = "n/a"
-                ros_now_ns = 0
-                ros_now_txt = "n/a"
-                ros_now_ns = _ros_clock_now_ns()
-                if ros_now_ns > 0:
-                    ros_now_txt = f"{ros_now_ns // 1_000_000_000}.{ros_now_ns % 1_000_000_000:09d}"
-                tf_age_sec = None
-                if ros_now_ns > 0 and tf_stamp_ns > 0:
-                    tf_age_sec = (ros_now_ns - tf_stamp_ns) / 1_000_000_000.0
-                tf_age_txt = "n/a" if tf_age_sec is None else f"{tf_age_sec:.3f}"
-                tf_fresh = tf_age_sec is None or (-0.10 <= float(tf_age_sec) <= max_tf_age_sec)
-                if tf_fresh:
-                    saw_fresh = True
-                if dist < best_dist:
-                    best_dist = dist
-                    best_dist_ts = time.time()
-                # Distancia manda; freshness solo diagnostica para evitar falsos abortos.
-                tf_ok = bool(dist <= tol_m)
-                last_diag = {
-                    "dist": dist,
-                    "best_dist": best_dist,
-                    "best_dist_age_sec": max(0.0, time.time() - best_dist_ts) if best_dist_ts > 0 else None,
-                    "target": target,
-                    "tcp": tcp,
-                    "tol": float(tol_m),
-                    "frame": frame_id,
-                    "ee_frame": ee_frame,
-                    "tf_stamp": tf_stamp,
-                    "tf_stamp_ns": tf_stamp_ns,
-                    "ros_now_ns": ros_now_ns,
-                    "tf_age_sec": tf_age_sec,
-                    "tf_fresh": tf_fresh,
-                    "saw_fresh": saw_fresh,
-                    "ok": tf_ok,
-                }
-                now_txt = ros_now_txt
-                panel._emit_log(
-                    f"[TF_CHECK] label={label} frame={frame_id} ee_link={ee_frame} "
-                    f"dist={dist:.3f} best={best_dist:.3f} tol={tol_m:.3f} "
-                    f"tf_age={tf_age_txt}s ros_now={now_txt} tf_stamp={tf_stamp} "
-                    f"fresh={str(tf_fresh).lower()}"
-                )
-                if tf_ok:
-                    panel._emit_log(
-                        f"[PICK_OBJ][TF][CHECK] {label} target=({target[0]:.3f},{target[1]:.3f},{target[2]:.3f}) "
-                        f"tcp=({tcp[0]:.3f},{tcp[1]:.3f},{tcp[2]:.3f}) dist={dist:.3f} "
-                        f"tol={tol_m:.3f} frame={frame_id} ee={ee_frame} "
-                        f"tf_stamp={tf_stamp} ros_now={ros_now_txt} tf_age={tf_age_txt}s "
-                        f"fresh={str(tf_fresh).lower()} ok=true"
-                    )
-                    return last_diag
-                # If TF is stale, give it a short dedicated grace window before
-                # deciding based on distance timeout.
-                if (not tf_fresh) and (time.time() <= fresh_deadline):
-                    time.sleep(0.08)
-                    continue
-                now = time.time()
-                if (now - wait_log_ts) >= 0.6:
-                    panel._emit_log(
-                        f"[PICK_OBJ][TF][WAIT] {label} dist={dist:.3f} tol={tol_m:.3f} "
-                        f"best={best_dist:.3f} tf_age={tf_age_txt}s fresh={str(tf_fresh).lower()} "
-                        f"frame={frame_id} ee={ee_frame}"
-                    )
-                    wait_log_ts = now
-                time.sleep(0.10)
-            if last_diag is None:
-                raise RuntimeError(f"TF sin datos para {frame_id}->{ee_frame}")
-            last_tcp = last_diag["tcp"]
-            tf_age_sec = last_diag.get("tf_age_sec")
-            tf_age_txt = "n/a" if tf_age_sec is None else f"{float(tf_age_sec):.3f}"
-            fail_reason = "pos_not_reached"
-            last_diag["fail_reason"] = fail_reason
-            panel._emit_log(
-                f"[PICK_OBJ][TF][CHECK] {label} target=({target[0]:.3f},{target[1]:.3f},{target[2]:.3f}) "
-                f"tcp=({last_tcp[0]:.3f},{last_tcp[1]:.3f},{last_tcp[2]:.3f}) dist={float(last_diag['dist']):.3f} "
-                f"best={float(last_diag.get('best_dist', float(last_diag['dist']))):.3f} "
-                f"tol={tol_m:.3f} frame={frame_id} ee={ee_frame} "
-                f"tf_stamp={last_diag.get('tf_stamp', 'n/a')} tf_age={tf_age_txt}s "
-                f"fresh={str(bool(last_diag.get('tf_fresh', False))).lower()} "
-                f"reason={fail_reason} ok=false"
+            return _tf_distance_check_pure(
+                _tdc_ctx, label=label, pose_data=pose_data,
+                tol_m=tol_m, ee_frame=ee_frame,
             )
-            return last_diag
+
 
         try:
             panel._emit_log("[PICK_OBJ] === WORKER INICIADO ===")
@@ -2341,162 +2006,17 @@ def run_pick_object(panel) -> None:
                     f"carry_coherence_failed_{gate_label} dist={last_dist:.3f} best={best_dist:.3f} max={max_dist_m:.3f}"
                 )
 
+            # F3-step4c: cuerpo de _ensure_gripper_open_for_moveit extraído
+            # a pick_object/ensure_gripper_open.py. Wrapper de 11 LOC.
             def _ensure_gripper_open_for_moveit(*, reason: str = "MOVEIT") -> None:
-                try:
-                    min_opening_m = _get_pick_object_params().min_opening_m
-                except Exception:
-                    min_opening_m = 0.020
-                reason_upper = str(reason or "").strip().upper()
-                if reason_upper in ("PRE_GRASP", "GRASP_DOWN"):
-                    try:
-                        min_opening_before_descent_m = _get_pick_object_params().min_opening_before_descent_m
-                    except Exception:
-                        min_opening_before_descent_m = 0.030
-                    min_opening_m = max(min_opening_m, min_opening_before_descent_m)
-                min_opening_m = max(0.0, min_opening_m)
-                try:
-                    open_wait_sec = _get_pick_object_params().open_wait_sec
-                except Exception:
-                    open_wait_sec = 2.2
-                open_wait_sec = max(0.1, open_wait_sec)
-                try:
-                    open_cmd_ack_sec = _get_pick_object_params().open_cmd_ack_sec
-                except Exception:
-                    open_cmd_ack_sec = 3.0
-                open_cmd_ack_sec = max(0.3, open_cmd_ack_sec)
-
-                joint_names = [str(j).strip() for j in (GRIPPER_JOINT_NAMES or []) if str(j).strip()]
-                if not joint_names:
-                    joint_names = ["rg2_finger_joint1", "rg2_finger_joint2"]
-
-                def _direct_open_publish() -> bool:
-                    if Float64MultiArray is None:
-                        panel._emit_log(
-                            f"[PICK_OBJ][GRIPPER] direct_open_publish_unavailable before={reason}"
-                        )
-                        return False
-                    try:
-                        panel._ensure_moveit_node()
-                        pub = panel._get_gripper_publisher(GRIPPER_CMD_TOPIC)
-                        if pub is None:
-                            panel._emit_log(
-                                f"[PICK_OBJ][GRIPPER] direct_open_publish_no_publisher before={reason}"
-                            )
-                            return False
-                        target = float(GRIPPER_OPEN_RAD)
-                        msg = Float64MultiArray()
-                        msg.data = [target, float(target) * float(GRIPPER_JOINT2_SIGN)]
-                        panel._gripper_closed = False
-                        panel._gripper_is_closed = False
-                        pub.publish(msg)
-                        panel._emit_log(
-                            "[PICK_OBJ][GRIPPER] direct_open_publish "
-                            f"before={reason} target={target:.3f} "
-                            f"topic={GRIPPER_CMD_TOPIC} ack_timeout={float(open_cmd_ack_sec):.2f}s"
-                        )
-                        return True
-                    except Exception as exc:
-                        panel._emit_log(
-                            "[PICK_OBJ][GRIPPER] direct_open_publish_fail "
-                            f"before={reason} err={type(exc).__name__}:{exc}"
-                        )
-                        return False
-
-                def _current_opening_m() -> tuple[Optional[float], bool]:
-                    if panel.ros_worker is None:
-                        return None, False
-                    payload, payload_wall = panel.ros_worker.get_last_joint_state()
-                    if not payload:
-                        return None, False
-                    if payload_wall <= 0.0 or (time.time() - float(payload_wall)) > 1.0:
-                        return None, False
-                    try:
-                        names = list(payload.get("name", []))
-                        pos = list(payload.get("position", []))
-                    except Exception:
-                        return None, False
-                    if not names or not pos:
-                        return None, False
-                    pos_map = {str(n): float(p) for n, p in zip(names, pos)}
-                    vals = [abs(float(pos_map[j])) for j in joint_names if j in pos_map]
-                    if len(vals) != len(joint_names):
-                        return None, True
-                    return float(sum(vals)), True
-
-                opening_ok = False
-                saw_joint_state = False
-                last_opening_m: Optional[float] = None
-                for attempt in (1, 2):
-                    state = {"done": False, "ok": False}
-
-                    def _open_cmd() -> None:
-                        state["ok"] = bool(
-                            panel._command_gripper(False, log_action="PICK", force=True)
-                        )
-                        state["done"] = True
-
-                    panel.signal_run_ui.emit(_open_cmd)
-                    deadline = time.time() + open_cmd_ack_sec
-                    while time.time() < deadline:
-                        if state["done"]:
-                            break
-                        time.sleep(0.03)
-                    if not state["done"]:
-                        panel._emit_log(
-                            "[PICK_OBJ][GRIPPER] ui_open_dispatch_timeout "
-                            f"before={reason} ack_timeout={float(open_cmd_ack_sec):.2f}s "
-                            "fallback=direct_publish"
-                        )
-                        state["ok"] = _direct_open_publish()
-                        state["done"] = True
-                    if not state["ok"]:
-                        raise RuntimeError("gripper_open_command_failed_before_moveit")
-                    if bool(getattr(panel, "_gripper_closed", False)):
-                        raise RuntimeError("gripper_state_closed_before_moveit")
-
-                    wait_deadline = time.time() + open_wait_sec
-                    while time.time() < wait_deadline:
-                        opening_m, has_js = _current_opening_m()
-                        saw_joint_state = saw_joint_state or has_js
-                        if opening_m is not None:
-                            last_opening_m = float(opening_m)
-                            if last_opening_m >= min_opening_m:
-                                opening_ok = True
-                                break
-                        time.sleep(0.05)
-                    if opening_ok:
-                        break
-                    if attempt == 1:
-                        panel._emit_log(
-                            f"[PICK_OBJ][GRIPPER] apertura insuficiente antes de {reason}; "
-                            "reintentando abrir"
-                        )
-
-                if saw_joint_state and not opening_ok:
-                    allow_degraded_guard = _get_pick_object_params().allow_degraded_open_guard
-                    if allow_degraded_guard and not bool(getattr(panel, "_gripper_closed", False)):
-                        panel._emit_log(
-                            "[PICK_OBJ][GRIPPER] apertura no confirmada por joint_state; "
-                            f"continuando en modo degradado before={reason} "
-                            f"opening_m={0.0 if last_opening_m is None else float(last_opening_m):.4f} "
-                            f"min_opening_m={float(min_opening_m):.4f}"
-                        )
-                        return
-                    raise RuntimeError(
-                        f"gripper_opening_below_threshold_before_{str(reason).lower()} "
-                        f"opening_m={0.0 if last_opening_m is None else float(last_opening_m):.4f} "
-                        f"min_opening_m={float(min_opening_m):.4f}"
-                    )
-                if saw_joint_state and opening_ok:
-                    panel._emit_log(
-                        f"[PICK_OBJ][GRIPPER] apertura_ok before={reason} "
-                        f"opening_m={float(last_opening_m or 0.0):.4f} "
-                        f"min_opening_m={float(min_opening_m):.4f}"
-                    )
-                panel._emit_log(
-                    f"[PICK_OBJ][GRIPPER] open_guard before={reason} "
-                    f"min_opening_m={float(min_opening_m):.4f} open_wait_sec={float(open_wait_sec):.2f}"
+                _ego_ctx = EnsureGripperOpenContext(
+                    panel=panel,
+                    get_pick_object_params=_get_pick_object_params,
+                    norm_frame=_norm_frame,
+                    log_moveit_panel_trace=_log_moveit_panel_trace,
                 )
+                _ensure_gripper_open_for_moveit_pure(_ego_ctx, reason=reason)
+
 
             def _read_gripper_contact_metrics() -> dict:
                 metrics = {

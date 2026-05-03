@@ -228,8 +228,11 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F5-step5 (2026-05-03): el factory de runtime nodes creció +20 LOC
     # al añadir Node object_pose_resolver y su parámetro de gating.
     "ur5_bringup/launch/runtime_nodes_factory.py::build_runtime_node_actions": 219,
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object": 4518,
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object.worker": 3512,
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object": 4171,   # F3-step4abc: -347 LOC (3 fns extraídas)
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object.worker": 3165,  # F3-step4abc: -347 LOC
+    # F3-step4a/b/c (2026-05-03): 3 funciones grandes de panel_pick_object
+    # extraídas a pick_object/<modulo>.py con dataclass + función pura.
+    "ur5_qt_panel/ur5_qt_panel/pick_object/wait_moveit_result.py::wait_moveit_result": 263,
     # Otros gigantes históricos.
     "ur5_tools/ur5_tools/moveit_bridge/executor.py::ExecutorMixin._execute_joint_trajectory_action": 1343,
     "ur5_qt_panel/ur5_qt_panel/panel_main_ui.py::build_main_ui": 733,
@@ -250,7 +253,8 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_inference.py::handle_infer_result": 283,
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py::RosWorker._thread_main": 279,
     "ur5_qt_panel/ur5_qt_panel/pick_demo/internal_helpers.py::_resolve_live_object_world": 261,
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object.worker._wait_moveit_result": 253,
+    # F3-step4a (2026-05-03): _wait_moveit_result extraído ⇒ wrapper
+    # < 200 LOC. Removido de la baseline.
     "ur5_bringup/launch/ur5_stack.launch.py::_prepare_runtime": 250,
     "ur5_qt_panel/ur5_qt_panel/step_window_refresh.py::_step_window_refresh": 249,
     "ur5_qt_panel/ur5_qt_panel/panel_launchers.py::start_gazebo": 237,
