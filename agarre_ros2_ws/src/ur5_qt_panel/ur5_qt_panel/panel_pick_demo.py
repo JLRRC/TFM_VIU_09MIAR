@@ -187,6 +187,9 @@ from .pick_demo.joint_step import (
     JointStepContext,
     run_joint_step as _run_joint_step_pure,
 )
+from .pick_demo.wait_gripper_target import (
+    wait_for_gripper_target as _wait_for_gripper_target_pure,
+)
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -1583,143 +1586,24 @@ def run_pick_demo(panel) -> None:
                 cmd_fn=None,
                 cmd_retry_sec: float = 0.5,
             ):
-                required_hits = max(
-                    1,
-                    _get_pick_demo_params().gripper_confirm_stable_samples,
+                # F3-step36: cuerpo extraído a pick_demo.wait_gripper_target.
+                # Wrapper resuelve params snapshot + delega callables-as-args.
+                _params = _get_pick_demo_params()
+                return _wait_for_gripper_target_pure(
+                    panel,
+                    closed=closed,
+                    timeout_sec=timeout_sec,
+                    opening_ref_sum=opening_ref_sum,
+                    cmd_fn=cmd_fn,
+                    cmd_retry_sec=cmd_retry_sec,
+                    read_gripper_state=_read_gripper_state,
+                    append_trace=_append_trace,
+                    monitor_alcance=_monitor_alcance,
+                    gripper_confirm_stable_samples=_params.gripper_confirm_stable_samples,
+                    gripper_confirm_max_state_age_sec=_params.gripper_confirm_max_state_age_sec,
+                    close_min_delta_sum=_params.close_min_delta_sum,
+                    close_fallback_opening_sum=_params.close_fallback_opening_sum,
                 )
-                max_state_age_sec = max(
-                    0.05,
-                    _get_pick_demo_params().gripper_confirm_max_state_age_sec,
-                )
-                close_min_delta_sum = max(
-                    0.005,
-                    _get_pick_demo_params().close_min_delta_sum,
-                )
-                close_fallback_opening_sum = max(
-                    0.02,
-                    _get_pick_demo_params().close_fallback_opening_sum,
-                )
-                start = time.monotonic()
-                stable_hits = 0
-                last_state = _read_gripper_state(expected_closed=closed)
-                best_close_delta = float("-inf")
-                last_debug_log_ts = 0.0
-                _append_trace(
-                    "[PICK][DIRECT][GRIPPER] "
-                    f"wait_start target={'closed' if closed else 'open'} "
-                    f"target_mag={last_state.get('target_mag')} timeout={timeout_sec:.2f}s stable_hits={required_hits} "
-                    f"opening_ref_sum={opening_ref_sum}"
-                )
-                _last_cmd_retry_ts = time.monotonic()
-                _cmd_retry_count = 0
-                while (time.monotonic() - start) <= timeout_sec:
-                    if cmd_fn is not None:
-                        _now_retry = time.monotonic()
-                        if (_now_retry - _last_cmd_retry_ts) >= cmd_retry_sec:
-                            _cmd_retry_count += 1
-                            panel.signal_run_ui.emit(cmd_fn)
-                            try:
-                                cmd_fn()
-                            except Exception as _exc_cmdfn:
-                                panel._emit_log(
-                                    "[PICK][DIRECT][GRIPPER][ERR] direct cmd_fn failed: "
-                                    f"{type(_exc_cmdfn).__name__}: {_exc_cmdfn}"
-                                )
-                            _last_cmd_retry_ts = _now_retry
-                            _append_trace(
-                                "[PICK][DIRECT][GRIPPER] "
-                                f"cmd_retry #{_cmd_retry_count} "
-                                f"target={'closed' if closed else 'open'} "
-                                f"elapsed={_now_retry - start:.2f}s"
-                            )
-                    _monitor_alcance(trigger=f"GRIPPER_WAIT_{'CLOSE' if closed else 'OPEN'}")
-                    state = _read_gripper_state(expected_closed=closed)
-                    last_state = state
-                    measured_ok = bool(state.get("measured_target_ok"))
-                    age_ok = (
-                        state.get("joint_state_age_sec") is None
-                        or float(state.get("joint_state_age_sec")) <= max_state_age_sec
-                    )
-                    opening_sum = state.get("opening_sum")
-                    close_delta = None
-                    if (
-                        opening_ref_sum is not None
-                        and opening_sum is not None
-                    ):
-                        close_delta = float(opening_ref_sum) - float(opening_sum)
-                        best_close_delta = max(best_close_delta, float(close_delta))
-                    close_heuristic_ok = False
-                    if closed:
-                        if (
-                            age_ok
-                            and bool(state.get("closed_flag"))
-                            and opening_sum is not None
-                        ):
-                            delta_ok = (
-                                close_delta is not None
-                                and float(close_delta) >= float(close_min_delta_sum)
-                            )
-                            fallback_ok = (
-                                opening_ref_sum is None
-                                and float(opening_sum) <= float(close_fallback_opening_sum)
-                            )
-                            close_heuristic_ok = bool(delta_ok or fallback_ok)
-                    confirm_mode = "none"
-                    confirm_ok = False
-                    if measured_ok and age_ok:
-                        confirm_ok = True
-                        confirm_mode = "measured_target_ok"
-                    elif close_heuristic_ok:
-                        confirm_ok = True
-                        confirm_mode = "closing_delta_ok"
-                    now_ts = time.monotonic()
-                    if now_ts >= (last_debug_log_ts + 0.20):
-                        _append_trace(
-                            "[PICK][DIRECT][GRIPPER] "
-                            f"wait_sample target={'closed' if closed else 'open'} "
-                            f"closed_flag={bool(state.get('closed_flag'))} measured_ok={measured_ok} age_ok={age_ok} "
-                            f"opening_sum={state.get('opening_sum')} max_abs_err={state.get('max_abs_err')} "
-                            f"close_delta={close_delta} min_delta={close_min_delta_sum} mode={confirm_mode}"
-                        )
-                        last_debug_log_ts = now_ts
-                    if confirm_ok:
-                        stable_hits += 1
-                        if stable_hits >= required_hits:
-                            done_state = dict(state)
-                            done_state["confirm_mode"] = confirm_mode
-                            done_state["close_delta_from_ref"] = close_delta
-                            done_state["close_delta_best"] = (
-                                None
-                                if best_close_delta == float("-inf")
-                                else float(best_close_delta)
-                            )
-                            _append_trace(
-                                "[PICK][DIRECT][GRIPPER] "
-                                f"wait_ok target={'closed' if closed else 'open'} "
-                                f"opening_sum={state.get('opening_sum')} max_abs_err={state.get('max_abs_err')} "
-                                f"age={state.get('joint_state_age_sec')} mode={confirm_mode} "
-                                f"close_delta={close_delta}"
-                            )
-                            return True, done_state
-                    else:
-                        stable_hits = 0
-                    time.sleep(0.05)
-                timeout_state = dict(last_state or {})
-                timeout_state["confirm_mode"] = "timeout"
-                timeout_state["close_delta_best"] = (
-                    None if best_close_delta == float("-inf") else float(best_close_delta)
-                )
-                _append_trace(
-                    "[PICK][DIRECT][GRIPPER] "
-                    f"wait_timeout target={'closed' if closed else 'open'} "
-                    f"opening_sum={last_state.get('opening_sum')} max_abs_err={last_state.get('max_abs_err')} "
-                    f"age={last_state.get('joint_state_age_sec')} "
-                    f"closed_flag={bool(last_state.get('closed_flag'))} "
-                    f"measured_ok={bool(last_state.get('measured_target_ok'))} "
-                    f"opening_ref_sum={opening_ref_sum} "
-                    f"close_delta_best={timeout_state.get('close_delta_best')}"
-                )
-                return False, timeout_state
 
             def _read_attach_state():
                 st = get_object_state(target_object_name)
