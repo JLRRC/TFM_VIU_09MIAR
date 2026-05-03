@@ -324,6 +324,94 @@ def _on_remote_pick_object_request(panel, source: str) -> None:
     panel._emit_log(f"[PICK][REMOTE] trigger={src}")
     panel._run_pick_object()
 
+def _remote_select_defer_until_on_table(
+    panel,
+    *,
+    target: str,
+    request_id: str,
+    reason: str,
+    ack: "Callable[[bool, str], None]",
+) -> bool:
+    """F3-step16: difiere la selección remota hasta que el objeto esté sobre la mesa.
+
+    Polling con wait_sec/poll_sec del dataclass remote_select_on_table_*.
+    Ejecuta select_now en el UI thread cuando el objeto aparece en is_on_table
+    o se agota el tiempo. Llama ack(True, "selected") o ack(False,
+    f"selection_rejected:{target}").
+
+    Devuelve True si se programó el wait_async (caller debe return), False si
+    no había request_id/target.
+    """
+    if not request_id or not target:
+        return False
+    wait_sec = max(2.0, _get_panel_ros_params().remote_select_on_table_wait_sec)
+    poll_sec = max(0.1, _get_panel_ros_params().remote_select_on_table_poll_sec)
+    panel._emit_log(
+        "[PICK][REMOTE][ACK] "
+        f"request_id={request_id} deferred=true waiting_select=true "
+        f"reason={reason or 'n/a'} wait_sec={wait_sec:.1f}"
+    )
+
+    def _wait_and_select() -> None:
+        deadline = time.time() + wait_sec
+        last_xyz = None
+        while time.time() < deadline:
+            pose = None
+            if getattr(panel, "_ros_worker_started", False) and getattr(panel, "ros_worker", None) is not None:
+                try:
+                    poses, _ts = panel.ros_worker.pose_snapshot()
+                except Exception:
+                    poses = {}
+                pose = poses.get(target)
+            if pose is None:
+                pose = get_object_position(target)
+            if pose is not None and len(pose) >= 3:
+                try:
+                    xyz = (float(pose[0]), float(pose[1]), float(pose[2]))
+                except Exception:
+                    xyz = None
+                if xyz is not None:
+                    last_xyz = xyz
+                    if is_on_table(xyz):
+                        break
+            time.sleep(poll_sec)
+
+        def _select_now() -> None:
+            xyz = last_xyz
+            if (xyz is None or not is_on_table(xyz)) and target:
+                pose = get_object_position(target)
+                if pose is not None and len(pose) >= 3:
+                    try:
+                        xyz = (float(pose[0]), float(pose[1]), float(pose[2]))
+                    except Exception:
+                        xyz = None
+            if xyz is not None and is_on_table(xyz):
+                x, y, z = xyz
+                bulk_update_object_positions(
+                    {target: (x, y, z)},
+                    source="remote_pose_select_retry",
+                    objects_stable=True,
+                )
+                recalc_object_states("remote_select_pose_retry_sync")
+                px, py = -1, -1
+                w = getattr(panel.camera_view, "_img_width", 0) if hasattr(panel, "camera_view") else 0
+                h = getattr(panel.camera_view, "_img_height", 0) if hasattr(panel, "camera_view") else 0
+                if panel._camera_stream_ok and panel._pose_info_ok and w > 0 and h > 0:
+                    pix = world_xyz_to_pixel(x, y, z, w, h) or table_xy_to_pixel(x, y, w, h)
+                    if pix:
+                        px, py = int(pix[0]), int(pix[1])
+                panel._select_object(target, px, py, x, y, z, source="remote_pose_retry")
+            if getattr(panel, "_selected_object", None) == target:
+                ack(True, "selected")
+            else:
+                ack(False, f"selection_rejected:{target}")
+
+        panel.signal_run_ui.emit(_select_now)
+
+    panel._run_async(_wait_and_select, name="remote_select_wait")
+    return True
+
+
 def _on_remote_object_select_request(panel, name: str, source: str) -> None:
     src = (source or "unknown").strip()
     target = (name or "").strip()
@@ -345,80 +433,13 @@ def _on_remote_object_select_request(panel, name: str, source: str) -> None:
                 pass
 
     def _defer_select_until_on_table(reason: str) -> bool:
-        if not request_id or not target:
-            return False
-        wait_sec = max(
-            2.0,
-            _get_panel_ros_params().remote_select_on_table_wait_sec,
+        return _remote_select_defer_until_on_table(
+            panel,
+            target=target,
+            request_id=request_id,
+            reason=reason,
+            ack=_ack,
         )
-        poll_sec = max(
-            0.1,
-            _get_panel_ros_params().remote_select_on_table_poll_sec,
-        )
-        panel._emit_log(
-            "[PICK][REMOTE][ACK] "
-            f"request_id={request_id} deferred=true waiting_select=true "
-            f"reason={reason or 'n/a'} wait_sec={wait_sec:.1f}"
-        )
-
-        def _wait_and_select() -> None:
-            deadline = time.time() + wait_sec
-            last_xyz = None
-            while time.time() < deadline:
-                pose = None
-                if getattr(panel, "_ros_worker_started", False) and getattr(panel, "ros_worker", None) is not None:
-                    try:
-                        poses, _ts = panel.ros_worker.pose_snapshot()
-                    except Exception:
-                        poses = {}
-                    pose = poses.get(target)
-                if pose is None:
-                    pose = get_object_position(target)
-                if pose is not None and len(pose) >= 3:
-                    try:
-                        xyz = (float(pose[0]), float(pose[1]), float(pose[2]))
-                    except Exception:
-                        xyz = None
-                    if xyz is not None:
-                        last_xyz = xyz
-                        if is_on_table(xyz):
-                            break
-                time.sleep(poll_sec)
-
-            def _select_now() -> None:
-                xyz = last_xyz
-                if (xyz is None or not is_on_table(xyz)) and target:
-                    pose = get_object_position(target)
-                    if pose is not None and len(pose) >= 3:
-                        try:
-                            xyz = (float(pose[0]), float(pose[1]), float(pose[2]))
-                        except Exception:
-                            xyz = None
-                if xyz is not None and is_on_table(xyz):
-                    x, y, z = xyz
-                    bulk_update_object_positions(
-                        {target: (x, y, z)},
-                        source="remote_pose_select_retry",
-                        objects_stable=True,
-                    )
-                    recalc_object_states("remote_select_pose_retry_sync")
-                    px, py = -1, -1
-                    w = getattr(panel.camera_view, "_img_width", 0) if hasattr(panel, "camera_view") else 0
-                    h = getattr(panel.camera_view, "_img_height", 0) if hasattr(panel, "camera_view") else 0
-                    if panel._camera_stream_ok and panel._pose_info_ok and w > 0 and h > 0:
-                        pix = world_xyz_to_pixel(x, y, z, w, h) or table_xy_to_pixel(x, y, w, h)
-                        if pix:
-                            px, py = int(pix[0]), int(pix[1])
-                    panel._select_object(target, px, py, x, y, z, source="remote_pose_retry")
-                if getattr(panel, "_selected_object", None) == target:
-                    _ack(True, "selected")
-                else:
-                    _ack(False, f"selection_rejected:{target}")
-
-            panel.signal_run_ui.emit(_select_now)
-
-        panel._run_async(_wait_and_select, name="remote_select_wait")
-        return True
 
     def _trigger_pick_demo_recover(reason: str) -> None:
         if target != PICK_DEMO_OBJECT_NAME:

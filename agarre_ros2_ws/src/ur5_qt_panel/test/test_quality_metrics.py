@@ -290,7 +290,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     "ur5_qt_panel/ur5_qt_panel/panel_runtime_pose_auditor.py::build_runtime_audit_snapshot": 213,
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py::UR5MoveItBridge._pose_callback": 210,
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py::UR5MoveItBridge._plan_worker": 207,
-    "ur5_qt_panel/ur5_qt_panel/panel_remote_callbacks.py::_on_remote_object_select_request": 206,
+    # F3-step16 (2026-05-03): _on_remote_object_select_request bajó de 206 →
+    # 139 LOC con _remote_select_defer_until_on_table (86 LOC, module-level).
+    # Removido de baseline (T15 cumplido).
 }
 LEGACY_FUNC_GROWTH_MARGIN_LOC = 30
 
