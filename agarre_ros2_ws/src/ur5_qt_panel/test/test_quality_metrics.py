@@ -138,6 +138,11 @@ LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  3823,   # F3-step5bis-c: -84 más (moveit_bridge_path body fuera con callables-as-args)
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py":          2149,
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py":        1838,  # F3-step21a/b: +75 LOC docstrings + helpers
+    # F3-step6a..f (2026-05-03): _execute_joint_trajectory_action 1.343→1.027 LOC
+    # (-316 LOC, -23.5%) extracción de 6 helpers. File creció 1394→1551 por
+    # dataclass _FjtPollingThresholds + 5 metodos helper. Trade-off aceptado:
+    # función monstruo trozeada a costa de +157 LOC totales del archivo.
+    "ur5_tools/ur5_tools/moveit_bridge/executor.py":   1551,
 }
 # Margen de crecimiento permitido para legacy oversize (drift cap).
 LEGACY_FILE_GROWTH_MARGIN_LOC = 50
@@ -688,6 +693,86 @@ def test_env_vars_have_documentation() -> None:
         msg_parts.append(
             "Env vars LEGACY_UNDOC_ENV_VARS ya documentadas (remover de la lista):\n  "
             + "\n  ".join(legacy_now_doc)
+        )
+    assert not msg_parts, "\n\n".join(msg_parts)
+
+
+# ---------------------------------------------------------------------------
+# T19 — Hash compat de interfaces IDL (.srv / .action)
+# ---------------------------------------------------------------------------
+
+
+# Baseline computado con sha256 sobre cada archivo IDL completo.
+# CUALQUIER cambio en una .srv o .action hace fallar este test, forzando
+# al desarrollador a actualizar este diccionario en el mismo commit (lo
+# que documenta el bump y obliga a revisar consumidores). Si se añade
+# una interfaz nueva, también se debe añadir aquí.
+INTERFACE_IDL_SHA256: Dict[str, str] = {
+    "srv/Attach.srv":                 "9af36c77cbb7e7615cb3f629dc51d68812077a483c25428e81f8545bbbf9a5d2",
+    "srv/Close.srv":                  "c6513eddb488591c09025d19676c8eba731a54a20b07450257142d87455e11d1",
+    "srv/ComputeApproachPose.srv":    "ffcd64aa0909f923bb70504c8a463070768694b99e9f115fcede9b0e5f1650ac",
+    "srv/Detach.srv":                 "19234a211e0624103fd2a5b5c715f210ff334327889aad0e69d760e15c3e7f62",
+    "srv/Open.srv":                   "abe79298978b674dc48dbf94169bb3d8dcbf4c7d4c309f326219efc4300a6434",
+    "srv/ResolveObjectPoseWorld.srv": "50fc276c79cc4fa74b1a76428c67e5f0155456d7a57abc5e830addbc4319e888",
+    "srv/SelectObject.srv":           "fec5f91a17660e04d9ea07ac5d392705353243dfe208234d109d63e3799d0186",
+    "srv/SetWidth.srv":               "9243cbd6711949a1feffc036015257e730946b95b649660885a142dfd773f7b4",
+    "srv/WorldToBase.srv":            "d0685c8fe466c1a7abe67f15065f1b6e11279ac9c9a302524e277697ca8769f4",
+    "action/PickPlace.action":        "ddbfe63ccef2357e5a498d23d2d6c207858ecefd357cced9bca8b8fd57edd166",
+    "action/PlanToPose.action":       "db63bbbe4b36c64ad26c061548a9a7349403268526105c2b5ad388b9d704e6d1",
+}
+
+
+def test_interface_idl_hash_compat() -> None:
+    """T19 — Detecta drift no documentado en .srv / .action.
+
+    Cualquier cambio (añadir campo, cambiar tipo, renombrar) altera el
+    sha256. El test fuerza al dev a actualizar INTERFACE_IDL_SHA256 en el
+    mismo PR que toca la interfaz, lo que documenta el bump y previene
+    cambios silenciosos que rompen consumidores en otros paquetes.
+    """
+    import hashlib
+
+    interfaces_root = SRC_ROOT / "ur5_panel_interfaces"
+    assert interfaces_root.is_dir(), f"falta {interfaces_root}"
+
+    actual_hashes: Dict[str, str] = {}
+    for rel in INTERFACE_IDL_SHA256:
+        path = interfaces_root / rel
+        assert path.is_file(), f"falta interfaz documentada: {rel}"
+        actual_hashes[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    on_disk: Set[str] = set()
+    for sub in ("srv", "action"):
+        for p in (interfaces_root / sub).glob(f"*.{sub}"):
+            on_disk.add(f"{sub}/{p.name}")
+    new_undocumented = sorted(on_disk - set(INTERFACE_IDL_SHA256))
+    removed = sorted(set(INTERFACE_IDL_SHA256) - on_disk)
+    drift = {
+        rel: (INTERFACE_IDL_SHA256[rel], actual_hashes[rel])
+        for rel in INTERFACE_IDL_SHA256
+        if INTERFACE_IDL_SHA256[rel] != actual_hashes[rel]
+    }
+
+    msg_parts: List[str] = []
+    if drift:
+        lines = [
+            f"  {rel}\n    expected={exp}\n    actual  ={act}"
+            for rel, (exp, act) in drift.items()
+        ]
+        msg_parts.append(
+            "Interfaces IDL han cambiado SIN actualizar baseline "
+            "(documenta el bump, revisa consumidores; luego actualiza "
+            "INTERFACE_IDL_SHA256 con los nuevos hashes):\n" + "\n".join(lines)
+        )
+    if new_undocumented:
+        msg_parts.append(
+            "Interfaces nuevas SIN entrada en INTERFACE_IDL_SHA256 "
+            "(añádelas con su sha256):\n  " + "\n  ".join(new_undocumented)
+        )
+    if removed:
+        msg_parts.append(
+            "Interfaces en INTERFACE_IDL_SHA256 que ya no existen en disco "
+            "(borra la entrada o restaura el archivo):\n  " + "\n  ".join(removed)
         )
     assert not msg_parts, "\n\n".join(msg_parts)
 

@@ -84,18 +84,8 @@ class _FjtPollingThresholds:
 class ExecutorMixin:
     """FollowJointTrajectory execution loop con retries y validación final."""
 
-    def _compute_fjt_polling_thresholds(
-        self,
-        *,
-        ee_target_tol_m: float | None,
-        phase_label_upper: str,
-        target_pose: Any,
-        cold_start_first_goal: bool,
-        prepared_traj_sec: float,
-        start_joint_vec: Any,
-        retry_on_tolerance_violation: bool,
-        approach_replan_attempt: int,
-    ) -> _FjtPollingThresholds:
+    def _compute_basic_check_thresholds(self) -> tuple[float, float, float, float, float]:
+        """Tolerancias/settle/poll del joint goal y feedback."""
         goal_check_tol_rad = max(
             0.05,
             self._env_float("PANEL_MOVEIT_BRIDGE_GOAL_CHECK_TOL_RAD", 0.12),
@@ -116,10 +106,22 @@ class ExecutorMixin:
             0.20,
             self._env_float("PANEL_MOVEIT_BRIDGE_FEEDBACK_GOAL_SETTLE_SEC", 0.35),
         )
-        _mb_params = _get_moveit_bridge_params()
-        allow_feedback_early_success = _mb_params.allow_feedback_early_success
-        allow_joint_early_success = _mb_params.allow_joint_early_success
-        allow_ee_early_success = _mb_params.allow_ee_early_success
+        return (
+            goal_check_tol_rad,
+            goal_check_settle_sec,
+            goal_check_poll_sec,
+            feedback_goal_check_tol_rad,
+            feedback_goal_check_settle_sec,
+        )
+
+    def _compute_ee_check_thresholds(
+        self,
+        *,
+        ee_target_tol_m: float | None,
+        phase_label_upper: str,
+        goal_check_settle_sec: float,
+    ) -> tuple[float, float]:
+        """Tolerancia EE y settle, con overrides APPROACH/PRE_GRASP."""
         ee_goal_check_tol_m = max(
             0.02,
             float(ee_target_tol_m)
@@ -129,36 +131,21 @@ class ExecutorMixin:
         if phase_label_upper == "APPROACH":
             ee_goal_check_tol_m = max(
                 ee_goal_check_tol_m,
-                self._env_float(
-                    "PANEL_MOVEIT_BRIDGE_APPROACH_EE_TARGET_TOL_M",
-                    0.10,
-                ),
+                self._env_float("PANEL_MOVEIT_BRIDGE_APPROACH_EE_TARGET_TOL_M", 0.10),
             )
         if phase_label_upper == "PRE_GRASP":
             ee_goal_check_tol_m = max(
                 ee_goal_check_tol_m,
-                self._env_float(
-                    "PANEL_MOVEIT_BRIDGE_PREGRASP_EE_TARGET_TOL_M",
-                    0.12,
-                ),
+                self._env_float("PANEL_MOVEIT_BRIDGE_PREGRASP_EE_TARGET_TOL_M", 0.12),
             )
         ee_goal_check_settle_sec = max(
             0.15,
-            self._env_float(
-                "PANEL_MOVEIT_BRIDGE_EE_TARGET_SETTLE_SEC",
-                goal_check_settle_sec,
-            ),
+            self._env_float("PANEL_MOVEIT_BRIDGE_EE_TARGET_SETTLE_SEC", goal_check_settle_sec),
         )
         if phase_label_upper == "APPROACH":
             ee_goal_check_settle_sec = min(
                 float(ee_goal_check_settle_sec),
-                max(
-                    0.15,
-                    self._env_float(
-                        "PANEL_MOVEIT_BRIDGE_APPROACH_EE_TARGET_SETTLE_SEC",
-                        0.25,
-                    ),
-                ),
+                max(0.15, self._env_float("PANEL_MOVEIT_BRIDGE_APPROACH_EE_TARGET_SETTLE_SEC", 0.25)),
             )
             self.get_logger().info(
                 "[BRIDGE_EXEC] approach early-close profile "
@@ -168,19 +155,27 @@ class ExecutorMixin:
         if phase_label_upper == "PRE_GRASP":
             ee_goal_check_settle_sec = min(
                 float(ee_goal_check_settle_sec),
-                max(
-                    0.15,
-                    self._env_float(
-                        "PANEL_MOVEIT_BRIDGE_PREGRASP_EE_TARGET_SETTLE_SEC",
-                        0.20,
-                    ),
-                ),
+                max(0.15, self._env_float("PANEL_MOVEIT_BRIDGE_PREGRASP_EE_TARGET_SETTLE_SEC", 0.20)),
             )
             self.get_logger().info(
                 "[BRIDGE_EXEC] pregrasp early-close profile "
                 f"ee_goal_check_tol_m={float(ee_goal_check_tol_m):.3f} "
                 f"ee_goal_check_settle_sec={float(ee_goal_check_settle_sec):.3f}"
             )
+        return ee_goal_check_tol_m, ee_goal_check_settle_sec
+
+    def _compute_retry_thresholds(
+        self,
+        *,
+        phase_label_upper: str,
+        prepared_traj_sec: float,
+        start_joint_vec: Any,
+        retry_on_tolerance_violation: bool,
+        approach_replan_attempt: int,
+        goal_check_tol_rad: float,
+        ee_goal_check_tol_m: float,
+    ) -> dict[str, Any]:
+        """Bundle de umbrales de retry: micro + APPROACH stall + APPROACH long."""
         micro_goal_profile = phase_label_upper == "GRASP_DOWN_MICRO_4"
         micro_retry_start_sec = max(
             10.0,
@@ -192,35 +187,20 @@ class ExecutorMixin:
                 ),
             ),
         )
-        micro_retry_scale = max(
-            1.2,
-            self._env_float("PANEL_MOVEIT_BRIDGE_MICRO_RETRY_SCALE", 1.6),
-        )
+        micro_retry_scale = max(1.2, self._env_float("PANEL_MOVEIT_BRIDGE_MICRO_RETRY_SCALE", 1.6))
         approach_stall_retry_enabled = (
             phase_label_upper == "APPROACH"
             and retry_on_tolerance_violation
             and bool(start_joint_vec is not None)
         )
         approach_stall_retry_start_sec = max(
-            8.0,
-            self._env_float(
-                "PANEL_MOVEIT_BRIDGE_APPROACH_STALL_RETRY_START_SEC",
-                12.0,
-            ),
+            8.0, self._env_float("PANEL_MOVEIT_BRIDGE_APPROACH_STALL_RETRY_START_SEC", 12.0)
         )
         approach_stall_min_motion_rad = max(
-            0.01,
-            self._env_float(
-                "PANEL_MOVEIT_BRIDGE_APPROACH_STALL_MIN_MOTION_RAD",
-                0.05,
-            ),
+            0.01, self._env_float("PANEL_MOVEIT_BRIDGE_APPROACH_STALL_MIN_MOTION_RAD", 0.05)
         )
         approach_stall_retry_scale = max(
-            1.2,
-            self._env_float(
-                "PANEL_MOVEIT_BRIDGE_APPROACH_STALL_RETRY_SCALE",
-                1.7,
-            ),
+            1.2, self._env_float("PANEL_MOVEIT_BRIDGE_APPROACH_STALL_RETRY_SCALE", 1.7)
         )
         approach_long_retry_enabled = (
             phase_label_upper == "APPROACH"
@@ -228,98 +208,24 @@ class ExecutorMixin:
             and int(approach_replan_attempt) <= 0
         )
         approach_long_retry_start_sec = max(
-            30.0,
-            self._env_float(
-                "PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_START_SEC",
-                55.0,
-            ),
+            30.0, self._env_float("PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_START_SEC", 55.0)
         )
         approach_long_retry_scale = max(
-            1.2,
-            self._env_float(
-                "PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_SCALE",
-                1.6,
-            ),
+            1.2, self._env_float("PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_SCALE", 1.6)
         )
         approach_long_retry_joint_tol_rad = max(
             goal_check_tol_rad,
-            self._env_float(
-                "PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_JOINT_TOL_RAD",
-                0.35,
-            ),
+            self._env_float("PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_JOINT_TOL_RAD", 0.35),
         )
         approach_long_retry_ee_tol_m = max(
             ee_goal_check_tol_m,
-            self._env_float(
-                "PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_EE_TOL_M",
-                0.18,
-            ),
+            self._env_float("PANEL_MOVEIT_BRIDGE_APPROACH_LONG_RETRY_EE_TOL_M", 0.18),
         )
         approach_replan_max_attempts = max(
             1,
-            int(
-                round(
-                    self._env_float(
-                        "PANEL_MOVEIT_BRIDGE_APPROACH_REPLAN_MAX_ATTEMPTS",
-                        2.0,
-                    )
-                )
-            ),
+            int(round(self._env_float("PANEL_MOVEIT_BRIDGE_APPROACH_REPLAN_MAX_ATTEMPTS", 2.0))),
         )
-        goal_check_start_sec = max(
-            4.0,
-            min(
-                25.0,
-                max(
-                    4.0,
-                    float(prepared_traj_sec) * 0.60,
-                ),
-            ),
-        )
-        if target_pose is not None:
-            goal_check_start_sec = min(
-                float(goal_check_start_sec),
-                max(
-                    4.0,
-                    self._env_float(
-                        "PANEL_MOVEIT_BRIDGE_EARLY_TARGET_CHECK_START_SEC",
-                        8.0,
-                    ),
-                ),
-            )
-        if phase_label_upper == "PRE_GRASP":
-            goal_check_start_sec = min(
-                float(goal_check_start_sec),
-                max(
-                    4.0,
-                    self._env_float(
-                        "PANEL_MOVEIT_BRIDGE_PREGRASP_EARLY_TARGET_CHECK_START_SEC",
-                        6.0,
-                    ),
-                ),
-            )
-        if cold_start_first_goal:
-            goal_check_start_sec = min(
-                float(goal_check_start_sec),
-                max(
-                    4.0,
-                    self._env_float(
-                        "PANEL_MOVEIT_BRIDGE_FIRST_GOAL_CHECK_START_SEC",
-                        10.0,
-                    ),
-                ),
-            )
-        return _FjtPollingThresholds(
-            goal_check_tol_rad=goal_check_tol_rad,
-            goal_check_settle_sec=goal_check_settle_sec,
-            goal_check_poll_sec=goal_check_poll_sec,
-            feedback_goal_check_tol_rad=feedback_goal_check_tol_rad,
-            feedback_goal_check_settle_sec=feedback_goal_check_settle_sec,
-            allow_feedback_early_success=allow_feedback_early_success,
-            allow_joint_early_success=allow_joint_early_success,
-            allow_ee_early_success=allow_ee_early_success,
-            ee_goal_check_tol_m=ee_goal_check_tol_m,
-            ee_goal_check_settle_sec=ee_goal_check_settle_sec,
+        return dict(
             micro_goal_profile=micro_goal_profile,
             micro_retry_start_sec=micro_retry_start_sec,
             micro_retry_scale=micro_retry_scale,
@@ -333,7 +239,91 @@ class ExecutorMixin:
             approach_long_retry_joint_tol_rad=approach_long_retry_joint_tol_rad,
             approach_long_retry_ee_tol_m=approach_long_retry_ee_tol_m,
             approach_replan_max_attempts=approach_replan_max_attempts,
+        )
+
+    def _compute_goal_check_start_sec(
+        self,
+        *,
+        prepared_traj_sec: float,
+        target_pose: Any,
+        phase_label_upper: str,
+        cold_start_first_goal: bool,
+    ) -> float:
+        goal_check_start_sec = max(
+            4.0, min(25.0, max(4.0, float(prepared_traj_sec) * 0.60))
+        )
+        if target_pose is not None:
+            goal_check_start_sec = min(
+                float(goal_check_start_sec),
+                max(4.0, self._env_float("PANEL_MOVEIT_BRIDGE_EARLY_TARGET_CHECK_START_SEC", 8.0)),
+            )
+        if phase_label_upper == "PRE_GRASP":
+            goal_check_start_sec = min(
+                float(goal_check_start_sec),
+                max(4.0, self._env_float(
+                    "PANEL_MOVEIT_BRIDGE_PREGRASP_EARLY_TARGET_CHECK_START_SEC", 6.0
+                )),
+            )
+        if cold_start_first_goal:
+            goal_check_start_sec = min(
+                float(goal_check_start_sec),
+                max(4.0, self._env_float("PANEL_MOVEIT_BRIDGE_FIRST_GOAL_CHECK_START_SEC", 10.0)),
+            )
+        return goal_check_start_sec
+
+    def _compute_fjt_polling_thresholds(
+        self,
+        *,
+        ee_target_tol_m: float | None,
+        phase_label_upper: str,
+        target_pose: Any,
+        cold_start_first_goal: bool,
+        prepared_traj_sec: float,
+        start_joint_vec: Any,
+        retry_on_tolerance_violation: bool,
+        approach_replan_attempt: int,
+    ) -> _FjtPollingThresholds:
+        (
+            goal_check_tol_rad,
+            goal_check_settle_sec,
+            goal_check_poll_sec,
+            feedback_goal_check_tol_rad,
+            feedback_goal_check_settle_sec,
+        ) = self._compute_basic_check_thresholds()
+        _mb_params = _get_moveit_bridge_params()
+        ee_goal_check_tol_m, ee_goal_check_settle_sec = self._compute_ee_check_thresholds(
+            ee_target_tol_m=ee_target_tol_m,
+            phase_label_upper=phase_label_upper,
+            goal_check_settle_sec=goal_check_settle_sec,
+        )
+        retry = self._compute_retry_thresholds(
+            phase_label_upper=phase_label_upper,
+            prepared_traj_sec=prepared_traj_sec,
+            start_joint_vec=start_joint_vec,
+            retry_on_tolerance_violation=retry_on_tolerance_violation,
+            approach_replan_attempt=approach_replan_attempt,
+            goal_check_tol_rad=goal_check_tol_rad,
+            ee_goal_check_tol_m=ee_goal_check_tol_m,
+        )
+        goal_check_start_sec = self._compute_goal_check_start_sec(
+            prepared_traj_sec=prepared_traj_sec,
+            target_pose=target_pose,
+            phase_label_upper=phase_label_upper,
+            cold_start_first_goal=cold_start_first_goal,
+        )
+        return _FjtPollingThresholds(
+            goal_check_tol_rad=goal_check_tol_rad,
+            goal_check_settle_sec=goal_check_settle_sec,
+            goal_check_poll_sec=goal_check_poll_sec,
+            feedback_goal_check_tol_rad=feedback_goal_check_tol_rad,
+            feedback_goal_check_settle_sec=feedback_goal_check_settle_sec,
+            allow_feedback_early_success=_mb_params.allow_feedback_early_success,
+            allow_joint_early_success=_mb_params.allow_joint_early_success,
+            allow_ee_early_success=_mb_params.allow_ee_early_success,
+            ee_goal_check_tol_m=ee_goal_check_tol_m,
+            ee_goal_check_settle_sec=ee_goal_check_settle_sec,
             goal_check_start_sec=goal_check_start_sec,
+            **retry,
         )
 
     def _make_fjt_feedback_cb(
