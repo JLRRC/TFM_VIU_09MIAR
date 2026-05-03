@@ -32,6 +32,154 @@ class WaitMoveItResultContext:
     moveit_result_topic: str
 
 
+def _wait_moveit_emit_diag_and_extend(
+    ctx,
+    label: str,
+    *,
+    started: float,
+    deadline: float,
+    cursor_seq: int,
+    expected_request_id: int,
+    expected_request_uuid: str,
+    last_seen_request_id: int,
+    last_seen_request_uuid: str,
+    panel_request_id: int,
+    hb_recent_window_sec: float,
+    active_request_grace_sec: float,
+    lost_pub_since,
+    wait_extended: bool,
+    ok: bool,
+):
+    """F3-step25a: emite diagnostics still_waiting + check lost_publisher +
+    extiende deadline si aplica (~64 LOC). Devuelve (deadline, lost_pub_since,
+    wait_extended) actualizados.
+    """
+    now = time.time()
+    elapsed = now - started
+    result_pubs = ctx.panel.ros_worker.topic_publisher_count(ctx.moveit_result_topic)
+    result_subs = ctx.panel.ros_worker.topic_subscriber_count(ctx.moveit_result_topic)
+    bridge_alive = bool(ctx.panel._proc_alive(getattr(ctx.panel, "moveit_bridge_proc", None)))
+    try:
+        bridge_detected = bool(ctx.panel._moveit_bridge_detected())
+    except Exception:
+        bridge_detected = False
+    hb_age = ctx.panel.ros_worker.moveit_bridge_heartbeat_age()
+    hb_recent = ctx.panel.ros_worker.has_recent_moveit_bridge_heartbeat(hb_recent_window_sec)
+    bridge_present = bool(bridge_alive or bridge_detected or hb_recent)
+    hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
+    ctx.panel._emit_log(
+        f"[PICK_OBJ][MOVEIT][EXEC] {label} still_waiting elapsed={elapsed:.1f}s "
+        f"timeout={max(0.0, deadline - started):.1f}s result_pubs={result_pubs} result_subs={result_subs} "
+        f"bridge_alive={str(bridge_alive).lower()} bridge_detected={str(bridge_detected).lower()} "
+        f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
+    )
+    ctx.panel._emit_log(
+        f"[PICK_OBJ][WAIT_RESULT] state=still_waiting label={label} elapsed={elapsed:.1f}s "
+        f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
+        f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
+    )
+    if result_pubs <= 0:
+        if lost_pub_since is None:
+            lost_pub_since = now
+        lost_age = now - float(lost_pub_since)
+        if (not bridge_present) and lost_age >= 1.5:
+            raise RuntimeError(
+                f"lost_result_publisher:{ctx.moveit_result_topic}:{label}:"
+                f"lost_age={lost_age:.1f}s bridge_alive={str(bridge_alive).lower()} "
+                f"bridge_detected={str(bridge_detected).lower()} "
+                f"hb_recent={str(bool(hb_recent)).lower()}"
+            )
+    else:
+        lost_pub_since = None
+    if (
+        not ok
+        and not wait_extended
+        and now >= deadline
+        and result_pubs > 0
+        and result_subs > 0
+        and bridge_present
+    ):
+        old_timeout_total = max(0.0, deadline - started)
+        deadline = now + active_request_grace_sec
+        wait_extended = True
+        ctx.panel._emit_log(
+            f"[PICK_OBJ][MOVEIT][EXEC] {label} extend_wait old_timeout={old_timeout_total:.1f}s "
+            f"new_timeout={max(0.0, deadline - started):.1f}s "
+            f"grace={active_request_grace_sec:.1f}s bridge_alive={str(bridge_alive).lower()} "
+            f"bridge_detected={str(bridge_detected).lower()} "
+            f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt} "
+            f"request_id={panel_request_id} expected_request_id={expected_request_id}"
+        )
+    return deadline, lost_pub_since, wait_extended
+
+
+def _wait_moveit_raise_timeout(
+    ctx,
+    label: str,
+    *,
+    started: float,
+    cursor_seq: int,
+    expected_request_id: int,
+    expected_stamp_ns: int,
+    expected_request_uuid: str,
+    last_seen_request_id: int,
+    last_seen_request_uuid: str,
+    panel_request_id: int,
+    hb_recent_window_sec: float,
+    lost_pub_since,
+    wait_extended: bool,
+) -> None:
+    """F3-step25b: emite log final + raise RuntimeError con diagnóstico
+    completo de timeout (active_request o lost_publisher) (~46 LOC).
+    Nunca retorna; siempre raise.
+    """
+    elapsed = time.time() - started
+    result_pubs = ctx.panel.ros_worker.topic_publisher_count(ctx.moveit_result_topic)
+    result_subs = ctx.panel.ros_worker.topic_subscriber_count(ctx.moveit_result_topic)
+    bridge_alive = bool(ctx.panel._proc_alive(getattr(ctx.panel, "moveit_bridge_proc", None)))
+    try:
+        bridge_detected = bool(ctx.panel._moveit_bridge_detected())
+    except Exception:
+        bridge_detected = False
+    hb_age = ctx.panel.ros_worker.moveit_bridge_heartbeat_age()
+    hb_recent = ctx.panel.ros_worker.has_recent_moveit_bridge_heartbeat(hb_recent_window_sec)
+    bridge_present = bool(bridge_alive or bridge_detected or hb_recent)
+    hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
+    lost_age_txt = (
+        "n/a"
+        if lost_pub_since is None
+        else f"{max(0.0, time.time() - float(lost_pub_since)):.1f}s"
+    )
+    if result_pubs > 0 and result_subs > 0 and bridge_present:
+        ctx.panel._emit_log(
+            f"[PICK_OBJ][WAIT_RESULT] state=timeout_active_request label={label} elapsed={elapsed:.1f}s "
+            f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
+            f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
+        )
+        raise RuntimeError(
+            f"result_timeout_active_request:{ctx.moveit_result_topic}:{label}:"
+            f"elapsed={elapsed:.1f}s pubs={result_pubs} subs={result_subs} "
+            f"bridge_alive={str(bridge_alive).lower()} bridge_detected={str(bridge_detected).lower()} "
+            f"hb_recent={str(bool(hb_recent)).lower()} "
+            f"hb_age={hb_age_txt} wait_extended={str(bool(wait_extended)).lower()} "
+            f"since_seq={cursor_seq} panel_request_id={panel_request_id} "
+            f"expected_request_id={expected_request_id} expected_stamp_ns={expected_stamp_ns} "
+            f"expected_uuid={expected_request_uuid or 'n/a'}"
+        )
+    ctx.panel._emit_log(
+        f"[PICK_OBJ][WAIT_RESULT] state=timeout_lost_publisher label={label} elapsed={elapsed:.1f}s "
+        f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
+        f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
+    )
+    raise RuntimeError(
+        f"lost_result_publisher:{ctx.moveit_result_topic}:{label}:"
+        f"elapsed={elapsed:.1f}s pubs={result_pubs} subs={result_subs} "
+        f"lost_pub_age={lost_age_txt} since_seq={cursor_seq} "
+        f"panel_request_id={panel_request_id} expected_request_id={expected_request_id} "
+        f"expected_stamp_ns={expected_stamp_ns} expected_uuid={expected_request_uuid or 'n/a'}"
+    )
+
+
 def wait_moveit_result(
     ctx: WaitMoveItResultContext,
     label: str,
@@ -159,111 +307,41 @@ def wait_moveit_result(
             )
             break
         now = time.time()
-        elapsed = now - started
-        result_pubs = ctx.panel.ros_worker.topic_publisher_count(ctx.moveit_result_topic)
-        result_subs = ctx.panel.ros_worker.topic_subscriber_count(ctx.moveit_result_topic)
-        bridge_alive = bool(ctx.panel._proc_alive(getattr(ctx.panel, "moveit_bridge_proc", None)))
-        try:
-            bridge_detected = bool(ctx.panel._moveit_bridge_detected())
-        except Exception:
-            bridge_detected = False
-        hb_age = ctx.panel.ros_worker.moveit_bridge_heartbeat_age()
-        hb_recent = ctx.panel.ros_worker.has_recent_moveit_bridge_heartbeat(hb_recent_window_sec)
-        bridge_present = bool(bridge_alive or bridge_detected or hb_recent)
-        hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
         if (now - last_diag) >= 2.0:
-            ctx.panel._emit_log(
-                f"[PICK_OBJ][MOVEIT][EXEC] {label} still_waiting elapsed={elapsed:.1f}s "
-                f"timeout={max(0.0, deadline - started):.1f}s result_pubs={result_pubs} result_subs={result_subs} "
-                f"bridge_alive={str(bridge_alive).lower()} bridge_detected={str(bridge_detected).lower()} "
-                f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt}"
-            )
-            ctx.panel._emit_log(
-                f"[PICK_OBJ][WAIT_RESULT] state=still_waiting label={label} elapsed={elapsed:.1f}s "
-                f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
-                f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
+            deadline, lost_pub_since, wait_extended = _wait_moveit_emit_diag_and_extend(
+                ctx,
+                label,
+                started=started,
+                deadline=deadline,
+                cursor_seq=cursor_seq,
+                expected_request_id=expected_request_id,
+                expected_request_uuid=expected_request_uuid,
+                last_seen_request_id=last_seen_request_id,
+                last_seen_request_uuid=last_seen_request_uuid,
+                panel_request_id=panel_request_id,
+                hb_recent_window_sec=hb_recent_window_sec,
+                active_request_grace_sec=active_request_grace_sec,
+                lost_pub_since=lost_pub_since,
+                wait_extended=wait_extended,
+                ok=ok,
             )
             last_diag = now
-            if result_pubs <= 0:
-                if lost_pub_since is None:
-                    lost_pub_since = now
-                lost_age = now - float(lost_pub_since)
-                # In stack launches where bridge is external to the ctx.panel process,
-                # rely on node discovery/heartbeat as liveness signal as well.
-                if (not bridge_present) and lost_age >= 1.5:
-                    raise RuntimeError(
-                        f"lost_result_publisher:{ctx.moveit_result_topic}:{label}:"
-                        f"lost_age={lost_age:.1f}s bridge_alive={str(bridge_alive).lower()} "
-                        f"bridge_detected={str(bridge_detected).lower()} "
-                        f"hb_recent={str(bool(hb_recent)).lower()}"
-                    )
-            else:
-                lost_pub_since = None
-        if (
-            not ok
-            and not wait_extended
-            and now >= deadline
-            and result_pubs > 0
-            and result_subs > 0
-            and bridge_present
-        ):
-            old_timeout_total = max(0.0, deadline - started)
-            deadline = now + active_request_grace_sec
-            wait_extended = True
-            ctx.panel._emit_log(
-                f"[PICK_OBJ][MOVEIT][EXEC] {label} extend_wait old_timeout={old_timeout_total:.1f}s "
-                f"new_timeout={max(0.0, deadline - started):.1f}s "
-                f"grace={active_request_grace_sec:.1f}s bridge_alive={str(bridge_alive).lower()} "
-                f"bridge_detected={str(bridge_detected).lower()} "
-                f"hb_recent={str(bool(hb_recent)).lower()} hb_age={hb_age_txt} "
-                f"request_id={panel_request_id} expected_request_id={expected_request_id}"
-            )
             continue
     if not ok:
-        elapsed = time.time() - started
-        result_pubs = ctx.panel.ros_worker.topic_publisher_count(ctx.moveit_result_topic)
-        result_subs = ctx.panel.ros_worker.topic_subscriber_count(ctx.moveit_result_topic)
-        bridge_alive = bool(ctx.panel._proc_alive(getattr(ctx.panel, "moveit_bridge_proc", None)))
-        try:
-            bridge_detected = bool(ctx.panel._moveit_bridge_detected())
-        except Exception:
-            bridge_detected = False
-        hb_age = ctx.panel.ros_worker.moveit_bridge_heartbeat_age()
-        hb_recent = ctx.panel.ros_worker.has_recent_moveit_bridge_heartbeat(hb_recent_window_sec)
-        bridge_present = bool(bridge_alive or bridge_detected or hb_recent)
-        hb_age_txt = "inf" if math.isinf(hb_age) else f"{hb_age:.2f}s"
-        lost_age_txt = (
-            "n/a"
-            if lost_pub_since is None
-            else f"{max(0.0, time.time() - float(lost_pub_since)):.1f}s"
-        )
-        if result_pubs > 0 and result_subs > 0 and bridge_present:
-            ctx.panel._emit_log(
-                f"[PICK_OBJ][WAIT_RESULT] state=timeout_active_request label={label} elapsed={elapsed:.1f}s "
-                f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
-                f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
-            )
-            raise RuntimeError(
-                f"result_timeout_active_request:{ctx.moveit_result_topic}:{label}:"
-                f"elapsed={elapsed:.1f}s pubs={result_pubs} subs={result_subs} "
-                f"bridge_alive={str(bridge_alive).lower()} bridge_detected={str(bridge_detected).lower()} "
-                f"hb_recent={str(bool(hb_recent)).lower()} "
-                f"hb_age={hb_age_txt} wait_extended={str(bool(wait_extended)).lower()} "
-                f"since_seq={cursor_seq} panel_request_id={panel_request_id} "
-                f"expected_request_id={expected_request_id} expected_stamp_ns={expected_stamp_ns} "
-                f"expected_uuid={expected_request_uuid or 'n/a'}"
-            )
-        ctx.panel._emit_log(
-            f"[PICK_OBJ][WAIT_RESULT] state=timeout_lost_publisher label={label} elapsed={elapsed:.1f}s "
-            f"expected_id={expected_request_id} expected_uuid={expected_request_uuid or 'n/a'} "
-            f"last_seen_id={last_seen_request_id} last_seen_uuid={last_seen_request_uuid or 'n/a'}"
-        )
-        raise RuntimeError(
-            f"lost_result_publisher:{ctx.moveit_result_topic}:{label}:"
-            f"elapsed={elapsed:.1f}s pubs={result_pubs} subs={result_subs} "
-            f"lost_pub_age={lost_age_txt} since_seq={cursor_seq} "
-            f"panel_request_id={panel_request_id} expected_request_id={expected_request_id} "
-            f"expected_stamp_ns={expected_stamp_ns} expected_uuid={expected_request_uuid or 'n/a'}"
+        _wait_moveit_raise_timeout(
+            ctx,
+            label,
+            started=started,
+            cursor_seq=cursor_seq,
+            expected_request_id=expected_request_id,
+            expected_stamp_ns=expected_stamp_ns,
+            expected_request_uuid=expected_request_uuid,
+            last_seen_request_id=last_seen_request_id,
+            last_seen_request_uuid=last_seen_request_uuid,
+            panel_request_id=panel_request_id,
+            hb_recent_window_sec=hb_recent_window_sec,
+            lost_pub_since=lost_pub_since,
+            wait_extended=wait_extended,
         )
     try:
         data = json.loads(raw)

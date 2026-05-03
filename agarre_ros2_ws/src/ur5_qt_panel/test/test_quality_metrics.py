@@ -234,7 +234,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object.worker": 2696,  # F3-step5bis-c: -88 más
     # F3-step4a/b/c (2026-05-03): 3 funciones grandes de panel_pick_object
     # extraídas a pick_object/<modulo>.py con dataclass + función pura.
-    "ur5_qt_panel/ur5_qt_panel/pick_object/wait_moveit_result.py::wait_moveit_result": 263,
+    # F3-step25a/b (2026-05-03): wait_moveit_result bajó de 263 → 193 LOC con
+    # 2 sub-helpers (_wait_moveit_emit_diag_and_extend 79 + _wait_moveit_raise_
+    # timeout 65). Removido de baseline (T15 cumplido).
     # Otros gigantes históricos.
     "ur5_tools/ur5_tools/moveit_bridge/executor.py::ExecutorMixin._execute_joint_trajectory_action": 1343,
     # F3-step9 + step9bis/ter/quater/quintus (2026-05-03): build_main_ui bajó
