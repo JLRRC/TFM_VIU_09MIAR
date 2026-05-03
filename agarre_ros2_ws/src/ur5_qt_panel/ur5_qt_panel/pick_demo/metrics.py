@@ -254,3 +254,176 @@ def grasp_down_runtime_metrics(
         "xy_err_object": xy_err_object,
         "z_gap_object": z_gap_object,
     }
+
+
+# ---------------------------------------------------------------------------
+# Pose consistency metrics (F3-step35: extraído del closure run_pick_demo)
+# ---------------------------------------------------------------------------
+
+
+def compute_pose_consistency_metrics(
+    panel,
+    phase_pose_cache: dict,
+    *,
+    phase: Optional[str],
+    tcp_base: Optional[Vec3],
+    panel_fk_base: Optional[Vec3],
+    panel_trace_base: Optional[Vec3],
+    target_base: Optional[Vec3],
+    tuple3,
+    vec_norm,
+    vector_minus,
+    pick_demo_env_float,
+    direct_pregrasp_gate_caps,
+    time_monotonic,
+) -> dict:
+    """Calcula métricas de consistencia de pose para gating runtime.
+
+    Función pura extraída de la closure ``run_pick_demo._pose_consistency_metrics``.
+    Sin acceso a globals: todas las dependencias (helpers + panel/cache)
+    se inyectan como argumentos. Retorna el dict con tolerancias derivadas
+    de env (vía ``pick_demo_env_float``), edades de las tres fuentes
+    (panel_fk / trace / joint_state) y banderas booleanas para el gate.
+
+    El caller resuelve ``tcp_base`` antes de invocar (típicamente con
+    ``_live_tcp_base()`` del scope) para evitar tener que importar el
+    closure aquí.
+    """
+    tcp_base_3 = tuple3(tcp_base)
+    panel_fk_3 = tuple3(panel_fk_base) or tuple3(getattr(panel, "_last_tcp_base", None))
+    panel_trace_3 = tuple3(panel_trace_base) or tuple3(getattr(panel, "_last_trace_tcp_base", None))
+    target_base_3 = tuple3(target_base)
+    pose_caps = direct_pregrasp_gate_caps(phase)
+    now_mono = float(time_monotonic())
+    fk_live_delta = vec_norm(vector_minus(panel_fk_3, tcp_base_3))
+    trace_live_delta = vec_norm(vector_minus(panel_trace_3, tcp_base_3))
+    fk_trace_delta = vec_norm(vector_minus(panel_fk_3, panel_trace_3))
+    target_live_delta = vec_norm(vector_minus(target_base_3, tcp_base_3))
+    source_tol = pick_demo_env_float(
+        "PANEL_PICK_DEMO_POSE_SOURCE_TOL_M",
+        0.006,
+        minimum=0.003,
+        maximum=(pose_caps or {}).get("source_tol_m"),
+    )
+    source_age_tol = pick_demo_env_float(
+        "PANEL_PICK_DEMO_POSE_SOURCE_AGE_TOL_SEC",
+        0.20,
+        minimum=0.05,
+        maximum=(pose_caps or {}).get("source_age_tol_sec"),
+    )
+    source_sync_tol = pick_demo_env_float(
+        "PANEL_PICK_DEMO_POSE_SOURCE_SYNC_TOL_SEC",
+        0.20,
+        minimum=0.02,
+        maximum=(pose_caps or {}).get("source_sync_tol_sec"),
+    )
+    phase_jump_tol = pick_demo_env_float(
+        "PANEL_PICK_DEMO_PHASE_JUMP_TOL_M",
+        0.010,
+        minimum=source_tol,
+        maximum=(pose_caps or {}).get("phase_jump_tol_m"),
+    )
+    panel_fk_age_sec = None
+    if float(getattr(panel, "_last_tcp_fk_ts", 0.0) or 0.0) > 0.0:
+        panel_fk_age_sec = max(
+            0.0,
+            now_mono - float(getattr(panel, "_last_tcp_fk_ts", 0.0) or 0.0),
+        )
+    trace_age_sec = None
+    if float(getattr(panel, "_last_trace_tcp_ts", 0.0) or 0.0) > 0.0:
+        trace_age_sec = max(
+            0.0,
+            now_mono - float(getattr(panel, "_last_trace_tcp_ts", 0.0) or 0.0),
+        )
+    # TF bridge latency: age of the TF message stamp from Gazebo's perspective.
+    tf_stamp_age_sec = None
+    _tf_stamp_ns = int(getattr(panel, "_last_trace_tcp_tf_stamp_ns", 0) or 0)
+    if _tf_stamp_ns > 0 and panel._ros_worker_started and panel.ros_worker is not None:
+        try:
+            _ros_now_ns = int(getattr(panel.ros_worker, "_last_clock_stamp_ns", 0) or 0)
+            if _ros_now_ns > 0:
+                tf_stamp_age_sec = max(0.0, (_ros_now_ns - _tf_stamp_ns) / 1_000_000_000.0)
+        except Exception:
+            pass
+    joint_state_age_sec = None
+    if panel._ros_worker_started and panel.ros_worker is not None:
+        try:
+            _payload, joint_ts = panel.ros_worker.get_last_joint_state()
+        except Exception:
+            joint_ts = 0.0
+        if joint_ts:
+            joint_state_age_sec = max(0.0, now_mono - float(joint_ts))
+    source_sync_delta_sec = None
+    if panel_fk_age_sec is not None and trace_age_sec is not None:
+        source_sync_delta_sec = abs(
+            float(getattr(panel, "_last_trace_tcp_ts", 0.0) or 0.0)
+            - float(getattr(panel, "_last_tcp_fk_ts", 0.0) or 0.0)
+        )
+    phase_end_delta = None
+    phase_end_age_sec = None
+    if phase:
+        cached = (phase_pose_cache.get("phase_end") or {}).get(str(phase))
+        if cached and tcp_base_3 is not None:
+            phase_end_delta = vec_norm(vector_minus(tcp_base_3, cached.get("tcp_base")))
+            phase_end_age_sec = max(
+                0.0,
+                float(time_monotonic()) - float(cached.get("mono") or 0.0),
+            )
+    fk_live_ok = fk_live_delta is None or float(fk_live_delta) <= source_tol
+    trace_live_ok = trace_live_delta is None or float(trace_live_delta) <= source_tol
+    panel_fk_fresh_ok = panel_fk_age_sec is None or float(panel_fk_age_sec) <= source_age_tol
+    trace_fresh_ok = trace_age_sec is None or float(trace_age_sec) <= source_age_tol
+    joint_state_fresh_ok = (
+        joint_state_age_sec is None
+        or float(joint_state_age_sec) <= source_age_tol
+    )
+    source_sync_ok = (
+        source_sync_delta_sec is None
+        or float(source_sync_delta_sec) <= source_sync_tol
+    )
+    sources_fresh_ok = bool(
+        panel_fk_fresh_ok
+        and trace_fresh_ok
+        and joint_state_fresh_ok
+        and source_sync_ok
+    )
+    phase_jump_ok = phase_end_delta is None or float(phase_end_delta) <= phase_jump_tol
+    sources_ok = bool(fk_live_ok and trace_live_ok and sources_fresh_ok)
+    ok_for_gate = bool(sources_ok and phase_jump_ok)
+    return {
+        "phase": str(phase or "none"),
+        "tcp_base": tcp_base_3,
+        "panel_fk_base": panel_fk_3,
+        "panel_trace_base": panel_trace_3,
+        "target_base": target_base_3,
+        "fk_live_delta_m": fk_live_delta,
+        "trace_live_delta_m": trace_live_delta,
+        "fk_trace_delta_m": fk_trace_delta,
+        "target_live_delta_m": target_live_delta,
+        "phase_end_delta_m": phase_end_delta,
+        "phase_end_age_sec": phase_end_age_sec,
+        "source_tol_m": float(source_tol),
+        "source_age_tol_sec": float(source_age_tol),
+        "source_sync_tol_sec": float(source_sync_tol),
+        "phase_jump_tol_m": float(phase_jump_tol),
+        "panel_fk_age_sec": panel_fk_age_sec,
+        "trace_age_sec": trace_age_sec,
+        "tf_stamp_age_sec": tf_stamp_age_sec,
+        "joint_state_age_sec": joint_state_age_sec,
+        "source_sync_delta_sec": source_sync_delta_sec,
+        "fk_live_ok": bool(fk_live_ok),
+        "trace_live_ok": bool(trace_live_ok),
+        "panel_fk_fresh_ok": bool(panel_fk_fresh_ok),
+        "trace_fresh_ok": bool(trace_fresh_ok),
+        "joint_state_fresh_ok": bool(joint_state_fresh_ok),
+        "source_sync_ok": bool(source_sync_ok),
+        "sources_fresh_ok": bool(sources_fresh_ok),
+        "phase_jump_ok": bool(phase_jump_ok),
+        "sources_ok": bool(sources_ok),
+        "ok_for_gate": bool(ok_for_gate),
+        "pose_gate_profile": (
+            "pregrasp_strict"
+            if pose_caps is not None
+            else "runtime_profile"
+        ),
+    }
