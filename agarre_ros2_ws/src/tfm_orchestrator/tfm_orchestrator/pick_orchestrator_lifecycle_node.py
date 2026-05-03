@@ -408,7 +408,31 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
 
             if dst != PickPhase.DONE:
                 timings.mark_start(dst.value, clock_now=time.monotonic(), detail=detail)
-                phase_ok, phase_reason = self._execute_phase(dst, ctx)
+
+                # B-iter7: callback de feedback intermedio. Las fases de
+                # ejecución larga (HOME_INITIAL, MoveIt) lo invocan con
+                # sub_progress (0..1) cada vez que el inner action emite
+                # feedback. Convertimos a progress global interpolado y
+                # publicamos PickPlace.Feedback.
+                from .phase_progress import interpolate_phase_progress
+
+                def _publish_intermediate(sub_0_1: float) -> None:
+                    try:
+                        global_progress = interpolate_phase_progress(
+                            ctx.current_phase, sub_0_1
+                        )
+                        fb = PickPlace.Feedback()
+                        fb.current_phase = str(ctx.current_phase.value)
+                        fb.progress = float(global_progress)
+                        fb.phase_index = int(ctx.index())
+                        fb.detail = f"intermediate:sub={float(sub_0_1):.2f}"
+                        goal_handle.publish_feedback(fb)
+                    except Exception:
+                        pass  # nunca dejar que el feedback rompa la fase
+
+                phase_ok, phase_reason = self._execute_phase(
+                    dst, ctx, intermediate_publisher=_publish_intermediate,
+                )
                 timings.mark_end(
                     dst.value,
                     clock_now=time.monotonic(),
@@ -437,7 +461,13 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         )
         return result
 
-    def _execute_phase(self, phase: PickPhase, ctx: PickContext) -> tuple[bool, str]:
+    def _execute_phase(
+        self,
+        phase: PickPhase,
+        ctx: PickContext,
+        *,
+        intermediate_publisher=None,
+    ) -> tuple[bool, str]:
         if self._use_stubs:
             time.sleep(_PHASE_DELAY_SEC)
             return True, f"{phase.value}_stub_ok"
@@ -452,7 +482,9 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         # B-iter6: HOME_INITIAL real (intercepta antes del dispatch genérico).
         if phase == PickPhase.HOME_INITIAL:
             try:
-                return self._execute_home_initial_real(ctx)
+                return self._execute_home_initial_real(
+                    ctx, intermediate_publisher=intermediate_publisher,
+                )
             except Exception as exc:
                 return False, (
                     f"home_initial_exception:{type(exc).__name__}:{exc}"
@@ -561,12 +593,21 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
     # B-iter6 (2026-05-03) — HOME_INITIAL real
     # ------------------------------------------------------------------
 
-    def _execute_home_initial_real(self, ctx: PickContext) -> tuple[bool, str]:
+    def _execute_home_initial_real(
+        self,
+        ctx: PickContext,
+        *,
+        intermediate_publisher=None,
+    ) -> tuple[bool, str]:
         """Mueve el robot a HOME via FollowJointTrajectory.action directo.
 
         Llamado desde _execute_phase cuando dst=HOME_INITIAL y use_stubs=False.
         Si el ActionClient FJT no está disponible (init falló en on_configure),
         degrada a scaffold (no-op success) para no bloquear el resto del FSM.
+
+        B-iter7: si ``intermediate_publisher`` no es None, lo invoca con
+        sub_progress (0..1) cada feedback recibido del FJT para que el
+        cliente del PickPlace.action vea progreso intra-fase.
         """
         import threading
         from .home_initial import (
@@ -574,6 +615,7 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             build_home_joint_trajectory,
             parse_fjt_result,
         )
+        from .phase_progress import fjt_progress_from_feedback
 
         if self._fjt_client is None:
             return True, "home_initial:scaffold_fallback"
@@ -600,7 +642,20 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             f"pos_tol={self._home_position_tol_rad:.3f}rad"
         )
 
-        send_future = self._fjt_client.send_goal_async(goal)
+        # B-iter7: feedback_callback que estima sub_progress desde
+        # desired/actual del FJT y publica feedback intermedio del PickPlace.
+        def _fjt_feedback_cb(fb_msg) -> None:
+            if intermediate_publisher is None:
+                return
+            try:
+                sub = fjt_progress_from_feedback(fb_msg)
+                intermediate_publisher(sub)
+            except Exception:
+                pass
+
+        send_future = self._fjt_client.send_goal_async(
+            goal, feedback_callback=_fjt_feedback_cb,
+        )
         send_event = threading.Event()
         send_future.add_done_callback(lambda _f: send_event.set())
         send_event.wait(timeout=3.0)
