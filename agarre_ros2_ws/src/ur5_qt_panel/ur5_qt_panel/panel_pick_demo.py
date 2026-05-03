@@ -190,6 +190,9 @@ from .pick_demo.joint_step import (
 from .pick_demo.wait_gripper_target import (
     wait_for_gripper_target as _wait_for_gripper_target_pure,
 )
+from .pick_demo.wait_runtime_tcp_stable import (
+    wait_runtime_tcp_stable as _wait_runtime_tcp_stable_pure,
+)
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -2757,105 +2760,25 @@ def run_pick_demo(panel) -> None:
                 target_tol_m: float,
                 timeout_sec: float,
             ) -> dict:
-                target_tcp_3 = _tuple3(target_tcp_runtime)
-                poll_sec = max(
-                    0.05,
-                    _get_pick_demo_params().direct_ik_runtime_settle_poll_sec,
+                # F3-step37: cuerpo extraído a pick_demo.wait_runtime_tcp_stable.
+                _params = _get_pick_demo_params()
+                return _wait_runtime_tcp_stable_pure(
+                    panel,
+                    label=label,
+                    target_tcp_runtime=target_tcp_runtime,
+                    target_tol_m=target_tol_m,
+                    timeout_sec=timeout_sec,
+                    tuple3=_tuple3,
+                    live_tcp_base=_live_tcp_base,
+                    dist=_dist,
+                    pose_consistency_metrics=_pose_consistency_metrics,
+                    json_safe=_json_safe,
+                    fmt_vec=_fmt_vec,
+                    fmt_scalar=_fmt_scalar,
+                    direct_ik_runtime_settle_poll_sec=_params.direct_ik_runtime_settle_poll_sec,
+                    direct_ik_runtime_settle_delta_m=_params.direct_ik_runtime_settle_delta_m,
+                    direct_ik_runtime_settle_samples=_params.direct_ik_runtime_settle_samples,
                 )
-                stable_delta_m = max(
-                    0.001,
-                    _get_pick_demo_params().direct_ik_runtime_settle_delta_m,
-                )
-                stable_samples = max(
-                    2,
-                    _get_pick_demo_params().direct_ik_runtime_settle_samples,
-                )
-                start_mono = time.monotonic()
-                deadline = start_mono + max(0.2, float(timeout_sec))
-                prev_tcp = _tuple3(_live_tcp_base())
-                last_tcp = prev_tcp
-                last_target_dist = _dist(prev_tcp, target_tcp_3)
-                last_motion_delta = None
-                last_metrics = _pose_consistency_metrics(
-                    tcp_base=prev_tcp,
-                    target_base=target_tcp_3,
-                )
-                stable_count = 0
-                stable_ok = False
-
-                while True:
-                    curr_tcp = _tuple3(_live_tcp_base())
-                    if curr_tcp is not None:
-                        last_tcp = curr_tcp
-                        last_target_dist = _dist(curr_tcp, target_tcp_3)
-                        last_motion_delta = _dist(curr_tcp, prev_tcp) if prev_tcp is not None else None
-                        last_metrics = _pose_consistency_metrics(
-                            tcp_base=curr_tcp,
-                            target_base=target_tcp_3,
-                        )
-                        target_ok = (
-                            target_tcp_3 is None
-                            or (
-                                last_target_dist is not None
-                                and float(last_target_dist) <= float(target_tol_m)
-                            )
-                        )
-                        motion_ok = (
-                            last_motion_delta is None
-                            or float(last_motion_delta) <= float(stable_delta_m)
-                        )
-                        sources_ok = bool((last_metrics or {}).get("sources_ok"))
-                        # sources_ok reflects FK/trace lag vs TF-live, which is a
-                        # transient timing artefact (~0.5s after the controller settles).
-                        # Physical convergence (target_ok + motion_ok) is sufficient here;
-                        # source consistency is enforced by _wait_phase_gate_ready.
-                        if target_ok and motion_ok:
-                            stable_count += 1
-                            if stable_count >= stable_samples:
-                                stable_ok = True
-                                break
-                        else:
-                            stable_count = 0
-                        prev_tcp = curr_tcp
-                    if time.monotonic() >= deadline:
-                        break
-                    time.sleep(poll_sec)
-
-                elapsed_sec = max(0.0, float(time.monotonic() - start_mono))
-                result = {
-                    "ok": bool(stable_ok),
-                    "tcp_base": _tuple3(last_tcp),
-                    "target_dist_m": (
-                        float(last_target_dist)
-                        if last_target_dist is not None
-                        else None
-                    ),
-                    "motion_delta_m": (
-                        float(last_motion_delta)
-                        if last_motion_delta is not None
-                        else None
-                    ),
-                    "stable_samples": int(stable_count),
-                    "required_samples": int(stable_samples),
-                    "elapsed_sec": float(elapsed_sec),
-                    "poll_sec": float(poll_sec),
-                    "stable_delta_m": float(stable_delta_m),
-                    "target_tol_m": float(target_tol_m),
-                    "pose_consistency": _json_safe(last_metrics),
-                }
-                panel._emit_log(
-                    "[PICK][DIRECT][RUNTIME_SETTLE] "
-                    f"label={label} "
-                    f"target={_fmt_vec(target_tcp_3)} "
-                    f"tcp={_fmt_vec(result.get('tcp_base'))} "
-                    f"target_dist={_fmt_scalar(result.get('target_dist_m'))}/{float(target_tol_m):.3f} "
-                    f"motion_delta={_fmt_scalar(result.get('motion_delta_m'))}/{float(stable_delta_m):.3f} "
-                    f"samples={stable_count}/{stable_samples} "
-                    f"elapsed={elapsed_sec:.2f}s "
-                    f"sources_ok={str(bool((last_metrics or {}).get('sources_ok'))).lower()} "
-                    f"result={'OK' if stable_ok else 'NO'}"
-                )
-                return result
 
             def _move_tcp_direct(
                 *,
