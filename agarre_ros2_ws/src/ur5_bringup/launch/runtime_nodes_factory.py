@@ -133,11 +133,23 @@ def _build_orchestrator_service_nodes(
             {"use_sim_time": use_sim_time},
             {"action_name": "/orchestrator/plan_to_pose"},
             {"step_delay_sec": 0.10},
-            # F5-step6d (2026-05-03): use_real_bridge=true → plan_to_pose
-            # publica PoseStamped a /desired_grasp y espera /desired_grasp/result
-            # del ur5_moveit_bridge real. Esto hace que el orchestrator
-            # mueva el robot real (no stub_planning_completed).
-            {"use_real_bridge": True},
+            # B-iter3-bis (2026-05-03): mode=MOVEIT_DIRECT por default.
+            # Cliente directo a /move_action de MoveIt 2 (sin bridge al panel).
+            # Esto hace al orchestrator INDEPENDIENTE del panel para las fases
+            # APPROACH/LIFT/TRANSPORT. Antes (F5-step6d): use_real_bridge=true
+            # publicaba a /desired_grasp y esperaba al panel — ese path queda
+            # como fallback (mode=REAL_BRIDGE) seteable por param si MoveIt no
+            # responde en algún despliegue.
+            {"mode": "MOVEIT_DIRECT"},
+            {"moveit_action_name": "/move_action"},
+            {"moveit_group_name": "manipulator"},
+            {"moveit_planning_time_sec": 10.0},
+            {"moveit_position_tol_m": 0.02},
+            {"moveit_orientation_tol_rad": 0.30},
+            {"moveit_result_timeout_sec": 60.0},
+            # Backwards compat: si alguien fija mode="" + use_real_bridge=true,
+            # el server cae a REAL_BRIDGE (mode efectivo).
+            {"use_real_bridge": False},
         ],
         condition=IfCondition(launch_plan_to_pose_server),
     )
