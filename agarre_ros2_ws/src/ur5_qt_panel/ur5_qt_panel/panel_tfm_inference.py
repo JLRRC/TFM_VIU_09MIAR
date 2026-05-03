@@ -83,6 +83,135 @@ def _selection_snapshot(panel) -> dict:
     }
 
 
+def _tfm_infer_run_script_mode(
+    panel,
+    *,
+    qimg,
+    w: int,
+    h: int,
+    frame_ts: float,
+    roi,
+    selection_snapshot: dict,
+    ckpt_path: str,
+) -> tuple[bool, str]:
+    """F3-step18a: branch script-mode de tfm_infer (panel.tfm_module no cargado).
+
+    Resuelve INFER_SCRIPT (predict.py preferido), guarda imagen, construye
+    cmd con --config/--checkpoint/--image (predict.py) o --image/--ckpt/--out
+    (legacy), spawn subprocess async + parsing JSON o CSV-like fallback.
+    Devuelve (started, message).
+    """
+    infer_script = INFER_SCRIPT
+    if not infer_script or not os.path.isfile(infer_script):
+        candidate = os.path.join(VISION_DIR, "scripts", "predict.py")
+        if os.path.isfile(candidate):
+            infer_script = candidate
+    if not infer_script or not os.path.isfile(infer_script):
+        panel._set_status("TFM: script de inferencia no disponible", error=True)
+        return False, "script de inferencia no disponible"
+    if not ckpt_path or not os.path.isfile(ckpt_path):
+        panel._set_status("TFM: checkpoint no disponible", error=True)
+        return False, "checkpoint no disponible"
+    out_dir = os.path.join(LOG_DIR, "panel_infer")
+    ensure_dir(out_dir)
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    image_path = os.path.join(out_dir, f"frame_{stamp}.png")
+    out_path = os.path.join(out_dir, f"grasp_{stamp}.json")
+    if not qimg.save(image_path):
+        panel._set_status("TFM: no se pudo guardar imagen", error=True)
+        return False, "no se pudo guardar imagen"
+    roi_args = ""
+    if roi:
+        roi_cx, roi_cy, roi_size = roi
+        roi_args = f" --roi-cx {roi_cx} --roi-cy {roi_cy} --roi-size {roi_size}"
+    script_name = os.path.basename(infer_script)
+    if script_name == "predict.py":
+        cfg_path = str(getattr(panel, "_exp_info", {}).get("config_path", "") or "")
+        if not cfg_path or not os.path.isfile(cfg_path):
+            panel._load_experiment_info()
+            cfg_path = str(getattr(panel, "_exp_info", {}).get("config_path", "") or "")
+        if not cfg_path or not os.path.isfile(cfg_path):
+            panel._set_status("TFM: config del experimento no disponible", error=True)
+            return False, "config del experimento no disponible"
+        cmd = (
+            f"python3 {shlex.quote(infer_script)}"
+            f" --config {shlex.quote(cfg_path)}"
+            f" --checkpoint {shlex.quote(ckpt_path)}"
+            f" --image {shlex.quote(image_path)}"
+        )
+    else:
+        cmd = (
+            f"python3 {shlex.quote(infer_script)}"
+            f" --image {shlex.quote(image_path)}"
+            f" --ckpt {shlex.quote(ckpt_path)}"
+            f" --out {shlex.quote(out_path)}"
+            f"{roi_args}"
+        )
+    start_ts = time.time()
+    panel._tfm_infer_inflight = True
+    panel._set_status("TFM: inferencia en curso…", error=False)
+    panel._audit_append(
+        "logs/infer.log",
+        f"[TFM] infer_start session={panel._infer_session_id} "
+        f"mode=script ckpt={ckpt_path} camera={panel.camera_topic} roi={roi} "
+        f"selected={selection_snapshot.get('name') or 'none'} image={image_path}",
+    )
+
+    def worker():
+        res = run_cmd(cmd, timeout=30.0, capture_output=True)
+        infer_ms = (time.time() - start_ts) * 1000.0
+        total_ms = (time.time() - frame_ts) * 1000.0
+        pred = None
+        err = ""
+        if os.path.isfile(out_path):
+            try:
+                pred = json.loads(Path(out_path).read_text(encoding="utf-8"))
+            except Exception as exc:
+                err = f"{exc}"
+        if not pred:
+            raw = (res.stdout or "").strip()
+            if raw:
+                try:
+                    pred = json.loads(raw)
+                except Exception as exc:
+                    err = f"{exc}"
+        if not pred:
+            raw = (res.stdout or "").strip()
+            lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+            if len(lines) >= 2 and "pred_cx" in lines[0]:
+                try:
+                    vals = [float(v.strip()) for v in lines[1].split(",")]
+                    if len(vals) >= 5:
+                        pred = {
+                            "cx": vals[0],
+                            "cy": vals[1],
+                            "w": vals[2],
+                            "h": vals[3],
+                            "angle_deg": vals[4],
+                        }
+                except Exception as exc:
+                    err = f"{exc}"
+        if res.returncode != 0 and not err:
+            err = (res.stderr or res.stdout or "error en inferencia").strip()
+        result = {
+            "ok": bool(pred) and res.returncode == 0,
+            "pred": pred,
+            "infer_ms": infer_ms,
+            "total_ms": total_ms,
+            "frame_w": w,
+            "frame_h": h,
+            "frame_ts": frame_ts,
+            "image_path": image_path,
+            "out_path": out_path,
+            "selection_snapshot": selection_snapshot,
+            "error": err,
+        }
+        panel.signal_run_ui.emit(lambda: panel._handle_infer_result(result))
+
+    panel._run_async(worker, name="infer_grasp")
+    return True, "inferencia iniciada"
+
+
 def tfm_infer(panel) -> tuple[bool, str]:
     if panel._tfm_infer_inflight:
         panel._set_status("TFM: inferencia en curso", error=False)
@@ -191,117 +320,16 @@ def tfm_infer(panel) -> tuple[bool, str]:
         else:
             panel._log_warning("[TFM] Modelo no cargado; usando inferencia por script.")
 
-    infer_script = INFER_SCRIPT
-    if not infer_script or not os.path.isfile(infer_script):
-        candidate = os.path.join(VISION_DIR, "scripts", "predict.py")
-        if os.path.isfile(candidate):
-            infer_script = candidate
-    if not infer_script or not os.path.isfile(infer_script):
-        panel._set_status("TFM: script de inferencia no disponible", error=True)
-        return False, "script de inferencia no disponible"
-    if not ckpt_path or not os.path.isfile(ckpt_path):
-        panel._set_status("TFM: checkpoint no disponible", error=True)
-        return False, "checkpoint no disponible"
-    out_dir = os.path.join(LOG_DIR, "panel_infer")
-    ensure_dir(out_dir)
-    stamp = time.strftime("%Y%m%d_%H%M%S")
-    image_path = os.path.join(out_dir, f"frame_{stamp}.png")
-    out_path = os.path.join(out_dir, f"grasp_{stamp}.json")
-    if not qimg.save(image_path):
-        panel._set_status("TFM: no se pudo guardar imagen", error=True)
-        return False, "no se pudo guardar imagen"
-    roi_args = ""
-    if roi:
-        roi_cx, roi_cy, roi_size = roi
-        roi_args = f" --roi-cx {roi_cx} --roi-cy {roi_cy} --roi-size {roi_size}"
-    script_name = os.path.basename(infer_script)
-    if script_name == "predict.py":
-        cfg_path = str(getattr(panel, "_exp_info", {}).get("config_path", "") or "")
-        if not cfg_path or not os.path.isfile(cfg_path):
-            panel._load_experiment_info()
-            cfg_path = str(getattr(panel, "_exp_info", {}).get("config_path", "") or "")
-        if not cfg_path or not os.path.isfile(cfg_path):
-            panel._set_status("TFM: config del experimento no disponible", error=True)
-            return False, "config del experimento no disponible"
-        cmd = (
-            f"python3 {shlex.quote(infer_script)}"
-            f" --config {shlex.quote(cfg_path)}"
-            f" --checkpoint {shlex.quote(ckpt_path)}"
-            f" --image {shlex.quote(image_path)}"
-        )
-    else:
-        cmd = (
-            f"python3 {shlex.quote(infer_script)}"
-            f" --image {shlex.quote(image_path)}"
-            f" --ckpt {shlex.quote(ckpt_path)}"
-            f" --out {shlex.quote(out_path)}"
-            f"{roi_args}"
-        )
-    start_ts = time.time()
-    panel._tfm_infer_inflight = True
-    panel._set_status("TFM: inferencia en curso…", error=False)
-    panel._audit_append(
-        "logs/infer.log",
-        f"[TFM] infer_start session={panel._infer_session_id} "
-        f"mode=script ckpt={ckpt_path} camera={panel.camera_topic} roi={roi} "
-        f"selected={selection_snapshot.get('name') or 'none'} image={image_path}",
+    return _tfm_infer_run_script_mode(
+        panel,
+        qimg=qimg,
+        w=w,
+        h=h,
+        frame_ts=frame_ts,
+        roi=roi,
+        selection_snapshot=selection_snapshot,
+        ckpt_path=ckpt_path,
     )
-
-    def worker():
-        res = run_cmd(cmd, timeout=30.0, capture_output=True)
-        infer_ms = (time.time() - start_ts) * 1000.0
-        total_ms = (time.time() - frame_ts) * 1000.0
-        pred = None
-        err = ""
-        if os.path.isfile(out_path):
-            try:
-                pred = json.loads(Path(out_path).read_text(encoding="utf-8"))
-            except Exception as exc:
-                err = f"{exc}"
-        if not pred:
-            raw = (res.stdout or "").strip()
-            if raw:
-                try:
-                    pred = json.loads(raw)
-                except Exception as exc:
-                    err = f"{exc}"
-        # Fallback for scripts/predict.py CSV-like output:
-        #   pred_cx,pred_cy,pred_w,pred_h,pred_angle_deg\n<vals>
-        if not pred:
-            raw = (res.stdout or "").strip()
-            lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
-            if len(lines) >= 2 and "pred_cx" in lines[0]:
-                try:
-                    vals = [float(v.strip()) for v in lines[1].split(",")]
-                    if len(vals) >= 5:
-                        pred = {
-                            "cx": vals[0],
-                            "cy": vals[1],
-                            "w": vals[2],
-                            "h": vals[3],
-                            "angle_deg": vals[4],
-                        }
-                except Exception as exc:
-                    err = f"{exc}"
-        if res.returncode != 0 and not err:
-            err = (res.stderr or res.stdout or "error en inferencia").strip()
-        result = {
-            "ok": bool(pred) and res.returncode == 0,
-            "pred": pred,
-            "infer_ms": infer_ms,
-            "total_ms": total_ms,
-            "frame_w": w,
-            "frame_h": h,
-            "frame_ts": frame_ts,
-            "image_path": image_path,
-            "out_path": out_path,
-            "selection_snapshot": selection_snapshot,
-            "error": err,
-        }
-        panel.signal_run_ui.emit(lambda: panel._handle_infer_result(result))
-
-    panel._run_async(worker, name="infer_grasp")
-    return True, "inferencia iniciada"
 
 # ── Additional imports needed by extended TFM block ──────────────────────────
 import json

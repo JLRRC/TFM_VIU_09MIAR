@@ -107,26 +107,13 @@ class AuditEmitContext:
     base_frame_default: str = "base_link"
 
 
-def audit_emit(
-    ctx: AuditEmitContext,
-    stage: str,
-    *,
-    target_source: str,
-    target_frame_original: Optional[str],
-    target_pose_original: Any = None,
-    target_pose_world: Any = None,
-    target_pose_base_link: Any = None,
-    command_pose_sent: Any = None,
-    command_frame: Optional[str] = None,
-    command_joint_goal: Any = None,
-    extra: Optional[dict] = None,
-) -> None:
-    """Emite el bloque de logs structured del audit Pick Demo.
+def _audit_emit_compute_pose_data(ctx: AuditEmitContext) -> dict:
+    """F3-step18b: gathers all the live pose data for audit_emit (55 LOC).
 
-    Equivalente funcional 1:1 al ``_audit_emit`` legacy del closure.
-    Conserva todas las claves del schema; cualquier cambio de schema
-    debe sincronizarse con consumidores externos (test_quality_metrics,
-    parsers de evidencia, etc.).
+    Resuelve world_frame + base_frame + object/tcp/tool0/pinch/rg2_tcp en
+    world y base + alturas + edades + deltas TCP-objeto + delta panel-live
+    + legacy_gap. Devuelve dict serializable que audit_emit consume para
+    componer las trace lines.
     """
     panel = ctx.panel
     world_frame = str(
@@ -180,6 +167,149 @@ def audit_emit(
     tool0_top_dz = ctx.z_delta_fn(tool0_base, object_top_base)
     pinch_top_dz = ctx.z_delta_fn(pinch_base, object_top_base)
     rg2_tcp_top_dz = ctx.z_delta_fn(rg2_tcp_base, object_top_base)
+    return {
+        "world_frame": world_frame,
+        "base_frame": base_frame,
+        "object_world": object_world,
+        "object_base": object_base,
+        "object_top_world": object_top_world,
+        "object_top_base": object_top_base,
+        "tcp_world": tcp_world,
+        "tcp_base": tcp_base,
+        "tool0_world": tool0_world,
+        "tool0_base": tool0_base,
+        "pinch_world": pinch_world,
+        "pinch_base": pinch_base,
+        "rg2_tcp_world": rg2_tcp_world,
+        "rg2_tcp_base": rg2_tcp_base,
+        "object_height_m": object_height_m,
+        "camera_meta": camera_meta,
+        "selection_age": selection_age,
+        "selected_world": selected_world,
+        "selected_base": selected_base,
+        "panel_tcp_fk_base": panel_tcp_fk_base,
+        "panel_tcp_fk_rpy_deg": panel_tcp_fk_rpy_deg,
+        "panel_tcp_fk_age": panel_tcp_fk_age,
+        "panel_trace_tcp_base": panel_trace_tcp_base,
+        "panel_trace_tcp_rpy_deg": panel_trace_tcp_rpy_deg,
+        "panel_trace_tcp_age": panel_trace_tcp_age,
+        "panel_object_age": panel_object_age,
+        "delta_world": delta_world,
+        "delta_base": delta_base,
+        "delta_pinch_world": delta_pinch_world,
+        "delta_pinch_base": delta_pinch_base,
+        "delta_panel_live": delta_panel_live,
+        "delta_panel_live_norm": delta_panel_live_norm,
+        "legacy_gap": legacy_gap,
+        "legacy_gap_norm": legacy_gap_norm,
+        "tool0_top_dz": tool0_top_dz,
+        "pinch_top_dz": pinch_top_dz,
+        "rg2_tcp_top_dz": rg2_tcp_top_dz,
+    }
+
+
+def _audit_emit_geom_and_panel_traces(ctx, stage: str, d: dict, fmt_vec, fmt_scalar) -> None:
+    """F3-step18c: emite GEOM + PANEL_TRACE + DIVERGENCE traces (~32 LOC).
+
+    GEOM line va a panel._emit_log + append_trace. PANEL_TRACE siempre.
+    DIVERGENCE solo si delta_panel_live_norm > 0.02.
+    """
+    geom_audit_line = (
+        "[RG2][AUDIT][GEOM] "
+        f"stage={stage} "
+        f"object_pose_base_link={fmt_vec(d['object_base'])} "
+        f"object_top_pose_base_link={fmt_vec(d['object_top_base'])} "
+        f"tool0_pose_base_link={fmt_vec(d['tool0_base'])} "
+        f"rg2_pinch_center_pose_base_link={fmt_vec(d['pinch_base'])} "
+        f"rg2_tcp_pose_base_link={fmt_vec(d['rg2_tcp_base'])} "
+        f"dz_tool0_vs_object_top_m={fmt_scalar(d['tool0_top_dz'])} "
+        f"dz_pinch_center_vs_object_top_m={fmt_scalar(d['pinch_top_dz'])} "
+        f"dz_rg2_tcp_vs_object_top_m={fmt_scalar(d['rg2_tcp_top_dz'])} "
+        f"object_height_m={fmt_scalar(d['object_height_m'])}"
+    )
+    ctx.panel._emit_log(geom_audit_line)
+    ctx.append_trace(geom_audit_line)
+    ctx.append_trace(
+        "[PICK][DIRECT][PANEL_TRACE] "
+        f"stage={stage} panel_tcp_fk_base={fmt_vec(d['panel_tcp_fk_base'])} "
+        f"panel_tcp_fk_rpy_deg={fmt_vec(d['panel_tcp_fk_rpy_deg'])} "
+        f"tcp_live_base={fmt_vec(d['tcp_base'])} "
+        f"delta_panel_tcp_live={fmt_vec(d['delta_panel_live'])} "
+        f"delta_panel_tcp_live_norm_m={fmt_scalar(d['delta_panel_live_norm'])} "
+        f"panel_tcp_fk_age_sec={fmt_scalar(d['panel_tcp_fk_age'])}"
+    )
+    if d["delta_panel_live_norm"] is not None and d["delta_panel_live_norm"] > 0.02:
+        ctx.append_trace(
+            "[PICK][DIRECT][DIVERGENCE] "
+            "kind=panel_fk_vs_live_tf "
+            f"stage={stage} delta_m={fmt_scalar(d['delta_panel_live_norm'])} "
+            f"panel_tcp_fk_base={fmt_vec(d['panel_tcp_fk_base'])} "
+            f"tcp_live_base={fmt_vec(d['tcp_base'])} "
+            f"delta={fmt_vec(d['delta_panel_live'])} "
+            "note=panel_fk_is_model_pose_not_runtime_rg2_tcp"
+        )
+
+
+def audit_emit(
+    ctx: AuditEmitContext,
+    stage: str,
+    *,
+    target_source: str,
+    target_frame_original: Optional[str],
+    target_pose_original: Any = None,
+    target_pose_world: Any = None,
+    target_pose_base_link: Any = None,
+    command_pose_sent: Any = None,
+    command_frame: Optional[str] = None,
+    command_joint_goal: Any = None,
+    extra: Optional[dict] = None,
+) -> None:
+    """Emite el bloque de logs structured del audit Pick Demo.
+
+    Equivalente funcional 1:1 al ``_audit_emit`` legacy del closure.
+    Conserva todas las claves del schema; cualquier cambio de schema
+    debe sincronizarse con consumidores externos (test_quality_metrics,
+    parsers de evidencia, etc.).
+    """
+    panel = ctx.panel
+    d = _audit_emit_compute_pose_data(ctx)
+    world_frame = d["world_frame"]
+    base_frame = d["base_frame"]
+    object_world = d["object_world"]
+    object_base = d["object_base"]
+    object_top_world = d["object_top_world"]
+    object_top_base = d["object_top_base"]
+    tcp_world = d["tcp_world"]
+    tcp_base = d["tcp_base"]
+    tool0_world = d["tool0_world"]
+    tool0_base = d["tool0_base"]
+    pinch_world = d["pinch_world"]
+    pinch_base = d["pinch_base"]
+    rg2_tcp_world = d["rg2_tcp_world"]
+    rg2_tcp_base = d["rg2_tcp_base"]
+    object_height_m = d["object_height_m"]
+    camera_meta = d["camera_meta"]
+    selection_age = d["selection_age"]
+    selected_world = d["selected_world"]
+    selected_base = d["selected_base"]
+    panel_tcp_fk_base = d["panel_tcp_fk_base"]
+    panel_tcp_fk_rpy_deg = d["panel_tcp_fk_rpy_deg"]
+    panel_tcp_fk_age = d["panel_tcp_fk_age"]
+    panel_trace_tcp_base = d["panel_trace_tcp_base"]
+    panel_trace_tcp_rpy_deg = d["panel_trace_tcp_rpy_deg"]
+    panel_trace_tcp_age = d["panel_trace_tcp_age"]
+    panel_object_age = d["panel_object_age"]
+    delta_world = d["delta_world"]
+    delta_base = d["delta_base"]
+    delta_pinch_world = d["delta_pinch_world"]
+    delta_pinch_base = d["delta_pinch_base"]
+    delta_panel_live = d["delta_panel_live"]
+    delta_panel_live_norm = d["delta_panel_live_norm"]
+    legacy_gap = d["legacy_gap"]
+    legacy_gap_norm = d["legacy_gap_norm"]
+    tool0_top_dz = d["tool0_top_dz"]
+    pinch_top_dz = d["pinch_top_dz"]
+    rg2_tcp_top_dz = d["rg2_tcp_top_dz"]
     extra_payload = ctx.json_safe_fn(extra) or {}
     fmt_vec = ctx.fmt_vec_fn
     fmt_scalar = ctx.fmt_scalar_fn
@@ -290,37 +420,4 @@ def audit_emit(
         f"legacy_tcp_vs_pinch_center_base={fmt_vec(legacy_gap)} "
         f"legacy_tcp_vs_pinch_center_dist_m={fmt_scalar(legacy_gap_norm)}"
     )
-    geom_audit_line = (
-        "[RG2][AUDIT][GEOM] "
-        f"stage={stage} "
-        f"object_pose_base_link={fmt_vec(object_base)} "
-        f"object_top_pose_base_link={fmt_vec(object_top_base)} "
-        f"tool0_pose_base_link={fmt_vec(tool0_base)} "
-        f"rg2_pinch_center_pose_base_link={fmt_vec(pinch_base)} "
-        f"rg2_tcp_pose_base_link={fmt_vec(rg2_tcp_base)} "
-        f"dz_tool0_vs_object_top_m={fmt_scalar(tool0_top_dz)} "
-        f"dz_pinch_center_vs_object_top_m={fmt_scalar(pinch_top_dz)} "
-        f"dz_rg2_tcp_vs_object_top_m={fmt_scalar(rg2_tcp_top_dz)} "
-        f"object_height_m={fmt_scalar(object_height_m)}"
-    )
-    panel._emit_log(geom_audit_line)
-    ctx.append_trace(geom_audit_line)
-    ctx.append_trace(
-        "[PICK][DIRECT][PANEL_TRACE] "
-        f"stage={stage} panel_tcp_fk_base={fmt_vec(panel_tcp_fk_base)} "
-        f"panel_tcp_fk_rpy_deg={fmt_vec(panel_tcp_fk_rpy_deg)} "
-        f"tcp_live_base={fmt_vec(tcp_base)} "
-        f"delta_panel_tcp_live={fmt_vec(delta_panel_live)} "
-        f"delta_panel_tcp_live_norm_m={fmt_scalar(delta_panel_live_norm)} "
-        f"panel_tcp_fk_age_sec={fmt_scalar(panel_tcp_fk_age)}"
-    )
-    if delta_panel_live_norm is not None and delta_panel_live_norm > 0.02:
-        ctx.append_trace(
-            "[PICK][DIRECT][DIVERGENCE] "
-            "kind=panel_fk_vs_live_tf "
-            f"stage={stage} delta_m={fmt_scalar(delta_panel_live_norm)} "
-            f"panel_tcp_fk_base={fmt_vec(panel_tcp_fk_base)} "
-            f"tcp_live_base={fmt_vec(tcp_base)} "
-            f"delta={fmt_vec(delta_panel_live)} "
-            "note=panel_fk_is_model_pose_not_runtime_rg2_tcp"
-        )
+    _audit_emit_geom_and_panel_traces(ctx, stage, d, fmt_vec, fmt_scalar)

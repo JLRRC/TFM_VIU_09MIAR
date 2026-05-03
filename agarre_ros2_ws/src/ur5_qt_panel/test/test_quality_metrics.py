@@ -224,7 +224,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # pick_demo/audit_emit.py contiene el cuerpo legacy 1:1 (217 LOC).
     # La rebajada estructural a < 200 LOC requiere extraer las múltiples
     # llamadas a ``_append_trace`` en sub-helpers (F3-step3a-bis pendiente).
-    "ur5_qt_panel/ur5_qt_panel/pick_demo/audit_emit.py::audit_emit": 217,
+    # F3-step18b/c (2026-05-03): audit_emit bajó de 217 → 171 LOC con 2 helpers
+    # (_audit_emit_compute_pose_data 99 + _audit_emit_geom_and_panel_traces 40).
+    # Removido de baseline (T15 cumplido).
     # F5-step5 (2026-05-03): el factory de runtime nodes creció +20 LOC
     # al añadir Node object_pose_resolver y su parámetro de gating.
     "ur5_bringup/launch/runtime_nodes_factory.py::build_runtime_node_actions": 219,
@@ -286,7 +288,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # 2 sub-helpers (_spawn_gz_gui_client 57 + _prepare_gz_runtime_assets 80).
     # Removido de baseline (T15 cumplido).
     "ur5_qt_panel/ur5_qt_panel/pick_demo/internal_helpers.py::_select_pick_demo_cycle_object_reference": 231,
-    "ur5_qt_panel/ur5_qt_panel/panel_tfm_inference.py::tfm_infer": 219,
+    # F3-step18a (2026-05-03): tfm_infer bajó de 219 → 118 LOC con
+    # _tfm_infer_run_script_mode (127 LOC, branch sin tfm_module). Removido
+    # de baseline (T15 cumplido).
     # F3-step17 (a/b/c) (2026-05-03): build_runtime_audit_snapshot bajó de
     # 213 → 114 LOC con 3 sub-helpers (_build_dh_tf_block 57 + _build_joints_
     # control_block 56 + _build_sdf_gazebo_block 73). Removido de baseline.
