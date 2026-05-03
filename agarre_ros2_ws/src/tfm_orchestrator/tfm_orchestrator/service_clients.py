@@ -104,8 +104,9 @@ def call_service_with_timeout(
         client_cache: dict opcional para reusar clients entre calls.
     """
     import time as _time
+    import threading as _threading
     try:
-        import rclpy as _rclpy
+        import rclpy as _rclpy  # noqa: F401
     except ImportError:
         return ServiceCallResult(
             success=False,
@@ -128,10 +129,17 @@ def call_service_with_timeout(
                 elapsed_sec=_time.monotonic() - start,
             )
 
+        # F5-step7 (2026-05-03): Event-based wait en lugar de
+        # spin_until_future_complete. Evita deadlock cuando se llama desde
+        # dentro del callback de un action server con MultiThreadedExecutor +
+        # ReentrantCallbackGroup: spin_until_future_complete crearía un
+        # SingleThreadedExecutor nuevo que conflictúa con el executor
+        # principal. add_done_callback delega al executor principal que
+        # ya está spinning las callbacks del action client.
         future = client.call_async(request)
-        _rclpy.spin_until_future_complete(
-            node, future, timeout_sec=call_timeout_sec
-        )
+        done_event = _threading.Event()
+        future.add_done_callback(lambda _f: done_event.set())
+        done_event.wait(timeout=call_timeout_sec)
 
         if not future.done():
             return ServiceCallResult(
@@ -251,8 +259,9 @@ def call_action_with_timeout(
         client_cache: dict opcional para reusar clients entre calls.
     """
     import time as _time
+    import threading as _threading
     try:
-        import rclpy as _rclpy
+        import rclpy as _rclpy  # noqa: F401
         from rclpy.action import ActionClient as _ActionClient
     except ImportError:
         return ActionCallResult(
@@ -286,8 +295,12 @@ def call_action_with_timeout(
                 elapsed_sec=_time.monotonic() - start,
             )
 
+        # F5-step7 (2026-05-03): Event-based wait. Evita deadlock al llamar
+        # desde dentro de un goal callback del action server propio.
         send_future = client.send_goal_async(goal, feedback_callback=_feedback_wrapper)
-        _rclpy.spin_until_future_complete(node, send_future, timeout_sec=accept_timeout_sec)
+        send_event = _threading.Event()
+        send_future.add_done_callback(lambda _f: send_event.set())
+        send_event.wait(timeout=accept_timeout_sec)
         if not send_future.done():
             return ActionCallResult(
                 success=False,
@@ -306,7 +319,9 @@ def call_action_with_timeout(
             )
 
         result_future = goal_handle.get_result_async()
-        _rclpy.spin_until_future_complete(node, result_future, timeout_sec=result_timeout_sec)
+        result_event = _threading.Event()
+        result_future.add_done_callback(lambda _f: result_event.set())
+        result_event.wait(timeout=result_timeout_sec)
         if not result_future.done():
             return ActionCallResult(
                 success=False,
