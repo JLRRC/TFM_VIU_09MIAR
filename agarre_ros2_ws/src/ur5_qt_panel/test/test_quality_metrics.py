@@ -253,7 +253,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     "ur5_qt_panel/ur5_qt_panel/panel_launchers.py::start_moveit_bridge": 287,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py::execute_tfm_world_grasp.worker": 286,
     "ur5_qt_panel/ur5_qt_panel/panel_tfm_inference.py::handle_infer_result": 283,
-    "ur5_qt_panel/ur5_qt_panel/panel_ros.py::RosWorker._thread_main": 279,
+    # F3-step7 (2026-05-03): RosWorker._thread_main bajó de 279 → 120 LOC
+    # con sub-helper _thread_main_create_optional_subs_and_services (167 LOC).
+    # Removido de baseline (T15 cumplido).
     "ur5_qt_panel/ur5_qt_panel/pick_demo/internal_helpers.py::_resolve_live_object_world": 261,
     # F3-step4a (2026-05-03): _wait_moveit_result extraído ⇒ wrapper
     # < 200 LOC. Removido de la baseline.

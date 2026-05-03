@@ -1463,166 +1463,7 @@ class RosWorker(QObject):
                     )
                 except Exception:
                     pass
-            if Empty is not None:
-                try:
-                    self._tfm_infer_sub = self._node.create_subscription(
-                        Empty,
-                        self._tfm_infer_topic,
-                        self._on_tfm_infer_topic,
-                        10,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger topic listo: {self._tfm_infer_topic} (std_msgs/Empty)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create tfm_infer topic", exc)
-                try:
-                    self._tfm_execute_sub = self._node.create_subscription(
-                        Empty,
-                        self._tfm_execute_topic,
-                        self._on_tfm_execute_topic,
-                        10,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger topic listo: {self._tfm_execute_topic} (std_msgs/Empty)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create tfm_execute topic", exc)
-                try:
-                    self._pick_object_sub = self._node.create_subscription(
-                        Empty,
-                        self._pick_object_topic,
-                        self._on_pick_object_topic,
-                        10,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger topic listo: {self._pick_object_topic} (std_msgs/Empty)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create pick_object topic", exc)
-                try:
-                    self._recover_sub = self._node.create_subscription(
-                        Empty,
-                        self._recover_topic,
-                        self._on_recover_topic,
-                        10,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger topic listo: {self._recover_topic} (std_msgs/Empty)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create recover topic", exc)
-            if String is not None:
-                try:
-                    self._select_object_sub = self._node.create_subscription(
-                        String,
-                        self._select_object_topic,
-                        self._on_select_object_topic,
-                        10,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger topic listo: {self._select_object_topic} (std_msgs/String)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create select_object topic", exc)
-            if Trigger is not None:
-                try:
-                    self._camera_connect_srv = self._node.create_service(
-                        Trigger,
-                        self._camera_connect_service,
-                        self._on_camera_connect_service,
-                        callback_group=self._service_callback_group,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._camera_connect_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create camera_connect service", exc)
-                try:
-                    self._camera_disconnect_srv = self._node.create_service(
-                        Trigger,
-                        self._camera_disconnect_service,
-                        self._on_camera_disconnect_service,
-                        callback_group=self._service_callback_group,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._camera_disconnect_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create camera_disconnect service", exc)
-                try:
-                    self._tfm_infer_srv = self._node.create_service(
-                        Trigger,
-                        self._tfm_infer_service,
-                        self._on_tfm_infer_service,
-                        callback_group=self._service_callback_group,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._tfm_infer_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create tfm_infer service", exc)
-                try:
-                    self._tfm_execute_srv = self._node.create_service(
-                        Trigger,
-                        self._tfm_execute_service,
-                        self._on_tfm_execute_service,
-                        callback_group=self._service_callback_group,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._tfm_execute_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create tfm_execute service", exc)
-                try:
-                    self._recover_srv = self._node.create_service(
-                        Trigger,
-                        self._recover_service,
-                        self._on_recover_service,
-                        callback_group=self._service_callback_group,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._recover_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create recover service", exc)
-                try:
-                    self._pick_demo_srv = self._node.create_service(
-                        Trigger,
-                        self._pick_demo_service,
-                        self._on_pick_demo_service,
-                        callback_group=self._service_callback_group,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._pick_demo_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create pick_demo service", exc)
-                try:
-                    self._pick_object_srv = self._node.create_service(
-                        Trigger,
-                        self._pick_object_service,
-                        self._on_pick_object_service,
-                        callback_group=self._service_callback_group,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._pick_object_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create pick_object service", exc)
-            if SelectObject is not None:
-                try:
-                    self._select_object_srv = self._node.create_service(
-                        SelectObject,
-                        self._select_object_service,
-                        self._on_select_object_service,
-                        callback_group=self._service_callback_group,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._select_object_service} (ur5_panel_interfaces/SelectObject)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create select_object service", exc)
+            self._thread_main_create_optional_subs_and_services()
             try:
                 self.log.emit("[ROS] OK: nodo listo.")
             except RuntimeError:
@@ -1655,6 +1496,175 @@ class RosWorker(QObject):
                 time.sleep(0.1)
         # Limpieza final (evita logs si ya estamos apagando)
         self._cleanup_ros()
+
+
+    def _thread_main_create_optional_subs_and_services(self) -> None:
+        """F3-step7: bloque de creación de subs/services condicional extraído.
+
+        Crea subscripciones y services que dependen de imports opcionales
+        (Empty, String, Trigger, SelectObject). Cada bloque protegido por
+        try/except interno. ~160 LOC fuera de _thread_main.
+        """
+        if Empty is not None:
+            try:
+                self._tfm_infer_sub = self._node.create_subscription(
+                    Empty,
+                    self._tfm_infer_topic,
+                    self._on_tfm_infer_topic,
+                    10,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger topic listo: {self._tfm_infer_topic} (std_msgs/Empty)"
+                )
+            except Exception as exc:
+                self._log_exception("create tfm_infer topic", exc)
+            try:
+                self._tfm_execute_sub = self._node.create_subscription(
+                    Empty,
+                    self._tfm_execute_topic,
+                    self._on_tfm_execute_topic,
+                    10,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger topic listo: {self._tfm_execute_topic} (std_msgs/Empty)"
+                )
+            except Exception as exc:
+                self._log_exception("create tfm_execute topic", exc)
+            try:
+                self._pick_object_sub = self._node.create_subscription(
+                    Empty,
+                    self._pick_object_topic,
+                    self._on_pick_object_topic,
+                    10,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger topic listo: {self._pick_object_topic} (std_msgs/Empty)"
+                )
+            except Exception as exc:
+                self._log_exception("create pick_object topic", exc)
+            try:
+                self._recover_sub = self._node.create_subscription(
+                    Empty,
+                    self._recover_topic,
+                    self._on_recover_topic,
+                    10,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger topic listo: {self._recover_topic} (std_msgs/Empty)"
+                )
+            except Exception as exc:
+                self._log_exception("create recover topic", exc)
+        if String is not None:
+            try:
+                self._select_object_sub = self._node.create_subscription(
+                    String,
+                    self._select_object_topic,
+                    self._on_select_object_topic,
+                    10,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger topic listo: {self._select_object_topic} (std_msgs/String)"
+                )
+            except Exception as exc:
+                self._log_exception("create select_object topic", exc)
+        if Trigger is not None:
+            try:
+                self._camera_connect_srv = self._node.create_service(
+                    Trigger,
+                    self._camera_connect_service,
+                    self._on_camera_connect_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._camera_connect_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create camera_connect service", exc)
+            try:
+                self._camera_disconnect_srv = self._node.create_service(
+                    Trigger,
+                    self._camera_disconnect_service,
+                    self._on_camera_disconnect_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._camera_disconnect_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create camera_disconnect service", exc)
+            try:
+                self._tfm_infer_srv = self._node.create_service(
+                    Trigger,
+                    self._tfm_infer_service,
+                    self._on_tfm_infer_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._tfm_infer_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create tfm_infer service", exc)
+            try:
+                self._tfm_execute_srv = self._node.create_service(
+                    Trigger,
+                    self._tfm_execute_service,
+                    self._on_tfm_execute_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._tfm_execute_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create tfm_execute service", exc)
+            try:
+                self._recover_srv = self._node.create_service(
+                    Trigger,
+                    self._recover_service,
+                    self._on_recover_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._recover_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create recover service", exc)
+            try:
+                self._pick_demo_srv = self._node.create_service(
+                    Trigger,
+                    self._pick_demo_service,
+                    self._on_pick_demo_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._pick_demo_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create pick_demo service", exc)
+            try:
+                self._pick_object_srv = self._node.create_service(
+                    Trigger,
+                    self._pick_object_service,
+                    self._on_pick_object_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._pick_object_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create pick_object service", exc)
+        if SelectObject is not None:
+            try:
+                self._select_object_srv = self._node.create_service(
+                    SelectObject,
+                    self._select_object_service,
+                    self._on_select_object_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._select_object_service} (ur5_panel_interfaces/SelectObject)"
+                )
+            except Exception as exc:
+                self._log_exception("create select_object service", exc)
 
     def _cleanup_ros(self):
         with self._lock:
