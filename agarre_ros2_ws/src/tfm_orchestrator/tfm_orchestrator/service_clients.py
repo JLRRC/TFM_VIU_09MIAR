@@ -165,14 +165,26 @@ class PhaseServiceMap:
     Permite override por param ROS sin tocar el código del FSM.
     """
 
+    # F5-step6c (2026-05-03): defaults alineados con services REALES
+    # del stack vivo. Validado en runtime con Gazebo activo:
+    #   * /panel/select_object        ← exposed by ControlPanelV2 (panel_ros)
+    #   * /tf_geometry/world_to_base  ← tf_geometry_service (existe)
+    #   * /tf_geometry/compute_approach_pose ← tf_geometry_service (existe)
+    #   * /orchestrator/resolve_object_pose_world ← object_pose_resolver_service
+    #     (cableado en F5-step5)
+    #   * /orchestrator/plan_to_pose  ← plan_to_pose_server (existe en
+    #     ur5_tools, falta auto-launch — F5-step6a pendiente)
+    #   * /gripper/open|close, /orchestrator/attach|detach ← NO existen
+    #     todavía. F5-step6b pendiente: implementar wrappers en
+    #     gripper_attach_backend.
     select_object: str = "/panel/select_object"
-    approach_compute: str = "/orchestrator/compute_approach_pose"
+    approach_compute: str = "/tf_geometry/compute_approach_pose"
     resolve_object_pose_world: str = "/orchestrator/resolve_object_pose_world"
     gripper_open: str = "/gripper/open"
     gripper_close: str = "/gripper/close"
     attach: str = "/orchestrator/attach"
     detach: str = "/orchestrator/detach"
-    world_to_base: str = "/orchestrator/world_to_base"
+    world_to_base: str = "/tf_geometry/world_to_base"
     plan_to_pose_action: str = "/orchestrator/plan_to_pose"
 
     @classmethod

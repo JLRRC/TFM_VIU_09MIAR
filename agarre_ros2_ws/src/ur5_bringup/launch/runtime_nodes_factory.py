@@ -61,6 +61,7 @@ def build_runtime_node_actions(
     launch_moveit_bridge: LaunchConfiguration,
     launch_tf_geometry_service: LaunchConfiguration,
     launch_object_pose_resolver: LaunchConfiguration,
+    launch_plan_to_pose_server: LaunchConfiguration,
     gz_delete_service: LaunchConfiguration,
     gz_spawn_service: LaunchConfiguration,
     attach_backend_mode: LaunchConfiguration,
@@ -252,6 +253,23 @@ def build_runtime_node_actions(
         condition=IfCondition(launch_object_pose_resolver),
     )
 
+    # F5-step6a (2026-05-03): plan_to_pose_server — action server
+    # /orchestrator/plan_to_pose que el pick_orchestrator necesita en
+    # las fases APPROACH / LIFT / TRANSPORT. La versión actual es STUB
+    # (no usa MoveIt real); F6.6 conectará el bridge MoveIt vía
+    # use_real_bridge=True. Sin coste si no hay clientes invocando.
+    plan_to_pose_server_node = Node(
+        package="ur5_tools",
+        executable="plan_to_pose_server",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"action_name": "/orchestrator/plan_to_pose"},
+            {"step_delay_sec": 0.10},
+        ],
+        condition=IfCondition(launch_plan_to_pose_server),
+    )
+
     return [
         world_tf,
         world_tf_guard,
@@ -263,4 +281,5 @@ def build_runtime_node_actions(
         moveit_bridge,
         tf_geometry_service,
         object_pose_resolver,
+        plan_to_pose_server_node,
     ]

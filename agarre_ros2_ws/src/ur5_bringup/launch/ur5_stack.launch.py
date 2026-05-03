@@ -598,6 +598,9 @@ def generate_launch_description():
         launch_object_pose_resolver=LaunchConfiguration(
             "launch_object_pose_resolver"
         ),
+        launch_plan_to_pose_server=LaunchConfiguration(
+            "launch_plan_to_pose_server"
+        ),
         gz_delete_service=LaunchConfiguration("gz_delete_service"),
         gz_spawn_service=LaunchConfiguration("gz_spawn_service"),
         attach_backend_mode=LaunchConfiguration("attach_backend_mode"),
@@ -691,6 +694,13 @@ def generate_launch_description():
             # del cliente. Sin efectos colaterales si no hay subs ni calls.
             DeclareLaunchArgument(
                 "launch_object_pose_resolver", default_value="true"
+            ),
+            # F5-step6a (2026-05-03): plan_to_pose_server stub para que
+            # /orchestrator/plan_to_pose esté siempre disponible. Sin
+            # efectos colaterales si no hay clientes; el server queda
+            # idle esperando goals. Default true.
+            DeclareLaunchArgument(
+                "launch_plan_to_pose_server", default_value="true"
             ),
             DeclareLaunchArgument("launch_scene_sync", default_value="true"),
             DeclareLaunchArgument("launch_system_state", default_value="true"),
