@@ -356,6 +356,36 @@ def _disable_button_anyway(panel) -> None:
     panel._ui_set_status("Pick demo fallido: cesta no confirmada", error=True)
 
 
+# F3-step1.4: cadena de helpers IK seed deviation promovida del closure.
+# Constante _TWO_PI_R y los 3 helpers (_seed_devs / _seed_max_dev /
+# _seed_sum_dev) sirven para detectar soluciones IK en una rama
+# distinta a la del seed (>90° de deviación angular). Ahora
+# module-level — paridad numérica garantizada (mismo math.pi).
+
+_TWO_PI_R = 2.0 * math.pi
+
+
+def _seed_devs(q_arr, s_arr):
+    return [
+        abs(float(q) + _TWO_PI_R * round((float(s) - float(q)) / _TWO_PI_R) - float(s))
+        for q, s in zip(q_arr, s_arr)
+    ]
+
+
+def _seed_max_dev(q_arr, s_arr):
+    return max(_seed_devs(q_arr, s_arr))
+
+
+def _seed_sum_dev(q_arr, s_arr):
+    return sum(_seed_devs(q_arr, s_arr))
+
+
+# F3-step1.4: helper UI promovido del closure (4 callsites; 3 callables
+# usan ``lambda: _close_only(panel)``, 1 invocación directa pasa panel).
+def _close_only(panel) -> None:
+    panel._command_gripper(True, log_action="PICK", force=True)
+
+
 _RUN_PICK_DEMO_INVOCATION_COUNT = 0
 
 
@@ -3662,7 +3692,9 @@ def run_pick_demo(panel) -> None:
                 _direct_debug_state["seed_weight"] = float(_effective_joint_weight)
                 # Compute pure position error via FK to validate independently of joint_weight cost
                 import numpy as _np_ik_check
-                import math as _math_ik_retry
+                # F3-step1.4: math import legacy ya no necesario aquí
+                # (los helpers _seed_* viven a module-level y usan math).
+                import math as _math_ik_retry  # mantenido para _IK_DEV_THRESHOLD abajo
                 _fk_pos_solved, _ = fk_ur5(solved_q)
                 pos_err_m = float(_np_ik_check.linalg.norm(
                     _np_ik_check.asarray(_fk_pos_solved, dtype=float)
@@ -3674,19 +3706,8 @@ def run_pick_demo(panel) -> None:
                 # branch.  Retry with escalating seed_weights to force it closer to the
                 # seed configuration.  Stop as soon as we get a valid solution that is
                 # nearer to the seed OR once we've exhausted the retry schedule.
-                _TWO_PI_R = 2.0 * _math_ik_retry.pi
-                def _seed_devs(q_arr, s_arr):
-                    return [
-                        abs(float(q) + _TWO_PI_R * round((float(s) - float(q)) / _TWO_PI_R) - float(s))
-                        for q, s in zip(q_arr, s_arr)
-                    ]
-
-                def _seed_max_dev(q_arr, s_arr):
-                    return max(_seed_devs(q_arr, s_arr))
-
-                def _seed_sum_dev(q_arr, s_arr):
-                    return sum(_seed_devs(q_arr, s_arr))
-
+                # F3-step1.4: _TWO_PI_R y _seed_devs/max/sum promovidos
+                # a module-level. Paridad numérica garantizada (math.pi).
                 _IK_DEV_THRESHOLD = _math_ik_retry.pi / 2  # 90° — flag a wrong-branch solution
                 _retry_due_to_branch = (
                     bool(ik_ok)
@@ -9141,8 +9162,10 @@ def run_pick_demo(panel) -> None:
             )
             _monitor_alcance(trigger="PRE_CLOSE_GATE_OK")
             panel._emit_log("[DEMO] Cerrando pinza")
-            def _close_only():
-                panel._command_gripper(True, log_action="PICK", force=True)
+            # F3-step1.4: _close_only promovido a module-level. Wrapper local
+            # con panel ya cerrado para callsites callable (signal_run_ui /
+            # cmd_fn) — evita boilerplate de lambda repetido.
+            _close_only_local = lambda: _close_only(panel)  # noqa: E731
 
             _phase_begin(
                 "CLOSE",
@@ -9161,9 +9184,9 @@ def run_pick_demo(panel) -> None:
                 f"age={_fmt_scalar(close_state_pre_cmd.get('joint_state_age_sec'))} "
                 f"closed_flag={bool(close_state_pre_cmd.get('closed_flag'))}"
             )
-            panel.signal_run_ui.emit(_close_only)
+            panel.signal_run_ui.emit(_close_only_local)
             try:
-                _close_only()
+                _close_only(panel)
             except Exception as _exc_close:
                 panel._emit_log(
                     f"[PICK][DIRECT][CLOSE][ERR] direct call _close_only failed: {type(_exc_close).__name__}: {_exc_close}"
@@ -9186,7 +9209,7 @@ def run_pick_demo(panel) -> None:
                 True,
                 timeout_sec=close_confirm_timeout_sec,
                 opening_ref_sum=close_state_pre_cmd.get("opening_sum"),
-                cmd_fn=_close_only,
+                cmd_fn=_close_only_local,
                 cmd_retry_sec=0.4,
             )
             panel._emit_log(
