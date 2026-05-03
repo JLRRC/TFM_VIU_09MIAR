@@ -83,6 +83,9 @@ class ObjectPoseResolverService(LifecycleNode):
             self.declare_parameter("max_pose_age_sec", _DEFAULT_MAX_POSE_AGE_SEC)
             self.declare_parameter("gz_pose_topic", "")
             self.declare_parameter("service_name", _DEFAULT_SERVICE_NAME)
+            # auto_activate ya declarado por __init__ vía main(); el resto
+            # de declaraciones se hace aquí para que un cleanup→configure
+            # pueda regenerar el estado limpiamente.
         except Exception:
             # Re-configure: ya declarados.
             pass
@@ -213,6 +216,21 @@ class ObjectPoseResolverService(LifecycleNode):
 def main(args: Optional[list] = None) -> None:
     rclpy.init(args=args)
     node = ObjectPoseResolverService()
+    # F5-step5: parámetro auto_activate=True por defecto para integrarse
+    # como microservicio listo en el launch del stack. El parámetro debe
+    # declararse ANTES de get_parameter() — antes de cualquier transición.
+    try:
+        node.declare_parameter("auto_activate", True)
+    except Exception:
+        pass
+    if bool(node.get_parameter("auto_activate").value):
+        try:
+            node.trigger_configure()
+            node.trigger_activate()
+        except Exception as exc:
+            node.get_logger().error(
+                f"[OBJ_POSE_RESOLVER] auto_activate failed: {exc}"
+            )
     executor = SingleThreadedExecutor()
     executor.add_node(node)
     try:

@@ -60,6 +60,7 @@ def build_runtime_node_actions(
     launch_scene_sync: LaunchConfiguration,
     launch_moveit_bridge: LaunchConfiguration,
     launch_tf_geometry_service: LaunchConfiguration,
+    launch_object_pose_resolver: LaunchConfiguration,
     gz_delete_service: LaunchConfiguration,
     gz_spawn_service: LaunchConfiguration,
     attach_backend_mode: LaunchConfiguration,
@@ -232,6 +233,25 @@ def build_runtime_node_actions(
         condition=IfCondition(launch_tf_geometry_service),
     )
 
+    # F5-step5 (2026-05-03): object_pose_resolver_service — LifecycleNode
+    # con auto_activate. Suscribe al TFMessage de gz_pose_bridge y aloja
+    # /orchestrator/resolve_object_pose_world. Permite que el orchestrator
+    # (PickPlace.action) resuelva poses de objetos sin depender del hint
+    # del cliente (panel). Gating opt-in vía launch_object_pose_resolver.
+    object_pose_resolver = Node(
+        package="ur5_tools",
+        executable="object_pose_resolver_service",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"world_name": world_name},
+            {"world_frame": "world"},
+            {"max_pose_age_sec": 1.5},
+            {"auto_activate": True},
+        ],
+        condition=IfCondition(launch_object_pose_resolver),
+    )
+
     return [
         world_tf,
         world_tf_guard,
@@ -242,4 +262,5 @@ def build_runtime_node_actions(
         planning_scene_sync,
         moveit_bridge,
         tf_geometry_service,
+        object_pose_resolver,
     ]
