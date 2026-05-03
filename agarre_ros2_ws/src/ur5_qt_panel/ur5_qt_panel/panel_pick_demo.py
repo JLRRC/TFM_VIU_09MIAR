@@ -178,6 +178,10 @@ from .pick_demo.align_grasp import (
     AlignGraspState,
     align_demo_grasp_direct as _align_demo_grasp_direct_pure,
 )
+from .pick_demo.grasp_down import (
+    GraspDownContext,
+    run_grasp_down_conservative as _run_grasp_down_conservative_pure,
+)
 
 _DIRECT_GRIPPER_GEOMETRY = load_gripper_geometry()
 _DIRECT_TOOL0_TO_SOURCE_OFFSET = _DIRECT_GRIPPER_GEOMETRY.xyz_for_frame(
@@ -4632,6 +4636,10 @@ def run_pick_demo(panel) -> None:
                     panel._motion_in_progress = False
                     raise RuntimeError("grasp_down_cartesian_no_result_topic")
 
+            # F3-step3d: cuerpo de _run_grasp_down_conservative extraído a
+            # pick_demo/grasp_down.py. El wrapper construye el
+            # GraspDownContext con los 13 helpers/refs del closure y
+            # delega. Los 5 callsites legacy NO cambian.
             def _run_grasp_down_conservative(
                 *,
                 target_base,
@@ -4639,525 +4647,37 @@ def run_pick_demo(panel) -> None:
                 timeout_sec: float,
                 audit_target_source: str,
                 phase_seed_joints=None,
-            ) -> tuple[dict | None, str, dict]:
-                strict_xy_tol = max(0.006, _get_pick_demo_params().grasp_down_strict_xy_tol_m)
-                strict_z_tol = max(0.008, _get_pick_demo_params().grasp_down_strict_z_tol_m)
-                target_dist_tol = max(strict_xy_tol, _get_pick_demo_params().grasp_down_strict_dist_tol_m)
-                max_attempts = max(
-                    1,
-                    _get_pick_demo_params().grasp_down_max_attempts,
+            ):
+                _gd_ctx = GraspDownContext(
+                    panel=panel,
+                    live_object_base=_live_object_base,
+                    live_tcp_base=_live_tcp_base,
+                    move_tcp_direct=_move_tcp_direct,
+                    run_joint_step=_run_joint_step,
+                    append_trace=_append_trace,
+                    emit_pose_consistency=_emit_pose_consistency,
+                    pose_consistency_metrics=_pose_consistency_metrics,
+                    grasp_down_joint_quality=_grasp_down_joint_quality,
+                    grasp_down_runtime_metrics=_grasp_down_runtime_metrics,
+                    grasp_down_waypoints=_grasp_down_waypoints,
+                    joint_preset_fallback_ok=_joint_preset_fallback_ok,
+                    current_joint_seed=_current_joint_seed,
+                    move_sec=move_sec,
+                    get_pick_demo_params=_get_pick_demo_params,
+                    fmt_vec=_fmt_vec,
+                    fmt_scalar=_fmt_scalar,
+                    tuple3=_tuple3,
+                    iso_now=_iso_now,
                 )
-                rot_weight = max(0.0, _get_pick_demo_params().grasp_down_rot_weight)
-                ik_err_tol = max(0.035, _get_pick_demo_params().grasp_down_ik_err_tol)
-                joint_weight = max(0.0, _get_pick_demo_params().grasp_down_ik_seed_weight)
-
-                def _grasp_down_permissive_rot_weight() -> float:
-                    return max(
-                        rot_weight,
-                        _get_pick_demo_params().grasp_down_permissive_rot_weight,
-                    )
-
-                # F3-step1.2: _grasp_down_permissive_ik_err_tol promovido a module-level.
-
-                def _grasp_down_permissive_joint_weight() -> float:
-                    return max(
-                        joint_weight,
-                        _get_pick_demo_params().grasp_down_permissive_seed_weight,
-                    )
-
-                grasp_down_disable_permissive_fallback = _get_pick_demo_params().grasp_down_disable_permissive_fallback
-
-                last_debug = None
-                last_metrics = _grasp_down_runtime_metrics(target_base=target_base, obj_base=obj_base)
-                last_route = "cartesian_like_descent"
-                _gd_seed_injected = False
-                panel._emit_log(
-                    "[DIAG][GD_CONSERVATIVE_ENTRY] "
-                    f"tcp_base={_fmt_vec(_tuple3(_live_tcp_base()))} "
-                    f"target_base={_fmt_vec(_tuple3(target_base))}"
+                return _run_grasp_down_conservative_pure(
+                    _gd_ctx,
+                    target_base=target_base,
+                    obj_base=obj_base,
+                    timeout_sec=timeout_sec,
+                    audit_target_source=audit_target_source,
+                    phase_seed_joints=phase_seed_joints,
                 )
-                # ── Permissive-first for large Z gap (Z-only) ────────────────────────
-                # When the TCP is ≥20mm above the grasp target (standard after
-                # APPROACH_COARSE at +35mm clearance), the multi-segment waypoint
-                # approach sends tiny joint commands so fast the controller cannot
-                # track them → arm barely moves → visual "hover/separation."
-                # XY se congela al TCP actual para evitar drift lateral: permissive-first
-                # solo desciende en Z. La corrección XY residual queda para el loop
-                # segmentado con joint_weight=0.45, que la ejecuta en pasos controlados.
-                _pf_tcp = _tuple3(_live_tcp_base())
-                _pf_tgt = _tuple3(target_base)
-                if _pf_tcp is not None and _pf_tgt is not None:
-                    _pf_z_gap = abs(float(_pf_tcp[2]) - float(_pf_tgt[2]))
-                    _pf_xy_gap = math.hypot(
-                        float(_pf_tcp[0]) - float(_pf_tgt[0]),
-                        float(_pf_tcp[1]) - float(_pf_tgt[1]),
-                    )
-                    if _pf_z_gap >= 0.020 and grasp_down_disable_permissive_fallback:
-                        _pf_msg = (
-                            "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                            "reason=large_z_gap_pre_motion "
-                            f"z_gap={_pf_z_gap:.3f} xy_gap={_pf_xy_gap:.3f} "
-                            "strategy=permissive_z_only_descent_disabled"
-                        )
-                        panel._emit_log(_pf_msg)
-                        _append_trace(_pf_msg)
-                    elif _pf_z_gap >= 0.020:
-                        _pf_z_only_target = (
-                            float(_pf_tcp[0]),
-                            float(_pf_tcp[1]),
-                            float(_pf_tgt[2]),
-                        )
-                        _pf_msg = (
-                            "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                            f"reason=large_z_gap_pre_motion "
-                            f"z_gap={_pf_z_gap:.3f} xy_gap={_pf_xy_gap:.3f} "
-                            f"strategy=permissive_z_only_descent "
-                            f"pf_target={_fmt_vec(_pf_z_only_target)} "
-                            f"full_target={_fmt_vec(_pf_tgt)}"
-                        )
-                        panel._emit_log(_pf_msg)
-                        _append_trace(_pf_msg)
-                        try:
-                            last_debug = _move_tcp_direct(
-                                label="GRASP_DOWN_JOINT",
-                                target_tcp_runtime=_pf_z_only_target,
-                                timeout_sec=max(float(timeout_sec), move_sec + 3.0),
-                                audit_target_source=f"{audit_target_source}:permissive_pre",
-                                target_pose_original=_pf_z_only_target,
-                                target_frame_original="base_link",
-                                rot_weight=_grasp_down_permissive_rot_weight(),
-                                ik_err_tol=_grasp_down_permissive_ik_err_tol(),
-                                joint_weight=_grasp_down_permissive_joint_weight(),
-                                force_send=True,
-                            )
-                            last_route = "permissive_direct_descent"
-                        except Exception as _pf_exc:
-                            panel._emit_log(
-                                f"[PICK][DIRECT][GRASP_DOWN] permissive_pre_failed:{_pf_exc}"
-                            )
-                            last_debug = None
-                            last_route = "cartesian_like_descent"
-                # If permissive_pre succeeded and z_gap is within the outer PHASE_CHECK
-                # tolerance (UTIL_Z_ERR_TOL, not the tighter strict_z_tol), skip the
-                # waypoint loop entirely.  Use the TCP position already settled inside
-                # _move_tcp_direct to avoid a stale _live_tcp_base() read.
-                # NOTE: strict_z_tol is 8mm (conservative descent gate) but the DH/SDF
-                # divergence always leaves ~13mm Z residual → strict_z_tol would never
-                # pass.  Use UTIL_Z_ERR_TOL (25mm) which is what the outer PHASE_CHECK
-                # uses, so "early return here" ↔ "PHASE_CHECK will pass out there".
-                if last_route == "permissive_direct_descent" and last_debug is not None:
-                    _pf_util_z_tol = max(
-                        0.008,
-                        _get_pick_demo_params().grasp_down_util_z_err_tol_m,
-                    )
-                    _pf_actual = _tuple3(
-                        (last_debug or {}).get("runtime_target_stable_pos")
-                        or (last_debug or {}).get("runtime_target_pos")
-                        or _live_tcp_base()
-                    )
-                    if _pf_actual is not None:
-                        _pf_remaining = abs(float(_pf_actual[2]) - float(_pf_tgt[2]))
-                        _pf_xy_after = math.hypot(
-                            float(_pf_actual[0]) - float(_pf_tgt[0]),
-                            float(_pf_actual[1]) - float(_pf_tgt[1]),
-                        )
-                        _pf_msg2 = (
-                            "[DIAG][PERMISSIVE_RESULT] "
-                            f"actual={_fmt_vec(_pf_actual)} "
-                            f"target={_fmt_vec(_pf_tgt)} "
-                            f"xy_err_after={_pf_xy_after:.4f} "
-                            f"z_remaining={_pf_remaining:.4f}/{_pf_util_z_tol:.3f} "
-                            f"early_return={str(_pf_remaining <= _pf_util_z_tol).lower()}"
-                        )
-                        panel._emit_log(_pf_msg2)
-                        _append_trace(_pf_msg2)
-                        if _pf_remaining <= _pf_util_z_tol:
-                            last_metrics = _grasp_down_runtime_metrics(
-                                target_base=target_base,
-                                tcp_base=_pf_actual,
-                                obj_base=_tuple3(_live_object_base()) or _tuple3(obj_base),
-                            )
-                            return last_debug, "permissive_direct_descent:pre_motion", last_metrics
-                # ─────────────────────────────────────────────────────────────────────
-                for attempt in range(1, max_attempts + 1):
-                    actual_before = _tuple3(_live_tcp_base())
-                    object_now = _tuple3(_live_object_base()) or _tuple3(obj_base)
-                    panel._emit_log(
-                        "[DIAG][GD_WAYPOINT_LOOP] "
-                        f"attempt={attempt} "
-                        f"actual={_fmt_vec(actual_before)} "
-                        f"target={_fmt_vec(_tuple3(target_base))}"
-                    )
-                    step_divider = float(2 ** (attempt - 1))
-                    waypoint_xy_step = max(
-                        0.008,
-                        _get_pick_demo_params().grasp_down_segment_xy_step_m / step_divider,
-                    )
-                    waypoint_z_step = max(
-                        0.005,
-                        _get_pick_demo_params().grasp_down_segment_z_step_m / step_divider,
-                    )
-                    waypoints = _grasp_down_waypoints(
-                        actual_before,
-                        target_base,
-                        max_xy_step_m=waypoint_xy_step,
-                        max_z_step_m=waypoint_z_step,
-                    )
-                    if not waypoints:
-                        raise RuntimeError("grasp_down_waypoints_unavailable")
-                    mode = "cartesian" if len(waypoints) > 1 else "hybrid"
-                    route = (
-                        f"cartesian_like_segments:{len(waypoints)}"
-                        if len(waypoints) > 1
-                        else "direct_ik"
-                    )
-                    try:
-                        for segment_idx, waypoint in enumerate(waypoints, start=1):
-                            last_debug = _move_tcp_direct(
-                                label="GRASP_DOWN_JOINT",
-                                target_tcp_runtime=waypoint,
-                                timeout_sec=max(float(timeout_sec), move_sec + 2.0 + float(attempt)),
-                                audit_target_source=f"{audit_target_source}:segment_{segment_idx}_of_{len(waypoints)}",
-                                target_pose_original=waypoint,
-                                target_frame_original="base_link",
-                                rot_weight=rot_weight,
-                                ik_err_tol=ik_err_tol,
-                                joint_weight=joint_weight,
-                                force_send=True,
-                            )
-                        last_route = route
-                    except Exception as exc:
-                        previous_xy_err = last_metrics.get("xy_err_target")
-                        if grasp_down_disable_permissive_fallback:
-                            if attempt < max_attempts:
-                                _fb_msg = (
-                                    "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                                    f"reason=direct_ik_exception:{exc} "
-                                    f"previous_xy_err={_fmt_scalar(previous_xy_err)} "
-                                    f"strategy=retry_segmented_refine_without_permissive segments={len(waypoints)}"
-                                )
-                                panel._emit_log(_fb_msg)
-                                _append_trace(_fb_msg)
-                                continue
-                            if _joint_preset_fallback_ok(
-                                "GRASP_DOWN_JOINT",
-                                JOINT_GRASP_DOWN_POSE_RAD,
-                                target_base=target_base,
-                                obj_base=obj_base,
-                            ):
-                                last_route = "joint_preset_last_resort"
-                                _fb_msg = (
-                                    "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                                    f"reason=direct_ik_exception:{exc} "
-                                    f"previous_xy_err={_fmt_scalar(previous_xy_err)} "
-                                    "strategy=joint_preset_last_resort"
-                                )
-                                panel._emit_log(_fb_msg)
-                                _append_trace(_fb_msg)
-                                _run_joint_step(
-                                    "GRASP_DOWN_JOINT_FALLBACK",
-                                    JOINT_GRASP_DOWN_POSE_RAD,
-                                    timeout_sec=move_sec + 6.0,
-                                    tol_rad=0.08,
-                                )
-                                last_debug = {
-                                    "ik_solution": [float(v) for v in JOINT_GRASP_DOWN_POSE_RAD],
-                                    "runtime_target_ok": False,
-                                    "runtime_target_dist": None,
-                                }
-                            else:
-                                raise
-                            continue
-                        permissive_rot_weight = _grasp_down_permissive_rot_weight()
-                        permissive_ik_err_tol = _grasp_down_permissive_ik_err_tol()
-                        permissive_joint_weight = _grasp_down_permissive_joint_weight()
-                        try:
-                            _fb_msg = (
-                                "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                                f"reason=direct_ik_exception:{exc} "
-                                f"previous_xy_err={_fmt_scalar(previous_xy_err)} "
-                                "strategy=permissive_direct_descent"
-                            )
-                            panel._emit_log(_fb_msg)
-                            _append_trace(_fb_msg)
-                            last_debug = _move_tcp_direct(
-                                label="GRASP_DOWN_JOINT",
-                                target_tcp_runtime=target_base,
-                                timeout_sec=max(float(timeout_sec), move_sec + 3.0 + float(attempt)),
-                                audit_target_source=f"{audit_target_source}:permissive_final",
-                                target_pose_original=target_base,
-                                target_frame_original="base_link",
-                                rot_weight=permissive_rot_weight,
-                                ik_err_tol=permissive_ik_err_tol,
-                                joint_weight=permissive_joint_weight,
-                                force_send=True,
-                            )
-                            last_route = "permissive_direct_descent"
-                        except Exception as permissive_exc:
-                            if attempt < max_attempts:
-                                _fb_msg = (
-                                    "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                                    f"reason=permissive_direct_exception:{permissive_exc} "
-                                    f"previous_xy_err={_fmt_scalar(previous_xy_err)} "
-                                    f"strategy=retry_segmented_refine segments={len(waypoints)}"
-                                )
-                                panel._emit_log(_fb_msg)
-                                _append_trace(_fb_msg)
-                                continue
-                            exc = permissive_exc
-                            if _joint_preset_fallback_ok(
-                                "GRASP_DOWN_JOINT",
-                                JOINT_GRASP_DOWN_POSE_RAD,
-                                target_base=target_base,
-                                obj_base=obj_base,
-                            ):
-                                last_route = "joint_preset_last_resort"
-                                _fb_msg = (
-                                    "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                                    f"reason=direct_ik_exception:{exc} "
-                                    f"previous_xy_err={_fmt_scalar(previous_xy_err)} "
-                                    "strategy=joint_preset_last_resort"
-                                )
-                                panel._emit_log(_fb_msg)
-                                _append_trace(_fb_msg)
-                                _run_joint_step(
-                                    "GRASP_DOWN_JOINT_FALLBACK",
-                                    JOINT_GRASP_DOWN_POSE_RAD,
-                                    timeout_sec=move_sec + 6.0,
-                                    tol_rad=0.08,
-                                )
-                                last_debug = {
-                                    "ik_solution": [float(v) for v in JOINT_GRASP_DOWN_POSE_RAD],
-                                    "runtime_target_ok": False,
-                                    "runtime_target_dist": None,
-                                }
-                            else:
-                                raise
-                    actual_after = _tuple3(_live_tcp_base())
-                    object_after = _tuple3(_live_object_base()) or object_now
-                    q_after = [float(v) for v in (_current_joint_seed() or [])]
-                    # ── DH false-satisfied detection ─────────────────────────────────
-                    # When the IK reports joint_delta≈0 but physical TCP is still far
-                    # from target in Z, the DH model is "already satisfied" due to the
-                    # ~13mm DH/SDF Z divergence.  Arm stays put.  Force permissive.
-                    if last_route != "permissive_direct_descent":
-                        _dhs_seed = [float(v) for v in (phase_seed_joints or [])]
-                        _dhs_sum_delta = (
-                            sum(abs(a - b) for a, b in zip(q_after, _dhs_seed))
-                            if len(_dhs_seed) == len(q_after) and _dhs_seed
-                            else 1.0
-                        )
-                        _dhs_z_gap = (
-                            abs(float(actual_after[2]) - float(target_base[2]))
-                            if actual_after is not None
-                            else 0.0
-                        )
-                        if _dhs_z_gap > 0.010 and grasp_down_disable_permissive_fallback:
-                            _dhs_msg = (
-                                "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                                f"reason=dh_false_satisfied "
-                                f"joint_delta_sum={_dhs_sum_delta:.4f} "
-                                f"z_gap={_dhs_z_gap:.3f} "
-                                "strategy=permissive_direct_descent_disabled"
-                            )
-                            panel._emit_log(_dhs_msg)
-                            _append_trace(_dhs_msg)
-                        elif _dhs_z_gap > 0.010:
-                            _dhs_msg = (
-                                "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                                f"reason=dh_false_satisfied "
-                                f"joint_delta_sum={_dhs_sum_delta:.4f} "
-                                f"z_gap={_dhs_z_gap:.3f} "
-                                "strategy=permissive_direct_descent"
-                            )
-                            panel._emit_log(_dhs_msg)
-                            _append_trace(_dhs_msg)
-                            try:
-                                last_debug = _move_tcp_direct(
-                                    label="GRASP_DOWN_JOINT",
-                                    target_tcp_runtime=target_base,
-                                    timeout_sec=max(
-                                        float(timeout_sec), move_sec + 3.0 + float(attempt)
-                                    ),
-                                    audit_target_source=f"{audit_target_source}:permissive_dhs",
-                                    target_pose_original=target_base,
-                                    target_frame_original="base_link",
-                                    rot_weight=_grasp_down_permissive_rot_weight(),
-                                    ik_err_tol=_grasp_down_permissive_ik_err_tol(),
-                                    joint_weight=_grasp_down_permissive_joint_weight(),
-                                    force_send=True,
-                                )
-                                last_route = "permissive_direct_descent"
-                                actual_after = _tuple3(_live_tcp_base())
-                                object_after = _tuple3(_live_object_base()) or object_now
-                                q_after = [float(v) for v in (_current_joint_seed() or [])]
-                            except Exception as _dhs_exc:
-                                panel._emit_log(
-                                    "[PICK][DIRECT][GRASP_DOWN] "
-                                    f"permissive_dhs_failed:{_dhs_exc}"
-                                )
-                    # ─────────────────────────────────────────────────────────────────
-                    if isinstance(last_debug, dict):
-                        if q_after:
-                            last_debug["q_after"] = q_after
-                        if not last_debug.get("seed") and phase_seed_joints:
-                            last_debug["seed"] = [float(v) for v in phase_seed_joints]
-                    last_metrics = _grasp_down_runtime_metrics(
-                        target_base=target_base,
-                        tcp_base=actual_after,
-                        obj_base=object_after,
-                    )
-                    pose_consistency = _pose_consistency_metrics(
-                        phase="GRASP_DOWN_JOINT",
-                        tcp_base=actual_after,
-                        target_base=target_base,
-                    )
-                    last_metrics["pose_consistency"] = _json_safe(pose_consistency)
-                    runtime_ok = bool((last_debug or {}).get("runtime_target_ok"))
-                    xy_err_target = last_metrics.get("xy_err_target")
-                    z_err_target = last_metrics.get("z_err_target")
-                    target_dist = last_metrics.get("target_dist")
-                    ok = bool(
-                        xy_err_target is not None
-                        and z_err_target is not None
-                        and target_dist is not None
-                        and float(xy_err_target) <= strict_xy_tol
-                        and abs(float(z_err_target)) <= strict_z_tol
-                        and float(target_dist) <= target_dist_tol
-                    )
-                    quality = _grasp_down_joint_quality(
-                        phase_seed_joints=phase_seed_joints,
-                        command_seed_joints=(last_debug or {}).get("seed"),
-                        final_joints=(last_debug or {}).get("q_after") or q_after,
-                        runtime_ok=runtime_ok,
-                        geometry_ok=bool(ok and pose_consistency.get("sources_ok")),
-                    )
-                    last_metrics["joint_quality"] = quality
-                    exec_msg = (
-                        "[PICK][DIRECT][GRASP_DOWN_EXEC] "
-                        f"mode={mode} target_xyz={_fmt_vec(target_base)} "
-                        f"actual_before={_fmt_vec(actual_before)} "
-                        f"actual_after={_fmt_vec(actual_after)} "
-                        f"object_xyz={_fmt_vec(object_after)}"
-                    )
-                    panel._emit_log(exec_msg)
-                    _append_trace(exec_msg)
-                    result_msg = (
-                        "[PICK][DIRECT][GRASP_DOWN_RESULT] "
-                        f"xy_err={_fmt_scalar(xy_err_target)}/{strict_xy_tol:.3f} "
-                        f"z_err={_fmt_scalar(z_err_target)}/{strict_z_tol:.3f} "
-                        f"joint_err={_fmt_scalar(quality.get('max_joint_delta'))}/{_fmt_scalar(quality.get('sum_joint_delta'))} "
-                        f"max_joint_delta={_fmt_scalar(quality.get('max_joint_delta'))} "
-                        f"sum_joint_delta={_fmt_scalar(quality.get('sum_joint_delta'))} "
-                        f"joint_goal={json.dumps(_json_safe((last_debug or {}).get('ik_solution')), ensure_ascii=True)} "
-                        f"route={last_route} runtime_ok={str(runtime_ok).lower()} "
-                        f"result={'OK' if (ok and runtime_ok and bool(quality.get('branch_ok'))) else 'NO'}"
-                    )
-                    panel._emit_log(result_msg)
-                    _append_trace(result_msg)
-                    branch_msg = (
-                        "[PICK][DIRECT][GRASP_DOWN_BRANCH] "
-                        f"seed_joints={json.dumps(_json_safe(quality.get('phase_seed_joints')), ensure_ascii=True)} "
-                        f"command_seed_joints={json.dumps(_json_safe(quality.get('command_seed_joints')), ensure_ascii=True)} "
-                        f"final_joints={json.dumps(_json_safe(quality.get('final_joints')), ensure_ascii=True)} "
-                        f"branch_change={str(bool(quality.get('branch_change'))).lower()} "
-                        f"max_joint_delta={_fmt_scalar(quality.get('max_joint_delta'))} "
-                        f"sum_joint_delta={_fmt_scalar(quality.get('sum_joint_delta'))} "
-                        f"critical_joints_delta={json.dumps(_json_safe(quality.get('critical_joints_delta')), ensure_ascii=True)}"
-                    )
-                    panel._emit_log(branch_msg)
-                    _append_trace(branch_msg)
-                    quality_ok = bool(runtime_ok and ok and quality.get("branch_ok"))
-                    pose_sources_ok = bool(pose_consistency.get("sources_ok"))
-                    quality_msg = (
-                        "[PICK][DIRECT][GRASP_DOWN_JOINT_QUALITY] "
-                        f"runtime_ok={str(runtime_ok).lower()} "
-                        f"geometry_ok={str(ok).lower()} "
-                        f"pose_ok={str(pose_sources_ok).lower()} "
-                        f"branch_ok={str(bool(quality.get('branch_ok'))).lower()} "
-                        f"result={'OK' if (quality_ok and pose_sources_ok) else 'NO'} "
-                        f"reason={quality.get('reason')}"
-                    )
-                    panel._emit_log(quality_msg)
-                    _append_trace(quality_msg)
-                    _emit_pose_consistency(
-                        phase="GRASP_DOWN_JOINT",
-                        stage=f"attempt_{attempt}",
-                        metrics=pose_consistency,
-                    )
-                    visual_msg = (
-                        "[PICK][DIRECT][GRASP_DOWN_VISUAL] "
-                        f"tcp_frame={DIRECT_SOURCE_FRAME} actual_xyz={_fmt_vec(actual_after)} "
-                        f"object_xyz={_fmt_vec(object_after)} "
-                        f"note=step_by_step_operational_frame visual_frame={DIRECT_LEGACY_TCP_FRAME}"
-                    )
-                    panel._emit_log(visual_msg)
-                    _append_trace(visual_msg)
-                    # Accept when both quality checks pass.
-                    # Also accept on geometry_only: if TCP is within strict geometric
-                    # tolerance (z_err < 25mm, xy_err < 12mm) AND no branch change,
-                    # even when pose_sources_ok=False or runtime_ok=False.  This handles
-                    # the DH/SDF FK divergence at the grasp height (~13mm) that makes
-                    # panel._last_tcp_base (DH FK) diverge from the live TF TCP by more
-                    # than source_tol=6mm, causing a spurious sources_ok=False.
-                    geometry_only_ok = bool(ok and quality.get("branch_ok"))
-                    if (quality_ok and pose_sources_ok) or geometry_only_ok:
-                        if quality_ok and pose_sources_ok:
-                            accept_note = "geometry_and_joint_quality_ok"
-                            decision = f"{last_route}:runtime_converged" if runtime_ok else f"{last_route}:metrics_converged"
-                        else:
-                            accept_note = "geometry_ok_fk_model_diverges_accepted"
-                            decision = f"{last_route}:geometry_converged"
-                        accept_msg = (
-                            "[PICK][DIRECT][GRASP_DOWN_ACCEPT] "
-                            f"route={last_route} reason={accept_note} "
-                            f"runtime_ok={str(runtime_ok).lower()} "
-                            f"pose_sources_ok={str(pose_sources_ok).lower()}"
-                        )
-                        panel._emit_log(accept_msg)
-                        _append_trace(accept_msg)
-                        if _gd_seed_injected:
-                            os.environ.pop("PANEL_PICK_DEMO_IK_SEED_JOINTS", None)
-                        return last_debug, decision, last_metrics
-                    reject_reason = (
-                        "pose_source_mismatch"
-                        if not pose_sources_ok
-                        else quality.get("reason")
-                    )
-                    reject_msg = (
-                        "[PICK][DIRECT][GRASP_DOWN_REJECT] "
-                        f"route={last_route} reason={reject_reason} "
-                        f"max_joint_delta={_fmt_scalar(quality.get('max_joint_delta'))} "
-                        f"sum_joint_delta={_fmt_scalar(quality.get('sum_joint_delta'))} "
-                        f"critical_joints_delta={json.dumps(_json_safe(quality.get('critical_joints_delta')), ensure_ascii=True)}"
-                    )
-                    panel._emit_log(reject_msg)
-                    _append_trace(reject_msg)
-                    if last_route == "permissive_direct_descent" and reject_reason == "visual_or_joint_pose_bad":
-                        _fb_msg = (
-                            "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                            "route=permissive_direct_descent rejected=true "
-                            "reason=visual_or_joint_pose_bad"
-                        )
-                        panel._emit_log(_fb_msg)
-                        _append_trace(_fb_msg)
-                    if attempt < max_attempts:
-                        _fb_msg = (
-                            "[PICK][DIRECT][GRASP_DOWN_FALLBACK] "
-                            f"reason={reject_reason} "
-                            f"previous_xy_err={_fmt_scalar(xy_err_target)} "
-                            f"strategy=retry_segmented_refine segments={len(waypoints)}"
-                        )
-                        panel._emit_log(_fb_msg)
-                        _append_trace(_fb_msg)
-                if _gd_seed_injected:
-                    os.environ.pop("PANEL_PICK_DEMO_IK_SEED_JOINTS", None)
-                raise RuntimeError(
-                    "grasp_down_runtime_not_converged "
-                    f"xy_err={_fmt_scalar(last_metrics.get('xy_err_target'))} "
-                    f"z_err={_fmt_scalar(last_metrics.get('z_err_target'))} "
-                    f"route={last_route}"
-                )
+
 
             # F3-step3c: cuerpo de _align_demo_grasp_direct extraído a
             # pick_demo/align_grasp.py. El wrapper construye el

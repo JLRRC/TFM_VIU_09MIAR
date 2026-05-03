@@ -133,7 +133,7 @@ LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
     # F3-step1.4 (2026-05-03): +23 LOC por cadena _seed_devs/max/sum
     # (constante _TWO_PI_R + 3 helpers IK) y _close_only(panel)
     # promovidos a module-level. run_pick_demo y worker bajaron -7 LOC.
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   9724,   # F3-step3c: -493 LOC (_align_demo_grasp_direct body fuera) — bajo 10k
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   9244,   # F3-step3d: -480 LOC (_run_grasp_down_conservative body fuera)
 
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  4614,
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py":          2149,
@@ -200,8 +200,14 @@ MAX_LOC_PER_FUNCTION_GLOBAL = 200
 # completo por orden de prioridad de refactor (las top-3 son F3-step1).
 LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3 step1 — el monolito que decide el TFM (drift hacia abajo).
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo": 9157,   # F3-step3c: -498 LOC (_align_demo_grasp_direct fuera)
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo.worker": 8884,  # F3-step3c: -498 LOC
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo": 8673,   # F3-step3d: -484 LOC (_run_grasp_down_conservative fuera)
+    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo.worker": 8400,  # F3-step3d: -484 LOC
+    # F3-step3d (2026-05-03): run_grasp_down_conservative extracted to
+    # pick_demo/grasp_down.py. 534 LOC = cuerpo legacy 1:1 con descenso
+    # segmentado en waypoints intermedios + IK estricto + fallback preset.
+    # Reducción estructural < 200 requiere extraer cada waypoint loop
+    # iteration en sub-helper (F3-step3d-bis pendiente).
+    "ur5_qt_panel/ur5_qt_panel/pick_demo/grasp_down.py::run_grasp_down_conservative": 534,
     # F3-step3c (2026-05-03): align_demo_grasp_direct extracted to
     # pick_demo/align_grasp.py. 550 LOC = cuerpo legacy 1:1 + sub-bloques
     # GRASP_ALIGN_IK con audit detallado por intento. Reducción estructural
