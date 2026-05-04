@@ -15,6 +15,7 @@ La clase concreta debe heredar también de ``rclpy.node.Node``.
 from __future__ import annotations
 
 import json
+import os
 import time
 
 from geometry_msgs.msg import PoseStamped
@@ -150,9 +151,31 @@ class MoveItCommanderMixin:
         req.group_name = self._group_name
         req.link_name = self._ee_frame
         req.waypoints = [target.pose]
-        req.max_step = 0.005
-        req.jump_threshold = 0.0
-        req.avoid_collisions = True
+        # FIX 2026-05-04 (bug GRASP_DOWN cartesian fraction=0.000):
+        # max_step=0.005 + jump_threshold=0.0 + avoid_collisions=True
+        # rechazaban el cartesian path al intentar bajar el TCP al objeto.
+        # MoveIt computaba 1 waypoint (start) y se detenía con fraction=0.
+        #
+        # jump_threshold=0.0 = "no permitir NINGÚN salto en joint space".
+        # Para grasp con TCP cerca del target (28mm de descenso), esto
+        # es demasiado restrictivo. jump_threshold=5.0 permite los saltos
+        # típicos de cartesian descent sin permitir teleporte.
+        #
+        # avoid_collisions=False permite que el TCP haga contacto con el
+        # objeto (necesario para grasp). Override con env var:
+        #   MOVEIT_BRIDGE_CARTESIAN_AVOID_COLLISIONS=true
+        #   MOVEIT_BRIDGE_CARTESIAN_JUMP_THRESHOLD=<float>
+        #   MOVEIT_BRIDGE_CARTESIAN_MAX_STEP=<float>
+        req.max_step = float(
+            os.environ.get("MOVEIT_BRIDGE_CARTESIAN_MAX_STEP", "0.005") or 0.005
+        )
+        req.jump_threshold = float(
+            os.environ.get("MOVEIT_BRIDGE_CARTESIAN_JUMP_THRESHOLD", "5.0") or 5.0
+        )
+        _avoid_env = os.environ.get(
+            "MOVEIT_BRIDGE_CARTESIAN_AVOID_COLLISIONS", "false"
+        ).strip().lower()
+        req.avoid_collisions = _avoid_env in ("1", "true", "yes")
         start_state_msg, start_state_reason = self._build_start_robot_state_msg()
         if start_state_msg is not None:
             req.start_state = start_state_msg
