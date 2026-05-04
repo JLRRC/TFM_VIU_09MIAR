@@ -753,18 +753,23 @@ elif [[ "$MOVEIT_MODE" == "bridge" ]]; then
   LAUNCH_MOVEIT="false"
 fi
 export PANEL_MOVEIT_MODE="$MOVEIT_MODE"
-# FIX-DUAL-BRIDGE: con MOVEIT_MODE=move_group y stack externo (PANEL_START_STACK=0),
 # El panel publica goals a /desired_grasp y /desired_grasp_cartesian que SOLO
 # son consumidos por ur5_moveit_bridge. Sin el bridge los goals se pierden y
 # GRASP_DOWN nunca completa (TCP queda 35mm arriba del objeto, ciclo atascado).
 #
-# La lógica anterior (LAUNCH_MOVEIT_BRIDGE=false con moveit_mode=move_group)
-# asumía que el panel se conectaba directamente a /move_action, pero esa ruta
-# nunca se implementó en el código del panel. Fix 2026-05-04 (bug GRASP_DOWN).
+# Lógica del fix 2026-05-04:
+#   - PANEL_START_STACK=1: este script arranca todo el stack → bridge=true
+#     (el bridge debe arrancar porque no hay otro)
+#   - PANEL_START_STACK!=1: stack externo ya corriendo (lanzar_panelv2.sh
+#     ahora arranca su bridge en el stack) → bridge=false aquí para evitar
+#     duplicado
 #
-# Para evitar "doble bridge" el usuario debe pasar LAUNCH_MOVEIT_BRIDGE=false
-# explícitamente cuando exista otro bridge externo conocido.
-LAUNCH_MOVEIT_BRIDGE="${LAUNCH_MOVEIT_BRIDGE:-true}"
+# El bug original: tanto stack externo como start_panel_v2.sh tenían
+# bridge=false → ningún bridge corría → goals perdidos.
+LAUNCH_MOVEIT_BRIDGE="true"
+if [[ "${PANEL_START_STACK}" != "1" ]]; then
+  LAUNCH_MOVEIT_BRIDGE="false"
+fi
 
 runtime_sanity_check
 
