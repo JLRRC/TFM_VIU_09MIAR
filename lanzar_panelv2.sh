@@ -196,8 +196,12 @@ ros2 launch ur5_bringup ur5_stack.launch.py \
     launch_panel:=false \
     launch_moveit:=true \
     moveit_mode:=move_group \
-    launch_moveit_bridge:=false \
+    launch_moveit_bridge:=true \
     >"$STACK_LOG" 2>&1 &
+# launch_moveit_bridge:=true (fix 2026-05-04 bug GRASP_DOWN):
+# El panel publica a /desired_grasp y /desired_grasp_cartesian que sólo
+# son consumidos por ur5_moveit_bridge. Sin el bridge GRASP_DOWN nunca
+# completa el descenso al objeto.
 STACK_PID=$!
 echo "[LAUNCH] Stack PID=$STACK_PID"
 
