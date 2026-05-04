@@ -58,7 +58,7 @@ def test_defaults_have_expected_values():
     assert p.grasp_down_rot_weight == 0.10
     # Tolerancias TCP por fase (consumidas en directo_geometry).
     assert p.approach_coarse_tcp_tol_m == 0.015
-    assert p.approach_coarse_refine_tcp_tol_m == 0.006
+    assert p.approach_coarse_refine_tcp_tol_m == 0.020  # Fix 2026-05-04 bug GRASP_DOWN
     assert p.grasp_down_tcp_tol_m == 0.020
     assert p.grasp_align_tcp_tol_m == 0.015
     assert p.basket_transport_tcp_tol_m == 0.060
@@ -155,12 +155,12 @@ def test_defaults_have_expected_values():
     assert p.grasp_down_permissive_ik_err_tol == 0.015
     assert p.grasp_down_permissive_rot_weight == 0.35
     assert p.grasp_down_permissive_seed_weight == 0.65
-    assert p.grasp_down_use_moveit_cartesian is True
+    assert p.grasp_down_use_moveit_cartesian is False  # Fix 2026-05-04 bug GRASP_DOWN
     assert p.grasp_down_util_dist_tol_m == 0.22
     assert p.gripper_confirm_max_state_age_sec == 0.35
     assert p.gripper_confirm_stable_samples == 2
     assert p.gripper_target_tol_m == 0.035
-    assert p.handoff_target_jump_tol_m == 0.005
+    assert p.handoff_target_jump_tol_m == 0.040  # Fix 2026-05-04 bug GRASP_DOWN
     assert p.manual_like_attach_max_tcp_dist_m == 0.14
     assert p.manual_like_attach_wait_sec == 0.9
     assert p.manual_like_attach_xy_tol_m == 0.06

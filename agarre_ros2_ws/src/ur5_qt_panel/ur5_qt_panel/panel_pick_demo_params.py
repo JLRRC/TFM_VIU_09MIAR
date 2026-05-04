@@ -105,7 +105,11 @@ class PickDemoParams:
     # Consumidas en directo_geometry._direct_runtime_target_tol_m. Cada fase
     # del flujo tiene su propia tolerancia objetivo del TCP en metros.
     approach_coarse_tcp_tol_m: float = 0.015        # PANEL_PICK_DEMO_APPROACH_COARSE_TCP_TOL_M
-    approach_coarse_refine_tcp_tol_m: float = 0.006 # PANEL_PICK_DEMO_APPROACH_COARSE_REFINE_TCP_TOL_M
+    # Fix 2026-05-04: 0.006→0.020. La tolerancia de 6mm era demasiado estricta:
+    # el COARSE_REFINE movía el TCP correctamente (delta_z 11mm) pero al no llegar
+    # a sub-6mm precisión, el system rechazaba (REJECT_RUNTIME) y nunca entraba
+    # a GRASP_DOWN_JOINT. 20mm permite progreso a la fase siguiente.
+    approach_coarse_refine_tcp_tol_m: float = 0.020 # PANEL_PICK_DEMO_APPROACH_COARSE_REFINE_TCP_TOL_M
     grasp_down_tcp_tol_m: float = 0.020             # PANEL_PICK_DEMO_GRASP_DOWN_TCP_TOL_M
     grasp_align_tcp_tol_m: float = 0.015            # PANEL_PICK_DEMO_GRASP_ALIGN_TCP_TOL_M
     basket_transport_tcp_tol_m: float = 0.060       # PANEL_PICK_DEMO_BASKET_TRANSPORT_TCP_TOL_M
@@ -215,14 +219,25 @@ class PickDemoParams:
     grasp_down_permissive_ik_err_tol: float = 0.015  # PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_IK_ERR_TOL
     grasp_down_permissive_rot_weight: float = 0.35  # PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_ROT_WEIGHT
     grasp_down_permissive_seed_weight: float = 0.65  # PANEL_PICK_DEMO_GRASP_DOWN_PERMISSIVE_SEED_WEIGHT
-    grasp_down_use_moveit_cartesian: bool = True  # PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN
+    # Fix 2026-05-04 (bug GRASP_DOWN): default False porque /compute_cartesian_path
+    # devuelve fraction=0.000 con err=SUCCESS para CUALQUIER waypoint en este setup
+    # (KDL CachedKinematicsPlugin + UR5 + ROS Jazzy). Verificado con tests offline:
+    # incluso movimientos triviales de 1mm fallan. El path conservative usa
+    # FollowJointTrajectory direct + IK numérico que SÍ funciona. Override con
+    # PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN=1 si en futuro se arregla.
+    grasp_down_use_moveit_cartesian: bool = False  # PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN
     grasp_down_util_dist_tol_m: float = 0.22  # PANEL_PICK_DEMO_GRASP_DOWN_UTIL_DIST_TOL_M
     # F2-step1 (2026-05-02): default 0.012 del callsite "grasp_down_gate_metrics".
     grasp_down_util_xy_tol_m: float = 0.012  # PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M
     gripper_confirm_max_state_age_sec: float = 0.35  # PANEL_PICK_DEMO_GRIPPER_CONFIRM_MAX_STATE_AGE_SEC
     gripper_confirm_stable_samples: int = 2  # PANEL_PICK_DEMO_GRIPPER_CONFIRM_STABLE_SAMPLES
     gripper_target_tol_m: float = 0.035  # PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M
-    handoff_target_jump_tol_m: float = 0.005  # PANEL_PICK_DEMO_HANDOFF_TARGET_JUMP_TOL_M
+    # Fix 2026-05-04: 0.005→0.040. La tolerancia 5mm aborta GRASP_DOWN cuando
+    # el target reconstruido en GRASP_DOWN difiere del de APPROACH_COARSE
+    # por más del jitter natural del object pose source. 40mm permite
+    # progreso sin perder seguridad porque la divergencia real observada
+    # es siempre <30mm (objeto Gazebo se mueve por física al inicio).
+    handoff_target_jump_tol_m: float = 0.040  # PANEL_PICK_DEMO_HANDOFF_TARGET_JUMP_TOL_M
     manual_like_attach_max_tcp_dist_m: float = 0.14  # PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_MAX_TCP_DIST_M
     manual_like_attach_wait_sec: float = 0.9  # PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_WAIT_SEC
     manual_like_attach_xy_tol_m: float = 0.06  # PANEL_PICK_DEMO_MANUAL_LIKE_ATTACH_XY_TOL_M

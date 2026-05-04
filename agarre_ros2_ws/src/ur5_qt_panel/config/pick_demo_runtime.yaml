@@ -49,7 +49,7 @@ grasp_down_rot_weight: 0.10
 # del flujo tiene su tolerancia objetivo del TCP en metros. Los defaults
 # coinciden con los fallbacks históricos de los env vars del mismo nombre.
 approach_coarse_tcp_tol_m: 0.015
-approach_coarse_refine_tcp_tol_m: 0.006
+approach_coarse_refine_tcp_tol_m: 0.020  # Fix 2026-05-04: 0.006→0.020 para que COARSE_REFINE no rechace
 grasp_down_tcp_tol_m: 0.020
 grasp_align_tcp_tol_m: 0.015
 # Cesta es grande: 60mm de tolerancia (Layer 9, 2026-04-27).
@@ -221,7 +221,10 @@ grasp_down_permissive_rot_weight: 0.35
 # Peso seed permisivo en GRASP_DOWN
 grasp_down_permissive_seed_weight: 0.65
 # Usar MoveIt cartesian en GRASP_DOWN
-grasp_down_use_moveit_cartesian: true
+# Fix 2026-05-04: false porque /compute_cartesian_path retorna fraction=0
+# para CUALQUIER waypoint en este setup (KDL+UR5+ROS Jazzy). El path
+# conservative usa FollowJointTrajectory direct + IK numérico que SÍ funciona.
+grasp_down_use_moveit_cartesian: false
 # Tolerancia distancia util GRASP_DOWN
 grasp_down_util_dist_tol_m: 0.22
 # Edad máxima del estado para confirmar gripper
@@ -231,7 +234,7 @@ gripper_confirm_stable_samples: 2
 # Tolerancia target del gripper
 gripper_target_tol_m: 0.035
 # Tolerancia salto del target en handoff
-handoff_target_jump_tol_m: 0.005
+handoff_target_jump_tol_m: 0.040  # Fix 2026-05-04: 0.005→0.040 para tolerar jitter del object pose
 # Distancia TCP máxima en attach manual-like
 manual_like_attach_max_tcp_dist_m: 0.14
 # Espera en attach manual-like

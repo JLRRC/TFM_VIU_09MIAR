@@ -22,6 +22,36 @@ import math
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from ur5_tools.gripper_geometry import RG2_PINCH_CENTER_FRAME, RG2_TCP_FRAME
+
+# Frames canónicos (replicado de panel_pick_demo.py para evitar circular import)
+DIRECT_SOURCE_FRAME = RG2_PINCH_CENTER_FRAME
+DIRECT_LEGACY_TCP_FRAME = RG2_TCP_FRAME
+
+
+def _joint_error_snapshot(panel, joints) -> str:
+    """Local copy: F3 extracted from panel_pick_demo to avoid circular import."""
+    names = list(getattr(panel, "UR5_JOINT_NAMES", []) or []) or [
+        "shoulder_pan_joint",
+        "shoulder_lift_joint",
+        "elbow_joint",
+        "wrist_1_joint",
+        "wrist_2_joint",
+        "wrist_3_joint",
+    ]
+    parts = []
+    for idx, name in enumerate(names):
+        if idx >= len(joints):
+            break
+        curr = getattr(panel, "_last_joint_positions", {}).get(name)
+        if curr is None:
+            parts.append(f"{name}=n/a")
+            continue
+        diff = abs(float(curr) - float(joints[idx]))
+        parts.append(f"{name}={diff:.3f}")
+    return " ".join(parts)
+
+
 from ..directo_geometry import (
     _is_demo_basket_transport_motion,
     _is_demo_basket_transport_stage,

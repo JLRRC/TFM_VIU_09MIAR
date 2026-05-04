@@ -34,9 +34,13 @@ import math
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from ..panel_config import GRIPPER_TCP_Z_OFFSET
 from .geometry import vec_dist3 as _dist
 # Resto de helpers module-level (fmt_vec, fmt_scalar, tuple3, params,
 # frames) se inyectan vía ctx.<fn> para evitar acoplamiento de imports.
+
+# Replicado de panel_pick_demo.DIRECT_ROUTE_MODE para evitar import circular.
+DIRECT_ROUTE_MODE = "direct_rg2_pinch_center"
 
 
 @dataclass
