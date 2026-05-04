@@ -106,8 +106,8 @@ def test_defaults_have_expected_values():
     assert p.approach_coarse_gate_settle_sec == 0.8
     assert p.approach_coarse_gate_stable_samples == 2
     assert p.approach_coarse_gate_z_tol_m == 0.008
-    assert p.approach_coarse_handoff_dist_tol_m == 0.015
-    assert p.approach_coarse_handoff_dz_tol_m == 0.015
+    assert p.approach_coarse_handoff_dist_tol_m == 0.035  # F7 2026-05-04 tuning
+    assert p.approach_coarse_handoff_dz_tol_m == 0.035  # F7 2026-05-04 tuning
     assert p.approach_coarse_max_skip_m == 0.06
     assert p.approach_coarse_relaxed_handoff_xy_tol_m == 0.01
     assert p.approach_coarse_relaxed_skip_pose_ok is False
