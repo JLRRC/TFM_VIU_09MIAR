@@ -1,9 +1,116 @@
 # BUG: GRASP_DOWN cartesian — TCP no alcanza el objeto (35mm shortfall)
 
-**Estado**: 🔴 ABIERTO
+**Estado**: 🟡 PARCIALMENTE ABIERTO (2026-05-04 sesión 2)
 **Detectado**: 2026-05-04 (sesión live E2E con stack ROS completo)
 **Reproducibilidad**: 100% (cada `pick_demo`)
 **Bloqueante para**: Ciclo pick & place completo, F8 (medición de latencias live)
+
+## ACTUALIZACIÓN 2026-05-04 sesión 2 — root cause #1 ARREGLADO
+
+**Causa #1 (RESUELTA — commit `9564529`)**: `ur5_moveit_bridge` NO estaba
+corriendo. El panel publicaba goals a `/desired_grasp_cartesian` pero NADIE
+los consumía (`Subscription count: 0`). Sin el bridge, los goals se perdían
+y MoveIt ni se enteraba.
+
+Fix: cambiar default de `LAUNCH_MOVEIT_BRIDGE` de "false en move_group" a
+"true siempre" en `start_panel_v2.sh` y `lanzar_panelv2.sh`.
+
+Tras el fix:
+- ✅ APPROACH_COARSE pasa
+- ✅ Pick demo entra a GRASP_DOWN_JOINT
+- ✅ Bridge consume goals (Subscription count: 2)
+- ✅ Joint trajectory completa goals (Goal reached, success)
+- ❌ **Pero el TCP sigue quedando 35mm arriba del objeto** → causa #2
+
+## CAUSA #2 (PENDIENTE) — target_exec_tool0 mal calculado
+
+Con el bridge funcionando, descubrí la causa concreta del shortfall:
+
+```
+target_semantic=z=0.875   ← target rg2_pinch_center (CORRECTO)
+target_exec_tool0=z=0.735 ← INCORRECTO (debería ser z=0.700)
+```
+
+**Diferencia exacta: 0.035 m = `coarse_extra_z_m`**
+
+### Análisis del cálculo
+
+En `panel_pick_demo.py:429 _resolve_direct_execution_target()`:
+
+```python
+# Línea 510-520:
+offset_vector = (
+    R[0,0]*ox + R[0,1]*oy + R[0,2]*oz,
+    R[1,0]*ox + R[1,1]*oy + R[1,2]*oz,
+    R[2,0]*ox + R[2,1]*oy + R[2,2]*oz,
+)
+
+# Línea 522-526:
+execution_target_tool0 = (
+    target_model[0] - offset_vector[0],
+    target_model[1] - offset_vector[1],
+    target_model[2] - offset_vector[2],
+)
+```
+
+Donde `R = execution_rot = fk_ur5(seed)[1]` es la rotación del tool0 calculada
+desde la **seed IK (pose inicial)**. El offset local es `(0, 0, 0.175)`.
+
+Si la rotación R fuera identidad (caso ideal): `offset_vector.z = 0.175` →
+`tool0_target.z = 0.875 - 0.175 = 0.700` (CORRECTO).
+
+Si R[2,2] = 0.8 (rotación real ~35°): `offset_vector.z = 0.140` →
+`tool0_target.z = 0.875 - 0.140 = 0.735` (lo que vemos en el log, ERROR 35mm).
+
+### Hipótesis: rotación seed vs rotación real
+
+El sistema usa `fk_ur5(seed)[1]` para calcular `R`, pero ese seed corresponde
+a la pose **pre-grasp en el aire** (TCP apuntando hacia abajo). Cuando el
+robot llega al objeto, su rotación real puede ser diferente.
+
+**TF live confirmado del tool0 actual** (`tf2_echo base_link tool0`):
+- RPY (deg) = (92.3, -5.8, 179.5)
+- Eso corresponde a rotación que pone z local en y world (no identidad)
+
+El offset local (0, 0, 0.175) rotado por R(90, 0, 180) debería dar
+`offset_vector ≈ (0, 0.175, 0)` (no `(0, 0, 0.175)`).
+
+Entonces el delta tool0 → rg2_pinch_center en world es **+0.175 en y**, no
+en z. Pero el código asume el offset en z.
+
+### Plan de fix (próxima sesión, 1-2 h)
+
+1. **Verificar hipótesis con log adicional**:
+   Añadir en `_resolve_direct_execution_target` un log temporal:
+   ```python
+   panel._emit_log(
+       f"[DEBUG][R_DIAG] R[2,2]={tool_rot[2,2]:.4f} "
+       f"offset_vector_z={offset_vector[2]:.4f} "
+       f"tool_rot_source={tool_rot_source}"
+   )
+   ```
+   Esperado: `R[2,2] ~ 0.8` (no 1.0) → confirma que la rotación seed no es
+   identidad y produce el 35mm de error.
+
+2. **Fix candidato A — usar rotación LIVE del tool0**:
+   En lugar de `fk_ur5(seed)[1]`, hacer un `tf2_lookup base_link → tool0` y
+   usar esa rotación. Más complejo pero más robusto a la pose real.
+
+3. **Fix candidato B — corregir la seed para incluir rotación target**:
+   La seed IK debe ser tal que `fk_ur5(seed)` dé la pose final esperada al
+   llegar al objeto, no la pose pre-grasp. Requiere saber la rotación target
+   de antemano.
+
+4. **Fix candidato C — desacoplar offset XY/Z**:
+   Si el grasp siempre es vertical, podemos asumir que el offset entre tool0
+   y rg2_pinch_center es **siempre 0.175 en z world** (no rotado por la seed).
+   Esto es una simplificación válida si el gripper siempre apunta hacia abajo.
+
+5. **Test E2E final** tras cualquiera de los 3 fixes:
+   ```bash
+   ./lanzar_panelc2.sh  # con commit 9564529 ya aplicado
+   # Pulsar Pick demo → verificar ciclo completo hasta DONE
+   ```
 
 ## Resumen
 
