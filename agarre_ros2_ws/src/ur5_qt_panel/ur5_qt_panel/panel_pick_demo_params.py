@@ -112,7 +112,11 @@ class PickDemoParams:
     approach_coarse_refine_tcp_tol_m: float = 0.020 # PANEL_PICK_DEMO_APPROACH_COARSE_REFINE_TCP_TOL_M
     grasp_down_tcp_tol_m: float = 0.020             # PANEL_PICK_DEMO_GRASP_DOWN_TCP_TOL_M
     grasp_align_tcp_tol_m: float = 0.015            # PANEL_PICK_DEMO_GRASP_ALIGN_TCP_TOL_M
-    basket_transport_tcp_tol_m: float = 0.060       # PANEL_PICK_DEMO_BASKET_TRANSPORT_TCP_TOL_M
+    # Fix 2026-05-04 (bug CESTA_STAGE_1 abort): 0.060 → 0.100 m. La cesta
+    # mide 60+ cm; 100 mm de tolerancia es seguro para soltar y permite que
+    # el detector no_progress vea target_reached antes de abortar el goal del
+    # FollowJointTrajectory cuando el approach final es lento (<3mm/15s).
+    basket_transport_tcp_tol_m: float = 0.100       # PANEL_PICK_DEMO_BASKET_TRANSPORT_TCP_TOL_M
     direct_ik_tcp_tol_m: float = 0.040              # PANEL_PICK_DEMO_DIRECT_IK_TCP_TOL_M
 
     # -- GRASP_DOWN: branch guard (gates de seguridad de rama IK) ---------

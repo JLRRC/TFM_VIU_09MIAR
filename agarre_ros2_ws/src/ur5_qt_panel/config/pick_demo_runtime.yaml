@@ -52,8 +52,11 @@ approach_coarse_tcp_tol_m: 0.015
 approach_coarse_refine_tcp_tol_m: 0.020  # Fix 2026-05-04: 0.006→0.020 para que COARSE_REFINE no rechace
 grasp_down_tcp_tol_m: 0.020
 grasp_align_tcp_tol_m: 0.015
-# Cesta es grande: 60mm de tolerancia (Layer 9, 2026-04-27).
-basket_transport_tcp_tol_m: 0.060
+# Cesta es grande: 100mm de tolerancia (Fix 2026-05-04 bug CESTA_STAGE_1
+# abort: con 60mm el detector no_progress abortaba el goal del controller
+# antes de aterrizar — la cesta tolera 100mm sin problema y permite
+# target_reached temprano).
+basket_transport_tcp_tol_m: 0.100
 # Default genérico cuando ninguna fase específica aplica.
 direct_ik_tcp_tol_m: 0.040
 

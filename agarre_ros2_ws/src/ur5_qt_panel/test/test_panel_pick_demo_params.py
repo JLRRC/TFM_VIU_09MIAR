@@ -61,7 +61,7 @@ def test_defaults_have_expected_values():
     assert p.approach_coarse_refine_tcp_tol_m == 0.020  # Fix 2026-05-04 bug GRASP_DOWN
     assert p.grasp_down_tcp_tol_m == 0.020
     assert p.grasp_align_tcp_tol_m == 0.015
-    assert p.basket_transport_tcp_tol_m == 0.060
+    assert p.basket_transport_tcp_tol_m == 0.100  # Fix 2026-05-04 bug CESTA_STAGE_1
     assert p.direct_ik_tcp_tol_m == 0.040
     # GRASP_DOWN: branch guard.
     assert p.grasp_down_branch_guard_xy_tol_m == 0.010

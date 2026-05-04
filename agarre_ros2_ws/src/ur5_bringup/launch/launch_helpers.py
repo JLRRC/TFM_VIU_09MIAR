@@ -178,6 +178,12 @@ PANEL_ENV_DEFAULTS: list[tuple[str, str]] = [
     ("PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M", "0.012"),
     ("PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS", "4"),
     ("PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M", "0.015"),
+    # Transport runtime no_progress tuning (Fix 2026-05-04 bug CESTA_STAGE_1):
+    # con stall=8s y min_progress=8mm, el detector cortaba al estancarse el
+    # FollowJointTrajectory en los últimos ~28mm a la cesta. 15s + 3mm permite
+    # que el controller termine el goal dentro de la tolerancia 60mm cesta.
+    ("PANEL_PICK_DEMO_TRANSPORT_RUNTIME_STALL_TIMEOUT_SEC", "15.0"),
+    ("PANEL_PICK_DEMO_TRANSPORT_RUNTIME_MIN_PROGRESS_M", "0.003"),
     # ATTACH gate tolerances
     ("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "0.020"),
     ("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "0.010"),
@@ -188,8 +194,14 @@ PANEL_ENV_DEFAULTS: list[tuple[str, str]] = [
     ("PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M", "0.020"),
     # Gripper close confirmation
     ("PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M", "0.020"),
-    ("PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC", "3.0"),
-    ("PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM", "0.01"),
+    # Fix 2026-05-04 (bug "el objeto se mueve solo"): subido de 3.0→8.0s y
+    # delta 0.01→0.060. Con 3s+10mm el panel daba por "cerrado" cuando el
+    # gripper sólo había cerrado 19mm (de los 85mm necesarios para tocar un
+    # objeto de 50mm); luego el attach lógico arrastraba el objeto sin
+    # contacto físico real. Con 8s+60mm sólo se confirma cierre cuando los
+    # dedos hayan reducido 60mm (objeto 50mm + 10mm de holgura).
+    ("PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC", "8.0"),
+    ("PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM", "0.060"),
     ("PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M", "0.12"),
     # TF stability gate for GRASP_DOWN post-motion check
     ("PANEL_PICK_OBJECT_GRASP_TF_STABLE_TOL_M", "0.045"),

@@ -70,6 +70,12 @@ PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M: "0.012"
 PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS: "4"
 PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M: "0.015"
 
+# --- pick_demo: transport runtime no_progress tuning (Fix 2026-05-04) ----------
+# Con stall=8s y min_progress=8mm el detector cortaba en los últimos ~28mm a
+# la cesta. 15s + 3mm permite que el FollowJointTrajectory termine el goal.
+PANEL_PICK_DEMO_TRANSPORT_RUNTIME_STALL_TIMEOUT_SEC: "15.0"
+PANEL_PICK_DEMO_TRANSPORT_RUNTIME_MIN_PROGRESS_M: "0.003"
+
 # --- pick_demo: ATTACH gate tolerances -----------------------------------------
 PANEL_PICK_DEMO_ATTACH_XY_TOL_M: "0.020"
 PANEL_PICK_DEMO_ATTACH_Z_TOL_M: "0.010"
@@ -81,8 +87,10 @@ PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M: "0.020"
 
 # --- pick_demo: Gripper close confirmation -------------------------------------
 PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M: "0.020"
-PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC: "3.0"
-PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM: "0.01"
+# Fix 2026-05-04 (bug falso positivo cierre): 3.0s+10mm permitía confirmar
+# "cerrado" con la pinza casi abierta. 8.0s+60mm exige cierre real.
+PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC: "8.0"
+PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM: "0.060"
 PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M: "0.12"
 
 # --- pick_object: TF stability gate for GRASP_DOWN post-motion check -----------
