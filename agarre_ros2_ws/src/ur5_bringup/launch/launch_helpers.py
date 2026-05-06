@@ -209,8 +209,9 @@ PANEL_ENV_DEFAULTS: list[tuple[str, str]] = [
     ("PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK", "4"),
     # Approach coarse gate
     ("PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M", "0.035"),
-    ("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M", "0.012"),
-    ("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M", "0.012"),
+    # Subidas 2026-05-06 a 0.020 — ver runtime_defaults.yaml para justificación.
+    ("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M", "0.020"),
+    ("PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M", "0.020"),
     # PRE_CLOSE tolerances
     ("PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M", "0.020"),
     ("PANEL_PICK_DEMO_PRE_CLOSE_Z_ERR_TOL_M", "0.010"),

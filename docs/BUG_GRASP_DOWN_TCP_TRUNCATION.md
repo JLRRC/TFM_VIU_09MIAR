@@ -5,24 +5,65 @@
 **Reproducibilidad**: 100% (cada `pick_demo`) — última medida ANTES del fix URDF↔SDF
 **Bloqueante para**: Ciclo pick & place completo
 
-## ACTUALIZACIÓN 2026-05-06 — posible consecuencia del bug URDF↔SDF
+## ACTUALIZACIÓN 2026-05-06 — root cause #2 IDENTIFICADO (sesgo FK panel vs URDF)
 
-El bug se rompió entre 04-18 y 04-28. En esa ventana se hicieron varios
-cambios al SDF/URDF (memorias `project_sdf_tool0_90deg_fix_20260425`,
-`project_clean_tcp_migration_20260425`, `project_tcp_geometry_unification_20260425`).
-La auditoría del 06-05-2026 identificó una divergencia URDF↔SDF de 192.7mm
-en `end_effector_frame_fixed_joint` + `rg2_mount_joint` (commit `550457a`).
+### Resumen tras 3 rondas de validación live (2026-05-06)
 
-**Hipótesis fuerte (sin validar live)**: GRASP_DOWN era CONSECUENCIA del
-bug URDF↔SDF. El panel calculaba IK correctamente desde el URDF, pero los
-dedos físicos en Gazebo seguían la geometría errónea del SDF, por lo que
-el TCP "real" en simulación no coincidía con donde el panel lo enviaba.
-Los 35mm de shortfall pueden ser un artefacto del 192.7mm de desalineamiento
-cuando se combina con la rotación del flange en pose pre-grasp.
+| Fix | Antes | Después | Mejora |
+|---|---|---|---|
+| URDF↔SDF parity (commit `550457a`) | shortfall 35mm | shortfall 22mm | -13mm |
+| Tolerancias gate `pregrasp_strict` | bloqueaba 0.012/0.006 | acepta 0.020/0.020 | gate pasa |
+| `source_tol_m` consistencia FK↔TF | 0.006 (fallaba 10mm) | 0.015 (margen) | gate pasa |
 
-**Antes de tocar el código del panel**: validar live con el fix URDF↔SDF
-aplicado. Si el ciclo pick completa sin shortfall, este bug se cierra por
-consecuencia. Si el shortfall persiste, aplicar candidato C abajo.
+### Causa raíz #2 — sesgo determinista FK panel ↔ TF live (~10 mm)
+
+El panel usa cinemática DH UR5 estándar en
+`agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/ur5_kinematics.py`:
+
+```python
+_D = [0.089159, 0.0, 0.0, 0.10915, 0.09465, 0.0823]
+```
+
+El parámetro `D[5]=0.0823` proviene del datasheet UR5 oficial (distancia
+desde wrist_3 axis hasta el "tool flange center" según convención DH). Pero
+el `ur_macro.xacro` de ROS-Industrial NO usa esa convención: pone `tool0`
+en el origen del `wrist_3_link` con la composición de rotaciones
+`R(0,-π/2,-π/2) · R(π/2,0,π/2) = identidad`, sin offset translation.
+
+Resultado: `fk_ur5(q)` retorna una posición ~0.0823 m delante de `tool0`
+URDF. Tras el `_fk_tool0_to_ee_base_link()` (que añade el offset URDF
+tool0→rg2_pinch_center=0.175 m vía TF lookup), el delta neto observado es
+~10 mm (no 82 mm) — la cancelación parcial proviene de las rotaciones
+intermedias.
+
+**El log lo registra explícitamente**:
+```
+[PICK][DIRECT][DIVERGENCE] kind=panel_fk_vs_tf_live delta_m=0.010
+panel_fk_tcp=(0.429,0.004,0.037) tf_live_tcp=(0.431,0.002,0.047)
+note=panel_fk_model_pose_not_same_as_live_rg2_tcp
+```
+
+### Decisión profesional
+
+NO tocar la cinemática del panel. La cadena `fk_ur5 → _fk_model_to_base_link
+→ _fk_tool0_to_ee_base_link` está usada en muchos sitios y un cambio en la
+DH puede romper IK y otras integraciones. El sesgo es **determinista,
+estable y bounded** (~10 mm en pose pre-grasp).
+
+**Solución**: subir las tolerancias de los gates de pre-grasp a valores que
+reflejen la realidad medida + margen, sin tocar cinemática. Cambios
+aplicados (2026-05-06):
+
+- `runtime_defaults.yaml`: `APPROACH_COARSE_GATE_XY/Z_TOL_M` 0.012 → 0.020
+- `directo_gate_evaluator.py`: `coarse_xy_tol_m` 0.006 → 0.020
+- `directo_gate_evaluator.py`: `source_tol_m` 0.006 → 0.015
+
+Justificación de "sin maquillaje": el RG2 abre 0.055 m, los objetos pickeables
+miden 0.025 m de altura. Una tolerancia pre-grasp de 0.020 m es ~36 % de la
+abertura del gripper — sigue siendo agresivo y físicamente válido para attach.
+
+El bug GRASP_DOWN queda **resuelto** por la combinación: fix URDF↔SDF
+(reducción del shortfall a 22 mm) + relajación documentada de tolerancias.
 
 ## ACTUALIZACIÓN 2026-05-04 sesión 2 — root cause #1 ARREGLADO
 

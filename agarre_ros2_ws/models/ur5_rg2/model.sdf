@@ -577,7 +577,11 @@
                  with the standard ROS-Industrial UR rotation, matching ur_macro.xacro
                  (wrist_3 → flange → tool0 are coincident in translation, only rotated).
                  The previous 0.275m Y-offset was incorrect and required a -0.1927m
-                 compensation in rg2_mount_joint. -->
+                 compensation in rg2_mount_joint.
+                 NOTA (2026-05-06 v2): la rotación rpy=-π/2 se mantiene porque el TF de
+                 tool0 lo publica el RSP desde URDF (la rotación SDF afecta sólo a la
+                 simulación física en Gazebo, no a los TF que el panel/MoveIt consumen).
+                 Cambiarla a 0 0 0 NO afectó las métricas en validación live. -->
             <pose relative_to="wrist_3_link">0 0 0 -1.570796325 0 0</pose>
             <parent>wrist_3_link</parent>
             <child>tool0</child>

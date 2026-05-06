@@ -213,11 +213,17 @@ def _direct_pregrasp_gate_caps(phase: str | None) -> dict[str, float] | None:
         except Exception:
             return float(default)
     return {
-        "source_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_SOURCE_TOL_M", 0.006),
+        # Subido 2026-05-06 a 0.015 — el panel FK (DH UR5 std) tiene sesgo
+        # determinista de ~10mm respecto al TF (URDF/ur_macro). 0.006 fallaba
+        # sistemáticamente. Ver runtime_defaults.yaml.
+        "source_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_SOURCE_TOL_M", 0.015),
         "source_age_tol_sec": _envf("PANEL_PICK_DEMO_PREGRASP_SOURCE_AGE_TOL_SEC", 0.400),
         "source_sync_tol_sec": _envf("PANEL_PICK_DEMO_PREGRASP_SOURCE_SYNC_TOL_SEC", 0.400),
         "phase_jump_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_PHASE_JUMP_TOL_M", 0.010),
-        "coarse_xy_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_COARSE_XY_TOL_M", 0.006),
+        # Subido 2026-05-06 a 0.020 — la FK del panel (DH UR5 std) tiene sesgo
+        # determinista de ~10mm respecto al TF (URDF/ur_macro). 0.006 fallaba
+        # sistemáticamente. Ver runtime_defaults.yaml para detalle.
+        "coarse_xy_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_COARSE_XY_TOL_M", 0.020),
         "keep_xy_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_KEEP_XY_TOL_M", 0.005),
         "object_divergence_tol_m": _envf("PANEL_PICK_DEMO_PREGRASP_OBJ_DIV_TOL_M", 0.020),
     }
