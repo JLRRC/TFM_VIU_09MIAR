@@ -278,7 +278,10 @@ def _run_one_cycle(cycle_idx: int) -> Tuple[str, str]:
         return "FAIL_SELECT", sel_out
     time.sleep(1.0)
     pick_ok, pick_out = _call_pick_demo()
-    if not pick_ok:
+    # `select_object` puede auto-iniciar el pick (panel_remote_callbacks.py).
+    # Si pick_demo retorna "ejecución en curso", el pick YA está corriendo,
+    # no es un fallo: continuar al watch_log para ver el resultado.
+    if not pick_ok and "ejecución en curso" not in (pick_out or ""):
         return "FAIL_PICK", pick_out
 
     wait_loops = _int_env("PICK_VALIDATE_WAIT_LOOPS", 600)

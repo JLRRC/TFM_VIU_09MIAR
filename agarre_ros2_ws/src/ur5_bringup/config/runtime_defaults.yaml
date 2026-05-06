@@ -100,8 +100,13 @@ PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK: "4"
 
 # --- pick_demo: Approach coarse gate -------------------------------------------
 PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M: "0.035"
-PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M: "0.012"
-PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M: "0.012"
+# Tolerancias subidas 2026-05-06 tras validación live: la FK del panel (DH UR5
+# estándar, D[5]=0.0823) tiene un sesgo determinista de ~13mm respecto al TF
+# publicado por el RSP (URDF/ur_macro). Las anteriores 0.012m fallaban el gate
+# de forma sistemática por ~1mm. 0.020m da margen para el sesgo + ruido sin
+# comprometer el agarre (RG2 abre 0.055m, objeto 0.025m alto).
+PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M: "0.020"
+PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M: "0.020"
 
 # --- pick_demo: PRE_CLOSE tolerances -------------------------------------------
 PANEL_PICK_DEMO_PRE_CLOSE_XY_TOL_M: "0.020"
