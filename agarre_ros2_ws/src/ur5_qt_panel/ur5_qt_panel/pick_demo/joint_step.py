@@ -165,7 +165,10 @@ def _run_joint_step_retry_for_recovery_labels(
     if not ok_retry:
         raise RuntimeError(f"{label} retry fallo: {info_retry}")
     retry_timeout = max(wait_timeout, effective_move_sec + 4.0)
-    retry_tol = max(tol_rad, 0.10 if is_basket_transport_motion else 0.06)
+    # Subido 2026-05-06 a 0.15: validación live mostró diffs hasta 0.130 rad en
+    # shoulder_pan/lift durante CESTA_STAGE_1_RECOVER_2 con el objeto agarrado.
+    # 0.10 era insuficiente. 0.15 = 8.6° (agresivo pero válido para transport).
+    retry_tol = max(tol_rad, 0.15 if is_basket_transport_motion else 0.06)
     if ctx.panel._wait_for_joint_target(joints, retry_timeout, tol_rad=retry_tol):
         ctx.panel._pick_demo_last_joint_target_accept_source = "joint_wait_retry"
         ctx.panel._emit_log(f"[PICK][RECOVERY] {label} alcanzado tras reintento")

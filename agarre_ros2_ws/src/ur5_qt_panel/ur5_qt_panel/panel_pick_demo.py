@@ -3325,16 +3325,25 @@ def run_pick_demo(panel) -> None:
                             max_shoulder_delta_rad=prep_max_shoulder_delta_rad,
                         )
                         prep_segment_count = max(1, len(prep_waypoints) + 1)
+                        # Floor 6.0s (era 4.0): 2026-05-06 validación live mostró
+                        # que segmentos PREP del transporte hacia CESTA no convergen
+                        # con 4s en shoulder_pan/shoulder_lift cuando el robot lleva
+                        # el objeto agarrado.
                         prep_move_sec = max(
-                            4.0,
+                            6.0,
                             float(move_sec) / float(prep_segment_count),
                         )
                         prep_failed = False
                         prep_failure_info = None
+                        # joint_tol 0.06→0.15: 2026-05-06 validación live mostró
+                        # diffs reales 0.075–0.119 rad en segmentos PREP con objeto
+                        # agarrado. 0.06 hacía fallar recovery sistemáticamente en
+                        # CESTA_STAGE_1_PREP_4. 0.15 = 8.6° es agresivo pero válido
+                        # para transport (no afecta a la precisión del pick).
                         prep_joint_tol_config = _pick_demo_env_float(
                             "PANEL_PICK_DEMO_TRANSPORT_PREP_JOINT_TOL_RAD",
-                            0.06,
-                            minimum=0.02,
+                            0.15,
+                            minimum=0.05,
                         )
                         prep_prev_joints = [float(v) for v in seed]
                         for prep_idx, prep_joints in enumerate(prep_waypoints, start=1):
@@ -3347,7 +3356,7 @@ def run_pick_demo(panel) -> None:
                                 prep_prev_joints,
                                 prep_joints,
                                 configured_tol_rad=prep_joint_tol_config,
-                                minimum_tol_rad=0.02,
+                                minimum_tol_rad=0.05,
                             )
                             panel._emit_log(
                                 "[PICK][DIRECT][TRANSPORT_PREP] "
