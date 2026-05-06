@@ -403,10 +403,12 @@
             </axis>
         </joint>
         <!-- Simplified RG2 gripper: prismatic box fingers, coherent with URDF/TF/ros2_control. -->
-        <!-- rg2_base_link at flange: tool0 is 0.275m past wrist_3_link (Z axis), flange is at
-             0.0823m, so offset = -(0.275-0.0823) = -0.1927m along tool0 Z. -->
+        <!-- URDF↔SDF parity fix (2026-05-06): rg2_base_link mounts at tool0 (origin 0,0,0),
+             matching ur5.urdf.xacro rg2_mount_joint. The previous -0.1927m compensation
+             was a workaround for an incorrect 0.275m translation in end_effector_frame_fixed_joint
+             (also fixed below). With both fixes, SDF and URDF describe the same geometry. -->
         <joint name="rg2_mount_joint" type="fixed">
-            <pose relative_to="tool0">0 0 -0.1927 0 0 0</pose>
+            <pose relative_to="tool0">0 0 0 0 0 0</pose>
             <parent>tool0</parent>
             <child>rg2_base_link</child>
         </joint>
@@ -571,7 +573,12 @@
             <pose relative_to="end_effector_frame_fixed_joint">0 0 0 0 0 0</pose>
         </link>
         <joint name="end_effector_frame_fixed_joint" type="fixed">
-            <pose relative_to="wrist_3_link">0 0.275 0 -1.570796325 0 0</pose>
+            <!-- URDF↔SDF parity fix (2026-05-06): tool0 sits at wrist_3_link origin
+                 with the standard ROS-Industrial UR rotation, matching ur_macro.xacro
+                 (wrist_3 → flange → tool0 are coincident in translation, only rotated).
+                 The previous 0.275m Y-offset was incorrect and required a -0.1927m
+                 compensation in rg2_mount_joint. -->
+            <pose relative_to="wrist_3_link">0 0 0 -1.570796325 0 0</pose>
             <parent>wrist_3_link</parent>
             <child>tool0</child>
         </joint>
