@@ -113,10 +113,47 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         self._home_position_tol_rad: float = 0.10
         self._home_goal_time_tol_sec: float = 5.0
         self._home_result_timeout_sec: float = 30.0
-        self.get_logger().info(
-            "[ORCHESTRATOR_LC] instantiated (UNCONFIGURED) — "
-            "use `ros2 lifecycle set <node> configure` para inicializar"
+        # 2026-05-06: auto_activate honrado al instantiation. El factory
+        # (runtime_nodes_factory.py) pasa auto_activate=True por defecto.
+        # Sin esto el orchestrator queda UNCONFIGURED y el dispatcher cae
+        # al legacy run_pick_demo.
+        self.declare_parameter("auto_activate", False)
+        self._auto_activate: bool = bool(
+            self.get_parameter("auto_activate").get_parameter_value().bool_value
         )
+        if self._auto_activate:
+            self.get_logger().info(
+                "[ORCHESTRATOR_LC] instantiated (UNCONFIGURED) — auto_activate=True; "
+                "scheduling configure+activate via timer (rclpy spin requerido)"
+            )
+            # Timer one-shot para ejecutar las transitions una vez el nodo
+            # esté siendo spinneado. trigger_configure/activate síncronos
+            # bloquearían si se llaman fuera del executor.
+            self._auto_activate_timer = self.create_timer(
+                0.2, self._auto_activate_callback
+            )
+        else:
+            self.get_logger().info(
+                "[ORCHESTRATOR_LC] instantiated (UNCONFIGURED) — "
+                "use `ros2 lifecycle set <node> configure` para inicializar"
+            )
+
+    def _auto_activate_callback(self) -> None:
+        """Dispara configure + activate una sola vez tras instantiation."""
+        try:
+            self._auto_activate_timer.cancel()
+        except Exception:
+            pass
+        try:
+            self.trigger_configure()
+            self.trigger_activate()
+            self.get_logger().info(
+                "[ORCHESTRATOR_LC] auto_activate completed — node should be ACTIVE"
+            )
+        except Exception as exc:
+            self.get_logger().error(
+                f"[ORCHESTRATOR_LC] auto_activate failed: {exc}"
+            )
 
     # ------------------------------------------------------------------
     # Lifecycle callbacks

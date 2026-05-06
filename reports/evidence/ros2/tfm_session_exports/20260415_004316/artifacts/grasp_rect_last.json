@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-04-15T00:43:04",
+  "source": "topic:/grasp_rect",
+  "topic": "/grasp_rect",
+  "msg_type": "std_msgs/msg/Float32MultiArray",
+  "grasp_image": {
+    "cx": 123.97434997558594,
+    "cy": 124.44648742675781,
+    "w": 6.685333251953125,
+    "h": 6.464191436767578,
+    "angle_deg": -88.44075910942347
+  },
+  "grasp_base": {
+    "x": 0.582727007833819,
+    "y": 0.10021694807845215,
+    "z": 0.029968278943695137,
+    "yaw_deg": 2.6538983433448857,
+    "proj_z_target": 0.8799682789436951,
+    "proj_z_source": "selected_object:box_red",
+    "table_top_z_world": 0.85,
+    "grasp_semantics": "projection_surface"
+  },
+  "frame": "/camera_overhead/image",
+  "cornell": {
+    "iou": 0.10793846180698737,
+    "dtheta": 88.44075910942347,
+    "success": false
+  }
+}

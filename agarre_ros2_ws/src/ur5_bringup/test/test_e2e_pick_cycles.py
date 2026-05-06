@@ -63,7 +63,12 @@ STOP_SCRIPT = WS_DIR / "scripts" / "stop_panel_v2.sh"
 ROS2_LAUNCH_LOG = WS_DIR / "log" / "ros2_launch.log"
 SUMMARY_DIR = WS_DIR / "auditoria"
 
-PASS_PATTERN = re.compile(r"SECUENCIA COMPLETADA EXITOSAMENTE")
+PASS_PATTERN = re.compile(
+    r"SECUENCIA COMPLETADA EXITOSAMENTE"
+    # 2026-05-06: añadido path orchestrator (Bloque 2 cierre profesional).
+    r"|\[PICK_DEMO\]\[ORCH\]\[DONE\] success=true"
+    r"|\[ORCHESTRATOR_LC\] result: success=True"
+)
 FAIL_PATTERN = re.compile(
     r"carry_coherence_failed"
     r"|\[PICK_OBJ\]\[ABORT\]"
@@ -71,6 +76,8 @@ FAIL_PATTERN = re.compile(
     r"|Error en pick (?:objeto|demo)"
     r"|\[PICK_OBJ\]\[FAIL_CLASS\]"
     r"|APPROACH_COARSE_NOT_READY"
+    r"|\[PICK_DEMO\]\[ORCH\]\[DONE\] success=false"
+    r"|\[ORCHESTRATOR_LC\] result: success=False"
 )
 MOVEIT_READY_PATTERN = re.compile(r"\[PICK\]\[MOVEIT\]\[INIT\].*moveit_state=READY")
 ERROR_FATAL_PATTERN = re.compile(r"ERROR_FATAL")
@@ -278,10 +285,17 @@ def _run_one_cycle(cycle_idx: int) -> Tuple[str, str]:
         return "FAIL_SELECT", sel_out
     time.sleep(1.0)
     pick_ok, pick_out = _call_pick_demo()
-    # `select_object` puede auto-iniciar el pick (panel_remote_callbacks.py).
-    # Si pick_demo retorna "ejecución en curso", el pick YA está corriendo,
-    # no es un fallo: continuar al watch_log para ver el resultado.
-    if not pick_ok and "ejecución en curso" not in (pick_out or ""):
+    # `select_object` puede auto-iniciar el pick (panel_remote_callbacks.py)
+    # o el dispatcher puede haberlo enviado al orchestrator (Bloque 2).
+    # Mensajes que indican "ya en curso" o "el panel no lo inició porque
+    # va por el orchestrator" NO son fallos: continuar al watch_log.
+    pick_inflight_markers = (
+        "ejecución en curso",
+        "pick_demo_no_iniciado",
+    )
+    if not pick_ok and not any(
+        marker in (pick_out or "") for marker in pick_inflight_markers
+    ):
         return "FAIL_PICK", pick_out
 
     wait_loops = _int_env("PICK_VALIDATE_WAIT_LOOPS", 600)

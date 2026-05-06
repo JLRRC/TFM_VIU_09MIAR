@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-04-15T00:43:16",
+  "status": "OK",
+  "selection_policy": "modo reproducci\u00f3n TFM (EXP3 seed_0)",
+  "postprocess_policy": "raw sin ajustes panel",
+  "experiment": "EXP3_RESNET18_RGB_AUGMENT",
+  "experiment_base": "EXP3_RESNET18_RGB_AUGMENT",
+  "seed": "0",
+  "model": "ResNet18Grasp",
+  "modality": "RGB",
+  "epoch": "13",
+  "config_path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/seed_0/config_snapshot.yaml",
+  "weights_path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/seed_0/checkpoints/best.pth",
+  "val_success_pct": "69.0%",
+  "val_iou": "0.402",
+  "checkpoint": {
+    "path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/seed_0/checkpoints/best.pth",
+    "exists": true,
+    "size_bytes": 134266594,
+    "sha256": "b2dfd3ea4a7057412e20cadfbbfa2a709f19cfa53862a43df053f0a04d5e6d1b"
+  },
+  "model_info": {
+    "model_path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/seed_0/checkpoints/best.pth",
+    "loaded": true,
+    "model_name": "resnet18",
+    "in_channels": 3,
+    "img_size": 224
+  }
+}

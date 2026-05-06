@@ -1,0 +1,55 @@
+{
+  "route": "TFM->MoveIt",
+  "session": "20260415_004307_712937",
+  "selected_object": "box_red",
+  "source": "topic:/grasp_rect",
+  "grasp_base": {
+    "x": 0.582727007833819,
+    "y": 0.10021694807845215,
+    "z": 0.029968278943695137,
+    "yaw_deg": 2.6538983433448857,
+    "proj_z_target": 0.8799682789436951,
+    "proj_z_source": "selected_object:box_red",
+    "table_top_z_world": 0.85,
+    "grasp_semantics": "projection_surface"
+  },
+  "state": "FAIL_TERMINAL",
+  "events": [
+    {
+      "ts": 1776206587.713185,
+      "state": "READY",
+      "detail": "preconditions_ok"
+    },
+    {
+      "ts": 1776206587.713426,
+      "state": "OBJECT_SELECTED",
+      "detail": "name=box_red"
+    },
+    {
+      "ts": 1776206587.714209,
+      "state": "GRASP_FRESH",
+      "detail": "source=topic:/grasp_rect age_sec=2.93"
+    },
+    {
+      "ts": 1776206587.7144687,
+      "state": "VISUAL_GRASP_OK",
+      "detail": "topic=/grasp_rect"
+    },
+    {
+      "ts": 1776206587.7147145,
+      "state": "EXECUTABLE_GRASP_OK",
+      "detail": "pose_topic=/desired_grasp cartesian_topic=/desired_grasp_cartesian"
+    },
+    {
+      "ts": 1776206604.644817,
+      "state": "FAIL_TERMINAL",
+      "detail": "planning:MoveItBridge no recuperado tras reinicio (pose_subs/result_pubs)"
+    }
+  ],
+  "start_ts": 1776206587.7129495,
+  "success": false,
+  "message": "planning:MoveItBridge no recuperado tras reinicio (pose_subs/result_pubs)",
+  "final_state": "FAIL_TERMINAL",
+  "end_ts": 1776206604.644817,
+  "duration_sec": 16.931867599487305
+}
