@@ -1,9 +1,28 @@
 # BUG: GRASP_DOWN cartesian — TCP no alcanza el objeto (35mm shortfall)
 
-**Estado**: 🟡 PARCIALMENTE ABIERTO (2026-05-04 sesión 2)
+**Estado**: 🟡 PENDIENTE VALIDACIÓN LIVE TRAS FIX URDF↔SDF (2026-05-06)
 **Detectado**: 2026-05-04 (sesión live E2E con stack ROS completo)
-**Reproducibilidad**: 100% (cada `pick_demo`)
-**Bloqueante para**: Ciclo pick & place completo, F8 (medición de latencias live)
+**Reproducibilidad**: 100% (cada `pick_demo`) — última medida ANTES del fix URDF↔SDF
+**Bloqueante para**: Ciclo pick & place completo
+
+## ACTUALIZACIÓN 2026-05-06 — posible consecuencia del bug URDF↔SDF
+
+El bug se rompió entre 04-18 y 04-28. En esa ventana se hicieron varios
+cambios al SDF/URDF (memorias `project_sdf_tool0_90deg_fix_20260425`,
+`project_clean_tcp_migration_20260425`, `project_tcp_geometry_unification_20260425`).
+La auditoría del 06-05-2026 identificó una divergencia URDF↔SDF de 192.7mm
+en `end_effector_frame_fixed_joint` + `rg2_mount_joint` (commit `550457a`).
+
+**Hipótesis fuerte (sin validar live)**: GRASP_DOWN era CONSECUENCIA del
+bug URDF↔SDF. El panel calculaba IK correctamente desde el URDF, pero los
+dedos físicos en Gazebo seguían la geometría errónea del SDF, por lo que
+el TCP "real" en simulación no coincidía con donde el panel lo enviaba.
+Los 35mm de shortfall pueden ser un artefacto del 192.7mm de desalineamiento
+cuando se combina con la rotación del flange en pose pre-grasp.
+
+**Antes de tocar el código del panel**: validar live con el fix URDF↔SDF
+aplicado. Si el ciclo pick completa sin shortfall, este bug se cierra por
+consecuencia. Si el shortfall persiste, aplicar candidato C abajo.
 
 ## ACTUALIZACIÓN 2026-05-04 sesión 2 — root cause #1 ARREGLADO
 
