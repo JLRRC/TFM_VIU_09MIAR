@@ -7,9 +7,12 @@ Uso:
   ros2 run tfm_grasping grasp_inference
 """
 
+import logging
 import sys
 from pathlib import Path
 from typing import Optional
+
+_logger = logging.getLogger(__name__)
 
 try:
     import cv2
@@ -21,10 +24,9 @@ try:
     import torch
     from torchvision import transforms
 except ImportError as e:
-    print(f"❌ Dependencia faltante: {e}")
+    _logger.critical("Dependencia faltante: %s", e)
     sys.exit(1)
 
-# Agregar src/ de agarre_inteligente al path
 VISION_DIR = Path.home() / "TFM" / "agarre_inteligente"
 if (VISION_DIR / "src").exists():
     sys.path.insert(0, str(VISION_DIR / "src"))
@@ -32,8 +34,7 @@ if (VISION_DIR / "src").exists():
 try:
     from graspnet.models.simple_grasp_cnn import SimpleGraspCNN
 except ImportError as e:
-    print(f"❌ No se pudo importar SimpleGraspCNN: {e}")
-    print(f"   VISION_DIR: {VISION_DIR}")
+    _logger.critical("No se pudo importar SimpleGraspCNN: %s (VISION_DIR=%s)", e, VISION_DIR)
     sys.exit(1)
 
 
@@ -199,9 +200,7 @@ def main(args=None):
         node = GraspInferenceNode()
         rclpy.spin(node)
     except Exception as e:
-        print(f"❌ Error fatal: {e}")
-        import traceback
-        traceback.print_exc()
+        _logger.exception("Error fatal en grasp_inference: %s", e)
     finally:
         rclpy.shutdown()
 

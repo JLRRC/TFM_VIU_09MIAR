@@ -64,10 +64,10 @@ def _rel(path: Path) -> str:
 # listado aquí hace fallar el test.
 LEGACY_PRINT_FILES: Set[str] = {
     # F1 cierre (2026-05-03): 19 archivos panel_* migrados a emit_log_line.
+    # F1 audit-v4 (2026-05-07): grasp_inference.py migrado a logging.getLogger.
     # Quedan sólo:
-    #  - tfm_grasping/grasp_inference.py: warning fatal pre-rclpy.init.
-    #  - ur5_tools/generate_latency_table.py: CLI standalone, no nodo.
-    "tfm_grasping/tfm_grasping/grasp_inference.py",
+    #  - ur5_tools/generate_latency_table.py: CLI standalone, prints a stderr
+    #    son parte del contrato del tool (no es un nodo ROS).
     "ur5_tools/ur5_tools/generate_latency_table.py",
 }
 
