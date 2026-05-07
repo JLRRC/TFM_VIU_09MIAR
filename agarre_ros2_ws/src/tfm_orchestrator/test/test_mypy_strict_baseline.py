@@ -36,6 +36,12 @@ WS_ROOT = Path(__file__).resolve().parents[3]
 MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/tfm_orchestrator/tfm_orchestrator/pick_gates.py",
     "src/tfm_orchestrator/tfm_orchestrator/retry.py",
+    # F7-step1.5 (2026-05-08): añadidos asserts explícitos para narrow
+    # tcp_tf_age_sec/joint_state_age_sec en success path. Pasa strict.
+    "src/tfm_orchestrator/tfm_orchestrator/pose_consistency.py",
+    # F7-step1.6 (2026-05-08): bare `tuple` → `Tuple[float, ...]` en 7 anotaciones
+    # del PickContext + helpers. is_no_hint con bool() explícito + len-guard.
+    "src/tfm_orchestrator/tfm_orchestrator/pick_fsm.py",
 ]
 
 

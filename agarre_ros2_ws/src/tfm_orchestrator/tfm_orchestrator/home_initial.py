@@ -35,7 +35,7 @@ Constantes UR5:
 from __future__ import annotations
 
 import math
-from typing import Any, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 
 # Constantes del UR5.
@@ -100,29 +100,45 @@ def build_follow_joint_trajectory_goal(
     *,
     position_tol_rad: float = 0.10,
     goal_time_tol_sec: float = 5.0,
+    path_tol_rad: Optional[float] = None,
 ) -> Any:
     """Construye un ``control_msgs.action.FollowJointTrajectory.Goal``.
 
-    Setea path_tolerance y goal_tolerance por joint a ``position_tol_rad``,
-    y goal_time_tolerance a ``goal_time_tol_sec``.
+    Setea ``goal_tolerance`` por joint a ``position_tol_rad``,
+    ``path_tolerance`` por joint a ``path_tol_rad`` (default: muy loose
+    para sim), y ``goal_time_tolerance`` a ``goal_time_tol_sec``.
 
     Parameters:
         jt: JointTrajectory (output de build_home_joint_trajectory).
-        position_tol_rad: tolerancia angular por joint (m=path == goal).
+        position_tol_rad: tolerancia angular por joint en GOAL (default
+            0.10rad ≈ 5.7°). Verifica que el robot llegó cerca de home.
         goal_time_tol_sec: tolerancia temporal de finalización.
+        path_tol_rad: tolerancia angular DURANTE la ejecución (default
+            10.0 rad ≈ effectively disabled). Razón F1.7: gz_ros2_control
+            en sim_time no rastrea linear interp con precisión y aborta
+            con PATH_TOLERANCE_VIOLATED si path_tol == goal_tol.
+            Separar path (loose) de goal (estricto) es el fix canónico
+            para FJT en simulación.
     """
     from control_msgs.action import FollowJointTrajectory
     from control_msgs.msg import JointTolerance
 
     goal = FollowJointTrajectory.Goal()
     goal.trajectory = jt
-    pos_tol = float(max(0.01, position_tol_rad))
+    goal_tol = float(max(0.01, position_tol_rad))
+    # F1.7 (2026-05-08): path_tol default 10.0 rad disables el path check
+    # de gz_ros2_control. El check de goal_tol al final sigue activo.
+    path_tol = (
+        float(max(0.01, path_tol_rad))
+        if path_tol_rad is not None
+        else 10.0
+    )
     goal.path_tolerance = [
-        JointTolerance(name=str(jn), position=pos_tol)
+        JointTolerance(name=str(jn), position=path_tol)
         for jn in jt.joint_names
     ]
     goal.goal_tolerance = [
-        JointTolerance(name=str(jn), position=pos_tol)
+        JointTolerance(name=str(jn), position=goal_tol)
         for jn in jt.joint_names
     ]
     total = float(max(0.0, goal_time_tol_sec))

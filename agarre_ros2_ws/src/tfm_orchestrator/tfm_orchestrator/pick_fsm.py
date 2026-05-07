@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, FrozenSet, List, Optional
+from typing import Dict, FrozenSet, List, Optional, Tuple
 
 
 class PickPhase(str, Enum):
@@ -156,16 +156,16 @@ class PickContext:
     """
 
     object_name: str = ""
-    drop_xyz_world: tuple = (0.0, 0.0, 0.0)
-    object_pose_world_hint: Optional[tuple] = None
+    drop_xyz_world: Tuple[float, ...] = (0.0, 0.0, 0.0)
+    object_pose_world_hint: Optional[Tuple[float, ...]] = None
     # B-iter5 (2026-05-03): snapshot inicial capturado durante INITIAL_SNAPSHOT.
     # Permanecen None hasta que la fase INITIAL_SNAPSHOT corra exitosamente.
     # Las fases siguientes (APPROACH/GRASP/etc) pueden consumir estos valores
     # en lugar de re-resolver TF/joint_state cada vez (fuente única de verdad
     # del estado al inicio del ciclo).
-    initial_tcp_pose_base: Optional[tuple] = None       # (x,y,z,qx,qy,qz,qw) en base_link
-    initial_joint_positions: Optional[tuple] = None      # tuple de 6 floats (rad)
-    initial_object_pose_world: Optional[tuple] = None    # (x,y,z,qx,qy,qz,qw) en world
+    initial_tcp_pose_base: Optional[Tuple[float, ...]] = None       # (x,y,z,qx,qy,qz,qw) en base_link
+    initial_joint_positions: Optional[Tuple[float, ...]] = None      # tuple de 6 floats (rad)
+    initial_object_pose_world: Optional[Tuple[float, ...]] = None    # (x,y,z,qx,qy,qz,qw) en world
     current_phase: PickPhase = PickPhase.IDLE
     detail: str = ""
     history: List[PickPhase] = field(default_factory=list)
@@ -215,7 +215,9 @@ def happy_path() -> List[PickPhase]:
     return list(_HAPPY_PATH)
 
 
-def normalize_pose_hint(pose_hint: Optional[tuple]) -> Optional[tuple]:
+def normalize_pose_hint(
+    pose_hint: Optional[Tuple[float, ...]],
+) -> Optional[Tuple[float, ...]]:
     """Normaliza un pose hint a tuple de 7 floats (x,y,z,qx,qy,qz,qw).
 
     Acepta:
@@ -239,7 +241,7 @@ def normalize_pose_hint(pose_hint: Optional[tuple]) -> Optional[tuple]:
     return None
 
 
-def is_no_hint(pose_hint: Optional[tuple]) -> bool:
+def is_no_hint(pose_hint: Optional[Tuple[float, ...]]) -> bool:
     """True si el pose hint es ``None`` o cumple la convención "no hint".
 
     Convención: position (0,0,0) y orientation identity (qw=1, qx=qy=qz=0).
@@ -250,8 +252,12 @@ def is_no_hint(pose_hint: Optional[tuple]) -> bool:
     norm = normalize_pose_hint(pose_hint)
     if norm is None:
         return True
+    if len(norm) != 7:
+        return True
     x, y, z, qx, qy, qz, qw = norm
-    return (
+    # F7: explicit bool() para que mypy strict no infiera Any de la cadena
+    # de comparaciones sobre los floats unpacked.
+    return bool(
         x == 0.0 and y == 0.0 and z == 0.0
         and qx == 0.0 and qy == 0.0 and qz == 0.0 and qw == 1.0
     )

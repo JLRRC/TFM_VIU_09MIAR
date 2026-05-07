@@ -93,6 +93,10 @@ def evaluate_pose_freshness_gate(
 
     if failures:
         return False, "freshness:" + "|".join(failures)
+    # F7: en el success path ambos no son None (pasaron las dos guardas
+    # `is None` arriba). Asserts explícitos para que mypy strict pase.
+    assert tcp_tf_age_sec is not None
+    assert joint_state_age_sec is not None
     return True, (
         f"freshness:ok:tcp_tf={float(tcp_tf_age_sec):.3f}s "
         f"joint_state={float(joint_state_age_sec):.3f}s "
