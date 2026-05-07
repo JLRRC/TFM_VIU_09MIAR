@@ -3,7 +3,13 @@
 **Estado**: 🟡 FIX A NIVEL APLICACIÓN APLICADO (commit `f18b2c2`). El bug raíz a nivel
 `/move_action` ↔ `controller_manager` SIGUE PRESENTE — se reproduce 5/5 goals con
 `debug_bridge_isolated.sh` (audit-v4 2026-05-07 22:40). El retry en
-`plan_to_pose_server` lo mitiga para el camino orchestrator.
+`plan_to_pose_server` lo mitiga para el camino orchestrator cuando aplica.
+
+**Validación live orchestrator (2026-05-07 22:57)**: 3/3 ciclos `/pick_place` ABORTED,
+pero **NO por bug bridge**. Causa: OMPL planning FAILURE en APPROACH (ver
+[BUG_ORCHESTRATOR_APPROACH_PLANNING.md](BUG_ORCHESTRATOR_APPROACH_PLANNING.md)).
+El retry no se ejercita porque MoveIt nunca llega al controller — falla antes,
+en planificación. Es un bug separado adyacente.
 
 **Guardrail de regresión**: T28 (`src/ur5_tools/test/test_bridge_path_tolerance_regression.py`),
 5 sub-tests AST verifican que el fix retry sigue presente en cualquier refactor futuro
