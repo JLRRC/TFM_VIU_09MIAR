@@ -33,10 +33,13 @@ def test_attach_gate_ok_at_exact_limit():
 
 
 def test_attach_gate_fails_when_too_far():
-    ok, reason = evaluate_attach_distance_gate(0.100)
+    # 2026-05-07 fix bug bridge (commit f18b2c2): DEFAULT_MAX_ATTACH_DIST_M
+    # subido 0.075 → 0.150 m. El test usa 0.200 m para garantizar
+    # too_far con el nuevo límite.
+    ok, reason = evaluate_attach_distance_gate(0.200)
     assert ok is False
     assert "too_far" in reason
-    assert "0.1000" in reason
+    assert "0.2000" in reason
 
 
 def test_attach_gate_custom_limit():
