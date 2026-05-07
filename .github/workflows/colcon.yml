@@ -34,8 +34,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install pytest + PyYAML
-        run: pip install pytest pyyaml
+      - name: Install pytest + PyYAML + PyQt5 (Qt headless smoke)
+        run: pip install pytest pyyaml PyQt5
 
       - name: pytest offline subset ur5_qt_panel
         working-directory: agarre_ros2_ws/src/ur5_qt_panel
@@ -83,6 +83,14 @@ jobs:
             test/test_logging_utils.py \
             test/test_quality_metrics.py
 
+      - name: pytest T18 Qt headless smoke (panel_v2 offscreen)
+        working-directory: agarre_ros2_ws/src/ur5_qt_panel
+        env:
+          PYTHONPATH: .
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          pytest -q test/test_panel_v2_qt_smoke.py
+
       - name: pytest offline subset ur5_tools (F4/F10/F6.5/F13 helpers puros)
         working-directory: agarre_ros2_ws/src/ur5_tools
         env:
@@ -99,12 +107,18 @@ jobs:
             test/test_tf_geometry_logic.py \
             test/test_perf_helpers.py
 
-      - name: pytest tfm_orchestrator (F5 FSM + F6 service clients + F8 timings)
+      - name: pytest tfm_orchestrator (F5 FSM + F6 service clients + F8 timings + T29 GRASP_DOWN)
         working-directory: agarre_ros2_ws/src/tfm_orchestrator
         env:
           PYTHONPATH: .
         run: |
-          pytest -q test/test_pick_fsm.py test/test_service_clients.py test/test_phase_timings.py test/test_lifecycle_helpers.py
+          pytest -q \
+            test/test_pick_fsm.py \
+            test/test_service_clients.py \
+            test/test_phase_timings.py \
+            test/test_lifecycle_helpers.py \
+            test/test_grasp_down_phase_in_fsm.py \
+            test/test_pick_gates.py
 
       - name: pytest ur5_bringup (F17 launch factories + T4 schemas + T26 grasp evidence)
         working-directory: agarre_ros2_ws/src/ur5_bringup
