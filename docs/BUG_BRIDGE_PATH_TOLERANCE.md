@@ -1,6 +1,53 @@
-# BUG: ur5_moveit_bridge ↔ joint_trajectory_controller path tolerance violation
+# BUG: ur5_moveit_bridge ↔ joint_trajectory_controller — flakiness intermitente
 
-**Estado**: 🟠 ABIERTO (2026-05-07 sesión 14 rondas live)
+**Estado**: 🟡 PARCIALMENTE MITIGADO (2026-05-07 sesión 28 rondas live)
+**Mitigación**: orchestrator funciona intermitentemente (rondas 25, 27 OK
+hasta GRASP_DOWN). Legacy path canónico (default) NO afectado.
+
+## Update 2026-05-07 ronda 27-28: orchestrator alcanza GRASP_DOWN
+
+Tras aplicar:
+- `max_velocity_scaling_factor` 0.5→0.3 (trayectoria más lenta)
+- `allowed_execution_duration_scaling` 30→100 (upper bound x10)
+- `moveit_result_timeout_sec` 90→400s
+- `action_result_timeout_sec` 150→500s
+
+El orchestrator path **completa hasta GRASP_DOWN** cuando funciona:
+```
+phase=INITIAL_SNAPSHOT ok=True
+phase=HOME_INITIAL ok=True
+phase=SELECT_OBJECT ok=True
+phase=APPROACH ok=True reason=approach:moveit:SUCCESS
+phase=GRASP_DOWN ok=True reason=grasp_down:moveit:SUCCESS
+```
+
+**Pero hay flakiness intermitente**: ronda 28 (config idéntica a ronda 27)
+falló en APPROACH con `moveit_result_timeout:400.0s` sin completar.
+
+Patrón observado:
+- ~50% de runs: APPROACH+GRASP_DOWN OK
+- ~50% de runs: APPROACH timeout
+
+Causa raíz: el `move_action` del move_group **se queda esperando feedback
+del controller** intermitentemente. El controller `joint_trajectory_controller`
+ejecuta la trayectoria pero por algún issue de timing entre threads de
+Gazebo+ROS, la respuesta no llega al move_group dentro del timeout.
+
+Este es un bug profundo de la integración MoveIt2 ↔ gz_ros2_control en
+sim_time, no resoluble subiendo más timeouts.
+
+## Estado del proyecto pese al bug
+
+✅ **Objetivo del proyecto cumplido vía LEGACY path** (`run_pick_demo`):
+   las pinzas RG2 agarran el objeto físicamente en Gazebo.
+   Tag: `objetivo-cumplido-pinzas-agarran-objeto-20260507`.
+   Evidencia: TCP↔objeto 1.8cm, levantado 97.8cm, 132 ticks attach.
+
+🟡 **Orchestrator path** (opt-in vía `PANEL_PICK_DEMO_USE_ORCHESTRATOR=1`):
+   funciona intermitentemente hasta GRASP_DOWN. NO recomendado para producción
+   hasta que se cierre el bug intermitente del bridge.
+
+## Estado original del bug
 **Detectado**: 2026-05-07 (validación E2E orchestrator path)
 **Reproducibilidad**: 100% en orchestrator path (`PANEL_PICK_DEMO_USE_ORCHESTRATOR=1`)
 **Bloqueante para**: completar pick & place full cycle vía orchestrator

@@ -92,8 +92,12 @@ def build_move_group_goal(
     req.planner_id = str(planner_id or "")
     req.allowed_planning_time = float(planning_time_sec)
     req.num_planning_attempts = 5
-    req.max_velocity_scaling_factor = 0.5
-    req.max_acceleration_scaling_factor = 0.5
+    # 2026-05-07: bajado 0.5→0.3 para que la trayectoria sea más lenta y el
+    # controller en gz_ros2_control la siga sin path_tolerance_violation
+    # (sim_per_wall ≈ 0.58 hace que la trayectoria a 0.5 vel max sea
+    # demasiado rápida para el controller).
+    req.max_velocity_scaling_factor = 0.3
+    req.max_acceleration_scaling_factor = 0.3
 
     # Goal constraints: position + orientation sobre ee_frame.
     pc = PositionConstraint()

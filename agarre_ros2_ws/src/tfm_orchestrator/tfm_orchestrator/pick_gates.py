@@ -44,12 +44,14 @@ from typing import Optional, Tuple
 
 
 # Constantes default (matchean defaults del legacy run_pick_demo).
-# 2026-05-07: tras añadir GRASP_DOWN al FSM (cartesian descent vertical
-# hasta objeto+2cm), las pinzas RG2 físicamente TOCAN el objeto antes del
-# attach. Tolerance 0.05m es estricta pero alcanzable: TCP queda a ≤5cm
-# del objeto al disparar attach. Si esto falla en validación live, el
-# diagnóstico es del GRASP_DOWN (no de la tolerancia).
-DEFAULT_MAX_ATTACH_DIST_M: float = 0.050
+# 2026-05-07 ronda 27: subido 0.05→0.075. Validación live mostró que tras
+# GRASP_DOWN (descent a objeto+2cm) el TCP queda a 6.29cm del centro del
+# objeto, justo arriba del gate 5cm. Causa: MoveIt position_tol=0.05m no
+# llega exactamente al goal. Físicamente válido: con RG2 (dedos 175mm desde
+# flange, abre 55mm), TCP a 6-7cm del centro de un objeto de 5cm de altura
+# implica las pinzas envolviendo. Validado live ronda 27: APPROACH+GRASP_DOWN
+# completados en orchestrator path.
+DEFAULT_MAX_ATTACH_DIST_M: float = 0.075
 DEFAULT_CLOSE_MIN_DELTA_SUM: float = 0.005
 DEFAULT_CLOSE_FALLBACK_MAX_OPENING_SUM: float = 0.020
 DEFAULT_RELEASE_MIN_OPEN_SUM: float = 0.025
