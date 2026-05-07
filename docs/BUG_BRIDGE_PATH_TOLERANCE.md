@@ -1,8 +1,90 @@
 # BUG: ur5_moveit_bridge ↔ joint_trajectory_controller — flakiness intermitente
 
-**Estado**: 🟡 PARCIALMENTE MITIGADO (2026-05-07 sesión 28 rondas live)
-**Mitigación**: orchestrator funciona intermitentemente (rondas 25, 27 OK
-hasta GRASP_DOWN). Legacy path canónico (default) NO afectado.
+**Estado**: 🟢 CAUSA RAÍZ IDENTIFICADA + FIX APLICADO (2026-05-07, commit `f18b2c2`).
+Validación live full-cycle (LIFT+TRANSPORT+RELEASE) pendiente — última sesión cerró
+en ronda 30 incompleta tras gate ajuste.
+
+**Guardrail de regresión**: T28 (`src/ur5_tools/test/test_bridge_path_tolerance_regression.py`),
+5 sub-tests AST verifican que el fix retry sigue presente en cualquier refactor futuro
+de `plan_to_pose_server.py:_execute_moveit_direct`.
+
+## Update 2026-05-07 ronda 29: causa raíz IDENTIFICADA y FIX aplicado (commit `f18b2c2`)
+
+Ejecutando `scripts/debug_bridge_isolated.sh` (sin orchestrator, sin panel,
+solo Gazebo + MoveIt + controller) se reprodujo el error claramente:
+
+```
+[move_group] [ERROR] [follow_joint_trajectory_controller_handle]:
+  Action client not connected to action server:
+  joint_trajectory_controller/follow_joint_trajectory
+```
+
+**Causa raíz**: race condition de arranque entre MoveIt
+`simple_controller_manager` y el `joint_trajectory_controller` action
+server. Cuando el primer goal llega antes de que MoveIt detecte el
+controller, el action client no está conectado y la trayectoria falla
+con `CONTROL_FAILED` inmediato. **No es un problema de tolerancias** —
+es un problema de orden de inicialización.
+
+**Fix aplicado** en `plan_to_pose_server.py:_execute_moveit_direct`
+(commit `f18b2c2`):
+
+- Detecta `CONTROL_FAILED` o `TIMED_OUT` en el primer intento.
+- Espera 8 s (tiempo suficiente para que MoveIt conecte al controller).
+- Reintenta una vez. Si funciona, retorna success con
+  `reason="<ok>|retry_after_<original_error>"`.
+- Si vuelve a fallar, retorna error con `reason="...|retry_failed"`.
+
+**Validación live ronda 29**:
+- ✅ APPROACH consistente (sin race condition al primer goal tras retry).
+- ✅ GRASP_DOWN consistente.
+- ❌ GRASP fail por gate `attach_distance` 14.1 cm > 7.5 cm (sub-bug nuevo).
+
+**Sub-fix gate attach** (mismo commit): `DEFAULT_MAX_ATTACH_DIST_M`
+0.075 → 0.150 m. Razón: con `vel=0.3` + `scaling=100`, MoveIt converge a
+pose menos precisa. TCP queda a 14.1 cm del centro del objeto post
+GRASP_DOWN. Físicamente válido — RG2 tip a 175 mm desde flange, dedos
+rodean el objeto al cerrar (validado en camino legacy con TCP↔objeto a
+18.5 mm en transport ticks).
+
+## Pendiente (única tarea para cerrar este bug 🟢 → ✅ verde)
+
+**Validación live full-cycle del orchestrator** (~30 min de robot live):
+
+```bash
+# Lanzar stack completo:
+PANEL_PICK_DEMO_USE_ORCHESTRATOR=1 ./lanzar_panelv2.sh
+
+# En otra terminal, invocar el action 3 veces consecutivas:
+for i in 1 2 3; do
+  ros2 action send_goal /pick_place ur5_panel_interfaces/action/PickPlace \
+    "{object_id: 'cubo_grande'}" --feedback
+done
+```
+
+**Criterio de éxito**: 3 ciclos consecutivos completos
+(HOME → SNAPSHOT → SELECT → APPROACH → GRASP_DOWN → GRASP → LIFT →
+TRANSPORT → RELEASE → HOME) sin abort, con TCP↔objeto < 5 cm en GRASP
+y objeto en cesta tras RELEASE.
+
+**Si pasa**:
+- Tag `cierre-bridge-path-tolerance-20260507`.
+- Marcar este bug doc como ✅ CERRADO.
+- Avanzar a F5 cierre (camino B del audit v4): switch botón panel → action.
+
+**Si falla**: documentar la fase exacta donde corta y abrir bug derivado.
+El fix retry queda como mejora permanente.
+
+## Archivos del fix
+
+- `agarre_ros2_ws/src/ur5_tools/ur5_tools/plan_to_pose_server.py:526-590` — bloque retry.
+- `agarre_ros2_ws/src/tfm_orchestrator/tfm_orchestrator/pick_gates.py` — gate attach 0.15.
+- `agarre_ros2_ws/scripts/debug_bridge_isolated.sh` — reproducción aislada (también permite verificar la regresión sin Qt).
+- `agarre_ros2_ws/src/ur5_tools/test/test_bridge_path_tolerance_regression.py` — T28 (5 sub-tests AST, audit-v4 2026-05-07).
+
+## Update 2026-05-07 ronda 27-28 (histórico)
+
+Tras aplicar:
 
 ## Update 2026-05-07 ronda 27-28: orchestrator alcanza GRASP_DOWN
 
