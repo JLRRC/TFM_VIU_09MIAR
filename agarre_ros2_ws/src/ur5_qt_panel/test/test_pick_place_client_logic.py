@@ -193,28 +193,40 @@ def test_should_use_orchestrator_falsy_explicit(v):
     assert should_use_orchestrator(v) is False
 
 
-def test_should_use_orchestrator_none_default_true_f12():
-    """F12: el default cambió a orchestrator (True)."""
-    assert should_use_orchestrator(None) is True
+def test_should_use_orchestrator_none_default_legacy_20260507():
+    """2026-05-07: default revertido a legacy tras 25 rondas live de debug
+    del orchestrator. El bug bridge MoveIt-controller (sim_time vs wall_time)
+    bloquea el orchestrator en Gazebo Sim — doc en BUG_BRIDGE_PATH_TOLERANCE.
+    El legacy run_pick_demo está validado live (objetivo cumplido en
+    objetivo-cumplido-pinzas-agarran-objeto-20260507)."""
+    assert should_use_orchestrator(None) is False
 
 
 @pytest.mark.parametrize("v", ["", "FOO", "weird"])
-def test_should_use_orchestrator_unknown_defaults_to_true_f12(v):
-    """F12: valores no reconocidos no son falsy explícito → orchestrator."""
-    assert should_use_orchestrator(v) is True
+def test_should_use_orchestrator_unknown_defaults_to_legacy_20260507(v):
+    """2026-05-07: valores no reconocidos defaultean a legacy."""
+    assert should_use_orchestrator(v) is False
 
 
 @pytest.mark.parametrize("v", ["1", "true", "yes", "on"])
 def test_should_use_orchestrator_legacy_override_forces_legacy(v):
-    """USE_LEGACY_PICK_DEMO=1 fuerza legacy pese al default orchestrator."""
+    """USE_LEGACY_PICK_DEMO=1 fuerza legacy (compatibilidad histórica)."""
     assert should_use_orchestrator(None, legacy_env_value=v) is False
     assert should_use_orchestrator("1", legacy_env_value=v) is False
 
 
 @pytest.mark.parametrize("v", ["0", "false", "no", "off", None, ""])
-def test_should_use_orchestrator_legacy_override_inactive(v):
-    """USE_LEGACY_PICK_DEMO falsy o ausente: respeta el default orchestrator."""
-    assert should_use_orchestrator(None, legacy_env_value=v) is True
+def test_should_use_orchestrator_legacy_override_inactive_20260507(v):
+    """2026-05-07: USE_LEGACY falsy + env_value None → legacy default
+    (era orchestrator en F12 pero el default ahora es legacy)."""
+    assert should_use_orchestrator(None, legacy_env_value=v) is False
+
+
+@pytest.mark.parametrize("v", ["1", "true", "yes", "on"])
+def test_should_use_orchestrator_explicit_truthy_forces_orchestrator(v):
+    """2026-05-07: PANEL_PICK_DEMO_USE_ORCHESTRATOR=1 explícito activa
+    el path orchestrator (opt-in tras revertir default a legacy)."""
+    assert should_use_orchestrator(v) is True
 
 
 # ---------------------------------------------------------------------------

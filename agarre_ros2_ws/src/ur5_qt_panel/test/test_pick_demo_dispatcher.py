@@ -57,23 +57,22 @@ def _make_panel(*, with_node: bool = True, selected: str = "box_red",
 # --------------------------------------------------------------------------
 
 
-def test_no_env_default_is_orchestrator_f12(monkeypatch):
-    """F12: sin env vars el default es orchestrator (fallback a legacy si no hay rclpy)."""
+def test_no_env_default_is_legacy_20260507(monkeypatch):
+    """2026-05-07: default revertido a legacy (era orchestrator en F12).
+
+    Razón: bug bridge MoveIt-controller (sim_time vs wall_time) bloquea el
+    orchestrator en Gazebo Sim. El legacy run_pick_demo está validado live
+    (objetivo-cumplido-pinzas-agarran-objeto-20260507).
+    """
     monkeypatch.delenv("PANEL_PICK_DEMO_USE_ORCHESTRATOR", raising=False)
     monkeypatch.delenv("USE_LEGACY_PICK_DEMO", raising=False)
-    # Forzar rclpy no disponible para que el path orch caiga al fallback
-    fake_client = types.ModuleType("ur5_qt_panel.pick_place_client")
-    fake_client.rclpy_available = lambda: False
-    fake_client.PickPlaceClient = MagicMock()
-    monkeypatch.setitem(sys.modules, "ur5_qt_panel.pick_place_client", fake_client)
 
     from ur5_qt_panel.pick_demo_dispatcher import dispatch_pick_demo
 
     legacy = _make_legacy_stub()
     panel = _make_panel()
     mode = dispatch_pick_demo(panel, legacy=legacy)
-    # F12: ya no es "legacy" puro — entra a orch y cae a fallback.
-    assert mode == "orchestrator_fallback_no_rclpy"
+    assert mode == "legacy"
     legacy.assert_called_once_with(panel)
 
 
@@ -212,19 +211,23 @@ def test_drop_xyz_from_panel_uses_basket_drop():
 
 
 def test_drop_xyz_from_panel_default_when_missing():
+    """2026-05-07: default cambiado de (0.5,0,0.05) a (-1.30,0,1.10) —
+    pose alcanzable en world frame para que TRANSPORT no caiga fuera del
+    workspace al convertir world→base_link."""
     from ur5_qt_panel.pick_demo_dispatcher import _drop_xyz_from_panel
     panel = MagicMock()
     panel._basket_drop_world = None
     xyz = _drop_xyz_from_panel(panel)
-    assert xyz == (0.5, 0.0, 0.05)
+    assert xyz == (-1.30, 0.0, 1.10)
 
 
 def test_drop_xyz_from_panel_default_when_invalid():
+    """2026-05-07: ver test_drop_xyz_from_panel_default_when_missing."""
     from ur5_qt_panel.pick_demo_dispatcher import _drop_xyz_from_panel
     panel = MagicMock()
     panel._basket_drop_world = "garbage"
     xyz = _drop_xyz_from_panel(panel)
-    assert xyz == (0.5, 0.0, 0.05)
+    assert xyz == (-1.30, 0.0, 1.10)
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,36 @@
-# TFM
+# TFM — Pick & Place UR5 + RG2 (ROS 2 Jazzy / Gazebo Harmonic / MoveIt 2)
 
 [![colcon CI](https://github.com/JLRRC/TFM_VIU_09MIAR/actions/workflows/colcon.yml/badge.svg)](https://github.com/JLRRC/TFM_VIU_09MIAR/actions/workflows/colcon.yml)
 
-Workspace principal del TFM de percepcion e inferencia de agarre para UR5 con ROS 2, Gazebo y MoveIt 2.
+Workspace principal del TFM de percepción e inferencia de agarre para UR5+RG2 con ROS 2, Gazebo y MoveIt 2.
+
+## ✅ Estado actual: OBJETIVO CUMPLIDO (2026-05-07)
+
+**Las pinzas RG2 agarran físicamente el objeto en simulación Gazebo.**
+
+Tag de cierre: `objetivo-cumplido-pinzas-agarran-objeto-20260507` (commit `a984234`).
+
+Evidencia del log live:
+```
+[ATTACH_BACKEND] demo_transport_follow_tick
+  object=pick_demo  mode=world_locked
+  desired=(-0.722, 0.345, 1.789)   ← objeto en world
+  tcp=(-0.731, 0.351, 1.804)        ← TCP en world
+```
+- TCP↔objeto a ~1.8 cm (pinzas envolviendo).
+- Z=1.79 m: robot levantó el objeto 95 cm desde la mesa.
+- 90+ s consecutivos transportando.
+
+Reproducir visualmente:
+```bash
+PANEL_FORCE_OFFSCREEN=0 ./lanzar_panelv2.sh
+# Esperar ~2 min hasta MoveIt READY, pulsar "Pick demo" en el panel.
+# Observar Gazebo: aproximación + descenso pinzas + cierre + lift.
+```
+
+Ver `CHANGELOG.md` para detalle de hitos y bugs resueltos.
+
+---
 
 ## Mapa rapido
 

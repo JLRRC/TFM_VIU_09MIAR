@@ -515,9 +515,11 @@ class TestPickDemoEnvIntInvalidFallback:
 
 class TestDirectRuntimeTargetTolMExtraPaths:
     def test_approach_coarse_refine_default(self, monkeypatch):
+        # 2026-05-04: default subido 0.006→0.020 para que COARSE_REFINE no
+        # rechace por sesgo determinista FK panel↔TF (~10mm).
         monkeypatch.delenv("PANEL_PICK_DEMO_APPROACH_COARSE_REFINE_TCP_TOL_M", raising=False)
         result = _direct_runtime_target_tol_m("APPROACH_COARSE_REFINE")
-        assert result == pytest.approx(0.006)
+        assert result == pytest.approx(0.020)
 
     def test_grasp_align_ik_default(self, monkeypatch):
         monkeypatch.delenv("PANEL_PICK_DEMO_GRASP_ALIGN_TCP_TOL_M", raising=False)
