@@ -702,6 +702,52 @@ def test_env_vars_have_documentation() -> None:
 
 
 # ---------------------------------------------------------------------------
+# T31 — F2 baseline: total env reads en producción (drift cap)
+# ---------------------------------------------------------------------------
+# F2 audit-v4 (2026-05-08): el objetivo F2 es bajar 131 → ≤ 30
+# `os.environ.get` reads en producción. Mientras se ejecuta el refactor
+# (mover env reads a `*_params.py` tipados), este test:
+#   1. Asegura que el conteo NO sube (regresión).
+#   2. Detecta cuando el conteo BAJA → el desarrollador debe actualizar el
+#      baseline en el mismo commit (lo que documenta el progreso F2).
+# Decrementar el baseline cuando se haga F2-step3..6.
+ENV_READS_BASELINE_TOTAL = 121
+ENV_READS_DRIFT_MARGIN = 0  # no se permite incremento.
+
+
+def test_env_reads_total_count_under_baseline() -> None:
+    """T31 — total env reads en producción <= baseline (F2 drift cap)."""
+    total = 0
+    per_file: Dict[str, int] = {}
+    for path in _iter_production_py_files():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # Cuenta `os.environ.get(` y `os.environ[`
+        n = text.count("os.environ.get(") + text.count("os.environ[")
+        if n:
+            per_file[_rel(path)] = n
+            total += n
+
+    upper = ENV_READS_BASELINE_TOTAL + ENV_READS_DRIFT_MARGIN
+    if total > upper:
+        top = sorted(per_file.items(), key=lambda kv: -kv[1])[:5]
+        top_str = "\n  ".join(f"{k}: {v}" for k, v in top)
+        raise AssertionError(
+            f"Env reads regresion: total={total} > baseline={upper}.\n"
+            f"Top files:\n  {top_str}\n"
+            "Mueve env reads a `*_params.py` tipados (F2-step3..6)."
+        )
+    if total < ENV_READS_BASELINE_TOTAL:
+        raise AssertionError(
+            f"Env reads bajaron: total={total} < baseline={ENV_READS_BASELINE_TOTAL}. "
+            "ACTUALIZA ENV_READS_BASELINE_TOTAL al nuevo valor en el mismo commit "
+            f"(progreso F2 hacia ≤ 30). Set baseline = {total}."
+        )
+
+
+# ---------------------------------------------------------------------------
 # T19 — Hash compat de interfaces IDL (.srv / .action)
 # ---------------------------------------------------------------------------
 
