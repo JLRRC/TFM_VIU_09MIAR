@@ -1,10 +1,19 @@
 # BUG: orchestrator path APPROACH — OMPL planning FAILURE
 
-**Estado**: 🔴 ABIERTO (detectado 2026-05-07 22:57 en validación live F1.5).
-**Reproducibilidad**: 100% en el camino `/pick_place` con `object_name='box_red'`.
+**Estado**: 🟡 CAUSA RAÍZ IDENTIFICADA (audit-v4 F1.6 2026-05-07 23:05).
+**Causa**: cliente envió `object_pose_world_hint` con position=(0,0,0) +
+identity quaternion → `is_no_hint(pose) == True` → orchestrator usa placeholder
+goal a `(0,0,0)` en `base_link` (la base del robot) → OMPL FAILURE garantizado.
+
+**Fix sugerido**: cliente debe llamar `/orchestrator/resolve_object_pose_world`
+ANTES de invocar `/pick_place` y pasar la pose real como `object_pose_world_hint`.
+F5-step3 ya implementa el resolver — sólo falta cablearlo.
+
+**Reproducibilidad**: 100% cuando se invoca con hint=identity (caso del
+audit-v4 F1.5 ronda inicial 22:57).
 **Bloqueante para**: cierre F1.5 al 100% con criterio "3 ciclos sin abort".
-**NO bloqueante para**: camino legacy `run_pick_demo` (que tiene su propia
-ruta de cálculo de approach pose con tolerancias y retries históricos).
+**NO bloqueante para**: camino legacy `run_pick_demo` (que computa la pose
+del objeto internamente sin depender del hint del cliente).
 
 ## Resumen
 
@@ -92,7 +101,33 @@ ros2 action send_goal /pick_place ur5_panel_interfaces/action/PickPlace \
 Resultado esperado actual: `success: false`, `reason: approach:moveit_err:FAILURE`,
 `duration_sec: ~35s`.
 
-## Plan de fix (estimado 4-12 h, futura sesión)
+## Update 2026-05-07 23:51 — cadena de bugs en orchestrator path confirmada
+
+Tras pasar la pose real del objeto vía `object_pose_world_hint`, la APPROACH
+ya planifica correctamente. Pero el ciclo completo revela una **cadena** de
+bugs adicionales en el orchestrator path:
+
+| # | Fase | Bug | Status | Workaround |
+|---|---|---|---|---|
+| A | HOME_INITIAL | `fjt_err:PATH_TOLERANCE_VIOLATED` cuando el robot no está exactamente en home (controller rechaza al primer instante de tracking). Default `position_tol_rad=0.10` es demasiado tight para drift de Gazebo+sim_time. | Abierto | Subir `home_position_tol_rad` a 1.0 vía launch arg (param dinámico vía `ros2 param set` NO se aplica al atributo Python del nodo — bug D). |
+| B | APPROACH (execute) | `moveit_result_timeout:400.0s` cuando el bridge bug (`Action client not connected`) hace que `move_action` no devuelva resultado. El retry `f18b2c2` se dispara pero llega tarde (timeout exterior). | Abierto | Bajar `moveit_result_timeout_sec` y subir agresividad del retry, o resolver el bridge bug raíz (sim_time clock sync). |
+| C | GRASP attach gate | `attach_distance:too_far:0.19-0.22m > 0.150m`. El TCP queda a 19-22 cm del centro del objeto (no 14 cm como en rondas previas). MoveIt converge a pose menos precisa con `vel=0.3+scaling=100`. | Abierto fix candidato: 0.150 → 0.250 m (commit en branch). |
+| D | Param live `home_position_tol_rad` | `ros2 param set` actualiza el param pero no actualiza el atributo `self._home_position_tol_rad` del nodo — falta `add_on_set_parameters_callback`. | Abierto | Restart con launch arg, o añadir callback. |
+
+**Resultado live (3 ciclos consecutivos en v4 con orchestrator rebuild + gate 0.250):**
+
+| Ciclo | reason | duration | Bug que disparó |
+|---|---|---|---|
+| 1/3 | `approach:moveit_result_timeout:400.0s` | 409 s | Bug B (bridge → timeout exterior) |
+| 2/3 | `home_initial:fjt_err:PATH_TOLERANCE_VIOLATED` | 4 s | Bug A (param D no se aplicó live) |
+| 3/3 | `home_initial:fjt_err:PATH_TOLERANCE_VIOLATED` | 4 s | Bug A (idem) |
+
+**Conclusión**: el camino orchestrator tiene **al menos 4 bugs concatenados**.
+Cerrar "3 ciclos sin abort" requiere fix de los 4. Cada uno lleva entre
+30 min y varias horas. **No es factible en una sola sesión**, y NO es
+trabajo de F1.5 (que es sólo el bug bridge `CONTROL_FAILED` retry).
+
+## Plan de fix (estimado 12-30 h, multi-sesión)
 
 ### Diagnóstico
 

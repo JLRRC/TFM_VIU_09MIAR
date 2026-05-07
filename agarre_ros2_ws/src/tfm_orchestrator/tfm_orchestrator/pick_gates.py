@@ -52,7 +52,7 @@ from typing import Optional, Tuple
 # Con TCP a 14cm del centro del objeto (5cm), los dedos del RG2 están
 # rodeando el objeto al cerrar — exactamente como en el camino legacy
 # que validó el agarre con TCP↔objeto a 18.5mm en ticks de transport.
-DEFAULT_MAX_ATTACH_DIST_M: float = 0.150
+DEFAULT_MAX_ATTACH_DIST_M: float = 0.250
 DEFAULT_CLOSE_MIN_DELTA_SUM: float = 0.005
 DEFAULT_CLOSE_FALLBACK_MAX_OPENING_SUM: float = 0.020
 DEFAULT_RELEASE_MIN_OPEN_SUM: float = 0.025
