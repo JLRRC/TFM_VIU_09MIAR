@@ -23,7 +23,7 @@ vars. Las tolerancias y posiciones de joint se reciben como argumentos.
 from __future__ import annotations
 
 import math
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from ur5_qt_panel.directo_geometry import angle_shortest_diff_rad
 

@@ -13,7 +13,6 @@ from types import SimpleNamespace
 import pytest
 
 from tfm_orchestrator.initial_snapshot import (
-    InitialSnapshotResult,
     capture_initial_snapshot,
     capture_tcp_pose_base,
     extract_joint_positions,

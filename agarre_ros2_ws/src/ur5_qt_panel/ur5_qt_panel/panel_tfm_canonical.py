@@ -18,7 +18,6 @@ Extraido de ``panel_tfm.py`` (lineas 317-465 originales). Cubre:
 """
 from __future__ import annotations
 
-import os
 import time
 from datetime import datetime
 

@@ -31,8 +31,8 @@ avanza la fase del FSM.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Iterable, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 
 _VALID_EE_FRAMES = frozenset({"rg2_pinch_center", "rg2_tcp", "tool0"})

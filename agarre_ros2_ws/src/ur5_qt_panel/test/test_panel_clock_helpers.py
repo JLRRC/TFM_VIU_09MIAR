@@ -10,7 +10,6 @@ módulo puro. Este test verifica el contrato.
 
 from __future__ import annotations
 
-import pytest
 
 from ur5_qt_panel.panel_clock_helpers import (
     clock_age_threshold_exceeded,

@@ -33,7 +33,6 @@ from rclpy.node import Node
 
 import threading
 import uuid
-from typing import Optional
 
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped

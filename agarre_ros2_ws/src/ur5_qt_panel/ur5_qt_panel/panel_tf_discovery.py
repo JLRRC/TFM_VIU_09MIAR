@@ -60,7 +60,6 @@ def yaw_from_quaternion(quat) -> float:  # late binding via panel_utils
 def _log_exception(context: str, exc: Exception) -> None:
     """Inline simplificado para evitar circular import."""
 
-    import os
     debug_enabled = _get_panel_ui_params().debug_exceptions
     if debug_enabled:
         import traceback

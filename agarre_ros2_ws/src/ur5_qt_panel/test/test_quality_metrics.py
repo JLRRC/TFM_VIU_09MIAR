@@ -29,7 +29,6 @@ import re
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
-import pytest
 
 # ---------------------------------------------------------------------------
 # Resolución de rutas (test vive en agarre_ros2_ws/src/ur5_qt_panel/test/).

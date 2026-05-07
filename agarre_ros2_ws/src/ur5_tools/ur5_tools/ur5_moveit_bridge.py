@@ -46,7 +46,6 @@ from moveit_msgs.srv import GetCartesianPath
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
-from rclpy.node import Node
 from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time

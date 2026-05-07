@@ -15,7 +15,7 @@ del closure ``run_pick_object.worker``, capturando 7 deps reales
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 

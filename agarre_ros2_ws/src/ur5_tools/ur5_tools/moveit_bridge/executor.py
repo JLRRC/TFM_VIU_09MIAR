@@ -33,7 +33,6 @@ Sin estado propio. La clase concreta debe heredar también de
 from __future__ import annotations
 
 import math
-import os
 import threading
 import time
 from dataclasses import dataclass

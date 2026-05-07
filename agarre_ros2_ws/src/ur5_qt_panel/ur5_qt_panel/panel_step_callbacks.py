@@ -5,14 +5,13 @@
 """Step pipeline callbacks for ControlPanelV2."""
 from __future__ import annotations
 
-import json
 import math
 import time
 from typing import Dict, List, Optional, Tuple
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import QPushButton, QTableWidgetItem
+from PyQt5.QtWidgets import QTableWidgetItem
 
 from .panel_config import (
     GRIPPER_CLOSED_RAD,
@@ -24,26 +23,10 @@ from .panel_utils import (
     get_object_positions,
     world_to_base,
 )
-from .panel_runtime_pose_auditor import (
-    build_runtime_audit_snapshot,
-    compute_step_history_metrics,
-    runtime_status_style,
-)
-from .step_pipeline_helpers import (
-    step_phase_action_text,
-    step_phase_gripper_state,
-    step_phase_intent,
-    step_phase_sequence,
-    step_predict_next_phase,
-)
 from .tf_pose_utils import (
     get_transform as tf_get_transform,
-    get_tcp_in_base as tf_get_tcp_in_base,
 )
 from .panel_objects import get_object_states
-from .panel_step_ui import build_step_cart_debug_window
-from .panel_utils import base_to_world
-from .step_pipeline_helpers import step_present_flow_name
 from .ur5_kinematics import fk_ur5, ik_ur5
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
 from .panel_objects import ObjectLogicalState

@@ -5,7 +5,6 @@
 """TF helper utilities for the panel."""
 from __future__ import annotations
 
-import os
 import threading
 import time
 from typing import Optional, Set, Tuple

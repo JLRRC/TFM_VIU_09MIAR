@@ -5,11 +5,8 @@
 
 from __future__ import annotations
 
-import pytest
 
 from tfm_orchestrator.pick_gates import (
-    DEFAULT_CLOSE_FALLBACK_MAX_OPENING_SUM,
-    DEFAULT_CLOSE_MIN_DELTA_SUM,
     DEFAULT_MAX_ATTACH_DIST_M,
     DEFAULT_RELEASE_MIN_OPEN_SUM,
     evaluate_attach_distance_gate,

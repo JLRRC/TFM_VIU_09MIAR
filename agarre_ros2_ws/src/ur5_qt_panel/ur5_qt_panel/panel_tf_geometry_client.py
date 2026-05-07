@@ -36,7 +36,7 @@ Uso desde el panel (cuando el usuario decida migrar consumidores)::
 
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
+from typing import Optional, Tuple
 
 try:
     import rclpy

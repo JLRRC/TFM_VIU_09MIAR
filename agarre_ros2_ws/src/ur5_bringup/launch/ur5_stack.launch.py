@@ -17,7 +17,6 @@ from typing import List
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from launch_helpers import (
-    PANEL_ENV_DEFAULTS,
     build_gz_plugin_path,
     build_gz_resource_path,
     copy_runtime_model,
@@ -44,12 +43,9 @@ _RUNTIME_DEFAULTS: dict[str, str] = load_runtime_defaults()
 
 from launch import LaunchDescription
 from launch.actions import (
-    DeclareLaunchArgument,
     ExecuteProcess,
     IncludeLaunchDescription,
     OpaqueFunction,
-    SetEnvironmentVariable,
-    SetLaunchConfiguration,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource

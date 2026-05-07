@@ -58,7 +58,6 @@ from .panel_config import (
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME
 from .panel_pick_demo_params import (
     load_pick_demo_params,
-    PickDemoParams,
     get_pick_demo_params as _get_pick_demo_params,
 )
 from .panel_objects import (
@@ -82,7 +81,6 @@ from .directo_geometry import (
     _effective_direct_grasp_z,
     _direct_runtime_target_tol_m,
     _is_demo_basket_transport_stage,
-    _is_demo_basket_transport_motion,
     _compute_demo_basket_targets,
     _compute_demo_linear_stage_targets,
     _compute_demo_stage_count_for_distance,
@@ -90,7 +88,6 @@ from .directo_geometry import (
     _compute_demo_transport_micro_recovery_target,
     _compute_demo_joint_prep_waypoints,
     _compute_demo_transport_prep_joint_tol,
-    _joint_step_wait_timeout,
 )
 from .panel_utils import (
     fmt_vec3,
@@ -120,7 +117,6 @@ from .pick_demo.internal_helpers import (
     _select_pick_demo_cycle_object_reference,
     _demo_object_in_basket,
     _validate_demo_transport_follow,
-    _wait_for_demo_runtime_target_progress,
 )
 from .pick_demo.pure_helpers import (
     iso_now as _iso_now,

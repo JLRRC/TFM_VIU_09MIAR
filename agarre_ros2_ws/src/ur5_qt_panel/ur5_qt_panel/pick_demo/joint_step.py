@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from ur5_tools.gripper_geometry import RG2_PINCH_CENTER_FRAME, RG2_TCP_FRAME
 

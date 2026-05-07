@@ -302,7 +302,6 @@ def dispatch_phase(
     disparan dispatch (el caller las filtra o las maneja como no-ops).
     """
     # Imports lazy para no exigir ROS en imports de módulo (tests puros).
-    from ur5_panel_interfaces.action import PlanToPose
     from ur5_panel_interfaces.srv import (
         Attach as AttachSrv,
         Close as CloseSrv,

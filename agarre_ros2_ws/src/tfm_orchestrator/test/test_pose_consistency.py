@@ -11,8 +11,6 @@ import pytest
 
 from tfm_orchestrator.pose_consistency import (
     DEFAULT_MAX_AGE_SEC,
-    DEFAULT_MAX_NORM_M,
-    DEFAULT_MAX_ORIENT_RAD,
     compute_orientation_angle_diff,
     compute_position_norm,
     evaluate_pose_divergence_gate,

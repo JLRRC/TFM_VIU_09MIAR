@@ -76,7 +76,6 @@ def build_move_group_goal(
     from moveit_msgs.msg import (
         BoundingVolume,
         Constraints,
-        MotionPlanRequest,
         OrientationConstraint,
         PlanningOptions,
         PositionConstraint,

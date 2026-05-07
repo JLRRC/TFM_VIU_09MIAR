@@ -56,7 +56,6 @@ def build_joint_trajectory(
     return traj
 
 import math
-import os
 import time
 import uuid
 from typing import Dict, List, Optional, Tuple

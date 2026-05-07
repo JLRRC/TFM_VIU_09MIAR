@@ -5,12 +5,10 @@
 """Remote service/topic request callbacks for ControlPanelV2."""
 from __future__ import annotations
 
-import os
 import time
 from .panel_objects import bulk_update_object_positions, get_object_position, get_object_positions, get_object_state, is_on_table, recalc_object_states, update_object_state
 from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
-from .panel_pick_demo import run_pick_demo
 from .pick_demo_dispatcher import dispatch_pick_demo as _dispatch_pick_demo
 from .panel_utils import table_xy_to_pixel, world_xyz_to_pixel
 from .panel_robot_presets import PICK_DEMO_OBJECT_NAME

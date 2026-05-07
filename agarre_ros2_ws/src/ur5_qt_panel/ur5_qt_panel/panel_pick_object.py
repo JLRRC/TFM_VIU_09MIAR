@@ -5,7 +5,6 @@
 """Pick object sequence helper for the panel."""
 from __future__ import annotations
 
-import json
 import math
 import os
 import threading
@@ -38,10 +37,7 @@ from .panel_config import (
     DROP_NAME_SET,
     PICK_DEMO_NAME_SET,
     GRIPPER_ATTACH_PREFIX,
-    GRIPPER_CMD_TOPIC,
     GRIPPER_JOINT_NAMES,
-    GRIPPER_JOINT2_SIGN,
-    GRIPPER_OPEN_RAD,
     GRIPPER_TCP_Z_OFFSET,
     PICK_DEMO_DROP_Z_OFFSET,
     PICK_DEMO_GRASP_Z_OFFSET,
@@ -83,11 +79,6 @@ from .pick_object.parsing_helpers import (
     norm_frame as _norm_frame_pure,
     sanitize_ros_ns as _sanitize_ros_ns_pure,
     tf_stamp_ns as _tf_stamp_ns_pure,
-)
-from .pick_object.wait_helpers import (
-    clamp_grace_window as _clamp_grace_window,
-    compute_wait_chunk_sec as _compute_wait_chunk_sec,
-    format_wait_state_log as _fmt_wait_state_log,
 )
 from .pick_object.wait_moveit_result import (
     WaitMoveItResultContext,

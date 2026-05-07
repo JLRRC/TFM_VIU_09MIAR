@@ -9,7 +9,6 @@ para que sean testeables sin Qt/ROS.
 
 from __future__ import annotations
 
-import pytest
 
 from ur5_qt_panel.pick_object.diagnostics import (
     classify_phase_outcome,

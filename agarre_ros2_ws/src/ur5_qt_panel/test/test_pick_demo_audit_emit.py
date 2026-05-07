@@ -12,11 +12,9 @@ Cubre:
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import List
 from unittest.mock import MagicMock
 
-import pytest
 
 from ur5_qt_panel.pick_demo.audit_emit import (
     AuditEmitContext,

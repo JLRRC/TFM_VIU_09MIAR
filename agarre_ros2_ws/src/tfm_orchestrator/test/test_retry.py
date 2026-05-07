@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 
 from tfm_orchestrator.retry import retry_with_backoff
 

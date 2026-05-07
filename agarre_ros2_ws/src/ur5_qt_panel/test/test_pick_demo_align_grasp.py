@@ -13,7 +13,6 @@ viable testearla end-to-end sin Qt/ROS. Aquí cubrimos:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import pytest

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from ur5_qt_panel.pick_demo.grasp_down import (
     GraspDownContext,

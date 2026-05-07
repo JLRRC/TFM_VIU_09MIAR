@@ -15,7 +15,6 @@ No levantan ROS ni MoveIt. Verifican que:
 
 from __future__ import annotations
 
-import math
 
 import pytest
 

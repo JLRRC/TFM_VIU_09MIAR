@@ -56,7 +56,6 @@ except Exception:  # pragma: no cover
     WorldToBase = None  # type: ignore
 
 from .tf_geometry_logic import (
-    apply_world_to_base_transform,
     compute_approach_pose,
 )
 

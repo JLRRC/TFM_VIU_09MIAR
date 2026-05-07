@@ -40,25 +40,13 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
-from ur5_panel_interfaces.action import PickPlace, PlanToPose
-from ur5_panel_interfaces.srv import (
-    Attach as AttachSrv,
-    Close as CloseSrv,
-    Detach as DetachSrv,
-    Open as OpenSrv,
-    SelectObject as SelectObjectSrv,
-    WorldToBase as WorldToBaseSrv,
-)
+from ur5_panel_interfaces.action import PickPlace
 
 from .phase_dispatch import PhaseDispatchContext, dispatch_phase, pose_msg_to_tuple7
 from .pick_fsm import PickContext, PickPhase
 from .phase_timings import PhaseTimings
 from .service_clients import (
-    ActionCallResult,
     PhaseServiceMap,
-    ServiceCallResult,
-    call_action_with_timeout,
-    call_service_with_timeout,
 )
 
 

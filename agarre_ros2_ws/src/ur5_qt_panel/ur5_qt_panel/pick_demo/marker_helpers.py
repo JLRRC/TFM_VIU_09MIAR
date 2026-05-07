@@ -15,7 +15,7 @@ la dependencia con el panel y permite testeo aislado.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Tuple
 
 try:
     from geometry_msgs.msg import Point

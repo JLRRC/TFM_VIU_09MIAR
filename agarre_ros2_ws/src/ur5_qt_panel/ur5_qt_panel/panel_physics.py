@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path

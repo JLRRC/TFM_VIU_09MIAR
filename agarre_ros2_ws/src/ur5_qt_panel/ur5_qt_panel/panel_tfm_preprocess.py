@@ -19,7 +19,6 @@ son testables sin panel. El resto requieren un panel o un mock.
 """
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from .panel_config import INFER_ROI_SIZE

@@ -18,7 +18,6 @@ import xml.etree.ElementTree as ET
 from geometry_msgs.msg import Pose
 import rclpy
 from rclpy.executors import ExternalShutdownException
-from rclpy.node import Node
 from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from ros_gz_interfaces.msg import Entity
 from ros_gz_interfaces.srv import DeleteEntity, SpawnEntity

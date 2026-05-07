@@ -49,7 +49,6 @@ from .panel_config import (
     TABLE_CENTER_Y,
     WORLD_FRAME,
 )
-from .panel_state import SystemState
 from .panel_utils import ensure_dir
 from . import panel_gz_objects as _gz
 from PyQt5.QtCore import QTimer

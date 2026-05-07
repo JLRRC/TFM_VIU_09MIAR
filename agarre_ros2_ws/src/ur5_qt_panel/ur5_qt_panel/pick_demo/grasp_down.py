@@ -31,7 +31,6 @@ from ur5_tools.gripper_geometry import RG2_PINCH_CENTER_FRAME, RG2_TCP_FRAME
 
 from ..panel_pick_demo_params import get_pick_demo_params as _get_pick_demo_params
 from ..panel_robot_presets import JOINT_GRASP_DOWN_POSE_RAD
-from .geometry import vec_dist3 as _dist
 from .pure_helpers import json_safe as _json_safe
 
 # Frames canónicos (replicados de panel_pick_demo.py para evitar circular import)

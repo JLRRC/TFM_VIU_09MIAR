@@ -16,7 +16,6 @@ con mocks. Tests E2E con ROS vivo van por launch_testing (F7-step3).
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest

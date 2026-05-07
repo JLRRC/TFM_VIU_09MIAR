@@ -20,7 +20,6 @@ La clase concreta debe heredar también de ``rclpy.node.Node``.
 from __future__ import annotations
 
 import math
-import os
 import time
 from typing import Any
 

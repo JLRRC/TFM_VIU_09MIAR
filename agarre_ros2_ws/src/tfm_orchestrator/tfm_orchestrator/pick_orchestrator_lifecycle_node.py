@@ -41,14 +41,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.lifecycle import LifecycleNode, State, TransitionCallbackReturn
 
-from ur5_panel_interfaces.action import PickPlace, PlanToPose
-from ur5_panel_interfaces.srv import (
-    Attach as AttachSrv,
-    Close as CloseSrv,
-    Detach as DetachSrv,
-    Open as OpenSrv,
-    SelectObject as SelectObjectSrv,
-)
+from ur5_panel_interfaces.action import PickPlace
 
 from .lifecycle_helpers import (
     LifecycleState,
@@ -59,9 +52,7 @@ from .phase_dispatch import PhaseDispatchContext, dispatch_phase, pose_msg_to_tu
 from .phase_timings import PhaseTimings
 from .pick_fsm import PickContext, PickPhase
 from .service_clients import (
-    ActionCallResult,
     PhaseServiceMap,
-    call_action_with_timeout,
     call_service_with_timeout,
 )
 
@@ -580,7 +571,6 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         """
         from .initial_snapshot import capture_initial_snapshot
         from ur5_panel_interfaces.srv import ResolveObjectPoseWorld
-        from .service_clients import call_service_with_timeout
 
         if self._tf_buffer is None or self._joint_state_sub is None:
             # Infra no disponible — degrada a scaffold.

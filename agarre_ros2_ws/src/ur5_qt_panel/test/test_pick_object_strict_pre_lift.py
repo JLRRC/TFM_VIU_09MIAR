@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 from unittest.mock import MagicMock
 
-import pytest
 
 from ur5_qt_panel.pick_object.strict_pre_lift_contact import (
     StrictPreLiftContactContext,

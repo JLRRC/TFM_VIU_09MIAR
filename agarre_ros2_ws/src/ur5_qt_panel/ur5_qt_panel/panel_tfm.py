@@ -5,20 +5,7 @@
 """TFM inference helpers for the panel."""
 from __future__ import annotations
 
-import datetime
-import json
-import os
-import re
-import shlex
-import time
-from pathlib import Path
-from typing import Optional
 
-from .panel_config import INFER_CKPT, INFER_SCRIPT, LOG_DIR, VISION_DIR
-from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
-from .panel_utils import ensure_dir, run_cmd
-from .panel_objects import get_object_position, get_object_state, get_object_states, is_on_table, update_object_state
-from .panel_pick_object import run_pick_object
 from .panel_utils import pixel_to_table_xy
 from .panel_tfm_preprocess import (  # noqa: F401
     _clip_roi,

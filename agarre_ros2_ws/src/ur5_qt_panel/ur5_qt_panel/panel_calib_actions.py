@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import time
 from typing import List, Optional
 from .panel_utils import world_xyz_to_pixel
@@ -34,7 +33,6 @@ from .panel_config import (
 )
 from .panel_calibration import start_calibration
 from .panel_objects import get_object_positions
-from .panel_pick_demo import run_pick_demo
 from .panel_pick_object import run_pick_object
 from .logging_utils import emit_log_line
 

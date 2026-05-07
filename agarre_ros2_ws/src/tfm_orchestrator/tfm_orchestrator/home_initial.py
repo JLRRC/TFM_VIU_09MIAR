@@ -35,7 +35,7 @@ Constantes UR5:
 from __future__ import annotations
 
 import math
-from typing import Any, Optional, Sequence, Tuple
+from typing import Any, Sequence, Tuple
 
 
 # Constantes del UR5.

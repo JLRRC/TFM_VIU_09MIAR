@@ -24,7 +24,6 @@ from typing import Optional
 from .panel_pick_object import run_pick_object
 from .panel_tfm_canonical import (
     build_tfm_pick_object_override,
-    complete_pending_pick_demo_request,
     complete_pending_tfm_execute_request,
     tfm_canonical_finish,
     tfm_canonical_phase_update,

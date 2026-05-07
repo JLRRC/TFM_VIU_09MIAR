@@ -16,7 +16,6 @@ from typing import Dict, List, Optional
 from geometry_msgs.msg import TransformStamped
 import rclpy
 from rclpy.executors import ExternalShutdownException
-from rclpy.node import Node
 from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from tf2_msgs.msg import TFMessage
 

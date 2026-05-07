@@ -41,7 +41,6 @@ from .panel_objects import (
 from .panel_tfm_canonical import (
     complete_pending_tfm_infer_request,
 )
-from .panel_tfm_params import get_panel_tfm_params as _get_panel_tfm_params
 from .panel_tfm_preprocess import (
     _resolve_infer_roi,
     build_tfm_preprocessed_input,
@@ -49,7 +48,7 @@ from .panel_tfm_preprocess import (
     reconcile_inferred_grasp_center,
     reconcile_inferred_grasp_size,
 )
-from .panel_utils import ensure_dir, pixel_to_table_xy, run_cmd
+from .panel_utils import ensure_dir, run_cmd
 
 
 
@@ -332,27 +331,13 @@ def tfm_infer(panel) -> tuple[bool, str]:
     )
 
 # ── Additional imports needed by extended TFM block ──────────────────────────
-import json
-import math
-import os
-import threading
-import time
-import uuid
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from .panel_config import (
-    BASE_FRAME,
-    GRIPPER_TCP_Z_OFFSET,
     OBJECT_SHAPES,
-    TABLE_CENTER_X,
-    TABLE_CENTER_Y,
 )
 from .panel_objects import ObjectLogicalState
-from .panel_robot_presets import JOINT_TABLE_POSE_RAD
 from .panel_camera import _runtime_time
-from .panel_robot_presets import _make_pose_data
-from .panel_objects import ObjectLogicalState
 
 MOVEIT_POSE_TOPIC = "/desired_grasp"
 MOVEIT_CARTESIAN_POSE_TOPIC = "/desired_grasp_cartesian"
@@ -371,7 +356,6 @@ from .panel_tfm_canonical import (  # noqa: F401
     build_tfm_pick_object_override,
     complete_pending_pick_demo_request,
     complete_pending_tfm_execute_request,
-    complete_pending_tfm_infer_request,
     tfm_canonical_finish,
     tfm_canonical_phase_update,
     tfm_canonical_state_reset,

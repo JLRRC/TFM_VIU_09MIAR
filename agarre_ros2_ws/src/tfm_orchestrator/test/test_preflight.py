@@ -20,8 +20,6 @@ import math
 import pytest
 
 from tfm_orchestrator.preflight import (
-    HomeTargetCheck,
-    InitialSnapshot,
     UR5_HOME_JOINTS_RAD,
     UR5_JOINT_NAMES,
     compose_initial_snapshot,

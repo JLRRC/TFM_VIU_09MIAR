@@ -16,7 +16,7 @@ Diseño:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 Vec3 = Tuple[float, float, float]
 
