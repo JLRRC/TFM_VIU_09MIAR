@@ -526,10 +526,64 @@ class PlanToPoseServer(Node):
             self.get_logger().info(
                 f"[PLAN_TO_POSE][MOVEIT_DIRECT] success reason={reason}"
             )
-        else:
-            self.get_logger().warning(
-                f"[PLAN_TO_POSE][MOVEIT_DIRECT] failed reason={reason}"
+            return PlanToPoseResult(
+                success=ok,
+                reason=reason,
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=1,
             )
+
+        # 2026-05-07 fix bug bridge: si CONTROL_FAILED (race condition de
+        # MoveIt simple_controller_manager con joint_trajectory_controller
+        # action server), reintentar UNA vez tras esperar 8s. El error
+        # "Action client not connected to action server" se da en el primer
+        # goal cuando MoveIt aún no terminó de detectar el controller.
+        if "CONTROL_FAILED" in reason or "TIMED_OUT" in reason:
+            self.get_logger().warning(
+                f"[PLAN_TO_POSE][MOVEIT_DIRECT] failed reason={reason} — "
+                "intentando retry tras 8s (race condition controller_manager)"
+            )
+            time.sleep(8.0)
+            send_future_retry = self._moveit_action_client.send_goal_async(mg_goal)
+            retry_send_event = threading.Event()
+            send_future_retry.add_done_callback(lambda _f: retry_send_event.set())
+            retry_send_event.wait(timeout=3.0)
+            if send_future_retry.done():
+                gh_retry = send_future_retry.result()
+                if gh_retry is not None and getattr(gh_retry, "accepted", False):
+                    result_future_retry = gh_retry.get_result_async()
+                    retry_result_event = threading.Event()
+                    result_future_retry.add_done_callback(
+                        lambda _f: retry_result_event.set()
+                    )
+                    retry_result_event.wait(
+                        timeout=float(max(1.0, self._moveit_result_timeout))
+                    )
+                    if result_future_retry.done():
+                        wrapper_retry = result_future_retry.result()
+                        ok_retry, reason_retry = parse_move_group_result(wrapper_retry)
+                        if ok_retry:
+                            self.get_logger().info(
+                                f"[PLAN_TO_POSE][MOVEIT_DIRECT] retry success "
+                                f"reason={reason_retry}"
+                            )
+                            return PlanToPoseResult(
+                                success=True,
+                                reason=f"{reason_retry}|retry_after_{reason}",
+                                final_xyz=goal.target_xyz,
+                                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                                duration_sec=time.monotonic() - start_mono,
+                                attempts=2,
+                            )
+                        reason = f"{reason_retry}|retry_failed"
+            else:
+                reason = f"{reason}|retry_send_timeout"
+
+        self.get_logger().warning(
+            f"[PLAN_TO_POSE][MOVEIT_DIRECT] failed reason={reason}"
+        )
         return PlanToPoseResult(
             success=ok,
             reason=reason,

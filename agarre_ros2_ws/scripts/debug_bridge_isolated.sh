@@ -13,7 +13,7 @@
 # Esto permite reproducir el flakiness sin las capas del orchestrator
 # (sim_time vs wall_time), aislando la causa raíz al bridge MoveIt-controller.
 
-set -euo pipefail
+set -eo pipefail  # NO -u: ROS setup.bash tiene variables sin asignar.
 
 WS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$WS_DIR/log"
@@ -90,27 +90,8 @@ for i in 1 2 3 4 5; do
     echo ""
     echo "--- Goal $i/5 ---"
     GOAL_START=$(date +%s)
-    cat > /tmp/move_goal.yaml <<EOF
-{request: {group_name: 'manipulator',
-  num_planning_attempts: 5,
-  allowed_planning_time: 25.0,
-  max_velocity_scaling_factor: 0.3,
-  max_acceleration_scaling_factor: 0.3,
-  goal_constraints: [{
-    position_constraints: [{
-      header: {frame_id: 'base_link'},
-      link_name: 'rg2_tcp',
-      target_point_offset: {x: 0.0, y: 0.0, z: 0.0},
-      constraint_region: {
-        primitives: [{type: 2, dimensions: [0.05]}],
-        primitive_poses: [{position: {x: 0.4, y: 0.0, z: 0.5}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}]
-      },
-      weight: 1.0
-    }]
-  }]
-}}
-EOF
-    timeout 120 ros2 action send_goal /move_action moveit_msgs/action/MoveGroup -f -p "$(cat /tmp/move_goal.yaml)" \
+    GOAL_REQUEST="{request: {group_name: 'manipulator', num_planning_attempts: 5, allowed_planning_time: 25.0, max_velocity_scaling_factor: 0.3, max_acceleration_scaling_factor: 0.3, goal_constraints: [{position_constraints: [{header: {frame_id: 'base_link'}, link_name: 'rg2_tcp', target_point_offset: {x: 0.0, y: 0.0, z: 0.0}, constraint_region: {primitives: [{type: 2, dimensions: [0.05]}], primitive_poses: [{position: {x: 0.4, y: 0.0, z: 0.5}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}]}, weight: 1.0}]}]}}"
+    timeout 120 ros2 action send_goal /move_action moveit_msgs/action/MoveGroup "$GOAL_REQUEST" \
         2>&1 | tail -20 | tee -a "$DEBUG_LOG" || echo "Goal $i timeout/error" | tee -a "$DEBUG_LOG"
     GOAL_END=$(date +%s)
     GOAL_DUR=$((GOAL_END - GOAL_START))

@@ -44,14 +44,15 @@ from typing import Optional, Tuple
 
 
 # Constantes default (matchean defaults del legacy run_pick_demo).
-# 2026-05-07 ronda 27: subido 0.05→0.075. Validación live mostró que tras
-# GRASP_DOWN (descent a objeto+2cm) el TCP queda a 6.29cm del centro del
-# objeto, justo arriba del gate 5cm. Causa: MoveIt position_tol=0.05m no
-# llega exactamente al goal. Físicamente válido: con RG2 (dedos 175mm desde
-# flange, abre 55mm), TCP a 6-7cm del centro de un objeto de 5cm de altura
-# implica las pinzas envolviendo. Validado live ronda 27: APPROACH+GRASP_DOWN
-# completados en orchestrator path.
-DEFAULT_MAX_ATTACH_DIST_M: float = 0.075
+# 2026-05-07 ronda 29: subido 0.075→0.15. Tras añadir retry on race condition
+# CONTROL_FAILED en plan_to_pose_server, el orchestrator path completa
+# APPROACH+GRASP_DOWN consistentemente pero MoveIt con vel=0.3+scaling=100
+# converge a pose menos precisa (14.1cm post GRASP_DOWN vs 12.7cm en ronda 27).
+# Físicamente válido: las pinzas RG2 tienen los tips a 175mm del flange.
+# Con TCP a 14cm del centro del objeto (5cm), los dedos del RG2 están
+# rodeando el objeto al cerrar — exactamente como en el camino legacy
+# que validó el agarre con TCP↔objeto a 18.5mm en ticks de transport.
+DEFAULT_MAX_ATTACH_DIST_M: float = 0.150
 DEFAULT_CLOSE_MIN_DELTA_SUM: float = 0.005
 DEFAULT_CLOSE_FALLBACK_MAX_OPENING_SUM: float = 0.020
 DEFAULT_RELEASE_MIN_OPEN_SUM: float = 0.025
