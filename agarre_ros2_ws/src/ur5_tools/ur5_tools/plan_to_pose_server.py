@@ -505,22 +505,45 @@ class PlanToPoseServer(Node):
                 attempts=1,
             )
 
+        # F1.7 audit-v4 (2026-05-08): first-attempt timeout corto para detectar
+        # hang del bridge (race condition controller_manager). Si MoveIt no
+        # devuelve resultado en _MOVEIT_FIRST_ATTEMPT_TIMEOUT_SEC, asumimos
+        # que el controller no conectó y disparamos el retry con el timeout
+        # completo. Sin esto, el primer attempt bloquea hasta
+        # _moveit_result_timeout completo (400s) y el retry NUNCA fira porque
+        # el reason resultante es "moveit_result_timeout" no "CONTROL_FAILED".
+        _MOVEIT_FIRST_ATTEMPT_TIMEOUT_SEC = 60.0
+        first_attempt_timeout = min(
+            _MOVEIT_FIRST_ATTEMPT_TIMEOUT_SEC,
+            float(max(1.0, self._moveit_result_timeout)),
+        )
+
         result_future = gh.get_result_async()
         result_event = threading.Event()
         result_future.add_done_callback(lambda _f: result_event.set())
-        result_event.wait(timeout=float(max(1.0, self._moveit_result_timeout)))
+        result_event.wait(timeout=first_attempt_timeout)
         if not result_future.done():
-            return PlanToPoseResult(
-                success=False,
-                reason=f"moveit_result_timeout:{self._moveit_result_timeout:.1f}s",
-                final_xyz=goal.target_xyz,
-                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
-                duration_sec=time.monotonic() - start_mono,
-                attempts=1,
+            # F1.7 audit-v4: primer attempt hang → tratar como CONTROL_FAILED
+            # para disparar retry. Cancelar la goal pendiente para liberar
+            # el server.
+            self.get_logger().warning(
+                f"[PLAN_TO_POSE][MOVEIT_DIRECT] first attempt hang "
+                f"timeout={first_attempt_timeout:.1f}s — cancelando goal y "
+                "disparando retry (probable bridge race condition)"
             )
-
-        wrapper = result_future.result()
-        ok, reason = parse_move_group_result(wrapper)
+            try:
+                cancel_future = gh.cancel_goal_async()
+                cancel_event = threading.Event()
+                cancel_future.add_done_callback(lambda _f: cancel_event.set())
+                cancel_event.wait(timeout=2.0)
+            except Exception:
+                pass
+            ok = False
+            reason = f"FIRST_ATTEMPT_TIMEOUT:{first_attempt_timeout:.1f}s"
+            wrapper = None  # type: ignore[assignment]
+        else:
+            wrapper = result_future.result()
+            ok, reason = parse_move_group_result(wrapper)
         if ok:
             self.get_logger().info(
                 f"[PLAN_TO_POSE][MOVEIT_DIRECT] success reason={reason}"
@@ -539,7 +562,11 @@ class PlanToPoseServer(Node):
         # action server), reintentar UNA vez tras esperar 8s. El error
         # "Action client not connected to action server" se da en el primer
         # goal cuando MoveIt aún no terminó de detectar el controller.
-        if "CONTROL_FAILED" in reason or "TIMED_OUT" in reason:
+        if (
+            "CONTROL_FAILED" in reason
+            or "TIMED_OUT" in reason
+            or "FIRST_ATTEMPT_TIMEOUT" in reason
+        ):
             self.get_logger().warning(
                 f"[PLAN_TO_POSE][MOVEIT_DIRECT] failed reason={reason} — "
                 "intentando retry tras 8s (race condition controller_manager)"

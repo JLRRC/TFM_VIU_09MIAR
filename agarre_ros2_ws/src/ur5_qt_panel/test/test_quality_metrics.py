@@ -245,6 +245,11 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # timeout 65). Removido de baseline (T15 cumplido).
     # Otros gigantes históricos.
     "ur5_tools/ur5_tools/moveit_bridge/executor.py::ExecutorMixin._execute_joint_trajectory_action": 1343,
+    # F1.7 audit-v4 (2026-05-08): _execute_moveit_direct creció 183 → 201 LOC
+    # al añadir first-attempt-timeout + cancel-on-hang (Bug B fix).
+    # Refactor estructural en F3-step6 cuando se parte el método en validate/
+    # send/poll/handle helpers (ver audit v4 §F3-step6).
+    "ur5_tools/ur5_tools/plan_to_pose_server.py::PlanToPoseServer._execute_moveit_direct": 201,
     # F3-step9 + step9bis/ter/quater/quintus (2026-05-03): build_main_ui bajó
     # de 733 → 44 LOC con 6 sub-helpers (_build_main_ui_topbar_and_leds 122 +
     # _controls_status_row 130 + _camera_and_objects 98 + _manual_joints_and_

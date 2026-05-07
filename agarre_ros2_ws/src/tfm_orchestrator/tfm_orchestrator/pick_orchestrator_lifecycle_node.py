@@ -100,8 +100,14 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         # Init en on_configure.
         self._fjt_client = None
         self._home_action_name: str = "/joint_trajectory_controller/follow_joint_trajectory"
-        self._home_duration_sec: float = 5.0
-        self._home_position_tol_rad: float = 0.10
+        # F1.7 audit-v4 (2026-05-08): defaults relajados tras live test 3 ciclos.
+        # 0.10 rad / 5.0 s eran demasiado tight para Gazebo Sim — el controller
+        # bajo gz_ros2_control no rastrea linear interp con esa precisión y
+        # aborta con PATH_TOLERANCE_VIOLATED al primer instante. 1.0 rad / 10s
+        # da slack suficiente sin invalidar el "home reached" físicamente
+        # (HOME positions tienen separación >> 1.0 rad entre joints).
+        self._home_duration_sec: float = 10.0
+        self._home_position_tol_rad: float = 1.0
         self._home_goal_time_tol_sec: float = 5.0
         self._home_result_timeout_sec: float = 30.0
         # 2026-05-06: auto_activate honrado al instantiation. El factory
@@ -166,8 +172,9 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
                 "home_action_name",
                 "/joint_trajectory_controller/follow_joint_trajectory",
             )
-            self.declare_parameter("home_duration_sec", 5.0)
-            self.declare_parameter("home_position_tol_rad", 0.10)
+            # F1.7 audit-v4 defaults relajados (ver __init__ docstring).
+            self.declare_parameter("home_duration_sec", 10.0)
+            self.declare_parameter("home_position_tol_rad", 1.0)
             self.declare_parameter("home_goal_time_tol_sec", 5.0)
             self.declare_parameter("home_result_timeout_sec", 30.0)
         except Exception:
