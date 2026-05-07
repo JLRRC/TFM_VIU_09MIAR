@@ -1,12 +1,53 @@
 # BUG: ur5_moveit_bridge ↔ joint_trajectory_controller — flakiness intermitente
 
-**Estado**: 🟢 CAUSA RAÍZ IDENTIFICADA + FIX APLICADO (2026-05-07, commit `f18b2c2`).
-Validación live full-cycle (LIFT+TRANSPORT+RELEASE) pendiente — última sesión cerró
-en ronda 30 incompleta tras gate ajuste.
+**Estado**: 🟡 FIX A NIVEL APLICACIÓN APLICADO (commit `f18b2c2`). El bug raíz a nivel
+`/move_action` ↔ `controller_manager` SIGUE PRESENTE — se reproduce 5/5 goals con
+`debug_bridge_isolated.sh` (audit-v4 2026-05-07 22:40). El retry en
+`plan_to_pose_server` lo mitiga para el camino orchestrator.
 
 **Guardrail de regresión**: T28 (`src/ur5_tools/test/test_bridge_path_tolerance_regression.py`),
 5 sub-tests AST verifican que el fix retry sigue presente en cualquier refactor futuro
 de `plan_to_pose_server.py:_execute_moveit_direct`.
+
+## Update 2026-05-07 22:40 — script aislado confirma bug en capa MoveIt
+
+Ejecutado `debug_bridge_isolated.sh` end-to-end. Resultado:
+
+| Goal | Estado | Duración |
+|---|---|---|
+| 1/5 | ABORTED | 1 s |
+| 2/5 | ABORTED | 2 s |
+| 3/5 | ABORTED | 1 s |
+| 4/5 | ABORTED | 2 s |
+| 5/5 | ABORTED | 3 s |
+
+Causa visible en el log (cada goal):
+```
+[move_group] [ERROR] [moveit.simple_controller_manager.follow_joint_trajectory_controller_handle]:
+  Action client not connected to action server: joint_trajectory_controller/follow_joint_trajectory
+[controller_manager] [WARN]: No clock received, using time argument instead!
+  Check your node's clock configuration (use_sim_time parameter) and if a valid clock source is available
+```
+
+**Lectura**: el script bypassa `plan_to_pose_server` y va directo a `/move_action`. El fix
+retry **no se ejercita aquí** porque vive en la capa orchestrator. Resultado consistente
+con la hipótesis del bug doc: el bug existe a nivel `/move_action` ↔ `controller_manager`,
+y el retry en `plan_to_pose_server` es el workaround a nivel aplicación.
+
+Sospecha adicional confirmada por el log: el `controller_manager` no recibe `/clock`
+de Gazebo Sim (sim_time mismatch). Esto es un bug de integración `gz_ros2_control` que
+está aguas abajo del retry — fix posible vía:
+
+1. Forzar `use_sim_time:=true` y verificar que `/clock` se publica antes de instanciar el
+   `controller_manager`.
+2. Usar `--controller-manager-timeout` mayor en el spawner.
+3. Activar streaming mode en `joint_trajectory_controller` (default es position).
+
+**Conclusión**: el bug raíz NO está cerrado a nivel MoveIt+controller, pero el camino
+de aplicación (`PANEL_PICK_DEMO_USE_ORCHESTRATOR=1`) sí dispone del workaround retry
+que lo enmascara cuando MoveIt eventualmente conecta tras los 8 s.
+
+## Update 2026-05-07 ronda 29: causa raíz IDENTIFICADA y FIX aplicado (commit `f18b2c2`)
 
 ## Update 2026-05-07 ronda 29: causa raíz IDENTIFICADA y FIX aplicado (commit `f18b2c2`)
 
