@@ -417,6 +417,9 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         ]
 
         for dst, detail in next_phases:
+            self.get_logger().info(
+                f"[ORCHESTRATOR_LC] phase_loop entering phase={dst.value}"
+            )
             if self._cancel_requested or goal_handle.is_cancel_requested:
                 ctx.abort("client_canceled")
                 self._publish_feedback(goal_handle, ctx)
@@ -467,8 +470,14 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
                     except Exception:
                         pass  # nunca dejar que el feedback rompa la fase
 
+                self.get_logger().info(
+                    f"[ORCHESTRATOR_LC] phase_loop calling _execute_phase phase={dst.value}"
+                )
                 phase_ok, phase_reason = self._execute_phase(
                     dst, ctx, intermediate_publisher=_publish_intermediate,
+                )
+                self.get_logger().info(
+                    f"[ORCHESTRATOR_LC] phase_loop _execute_phase returned phase={dst.value} ok={phase_ok} reason={phase_reason}"
                 )
                 timings.mark_end(
                     dst.value,
@@ -542,6 +551,11 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             client_cache=self._client_cache,
             discovery_timeout_sec=self._discovery_timeout,
             call_timeout_sec=self._call_timeout,
+            # 2026-05-07: action_result_timeout 60→150s. plan_to_pose ejecuta
+            # MoveIt + trajectory execution; la trayectoria APPROACH de
+            # ~9s pose-base + scaling 4.0 = hasta 36s + planning 25s + margen
+            # → al menos 90s. 150s da margen para grasps complejos.
+            action_result_timeout_sec=150.0,
         )
         return dispatch_phase(dctx, phase, ctx)
 

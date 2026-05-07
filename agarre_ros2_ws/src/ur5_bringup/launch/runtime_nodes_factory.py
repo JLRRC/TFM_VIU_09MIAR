@@ -140,7 +140,12 @@ def _build_orchestrator_service_nodes(
             # publicaba a /desired_grasp y esperaba al panel — ese path queda
             # como fallback (mode=REAL_BRIDGE) seteable por param si MoveIt no
             # responde en algún despliegue.
-            {"mode": "MOVEIT_DIRECT"},
+            # 2026-05-07: cambiado a REAL_BRIDGE tras 12 rondas live.
+            # MOVEIT_DIRECT en Gazebo simulation produce CONTROL_FAILED
+            # sistemático en APPROACH (controller no converge tras planning).
+            # REAL_BRIDGE delega a ur5_moveit_bridge que es el path validado
+            # del legacy y de B-iter4 (tag B-iter4-9-of-9-phases-independent).
+            {"mode": "REAL_BRIDGE"},
             {"moveit_action_name": "/move_action"},
             {"moveit_group_name": "manipulator"},
             # B-iter14 (2026-05-03): tip_link del SRDF UR5+RG2 = rg2_tcp.
@@ -148,10 +153,15 @@ def _build_orchestrator_service_nodes(
             # semántico) pero las constraints de MoveIt deben apuntar al
             # tip del kinematic chain del group.
             {"moveit_tip_link_override": "rg2_tcp"},
-            {"moveit_planning_time_sec": 10.0},
-            {"moveit_position_tol_m": 0.02},
-            {"moveit_orientation_tol_rad": 0.30},
-            {"moveit_result_timeout_sec": 60.0},
+            # 2026-05-07: subido planning_time 10→25 + relajadas tolerancias.
+            # Validación live ronda 10 mostró APPROACH timeout sistemático
+            # con 10s y pos_tol=0.02. El sesgo determinista FK panel↔TF live
+            # (~10mm pose pre-grasp) hace que MoveIt no encuentre solución
+            # dentro de 10s con tolerancia 20mm. 25s + tol 0.05 da margen.
+            {"moveit_planning_time_sec": 25.0},
+            {"moveit_position_tol_m": 0.05},
+            {"moveit_orientation_tol_rad": 0.50},
+            {"moveit_result_timeout_sec": 90.0},
             # Backwards compat: si alguien fija mode="" + use_real_bridge=true,
             # el server cae a REAL_BRIDGE (mode efectivo).
             {"use_real_bridge": False},

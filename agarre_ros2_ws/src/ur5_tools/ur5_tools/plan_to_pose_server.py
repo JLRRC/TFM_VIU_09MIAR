@@ -81,10 +81,15 @@ class PlanToPoseServer(Node):
         # las constraints apunten a un link del kinematic chain del group.
         self.declare_parameter("moveit_tip_link_override", "rg2_tcp")
         self.declare_parameter("moveit_planner_id", "")
-        self.declare_parameter("moveit_planning_time_sec", 5.0)
+        # 2026-05-07: subido planning_time 5→15 y result_timeout 30→60.
+        # Validación live ronda 9 mostró APPROACH timeout sistemático con 5s
+        # cuando el robot empieza desde pose post HOME_INITIAL no canónica.
+        # 15s es generoso pero válido para una sesión live; el orchestrator
+        # ya espera el result_timeout completo antes de fallar.
+        self.declare_parameter("moveit_planning_time_sec", 15.0)
         self.declare_parameter("moveit_position_tol_m", 0.005)
         self.declare_parameter("moveit_orientation_tol_rad", 0.05)
-        self.declare_parameter("moveit_result_timeout_sec", 30.0)
+        self.declare_parameter("moveit_result_timeout_sec", 60.0)
 
         self._action_name = str(
             self.get_parameter("action_name").value or "/orchestrator/plan_to_pose"

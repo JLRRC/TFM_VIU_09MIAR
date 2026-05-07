@@ -84,6 +84,13 @@ def generate_launch_description():
         parameters=[
             {"use_sim_time": use_sim_time},
             moveit_config.to_dict(),
+            # 2026-05-07: trajectory_execution timeout scaling. Default 1.2
+            # hace fail con TIMED_OUT cuando el controller necesita >9s para
+            # completar una trayectoria APPROACH (validado live ronda 11).
+            # 4.0 da margen generoso sin comprometer detección de stuck.
+            {"trajectory_execution.allowed_execution_duration_scaling": 4.0},
+            {"trajectory_execution.allowed_goal_duration_margin": 5.0},
+            {"trajectory_execution.allowed_start_tolerance": 0.05},
         ],
     )
 
