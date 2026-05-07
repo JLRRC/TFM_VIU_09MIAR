@@ -44,6 +44,11 @@ from typing import Optional, Tuple
 
 
 # Constantes default (matchean defaults del legacy run_pick_demo).
+# 2026-05-07: tras añadir GRASP_DOWN al FSM (cartesian descent vertical
+# hasta objeto+2cm), las pinzas RG2 físicamente TOCAN el objeto antes del
+# attach. Tolerance 0.05m es estricta pero alcanzable: TCP queda a ≤5cm
+# del objeto al disparar attach. Si esto falla en validación live, el
+# diagnóstico es del GRASP_DOWN (no de la tolerancia).
 DEFAULT_MAX_ATTACH_DIST_M: float = 0.050
 DEFAULT_CLOSE_MIN_DELTA_SUM: float = 0.005
 DEFAULT_CLOSE_FALLBACK_MAX_OPENING_SUM: float = 0.020

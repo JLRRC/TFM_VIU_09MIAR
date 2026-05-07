@@ -60,8 +60,13 @@ def _resolve_panel_node(panel: Any) -> Optional[Any]:
 def _drop_xyz_from_panel(panel: Any) -> tuple:
     """Resuelve el drop_xyz_world por defecto desde el panel.
 
-    Usa ``panel._basket_drop_world`` si existe; si no, defaults
-    razonables.
+    Usa ``panel._basket_drop_world`` si existe; si no, default razonable.
+
+    NOTA (2026-05-07 ronda 21): el default previo ``(0.5, 0.0, 0.05)``
+    convertido world→base daba (1.35, 0, -0.80) — fuera del workspace.
+    Cambiado a ``(-1.30, 0.0, 1.10)`` que en base es ``(-0.45, 0, 0.25)`` —
+    alcanzable y representativo de drop sobre la cesta del legacy
+    (target_pose_world=(-1.300, 0, 0.820) según logs históricos).
     """
     cand = getattr(panel, "_basket_drop_world", None)
     if cand is not None:
@@ -69,7 +74,7 @@ def _drop_xyz_from_panel(panel: Any) -> tuple:
             return (float(cand[0]), float(cand[1]), float(cand[2]))
         except Exception:
             pass
-    return (0.5, 0.0, 0.05)
+    return (-1.30, 0.0, 1.10)
 
 
 def _object_pose_world_from_panel(

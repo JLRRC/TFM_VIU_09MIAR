@@ -84,13 +84,17 @@ def generate_launch_description():
         parameters=[
             {"use_sim_time": use_sim_time},
             moveit_config.to_dict(),
-            # 2026-05-07: trajectory_execution timeout scaling. Default 1.2
-            # hace fail con TIMED_OUT cuando el controller necesita >9s para
-            # completar una trayectoria APPROACH (validado live ronda 11).
-            # 4.0 da margen generoso sin comprometer detección de stuck.
-            {"trajectory_execution.allowed_execution_duration_scaling": 4.0},
-            {"trajectory_execution.allowed_goal_duration_margin": 5.0},
-            {"trajectory_execution.allowed_start_tolerance": 0.05},
+            # 2026-05-07: trajectory_execution timeout scaling.
+            # Iteraciones live (rondas 11-24):
+            # - 1.2 → CONTROL_FAILED a 9s
+            # - 4.0 → CONTROL_FAILED a 71s
+            # - 10.0 → en ronda 24 fail con upper bound 105s, robot tardó más.
+            # 30.0 × 10.5s = 315s upper bound. Sim lento (sim_per_wall=0.58)
+            # necesita margen muy generoso. Si el robot no ha llegado en
+            # 315s, hay un bug real (no timeout artificial).
+            {"trajectory_execution.allowed_execution_duration_scaling": 30.0},
+            {"trajectory_execution.allowed_goal_duration_margin": 90.0},
+            {"trajectory_execution.allowed_start_tolerance": 0.15},
         ],
     )
 

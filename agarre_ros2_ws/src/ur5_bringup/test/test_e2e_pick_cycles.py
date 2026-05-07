@@ -67,7 +67,8 @@ PASS_PATTERN = re.compile(
     r"SECUENCIA COMPLETADA EXITOSAMENTE"
     # 2026-05-06: añadido path orchestrator (Bloque 2 cierre profesional).
     r"|\[PICK_DEMO\]\[ORCH\]\[DONE\] success=true"
-    r"|\[ORCHESTRATOR_LC\] result: success=True"
+    # 2026-05-07: fix pattern — orchestrator emite "result success=" sin colon.
+    r"|\[ORCHESTRATOR_LC\] result success=True"
 )
 FAIL_PATTERN = re.compile(
     r"carry_coherence_failed"
@@ -77,7 +78,7 @@ FAIL_PATTERN = re.compile(
     r"|\[PICK_OBJ\]\[FAIL_CLASS\]"
     r"|APPROACH_COARSE_NOT_READY"
     r"|\[PICK_DEMO\]\[ORCH\]\[DONE\] success=false"
-    r"|\[ORCHESTRATOR_LC\] result: success=False"
+    r"|\[ORCHESTRATOR_LC\] result success=False"
 )
 MOVEIT_READY_PATTERN = re.compile(r"\[PICK\]\[MOVEIT\]\[INIT\].*moveit_state=READY")
 ERROR_FATAL_PATTERN = re.compile(r"ERROR_FATAL")

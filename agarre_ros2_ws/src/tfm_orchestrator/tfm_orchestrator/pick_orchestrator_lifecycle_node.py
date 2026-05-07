@@ -409,6 +409,10 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             (PickPhase.HOME_INITIAL, "home_initial_stub"),
             (PickPhase.SELECT_OBJECT, "select_object_stub"),
             (PickPhase.APPROACH, "approach_stub"),
+            # 2026-05-07: GRASP_DOWN insertado entre APPROACH y GRASP para
+            # que las pinzas físicas RG2 toquen el objeto antes del attach.
+            # Sin esto, attach lógico funciona pero las pinzas quedan a 12cm.
+            (PickPhase.GRASP_DOWN, "grasp_down_stub"),
             (PickPhase.GRASP, "grasp_stub"),
             (PickPhase.LIFT, "lift_stub"),
             (PickPhase.TRANSPORT, "transport_stub"),
@@ -551,11 +555,10 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             client_cache=self._client_cache,
             discovery_timeout_sec=self._discovery_timeout,
             call_timeout_sec=self._call_timeout,
-            # 2026-05-07: action_result_timeout 60→150s. plan_to_pose ejecuta
-            # MoveIt + trajectory execution; la trayectoria APPROACH de
-            # ~9s pose-base + scaling 4.0 = hasta 36s + planning 25s + margen
-            # → al menos 90s. 150s da margen para grasps complejos.
-            action_result_timeout_sec=150.0,
+            # 2026-05-07 ronda 24: action_result_timeout 300→500s.
+            # Con MoveIt scaling=30 upper bound 315s + planning 25s + lag.
+            # 500s es margen confortable; si llega timeout aquí hay bug real.
+            action_result_timeout_sec=500.0,
         )
         return dispatch_phase(dctx, phase, ctx)
 

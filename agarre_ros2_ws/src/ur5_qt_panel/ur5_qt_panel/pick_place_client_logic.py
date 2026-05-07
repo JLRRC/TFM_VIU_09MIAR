@@ -162,20 +162,24 @@ def should_use_orchestrator(
 ) -> bool:
     """True si el panel debe usar el cliente del orchestrator.
 
-    F12 (2026-05-01): el default cambió a **orchestrator** (True). El
-    legacy ``run_pick_demo`` queda en deprecación; usa
-    ``USE_LEGACY_PICK_DEMO=1`` para forzar el path legacy si el
-    orchestrator falla en producción (rollback rápido).
+    F12 (2026-05-01): el default era **orchestrator** (True). El
+    legacy ``run_pick_demo`` quedaba en deprecación.
 
-    Reglas:
+    2026-05-07 (sesión 25 rondas live): default revertido a **legacy**
+    porque el orchestrator está bloqueado por un bug arquitectónico de
+    integración MoveIt ↔ joint_trajectory_controller en Gazebo Sim
+    (timing sim_time vs wall_time, doc:
+    docs/BUG_BRIDGE_PATH_TOLERANCE.md). El legacy ``run_pick_demo``
+    tiene workarounds históricos que sí funcionan (validado live
+    rondas 1-6: lift_delta=0.961m, robot levanta objeto 96cm).
+
+    Para ACTIVAR el orchestrator (tras cerrar el bug del bridge):
+        PANEL_PICK_DEMO_USE_ORCHESTRATOR=1
+
+    Reglas actuales:
       - Si ``legacy_env_value`` (USE_LEGACY_PICK_DEMO) es truthy → False (legacy).
-      - Si ``env_value`` (PANEL_PICK_DEMO_USE_ORCHESTRATOR) es falsy explícito → False.
-      - En cualquier otro caso (incluido None) → True (orchestrator).
-
-    Esto invierte el comportamiento previo a F12 (donde el default era legacy).
-    El dispatcher mantiene fallback automático a legacy si el orchestrator no
-    está disponible (no rclpy, no node, no server) — ver
-    ``pick_demo_dispatcher.dispatch_pick_demo``.
+      - Si ``env_value`` (PANEL_PICK_DEMO_USE_ORCHESTRATOR) es truthy explícito → True.
+      - En cualquier otro caso (incluido None) → False (legacy).
     """
     truthy = ("1", "true", "yes", "on")
     falsy = ("0", "false", "no", "off")
@@ -184,10 +188,9 @@ def should_use_orchestrator(
         if legacy_norm in truthy:
             return False
     if env_value is None:
-        return True
-    norm = str(env_value).strip().lower()
-    if norm in falsy:
+        # 2026-05-07: default ahora legacy (era orchestrator).
         return False
+    norm = str(env_value).strip().lower()
     if norm in truthy:
         return True
-    return True
+    return False

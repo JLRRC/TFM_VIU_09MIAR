@@ -57,6 +57,12 @@ class PickPhase(str, Enum):
     HOME_INITIAL = "HOME_INITIAL"
     SELECT_OBJECT = "SELECT_OBJECT"
     APPROACH = "APPROACH"
+    # 2026-05-07: GRASP_DOWN entre APPROACH y GRASP. Cartesian descent
+    # vertical desde APPROACH (objeto+10cm) hasta justo antes del contacto
+    # (objeto+2cm). Sin esto, GRASP cierra el gripper a 12cm del objeto
+    # — attach lógico funciona pero las pinzas NO tocan el objeto en
+    # Gazebo. Cierre del proyecto requiere validación visual del agarre.
+    GRASP_DOWN = "GRASP_DOWN"
     GRASP = "GRASP"
     LIFT = "LIFT"
     TRANSPORT = "TRANSPORT"
@@ -73,6 +79,7 @@ _HAPPY_PATH: List[PickPhase] = [
     PickPhase.HOME_INITIAL,
     PickPhase.SELECT_OBJECT,
     PickPhase.APPROACH,
+    PickPhase.GRASP_DOWN,  # 2026-05-07
     PickPhase.GRASP,
     PickPhase.LIFT,
     PickPhase.TRANSPORT,

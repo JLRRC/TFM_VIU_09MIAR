@@ -163,7 +163,10 @@ def _build_orchestrator_service_nodes(
             {"moveit_planning_time_sec": 25.0},
             {"moveit_position_tol_m": 0.05},
             {"moveit_orientation_tol_rad": 0.50},
-            {"moveit_result_timeout_sec": 90.0},
+            # 2026-05-07: subido a 400s. Con scaling=30 el upper bound de
+            # MoveIt es ~315s; el orchestrator necesita esperar más allá
+            # para no cortar antes de tiempo.
+            {"moveit_result_timeout_sec": 400.0},
             # Backwards compat: si alguien fija mode="" + use_real_bridge=true,
             # el server cae a REAL_BRIDGE (mode efectivo).
             {"use_real_bridge": False},
