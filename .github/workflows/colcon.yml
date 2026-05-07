@@ -120,7 +120,7 @@ jobs:
             test/test_grasp_down_phase_in_fsm.py \
             test/test_pick_gates.py
 
-      - name: pytest ur5_bringup (F17 launch factories + T4 schemas + T26 grasp evidence)
+      - name: pytest ur5_bringup (F17 launch + T4 schemas + T26 grasp evidence + T30 release integrity)
         working-directory: agarre_ros2_ws/src/ur5_bringup
         env:
           PYTHONPATH: .
@@ -128,4 +128,5 @@ jobs:
           pytest -q \
             test/test_launch_factories.py \
             test/test_yaml_schemas.py \
-            test/test_grasp_evidence_regression.py
+            test/test_grasp_evidence_regression.py \
+            test/test_release_integrity.py
