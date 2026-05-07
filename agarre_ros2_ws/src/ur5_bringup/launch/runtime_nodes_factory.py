@@ -140,12 +140,14 @@ def _build_orchestrator_service_nodes(
             # publicaba a /desired_grasp y esperaba al panel — ese path queda
             # como fallback (mode=REAL_BRIDGE) seteable por param si MoveIt no
             # responde en algún despliegue.
-            # 2026-05-07: cambiado a REAL_BRIDGE tras 12 rondas live.
-            # MOVEIT_DIRECT en Gazebo simulation produce CONTROL_FAILED
-            # sistemático en APPROACH (controller no converge tras planning).
-            # REAL_BRIDGE delega a ur5_moveit_bridge que es el path validado
-            # del legacy y de B-iter4 (tag B-iter4-9-of-9-phases-independent).
-            {"mode": "REAL_BRIDGE"},
+            # 2026-05-07: dejado en MOVEIT_DIRECT. REAL_BRIDGE también falla
+            # en sim por bug de path_tolerance_violation del joint_trajectory
+            # _controller cuando max_start_err >> 0 (robot en pose post-aborto).
+            # Bug arquitectónico del ur5_moveit_bridge ↔ controller pendiente
+            # de sesión dedicada (ver docs/BUG_BRIDGE_PATH_TOLERANCE.md).
+            # MOVEIT_DIRECT da diagnostics más limpias (TIMED_OUT → CONTROL_FAILED
+            # tras subir allowed_execution_duration_scaling 1.2→4.0).
+            {"mode": "MOVEIT_DIRECT"},
             {"moveit_action_name": "/move_action"},
             {"moveit_group_name": "manipulator"},
             # B-iter14 (2026-05-03): tip_link del SRDF UR5+RG2 = rg2_tcp.
