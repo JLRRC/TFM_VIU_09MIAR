@@ -36,6 +36,20 @@ Gazebo+ROS, la respuesta no llega al move_group dentro del timeout.
 Este es un bug profundo de la integración MoveIt2 ↔ gz_ros2_control en
 sim_time, no resoluble subiendo más timeouts.
 
+## Reproducción aislada (script de debug)
+
+```bash
+bash agarre_ros2_ws/scripts/debug_bridge_isolated.sh
+```
+
+Lanza el stack mínimo (Gazebo + MoveIt + controller, **sin orchestrator
+ni panel**) y envía 5 goals consecutivos a `/move_action`. Mide tiempo y
+resultado de cada goal. Si la varianza temporal entre goals es alta o
+algunos dan `error_code != 1`, el bug bridge está confirmado a nivel
+de integración MoveIt-controller (independiente de orchestrator/panel).
+
+Esto aísla el diagnóstico para futura sesión dedicada al bug.
+
 ## Estado del proyecto pese al bug
 
 ✅ **Objetivo del proyecto cumplido vía LEGACY path** (`run_pick_demo`):
