@@ -320,15 +320,30 @@ def test_grasp_fails_when_attach_distance_unmeasured():
 # ---------------------------------------------------------------------------
 
 
-def test_lift_calls_plan_to_pose_with_cartesian_true():
+# 2026-05-07: tests adaptados al fix world→base_link en phase_dispatch.py.
+# Offset estático del UR5 (urdf:47): base_link en world está en (-0.85, 0, 0.850).
+# Por tanto: pos_base = pos_world - (-0.85, 0, 0.850).
+_BASE_LINK_IN_WORLD = (-0.85, 0.0, 0.850)
+
+
+def _world_to_base(x_world, y_world, z_world):
+    return (
+        x_world - _BASE_LINK_IN_WORLD[0],
+        y_world - _BASE_LINK_IN_WORLD[1],
+        z_world - _BASE_LINK_IN_WORLD[2],
+    )
+
+
+def test_lift_calls_plan_to_pose_with_cartesian_false_20260507():
+    """2026-05-07: LIFT cambió a cartesian=False (joint planning más
+    robusto que cartesian para el LIFT con peso del objeto)."""
     spec = _MockCallerSpec()
     dctx = _ctx_for(spec)
     ok, reason = dispatch_phase(dctx, PickPhase.LIFT, _pick_ctx())
     assert ok is True
     assert reason.startswith("lift:")
     assert spec.recorded[0].msg_type_name == "PlanToPose"
-    # LIFT usa cartesian=True (movimiento lineal vertical).
-    assert spec.recorded[0].request.cartesian is True
+    assert spec.recorded[0].request.cartesian is False
 
 
 # ---------------------------------------------------------------------------
@@ -337,17 +352,21 @@ def test_lift_calls_plan_to_pose_with_cartesian_true():
 
 
 def test_transport_uses_drop_xyz_from_pick_context():
+    """2026-05-07: drop_xyz_world se convierte a base_link antes de poner
+    en target_pose_base (el server lee target_pose_base como base_link)."""
     spec = _MockCallerSpec()
     dctx = _ctx_for(spec)
+    drop_world = (0.7, -0.2, 0.10)
     ok, reason = dispatch_phase(
-        dctx, PickPhase.TRANSPORT, _pick_ctx(drop=(0.7, -0.2, 0.10))
+        dctx, PickPhase.TRANSPORT, _pick_ctx(drop=drop_world)
     )
     assert ok is True
     assert reason.startswith("transport:")
     pose = spec.recorded[0].request.target_pose_base
-    assert pose.position.x == pytest.approx(0.7)
-    assert pose.position.y == pytest.approx(-0.2)
-    assert pose.position.z == pytest.approx(0.10)
+    expected = _world_to_base(*drop_world)
+    assert pose.position.x == pytest.approx(expected[0])
+    assert pose.position.y == pytest.approx(expected[1])
+    assert pose.position.z == pytest.approx(expected[2])
 
 
 def test_transport_retries_on_first_failure_then_succeeds(monkeypatch):
@@ -458,18 +477,41 @@ def test_build_plan_to_pose_goal_for_approach_returns_neutral_pose_when_no_hint(
     assert goal.cartesian is False
 
 
-def test_build_plan_to_pose_goal_for_lift_uses_z_offset():
+def test_build_plan_to_pose_goal_for_lift_no_hint_uses_placeholder_20260507():
+    """2026-05-07: sin object_pose_world_hint, LIFT cae a placeholder
+    (0.40, 0, 0.40) en base_link y cartesian=False."""
     goal = build_plan_to_pose_goal_for_lift(_pick_ctx())
-    assert goal.target_pose_base.position.z == pytest.approx(0.20)
-    assert goal.cartesian is True
+    assert goal.target_pose_base.position.x == pytest.approx(0.40)
+    assert goal.target_pose_base.position.y == pytest.approx(0.0)
+    assert goal.target_pose_base.position.z == pytest.approx(0.40)
+    assert goal.cartesian is False
 
 
-def test_build_plan_to_pose_goal_for_transport_uses_drop_xyz():
-    ctx = _pick_ctx(drop=(0.3, 0.4, 0.15))
+def test_build_plan_to_pose_goal_for_lift_with_hint_uses_world_to_base_20260507():
+    """2026-05-07: con hint, LIFT usa pose objeto + lift_z 0.30, convertido
+    world→base_link."""
+    hint_world = (0.4, -0.1, 0.03)
+    ctx = PickContext(
+        object_name="box",
+        drop_xyz_world=(0.5, 0, 0.05),
+        object_pose_world_hint=hint_world,
+    )
+    goal = build_plan_to_pose_goal_for_lift(ctx)
+    expected = _world_to_base(hint_world[0], hint_world[1], hint_world[2] + 0.30)
+    assert goal.target_pose_base.position.x == pytest.approx(expected[0])
+    assert goal.target_pose_base.position.y == pytest.approx(expected[1])
+    assert goal.target_pose_base.position.z == pytest.approx(expected[2])
+
+
+def test_build_plan_to_pose_goal_for_transport_uses_drop_xyz_world_to_base_20260507():
+    """2026-05-07: drop_xyz_world se convierte a base_link en el goal."""
+    drop_world = (0.3, 0.4, 0.15)
+    ctx = _pick_ctx(drop=drop_world)
     goal = build_plan_to_pose_goal_for_transport(ctx)
-    assert goal.target_pose_base.position.x == pytest.approx(0.3)
-    assert goal.target_pose_base.position.y == pytest.approx(0.4)
-    assert goal.target_pose_base.position.z == pytest.approx(0.15)
+    expected = _world_to_base(*drop_world)
+    assert goal.target_pose_base.position.x == pytest.approx(expected[0])
+    assert goal.target_pose_base.position.y == pytest.approx(expected[1])
+    assert goal.target_pose_base.position.z == pytest.approx(expected[2])
 
 
 # ---------------------------------------------------------------------------
@@ -515,24 +557,28 @@ def _pick_ctx_with_hint(
     )
 
 
-def test_approach_uses_object_hint_with_default_z_clearance():
-    """Si el ctx tiene hint válido, el goal de approach usa esa pose +
-    clearance Z por defecto (0.10)."""
-    ctx = _pick_ctx_with_hint(hint=(0.4, -0.1, 0.03))
+def test_approach_uses_object_hint_with_default_z_clearance_world_to_base_20260507():
+    """2026-05-07: APPROACH convierte hint world → base_link y añade
+    clearance Z (0.10 default)."""
+    hint_world = (0.4, -0.1, 0.03)
+    ctx = _pick_ctx_with_hint(hint=hint_world)
     goal = build_plan_to_pose_goal_for_approach(ctx)
     pose = goal.target_pose_base
-    assert pose.position.x == pytest.approx(0.4)
-    assert pose.position.y == pytest.approx(-0.1)
-    # 0.03 (objeto) + 0.10 (clearance) = 0.13.
-    assert pose.position.z == pytest.approx(0.13)
+    expected = _world_to_base(hint_world[0], hint_world[1], hint_world[2] + 0.10)
+    assert pose.position.x == pytest.approx(expected[0])
+    assert pose.position.y == pytest.approx(expected[1])
+    assert pose.position.z == pytest.approx(expected[2])
     # Quat identity (hint era tuple3 → completed con identity).
     assert pose.orientation.w == pytest.approx(1.0)
 
 
-def test_approach_respects_custom_z_clearance():
-    ctx = _pick_ctx_with_hint(hint=(0.5, 0.2, 0.10))
+def test_approach_respects_custom_z_clearance_world_to_base_20260507():
+    """2026-05-07: ver test_approach_uses_object_hint."""
+    hint_world = (0.5, 0.2, 0.10)
+    ctx = _pick_ctx_with_hint(hint=hint_world)
     goal = build_plan_to_pose_goal_for_approach(ctx, z_clearance_m=0.05)
-    assert goal.target_pose_base.position.z == pytest.approx(0.15)
+    expected_z = hint_world[2] + 0.05 - _BASE_LINK_IN_WORLD[2]
+    assert goal.target_pose_base.position.z == pytest.approx(expected_z)
 
 
 def test_approach_uses_hint_quat_when_tuple7():
@@ -563,20 +609,21 @@ def test_approach_falls_back_to_neutral_when_hint_is_zero_pose():
     assert goal.target_pose_base.position.z == 0.0
 
 
-def test_dispatch_approach_propagates_hint_via_dispatch_context():
-    """Test E2E: dispatch_phase pasa el clearance del context al builder
-    y el resultado se ve en el goal recibido por el caller mock."""
+def test_dispatch_approach_propagates_hint_via_dispatch_context_world_to_base_20260507():
+    """2026-05-07: dispatch_phase pasa el clearance al builder y world→base
+    se aplica en el goal recibido."""
     spec = _MockCallerSpec()
     dctx = _ctx_for(spec, approach_z_clearance_m=0.07)
-    ctx = _pick_ctx_with_hint(hint=(0.6, 0.1, 0.04))
+    hint_world = (0.6, 0.1, 0.04)
+    ctx = _pick_ctx_with_hint(hint=hint_world)
     ok, reason = dispatch_phase(dctx, PickPhase.APPROACH, ctx)
     assert ok is True
     assert reason.startswith("approach:")
     rec_goal = spec.recorded[0].request
-    assert rec_goal.target_pose_base.position.x == pytest.approx(0.6)
-    assert rec_goal.target_pose_base.position.y == pytest.approx(0.1)
-    # 0.04 + 0.07 = 0.11.
-    assert rec_goal.target_pose_base.position.z == pytest.approx(0.11)
+    expected = _world_to_base(hint_world[0], hint_world[1], hint_world[2] + 0.07)
+    assert rec_goal.target_pose_base.position.x == pytest.approx(expected[0])
+    assert rec_goal.target_pose_base.position.y == pytest.approx(expected[1])
+    assert rec_goal.target_pose_base.position.z == pytest.approx(expected[2])
 
 
 # ---------------------------------------------------------------------------
@@ -698,10 +745,12 @@ def test_dispatch_approach_uses_resolver_when_no_hint():
     kinds = [r.kind for r in spec.recorded]
     assert kinds == ["service", "action"]
     plan_goal = spec.recorded[1].request
-    # Z = pose.z (0.04) + clearance default 0.10 = 0.14.
-    assert plan_goal.target_pose_base.position.x == pytest.approx(0.6)
-    assert plan_goal.target_pose_base.position.y == pytest.approx(-0.1)
-    assert plan_goal.target_pose_base.position.z == pytest.approx(0.14)
+    # 2026-05-07: pose resuelta (0.6, -0.1, 0.04) + clearance 0.10 → world
+    # (0.6, -0.1, 0.14), convertido a base_link.
+    expected = _world_to_base(0.6, -0.1, 0.04 + 0.10)
+    assert plan_goal.target_pose_base.position.x == pytest.approx(expected[0])
+    assert plan_goal.target_pose_base.position.y == pytest.approx(expected[1])
+    assert plan_goal.target_pose_base.position.z == pytest.approx(expected[2])
 
 
 def test_dispatch_approach_falls_back_to_placeholder_when_resolver_fails():

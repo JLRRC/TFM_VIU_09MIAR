@@ -32,36 +32,51 @@ def test_interpolate_done_is_one():
     assert interpolate_phase_progress(PickPhase.DONE, 0.5) == 1.0
 
 
+# 2026-05-07: tests reescritos para usar happy_path() dinámico tras
+# añadir GRASP_DOWN al FSM (era 10 entries, ahora 11; divisor era 9, ahora 10).
+# Los índices se calculan dinámicamente para no romper si añadimos más fases.
+_PATH = happy_path()
+_DIV = float(len(_PATH) - 1)  # número de transiciones (10 con GRASP_DOWN)
+
+
+def _idx(phase) -> float:
+    return float(_PATH.index(phase))
+
+
 def test_interpolate_intermediate_phase_at_zero_matches_phase_index():
-    # APPROACH es índice 4 en happy path de 9 phases (8 transiciones).
     p = interpolate_phase_progress(PickPhase.APPROACH, 0.0)
-    expected = 4.0 / 9.0  # ≈0.444 (10 fases en happy path → 9 transiciones)
+    expected = _idx(PickPhase.APPROACH) / _DIV
     assert p == pytest.approx(expected)
 
 
 def test_interpolate_intermediate_phase_at_one_matches_next_phase_index():
-    # APPROACH (idx 4) sub=1.0 debe igualar GRASP (idx 5) sub=0.0.
+    # APPROACH sub=1.0 debe igualar la fase siguiente (GRASP_DOWN tras 2026-05-07).
     p_approach_full = interpolate_phase_progress(PickPhase.APPROACH, 1.0)
-    p_grasp_zero = interpolate_phase_progress(PickPhase.GRASP, 0.0)
-    assert p_approach_full == pytest.approx(p_grasp_zero)
-    assert p_approach_full == pytest.approx(5.0 / 9.0)
+    next_phase_idx = _PATH.index(PickPhase.APPROACH) + 1
+    next_phase = _PATH[next_phase_idx]
+    p_next_zero = interpolate_phase_progress(next_phase, 0.0)
+    assert p_approach_full == pytest.approx(p_next_zero)
+    assert p_approach_full == pytest.approx(float(next_phase_idx) / _DIV)
 
 
 def test_interpolate_intermediate_phase_at_half():
-    # APPROACH idx 4, sub=0.5 → entre 4/9 y 5/9 → 0.5
     p = interpolate_phase_progress(PickPhase.APPROACH, 0.5)
-    assert p == pytest.approx(0.5)
+    expected = (_idx(PickPhase.APPROACH) + 0.5) / _DIV
+    assert p == pytest.approx(expected)
 
 
 def test_interpolate_clamps_sub_progress_high():
     p = interpolate_phase_progress(PickPhase.APPROACH, 5.0)
-    # >1.0 se clampea a 1.0
-    assert p == pytest.approx(5.0 / 9.0)
+    # >1.0 se clampea a 1.0 → equivale a (idx + 1) / DIV
+    expected = (_idx(PickPhase.APPROACH) + 1.0) / _DIV
+    assert p == pytest.approx(expected)
 
 
 def test_interpolate_clamps_sub_progress_low():
     p = interpolate_phase_progress(PickPhase.APPROACH, -0.5)
-    assert p == pytest.approx(4.0 / 9.0)
+    # <0 se clampea a 0.0 → equivale a idx / DIV
+    expected = _idx(PickPhase.APPROACH) / _DIV
+    assert p == pytest.approx(expected)
 
 
 def test_interpolate_unknown_phase_returns_zero():
@@ -70,9 +85,10 @@ def test_interpolate_unknown_phase_returns_zero():
 
 
 def test_interpolate_invalid_sub_progress_returns_phase_index():
-    # NaN/string como sub_progress → cae a 0.0 → progress = phase_index/8.
+    # NaN/string como sub_progress → cae a 0.0 → progress = phase_index / DIV.
     p = interpolate_phase_progress(PickPhase.LIFT, "not_a_number")
-    assert p == pytest.approx(6.0 / 9.0)
+    expected = _idx(PickPhase.LIFT) / _DIV
+    assert p == pytest.approx(expected)
 
 
 def test_interpolate_failed_phase_falls_back_to_zero():
