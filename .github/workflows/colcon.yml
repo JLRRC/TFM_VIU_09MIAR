@@ -106,9 +106,12 @@ jobs:
         run: |
           pytest -q test/test_pick_fsm.py test/test_service_clients.py test/test_phase_timings.py test/test_lifecycle_helpers.py
 
-      - name: pytest ur5_bringup (F17 launch modular factories)
+      - name: pytest ur5_bringup (F17 launch factories + T4 schemas + T26 grasp evidence)
         working-directory: agarre_ros2_ws/src/ur5_bringup
         env:
           PYTHONPATH: .
         run: |
-          pytest -q test/test_launch_factories.py
+          pytest -q \
+            test/test_launch_factories.py \
+            test/test_yaml_schemas.py \
+            test/test_grasp_evidence_regression.py

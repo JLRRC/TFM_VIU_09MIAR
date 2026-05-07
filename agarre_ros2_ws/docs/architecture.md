@@ -1,7 +1,79 @@
 # Arquitectura del sistema TFM — UR5 + RG2
 
-> Última actualización: 2026-05-01 (post F0–F10, F11 decisiones canónicas).
+> Última actualización: 2026-05-07 (post objetivo cumplido v1.0 + v1.1).
 > Snapshot vivo del estado de los paquetes ROS 2 y los nodos del proyecto.
+
+## Diagrama ejecutivo
+
+```mermaid
+graph TB
+    subgraph "Panel Qt (ur5_qt_panel)"
+        UI[Panel Qt5<br/>ControlPanelV2]
+        Disp[pick_demo_dispatcher<br/>default = legacy v1.1]
+        UI --> Disp
+        Legacy[run_pick_demo<br/>~9k LOC legacy<br/>OBJETIVO CUMPLIDO]
+        Disp -->|default| Legacy
+        Disp -.->|opt-in| Orch
+    end
+
+    subgraph "Orchestrator (tfm_orchestrator)"
+        Orch[pick_orchestrator_lifecycle<br/>action /pick_place<br/>FSM 11 fases]
+        FSM[FSM<br/>INITIAL_SNAPSHOT → HOME → SELECT<br/>→ APPROACH → GRASP_DOWN → GRASP<br/>→ LIFT → TRANSPORT → RELEASE → DONE]
+        Orch --> FSM
+    end
+
+    subgraph "Backend ROS 2 (ur5_tools — 11 LifecycleNodes)"
+        Plan[plan_to_pose_server<br/>MOVEIT_DIRECT]
+        Bridge[ur5_moveit_bridge<br/>REAL_BRIDGE]
+        Attach[gripper_attach_backend<br/>4 srv: open/close/attach/detach]
+        Resolve[object_pose_resolver<br/>ResolveObjectPoseWorld.srv]
+        TFGeom[tf_geometry_service]
+        WorldTF[world_tf_publisher]
+        GzPose[gz_pose_bridge]
+    end
+
+    subgraph "MoveIt 2 + Controller"
+        MoveGroup[move_group<br/>OMPL planners]
+        JTC[joint_trajectory_controller<br/>gz_ros2_control]
+        MoveGroup -->|FollowJointTrajectory| JTC
+    end
+
+    subgraph "Gazebo Sim Harmonic"
+        GZ[gz sim<br/>UR5+RG2 + objects]
+        GZ <--> JTC
+        GZ <--> GzPose
+    end
+
+    Legacy -->|publica /desired_grasp| Bridge
+    Orch -->|action /orchestrator/plan_to_pose| Plan
+    Plan -->|MOVEIT_DIRECT| MoveGroup
+    Plan -->|REAL_BRIDGE fallback| Bridge
+    Bridge --> MoveGroup
+    Orch --> Attach
+    Orch --> Resolve
+
+    Attach -->|detachable_joint| GZ
+    Resolve <--> GZ
+    WorldTF --> TFGeom
+
+    style Legacy fill:#90ee90
+    style Orch fill:#ffd700
+    style GZ fill:#87ceeb
+```
+
+**Leyenda colores:**
+- 🟢 Verde: camino canónico validado (v1.0+, las pinzas agarran el objeto).
+- 🟡 Amarillo: orchestrator path opt-in (v1.1, parcialmente mitigado).
+- 🔵 Azul: simulador.
+
+## Estado de releases
+
+| Tag | Hito |
+|---|---|
+| **v1.1** (2026-05-07) | Orchestrator path APPROACH+GRASP_DOWN OK intermitente |
+| **v1.0.1** (2026-05-07) | 2380 tests verdes (T26 grasp_evidence + T4 schemas) |
+| **v1.0** (2026-05-07) | Release inicial con README + LICENSE + CHANGELOG |
+| `objetivo-cumplido-pinzas-agarran-objeto-20260507` | Pinzas agarran objeto en Gazebo |
 
 ## 1. Visión general
 
