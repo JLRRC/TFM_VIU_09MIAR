@@ -512,6 +512,9 @@ class PlanToPoseServer(Node):
         # completo. Sin esto, el primer attempt bloquea hasta
         # _moveit_result_timeout completo (400s) y el retry NUNCA fira porque
         # el reason resultante es "moveit_result_timeout" no "CONTROL_FAILED".
+        # F1.12 audit-v4 (2026-05-08): primero subido 60→120s, pero rompió
+        # APPROACH por outer orchestrator timeout (500s). Revertido a 60s.
+        # El retry sleep es la palanca correcta — no first_attempt.
         _MOVEIT_FIRST_ATTEMPT_TIMEOUT_SEC = 60.0
         first_attempt_timeout = min(
             _MOVEIT_FIRST_ATTEMPT_TIMEOUT_SEC,
@@ -567,11 +570,15 @@ class PlanToPoseServer(Node):
             or "TIMED_OUT" in reason
             or "FIRST_ATTEMPT_TIMEOUT" in reason
         ):
+            # F1.12 audit-v4 (2026-05-08): retry sleep 8 → 20s. 8s era OK
+            # para el race condition de startup pero post-GRASP attach el
+            # controller_manager pausa más tiempo antes de aceptar un nuevo
+            # trajectory. 20s da margen adecuado.
             self.get_logger().warning(
                 f"[PLAN_TO_POSE][MOVEIT_DIRECT] failed reason={reason} — "
-                "intentando retry tras 8s (race condition controller_manager)"
+                "intentando retry tras 20s (race condition controller_manager)"
             )
-            time.sleep(8.0)
+            time.sleep(20.0)
             send_future_retry = self._moveit_action_client.send_goal_async(mg_goal)
             retry_send_event = threading.Event()
             send_future_retry.add_done_callback(lambda _f: retry_send_event.set())

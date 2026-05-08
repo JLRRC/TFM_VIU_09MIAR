@@ -554,9 +554,12 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             discovery_timeout_sec=self._discovery_timeout,
             call_timeout_sec=self._call_timeout,
             # 2026-05-07 ronda 24: action_result_timeout 300→500s.
-            # Con MoveIt scaling=30 upper bound 315s + planning 25s + lag.
-            # 500s es margen confortable; si llega timeout aquí hay bug real.
-            action_result_timeout_sec=500.0,
+            # F1.12 audit-v4 (2026-05-08): subido 500→700s. Con retry sleep
+            # 8→20s en plan_to_pose_server, el chain interno (60s first +
+            # 20s sleep + 400s retry = 480s) deja sólo 20s margen vs 500
+            # outer. Cycles 2/3 v6 hitean outer timeout. 700s da margen
+            # cómodo de 220s.
+            action_result_timeout_sec=700.0,
         )
         return dispatch_phase(dctx, phase, ctx)
 
