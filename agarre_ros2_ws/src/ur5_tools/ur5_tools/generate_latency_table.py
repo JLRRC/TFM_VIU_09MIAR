@@ -32,12 +32,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ur5_tools.evidence_helpers import aggregate_phase_timings
 
 
-def load_snapshots_from_jsonl(path: Path) -> List[Dict]:
+def load_snapshots_from_jsonl(path: Path) -> List[Dict[str, Any]]:
     """Lee eventos JSONL y extrae snapshots de PhaseTimings.
 
     Acepta dos formatos por evento:
@@ -46,7 +46,7 @@ def load_snapshots_from_jsonl(path: Path) -> List[Dict]:
 
     Líneas no-JSON se ignoran silenciosamente.
     """
-    snapshots: List[Dict] = []
+    snapshots: List[Dict[str, Any]] = []
     if not path.exists():
         return snapshots
     with open(path, "r", encoding="utf-8") as fh:
@@ -82,7 +82,7 @@ def format_rate(value: Optional[float]) -> str:
     return f"{value * 100:.1f}%"
 
 
-def render_markdown(aggregated: Dict, *, title: Optional[str] = None) -> str:
+def render_markdown(aggregated: Dict[str, Any], *, title: Optional[str] = None) -> str:
     """Renderiza la agregación como tabla markdown."""
     lines: List[str] = []
     if title:
@@ -105,7 +105,7 @@ def render_markdown(aggregated: Dict, *, title: Optional[str] = None) -> str:
     return "\n".join(lines)
 
 
-def render_latex(aggregated: Dict, *, title: Optional[str] = None) -> str:
+def render_latex(aggregated: Dict[str, Any], *, title: Optional[str] = None) -> str:
     """Renderiza la agregación como tabla LaTeX (booktabs)."""
     lines: List[str] = []
     lines.append("\\begin{table}[h]")
@@ -132,7 +132,7 @@ def render_latex(aggregated: Dict, *, title: Optional[str] = None) -> str:
     return "\n".join(lines)
 
 
-def render_json(aggregated: Dict) -> str:
+def render_json(aggregated: Dict[str, Any]) -> str:
     return json.dumps(aggregated, indent=2)
 
 
@@ -172,7 +172,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    all_snapshots: List[Dict] = []
+    all_snapshots: List[Dict[str, Any]] = []
     for path in args.input:
         all_snapshots.extend(load_snapshots_from_jsonl(path))
 

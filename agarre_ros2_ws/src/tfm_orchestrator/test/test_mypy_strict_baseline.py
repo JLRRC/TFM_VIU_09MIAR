@@ -75,6 +75,10 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_tools/ur5_tools/param_utils.py",
     "src/ur5_tools/ur5_tools/object_pose_cache.py",
     "src/ur5_tools/ur5_tools/moveit_bridge_utils.py",
+    # F7-step3 (2026-05-08): 3 módulos más.
+    "src/ur5_tools/ur5_tools/generate_latency_table.py",
+    "src/tfm_orchestrator/tfm_orchestrator/phase_timings.py",
+    "src/ur5_qt_panel/ur5_qt_panel/panel_env.py",
 ]
 
 

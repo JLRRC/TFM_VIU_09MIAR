@@ -53,6 +53,30 @@ def get_panel_ros_timeout(default: float = 1.5) -> float:
         return float(default)
 
 
+# F2-step4 (audit-v4 2026-05-08): consolidación de UI flags.
+def get_panel_max_fps(default: float = 12.0) -> float:
+    """Lee `PANEL_MAX_FPS` (default 12). Cap inferior a >0."""
+    raw = os.environ.get("PANEL_MAX_FPS", "")
+    if not raw:
+        return float(default)
+    try:
+        v = float(raw)
+        return v if v > 0 else float(default)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def is_panel_ros2_only() -> bool:
+    """Lee `PANEL_ROS2_ONLY=1` (true si "1")."""
+    return os.environ.get("PANEL_ROS2_ONLY", "0") == "1"
+
+
+def is_panel_single_cam(default_when_ros2_only: bool = True) -> bool:
+    """Lee `PANEL_SINGLE_CAM`. Default depende de PANEL_ROS2_ONLY."""
+    default = "1" if is_panel_ros2_only() and default_when_ros2_only else "0"
+    return os.environ.get("PANEL_SINGLE_CAM", default) == "1"
+
+
 def effective_mode(mode: str) -> str:
     normalized = (mode or "").strip().lower()
     if normalized.startswith("gui"):

@@ -63,6 +63,7 @@ from .panel_config import (
     TABLE_SIZE_Y,
     WS_DIR,
 )
+from .panel_env import get_panel_max_fps, is_panel_ros2_only, is_panel_single_cam
 from .panel_process import STDBUF_PREFIX
 from .panel_utils import (
     CmdRunner,
@@ -314,12 +315,8 @@ class CameraTile(QWidget):
         self._selection_target: Optional[SelectedTarget] = None
         self._pulse_phase = 0.0
         self._last_ui_ts = 0.0
-        try:
-            max_fps = float(os.environ.get("PANEL_MAX_FPS", "12"))
-            if max_fps <= 0:
-                max_fps = 12.0
-        except ValueError:
-            max_fps = 12.0
+        # F2-step4 (audit-v4): env read movida a panel_env.get_panel_max_fps.
+        max_fps = get_panel_max_fps()
         self._min_frame_interval = 1.0 / max_fps
 
         lay = QVBoxLayout()
@@ -664,8 +661,9 @@ class CamerasTab(QWidget):
         self.calib_click_fn = calib_click_fn
         self.infer_grasp_fn = infer_grasp_fn
         self._show_top_bar = show_top_bar
-        ros2_only = os.environ.get("PANEL_ROS2_ONLY", "0") == "1"
-        self._single_cam = os.environ.get("PANEL_SINGLE_CAM", "1" if ros2_only else "0") == "1"
+        # F2-step4 (audit-v4): env reads movidas a panel_env helpers.
+        ros2_only = is_panel_ros2_only()
+        self._single_cam = is_panel_single_cam(default_when_ros2_only=True)
         self.obj_panel = ObjectListPanel()
         self._manual_panel = None
         self._status_panel = None
