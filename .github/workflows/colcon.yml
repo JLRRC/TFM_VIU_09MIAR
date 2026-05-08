@@ -138,3 +138,49 @@ jobs:
             test/test_yaml_schemas.py \
             test/test_grasp_evidence_regression.py \
             test/test_release_integrity.py
+
+      - name: pytest ur5_bringup audit-v4 schemas + jsonschema drift
+        working-directory: agarre_ros2_ws/src/ur5_bringup
+        env:
+          PYTHONPATH: .
+        run: |
+          pip install jsonschema
+          pytest -q \
+            test/test_yaml_jsonschema.py \
+            test/test_yaml_env_consistency.py \
+            test/test_grasp_selector_launch.py
+
+      - name: pytest ur5_description URDF/Xacro structural
+        working-directory: agarre_ros2_ws/src/ur5_description
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_urdf_xacro_parses.py
+
+      - name: pytest ur5_panel_interfaces IDL inventory
+        working-directory: agarre_ros2_ws/src/ur5_panel_interfaces
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_idl_inventory.py
+
+      - name: pytest tfm_orchestrator typed errors
+        working-directory: agarre_ros2_ws/src/tfm_orchestrator
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_errors.py
+
+      - name: pytest panel_v2 MRO + UI LOC baselines (audit-v4)
+        working-directory: agarre_ros2_ws/src/ur5_qt_panel
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q \
+            test/test_panel_v2_mro.py \
+            test/test_ui_files_loc_baseline.py \
+            test/test_internal_helpers_snapshot.py \
+            test/test_panel_helpers_snapshot.py \
+            test/test_panel_ros_snapshot.py \
+            test/test_pick_object_snapshot.py \
+            test/test_no_environ_drift.py
