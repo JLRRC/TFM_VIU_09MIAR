@@ -92,6 +92,25 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_qt_panel/ur5_qt_panel/pick_place_client_logic.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_state.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_tfm_geometry.py",
+    # F1.20 (2026-05-08): batch +15 módulos puros que ya pasaban strict
+    # sin cambios. Total baseline: 31 → 46. Ámbitos: ur5_tools utility
+    # helpers, moveit_bridge sub-helpers, pick_demo extracciones recientes,
+    # pick_object helpers, panel utility puros.
+    "src/ur5_tools/ur5_tools/perf_helpers.py",
+    "src/ur5_tools/ur5_tools/moveit_bridge/queue_helpers.py",
+    "src/ur5_tools/ur5_tools/moveit_bridge/path_tolerance.py",
+    "src/ur5_tools/ur5_tools/system_health_helpers.py",
+    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/seed_metrics.py",
+    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/decision_helpers.py",
+    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/transport_replan.py",
+    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/pure_helpers.py",
+    "src/ur5_qt_panel/ur5_qt_panel/pick_object/diagnostics.py",
+    "src/ur5_qt_panel/ur5_qt_panel/pick_object/moveit_bridge_path.py",
+    "src/ur5_qt_panel/ur5_qt_panel/pick_object/wait_helpers.py",
+    "src/ur5_qt_panel/ur5_qt_panel/step_pipeline_helpers.py",
+    "src/ur5_qt_panel/ur5_qt_panel/panel_pick_geometry.py",
+    "src/ur5_qt_panel/ur5_qt_panel/panel_launchers_params.py",
+    "src/ur5_qt_panel/ur5_qt_panel/panel_ros_emitters.py",
 ]
 
 
