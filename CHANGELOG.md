@@ -2,6 +2,32 @@
 
 Historial de hitos del proyecto TFM UR5+RG2 Pick & Place (simulación ROS 2 Jazzy + Gazebo Harmonic + MoveIt 2).
 
+## [2026-05-08] v4.1 — auditoría delta + plan ejecutivo
+
+**Branch**: `audit/fase-0-1-cleanup`
+**HEAD auditado**: `1b2373b`
+**Documento**: [agarre_ros2_ws/docs/AUDIT_20260508_v4_1.md](agarre_ros2_ws/docs/AUDIT_20260508_v4_1.md) (copia local en `auditoria/`)
+
+Delta incremental sobre [docs/AUDIT_20260508_v4.md](agarre_ros2_ws/docs/AUDIT_20260508_v4.md). Hallazgo principal:
+
+- **`moveit_bridge/executor.py` +117 LOC** (1.546 → 1.663) por scaffold F5-iter1/2/3 inacabado. Los helpers `_prepare_fjt_execution`/`_send_and_accept_fjt_goal`/`_setup_post_accept_state` se extrajeron sin borrar el cuerpo equivalente del monolito. F5-iter4 es la siguiente acción y desbloquea el split planeado del v4.
+
+Reordenación de prioridades IMPRESCINDIBLES:
+1. **F5-iter4 cerrar scaffold de `executor.py`** (1-3 h) — bloqueante.
+2. F3 split `panel_pick_object.py` (12-20 h, multi-sesión).
+3. F5 split real `_execute_joint_trajectory_action` (4-8 h, después de iter4).
+4. F2 schemas YAML + drift test (6-10 h).
+
+Plan ejecutivo dividido en 10 fases (A→J) con criterios de aceptación, rollback y validación por fase.
+
+### FASE A ejecutada (cierre F5-iter4, sesión 2026-05-08)
+
+- Nuevo módulo `moveit_bridge/fjt_lifecycle_mixin.py` (230 LOC) con `_prepare_fjt_execution`, `_send_and_accept_fjt_goal`, `_setup_post_accept_state`.
+- `executor.py` 1.663 → **1.491 LOC** (-172, -10 %), por debajo del baseline v4 de 1.546.
+- `UR5MoveItBridge` hereda ahora también de `FjtLifecycleMixin` (orden MRO: `... TrajectoryPrepMixin → FjtLifecycleMixin → ExecutorMixin ...`).
+- Validación: T31 path tolerance contract (24 PASS) + trajectory_executor_contract (25 PASS) + fjt_direct_helpers (13 PASS) = **62/62 verde**. Suite completa `ur5_tools`: 755 PASS / 19 skipped (los 4 fallos son preexistentes: 2 launch tests `object_pose_resolver` + flake8 + pep257; pep257 mejoró -2 errores tras el refactor).
+- Tag rollback: `audit-v4.1-baseline-20260508`.
+
 ## [2026-05-08] v1.0-audit-v4 — refactor profesional close (round 2)
 
 **Branch**: `v1.0-audit-v4`

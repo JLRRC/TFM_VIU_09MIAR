@@ -78,6 +78,7 @@ from .moveit_bridge.queue_helpers import (
     is_stale_request as _is_stale_request,
 )
 from .moveit_bridge.executor import ExecutorMixin
+from .moveit_bridge.fjt_lifecycle_mixin import FjtLifecycleMixin
 from .moveit_bridge.geometry import GeometryMixin
 from .moveit_bridge.goal_validation import GoalValidationMixin
 from .moveit_bridge.joint_state_helpers import JointStateHelpersMixin
@@ -106,6 +107,7 @@ class UR5MoveItBridge(
     MoveItCommanderMixin,
     GeometryMixin,
     TrajectoryPrepMixin,
+    FjtLifecycleMixin,
     ExecutorMixin,
     JointStateHelpersMixin,
     ControllerManagementMixin,
