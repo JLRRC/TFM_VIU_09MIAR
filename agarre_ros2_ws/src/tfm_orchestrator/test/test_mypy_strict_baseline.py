@@ -151,6 +151,8 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/tfm_orchestrator/tfm_orchestrator/errors.py",
     # F6 audit-v4 (2026-05-08): trajectory_executor_node contract.
     "src/ur5_tools/ur5_tools/trajectory_executor_contract.py",
+    # V1.1 audit-v4 (2026-05-08): panel_audit_helpers puros.
+    "src/ur5_qt_panel/ur5_qt_panel/panel_audit_helpers.py",
 ]
 
 

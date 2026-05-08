@@ -466,18 +466,9 @@ def _audit_write_json(panel, rel_path: str, payload: Dict[str, object]) -> None:
         pass
 
 def _sha256_file(panel, path: str) -> str:
-    try:
-        import hashlib
-    except Exception:
-        return ""
-    h = hashlib.sha256()
-    try:
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                h.update(chunk)
-    except Exception:
-        return ""
-    return h.hexdigest()
+    """V1.1 audit-v4: delega al helper puro panel_audit_helpers.sha256_file."""
+    from .panel_audit_helpers import sha256_file
+    return sha256_file(path)
 
 def _should_emit_log(panel, msg: str) -> bool:
     if getattr(panel, "_debug_logs_enabled", False):
