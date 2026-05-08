@@ -274,10 +274,13 @@ def build_plan_to_pose_goal_for_grasp_down(ctx: PickContext) -> Any:
 def build_plan_to_pose_goal_for_lift(ctx: PickContext) -> Any:
     """Goal de LIFT: levantar el objeto a una altura segura sobre la mesa.
 
-    2026-05-07 fix ronda 19: el placeholder ``(0,0,0.20)`` absoluto en
-    base_link mandaba al robot al origen del manipulador, fail con
-    ``moveit_err:FAILURE``. Ahora usa ``object_pose_world_hint`` + lift_z
-    convertido a base_link (igual que APPROACH).
+    F1.15 (2026-05-08): orientación TCP-down via compute_top_down_grasp_quat
+    (mismo que APPROACH/GRASP_DOWN/TRANSPORT). Usar quat raw del objeto era
+    un bug arquitectónico: el robot venía de GRASP_DOWN ya en TCP-down y
+    forzar una orientación arbitraria del objeto provocaba que OMPL no
+    encontrara plan en 60s (FIRST_ATTEMPT_TIMEOUT). Con TCP-down consistente
+    desde APPROACH→GRASP_DOWN→GRASP→LIFT→TRANSPORT, el wrist no necesita
+    rotaciones extra entre fases.
     """
     from geometry_msgs.msg import Pose, Point, Quaternion
     from ur5_panel_interfaces.action import PlanToPose
@@ -293,15 +296,17 @@ def build_plan_to_pose_goal_for_lift(ctx: PickContext) -> Any:
         x_base = x - _BASE_LINK_IN_WORLD[0]
         y_base = y - _BASE_LINK_IN_WORLD[1]
         z_base = z - _BASE_LINK_IN_WORLD[2]
+        # F1.15: TCP-down quat coherente con APPROACH/GRASP_DOWN.
+        tcp_qx, tcp_qy, tcp_qz, tcp_qw = compute_top_down_grasp_quat((qx, qy, qz, qw))
         goal.target_pose_base = Pose(
             position=Point(x=x_base, y=y_base, z=z_base + _LIFT_Z_M),
-            orientation=Quaternion(x=qx, y=qy, z=qz, w=qw),
+            orientation=Quaternion(x=tcp_qx, y=tcp_qy, z=tcp_qz, w=tcp_qw),
         )
     else:
         # Sin hint: lift sobre el origen base_link a altura segura.
         goal.target_pose_base = Pose(
             position=Point(x=0.40, y=0.0, z=0.40),
-            orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
+            orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0),  # 180° around X = TCP-down
         )
     goal.ee_frame = "rg2_pinch_center"
     goal.cartesian = False  # Joint planning: más robusto que cartesian.
@@ -314,12 +319,29 @@ def build_plan_to_pose_goal_for_transport(ctx: PickContext) -> Any:
 
     NOTA (2026-05-07): drop_xyz_world viene en world frame, server espera
     base_link. Aplicar offset estático world→base (-0.85, 0, 0.850).
+
+    F1.14 (2026-05-08): orientación TCP-down (mismo que APPROACH/GRASP_DOWN
+    via compute_top_down_grasp_quat). Antes usaba identity, lo que forzaba
+    al robot a rotar 180° alrededor X axis EN MOVIMIENTO mientras
+    transportaba el objeto agarrado — trayectoria compleja que el bridge
+    no podía completar (CONTROL_FAILED|retry_failed). Ahora el TCP mantiene
+    la misma orientación down que tenía tras LIFT.
     """
     from geometry_msgs.msg import Pose, Point, Quaternion
     from ur5_panel_interfaces.action import PlanToPose
 
     # Offset estático world→base_link del UR5 (urdf:47).
     _BASE_LINK_IN_WORLD = (-0.85, 0.0, 0.850)
+
+    # F1.14: usar TCP-down quat. Si hay object_pose_world_hint, derivar
+    # yaw del objeto (consistencia con APPROACH/GRASP_DOWN). Si no, usar
+    # yaw=0 (180° around X canónico = TCP point down con X axis aligned).
+    if not is_no_hint(ctx.object_pose_world_hint):
+        norm = normalize_pose_hint(ctx.object_pose_world_hint)
+        _, _, _, qx, qy, qz, qw = norm  # type: ignore[misc]
+        tcp_qx, tcp_qy, tcp_qz, tcp_qw = compute_top_down_grasp_quat((qx, qy, qz, qw))
+    else:
+        tcp_qx, tcp_qy, tcp_qz, tcp_qw = 1.0, 0.0, 0.0, 0.0  # 180° around X
 
     goal = PlanToPose.Goal()
     goal.target_pose_base = Pose(
@@ -328,7 +350,7 @@ def build_plan_to_pose_goal_for_transport(ctx: PickContext) -> Any:
             y=float(ctx.drop_xyz_world[1]) - _BASE_LINK_IN_WORLD[1],
             z=float(ctx.drop_xyz_world[2]) - _BASE_LINK_IN_WORLD[2],
         ),
-        orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
+        orientation=Quaternion(x=tcp_qx, y=tcp_qy, z=tcp_qz, w=tcp_qw),
     )
     goal.ee_frame = "rg2_pinch_center"
     goal.cartesian = False
