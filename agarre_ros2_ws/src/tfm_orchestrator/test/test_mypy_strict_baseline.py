@@ -42,6 +42,15 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     # F7-step1.6 (2026-05-08): bare `tuple` → `Tuple[float, ...]` en 7 anotaciones
     # del PickContext + helpers. is_no_hint con bool() explícito + len-guard.
     "src/tfm_orchestrator/tfm_orchestrator/pick_fsm.py",
+    # F7-step1.7 (2026-05-08): home_initial.py limpio tras path_tol_rad
+    # opcional + Optional import.
+    "src/tfm_orchestrator/tfm_orchestrator/home_initial.py",
+    # F7-step1.8 (2026-05-08): 4 módulos puros adicionales pasan strict
+    # sin necesidad de cambios.
+    "src/tfm_orchestrator/tfm_orchestrator/phase_progress.py",
+    "src/tfm_orchestrator/tfm_orchestrator/cartesian_segments.py",
+    "src/tfm_orchestrator/tfm_orchestrator/gripper_monitor.py",
+    "src/tfm_orchestrator/tfm_orchestrator/lifecycle_helpers.py",
 ]
 
 

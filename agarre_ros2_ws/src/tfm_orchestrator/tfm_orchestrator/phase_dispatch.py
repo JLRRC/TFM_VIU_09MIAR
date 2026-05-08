@@ -128,6 +128,48 @@ class PhaseDispatchContext:
 # ---------------------------------------------------------------------------
 
 
+def compute_top_down_grasp_quat(
+    obj_quat_xyzw: Tuple[float, float, float, float],
+) -> Tuple[float, float, float, float]:
+    """Compute TCP orientation for a top-down grasp aligned with object yaw.
+
+    F1.8 audit-v4 (2026-05-08): bug TCP-orientation contract — el orchestrator
+    pasaba `obj_quat` directamente como TCP-orientation en APPROACH/GRASP_DOWN,
+    causando OMPL FAILURE consistente cuando el objeto caía con cualquier yaw
+    no trivial (orientación inalcanzable / en colisión).
+
+    Solución: el TCP debe apuntar hacia abajo (Z_TCP = -Z_world) con el yaw
+    alineado al yaw del objeto para que las pinzas RG2 se cierren a lo largo
+    del eje correcto del objeto.
+
+    Math: extraer yaw del object quat (rotación alrededor de world Z), luego
+    componer ``q_yaw * q_180X`` donde ``q_180X = (1,0,0,0)`` rota 180° alrededor
+    del eje X (haciendo que TCP Z apunte hacia abajo).
+
+    Resultado canónico: ``(cos(yaw/2), sin(yaw/2), 0, 0)``.
+
+    Casos:
+      * yaw=0     → (1,0,0,0)            → 180° around X: TCP-Z down, X=world-X.
+      * yaw=π/2   → (0.707,0.707,0,0)    → TCP-Z down, X=world-Y.
+      * yaw=π     → (0,1,0,0)            → 180° around Y: TCP-Z down, X=world-X.
+
+    Parameters:
+        obj_quat_xyzw: orientación del objeto en world (x,y,z,w convention).
+            Para objetos planos sobre mesa, sólo la componente z+w son
+            significativas (rotación alrededor de world Z).
+
+    Returns:
+        TCP quaternion (x,y,z,w) listo para Quaternion msg.
+    """
+    import math
+    qx, qy, qz, qw = obj_quat_xyzw
+    # yaw = atan2(2*(qw*qz + qx*qy), 1 - 2*(qy² + qz²))  (canonical formula)
+    yaw = math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz))
+    cy = math.cos(yaw / 2.0)
+    sy = math.sin(yaw / 2.0)
+    return (cy, sy, 0.0, 0.0)
+
+
 def build_plan_to_pose_goal_for_approach(
     ctx: PickContext,
     *,
@@ -163,9 +205,13 @@ def build_plan_to_pose_goal_for_approach(
         x_base = x - _BASE_LINK_IN_WORLD[0]
         y_base = y - _BASE_LINK_IN_WORLD[1]
         z_base = z - _BASE_LINK_IN_WORLD[2]
+        # F1.8 (2026-05-08): el TCP debe apuntar hacia abajo (top-down grasp)
+        # con yaw alineado al objeto. Antes pasábamos obj_quat directo →
+        # OMPL FAILURE por orientación inalcanzable (ver bug doc F1.8).
+        tcp_qx, tcp_qy, tcp_qz, tcp_qw = compute_top_down_grasp_quat((qx, qy, qz, qw))
         goal.target_pose_base = Pose(
             position=Point(x=x_base, y=y_base, z=z_base + float(z_clearance_m)),
-            orientation=Quaternion(x=qx, y=qy, z=qz, w=qw),
+            orientation=Quaternion(x=tcp_qx, y=tcp_qy, z=tcp_qz, w=tcp_qw),
         )
     else:
         goal.target_pose_base = Pose(
@@ -205,9 +251,13 @@ def build_plan_to_pose_goal_for_grasp_down(ctx: PickContext) -> Any:
         x_base = x - _BASE_LINK_IN_WORLD[0]
         y_base = y - _BASE_LINK_IN_WORLD[1]
         z_base = z - _BASE_LINK_IN_WORLD[2]
+        # F1.8 (2026-05-08): TCP top-down con yaw del objeto (mismo fix que
+        # APPROACH). Sin esto, GRASP_DOWN cartesian descent partía con orient
+        # inalcanzable y fallaba con OMPL FAILURE.
+        tcp_qx, tcp_qy, tcp_qz, tcp_qw = compute_top_down_grasp_quat((qx, qy, qz, qw))
         goal.target_pose_base = Pose(
             position=Point(x=x_base, y=y_base, z=z_base + _GRASP_DOWN_Z_M),
-            orientation=Quaternion(x=qx, y=qy, z=qz, w=qw),
+            orientation=Quaternion(x=tcp_qx, y=tcp_qy, z=tcp_qz, w=tcp_qw),
         )
     else:
         # Sin hint: target placeholder (el FSM debería rechazar antes de llegar aquí).
