@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "panel_settings.yaml",
+  "description": "Schema for ur5_qt_panel/config/panel_settings.yaml. Audit-v4.1 F2 (2026-05-09): typed jsonschema gating. Backed by PanelSettings dataclass.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["panel_settings"],
+  "properties": {
+    "panel_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base_frame": {"type": "string"},
+        "world_frame": {"type": ["string", "null"]},
+        "ur5_base_z": {"type": "number"},
+        "camera_topic": {"type": "string"},
+        "camera_required": {"type": ["boolean", "null"]},
+        "use_sim_time": {"type": "boolean"},
+        "pose_info_max_age_sec": {"type": "number", "minimum": 0},
+        "pose_info_poll_sec": {"type": "number", "minimum": 0},
+        "pose_info_log_period": {"type": "number", "minimum": 0},
+        "critical_clock_timeout_sec": {"type": "number", "minimum": 0},
+        "critical_pose_timeout_sec": {"type": "number", "minimum": 0},
+        "camera_ready_frames": {"type": "integer", "minimum": 0},
+        "camera_init_grace_sec": {"type": "number", "minimum": 0},
+        "camera_ready_max_age_sec": {"type": "number", "minimum": 0},
+        "tf_init_grace_sec": {"type": "number", "minimum": 0},
+        "controller_start_grace_sec": {"type": "number", "minimum": 0},
+        "controller_ready_timeout_sec": {"type": "number", "minimum": 0},
+        "moveit_ready_timeout_sec": {"type": "number", "minimum": 0},
+        "gz_launch_timeout_sec": {"type": "number", "minimum": 0},
+        "bridge_launch_timeout_sec": {"type": "number", "minimum": 0},
+        "moveit_launch_timeout_sec": {"type": "number", "minimum": 0},
+        "moveit_bridge_launch_timeout_sec": {"type": "number", "minimum": 0},
+        "controller_drop_grace_sec": {"type": "number", "minimum": 0},
+        "pick_tf_retry_sec": {"type": "number", "minimum": 0},
+        "pick_tf_timeout_sec": {"type": "number", "minimum": 0},
+        "selection_timeout_sec": {"type": "number", "minimum": 0},
+        "allow_unsettled_on_timeout": {"type": "boolean"},
+        "panel_managed": {"type": "boolean"},
+        "panel_moveit_required": {"type": "boolean"},
+        "auto_start_bridge": {"type": "boolean"},
+        "auto_start_bridge_delay_ms": {"type": "integer", "minimum": 0},
+        "auto_start_bridge_max_retries": {"type": "integer", "minimum": 0},
+        "table_object_z_min": {"type": "number"},
+        "table_object_z_max": {"type": "number"}
+      }
+    }
+  }
+}
