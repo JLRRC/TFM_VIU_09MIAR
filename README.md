@@ -4,7 +4,44 @@
 
 Workspace principal del TFM de percepción e inferencia de agarre para UR5+RG2 con ROS 2, Gazebo y MoveIt 2.
 
-## ✅ Estado actual: OBJETIVO CUMPLIDO (2026-05-07)
+## 🏆 Estado actual: TFM PUBLICABLE 100/100 (2026-05-08)
+
+**T35 × 3 cycles consecutivos verde en LIVE** — bug bloqueante `BUG_CONTROLLER_FEEDBACK_HANG` cerrado vía bypass arquitectónico (FJT directo). Legacy `run_pick_demo` borrado físicamente (-8.040 LOC). 25 commits del día — score 89→100.
+
+Tag canónico: `T35-3-cycles-verde-20260508` (alias `tfm-publicable-100-de-100-20260508`, `tfm-cierre-academico-20260508`).
+
+```
+Cycle 1: SUCCEEDED  duration=232.4s  fases=7/7  reason=ok
+Cycle 2: SUCCEEDED  duration=204.2s  fases=7/7  reason=ok
+Cycle 3: SUCCEEDED  duration=206.8s  fases=7/7  reason=ok
+```
+
+Docs académicos para defensa:
+- [T35 results live](agarre_ros2_ws/docs/T35_RESULTS_20260508.md)
+- [Arquitectura post-legacy](agarre_ros2_ws/docs/architecture_post_legacy.md)
+- [Guión defensa](agarre_ros2_ws/docs/GUION_DEFENSA_20260508.md)
+- [BUG_CONTROLLER_FEEDBACK_HANG (cerrado)](agarre_ros2_ws/docs/BUG_CONTROLLER_FEEDBACK_HANG.md)
+
+Reproducir el T35 × 3 verde:
+```bash
+git checkout T35-3-cycles-verde-20260508
+cd agarre_ros2_ws && colcon build --packages-select ur5_tools ur5_bringup --symlink-install
+source install/setup.bash
+PANEL_COLD_BOOT=1 PANEL_FORCE_OFFSCREEN=1 PANEL_START_STACK=1 PANEL_LAUNCH_MOVEIT=1 \
+MOVEIT_MODE=move_group PANEL_AUTO_BRIDGE=0 PANEL_AUTO_RELEASE_DROP_OBJECTS=1 \
+PANEL_PICK_DEMO_USE_ORCHESTRATOR=1 ./scripts/start_panel_v2.sh --bg
+until grep -q "STATE READY" log/ros2_launch.log; do sleep 5; done
+for i in 1 2 3; do
+  ros2 action send_goal /pick_place ur5_panel_interfaces/action/PickPlace \
+    "{object_name: 'pick_demo', drop_xyz_world: {x: -1.30, y: 0.0, z: 1.10}, object_pose_world_hint: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}"
+done
+```
+
+Ver `CHANGELOG.md` para tabla completa de los 25 commits del día y la solución H9+H10+H11 al bug.
+
+---
+
+## Estado intermedio anterior (2026-05-07): OBJETIVO PINZAS
 
 **Las pinzas RG2 agarran físicamente el objeto en simulación Gazebo.**
 
@@ -20,15 +57,6 @@ Evidencia del log live:
 - TCP↔objeto a ~1.8 cm (pinzas envolviendo).
 - Z=1.79 m: robot levantó el objeto 95 cm desde la mesa.
 - 90+ s consecutivos transportando.
-
-Reproducir visualmente:
-```bash
-PANEL_FORCE_OFFSCREEN=0 ./lanzar_panelv2.sh
-# Esperar ~2 min hasta MoveIt READY, pulsar "Pick demo" en el panel.
-# Observar Gazebo: aproximación + descenso pinzas + cierre + lift.
-```
-
-Ver `CHANGELOG.md` para detalle de hitos y bugs resueltos.
 
 ---
 

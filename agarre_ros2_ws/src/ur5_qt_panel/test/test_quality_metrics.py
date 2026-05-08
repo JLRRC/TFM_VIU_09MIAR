@@ -256,6 +256,16 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # + controller restart + final TF check post-retry. Trade-off aceptado:
     # mitigación BUG_CONTROLLER_FEEDBACK_HANG documentada.
     "ur5_tools/ur5_tools/plan_to_pose_server.py::PlanToPoseServer._execute_moveit_direct": 343,
+    # F1.24 H9+H10+H11 LIVE (2026-05-08): bypass MoveIt vía FJT directo. La
+    # función ejecuta el camino canónico que cierra BUG_CONTROLLER_FEEDBACK_HANG
+    # y deja T35 × 3 cycles consecutivos verde. Refactor estructural a sub-
+    # helpers (build_ik_request / fjt_send_and_wait / fallback_to_moveit) está
+    # planificado pero requiere validación live para no romper el camino verde.
+    "ur5_tools/ur5_tools/plan_to_pose_server.py::PlanToPoseServer._execute_fjt_direct": 253,
+    # F1.24 (2026-05-08): __init__ +18 LOC al declarar params del bypass FJT
+    # directo (ik_client, fjt_action_client, fjt_direct_*_timeout, normalize_*).
+    # Refactor planificado: agrupar declarations en un helper _init_fjt_direct_*.
+    "ur5_tools/ur5_tools/plan_to_pose_server.py::PlanToPoseServer.__init__": 219,
     # F3-step9 + step9bis/ter/quater/quintus (2026-05-03): build_main_ui bajó
     # de 733 → 44 LOC con 6 sub-helpers (_build_main_ui_topbar_and_leds 122 +
     # _controls_status_row 130 + _camera_and_objects 98 + _manual_joints_and_
