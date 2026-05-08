@@ -890,6 +890,7 @@ class PlanToPoseServer(Node):
             None si pre-condiciones no satisfechas (caller debe fallback a MoveIt).
         """
         from .fjt_direct_helpers import (
+            build_fjt_trajectory_multi_point,
             build_fjt_trajectory_two_point,
             build_ik_request,
             parse_ik_result,
@@ -900,8 +901,10 @@ class PlanToPoseServer(Node):
 
         # F1.24 LIVE (2026-05-08): tuning per-distancia para FJT_DIRECT.
         # Calcula distancia desde current pose (seed) al target XYZ. Si > 0.4m
-        # → trayectoria larga (TRANSPORT/destino lejos): duration=15s, timeout=90s.
-        # Si <= 0.4m → fase corta (APPROACH/GRASP_DOWN/LIFT): duration=8s, timeout=30s.
+        # → trayectoria larga (TRANSPORT/destino lejos): duration=25s, timeout=120s
+        #   + multi-waypoint trajectory (H11) para evitar path_tolerance fail.
+        # Si <= 0.4m → fase corta (APPROACH/GRASP_DOWN/LIFT): duration=8s, timeout=30s
+        #   + 2-point trajectory simple.
         # El criterio basado en target Z (classify_phase_by_target_z) NO funciona
         # cuando el target está alto (e.g. cesta a Z=0.25 base): falsamente
         # clasifica como "OTHER" pese a la distancia grande.
@@ -926,15 +929,17 @@ class PlanToPoseServer(Node):
         except Exception:
             dist_to_target = 0.5
 
-        if dist_to_target > 0.4:
-            fjt_duration_eff = max(self._fjt_direct_duration, 15.0)
-            fjt_result_timeout_eff = max(self._fjt_direct_result_timeout, 90.0)
+        is_long_traj = dist_to_target > 0.4
+        if is_long_traj:
+            fjt_duration_eff = max(self._fjt_direct_duration, 25.0)
+            fjt_result_timeout_eff = max(self._fjt_direct_result_timeout, 120.0)
         else:
             fjt_duration_eff = max(float(self._fjt_direct_duration), 8.0)
             fjt_result_timeout_eff = max(float(self._fjt_direct_result_timeout), 30.0)
         self.get_logger().info(
             f"[PLAN_TO_POSE][FJT_DIRECT] dist_to_target={dist_to_target:.3f}m "
-            f"duration={fjt_duration_eff:.1f}s timeout={fjt_result_timeout_eff:.1f}s"
+            f"duration={fjt_duration_eff:.1f}s timeout={fjt_result_timeout_eff:.1f}s "
+            f"multi_waypoint={is_long_traj}"
         )
         # 1. Joint state actual.
         js = self._get_latest_joint_state()
@@ -1024,13 +1029,24 @@ class PlanToPoseServer(Node):
             f"{goal.target_xyz[2]:.3f})"
         )
 
-        # 3. Build trajectory (duration per-fase F1.24 LIVE).
-        jt = build_fjt_trajectory_two_point(
-            joint_names=list(ur5_joints),
-            start_positions=seed_positions,
-            target_positions=target_joints,
-            duration_sec=fjt_duration_eff,
-        )
+        # 3. Build trajectory (per-distance F1.24 LIVE).
+        # H11: multi-waypoint para distancias largas (TRANSPORT) — evita
+        # path_tolerance_violation por aceleración brusca con solo 2 puntos.
+        if is_long_traj:
+            jt = build_fjt_trajectory_multi_point(
+                joint_names=list(ur5_joints),
+                start_positions=seed_positions,
+                target_positions=target_joints,
+                num_intermediate_points=8,
+                total_duration_sec=fjt_duration_eff,
+            )
+        else:
+            jt = build_fjt_trajectory_two_point(
+                joint_names=list(ur5_joints),
+                start_positions=seed_positions,
+                target_positions=target_joints,
+                duration_sec=fjt_duration_eff,
+            )
 
         # 4. FJT action client (lazy).
         if self._fjt_direct_action_client is None:

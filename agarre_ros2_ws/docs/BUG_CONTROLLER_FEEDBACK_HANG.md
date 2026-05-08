@@ -1,6 +1,8 @@
 # BUG — Controller feedback hang post-F1.18
 
-**Estado**: ABIERTO — bug profundo de simulación (mitigación parcial F1.22 aplicada)
+**Estado**: ✅ **CERRADO 2026-05-08** vía F1.24 H9+H10+H11 (bypass MoveIt + joint normalization + multi-waypoint trajectory). T35 verde con 3 cycles consecutivos SUCCEEDED.
+
+**Estado anterior**: ABIERTO — bug profundo de simulación (mitigación parcial F1.22 aplicada)
 **Detectado**: 2026-05-08 14:17 (validación live de F1.18, HEAD `744006a`)
 **Re-confirmado live**: 2026-05-08 18:13 + 18:19 (2 runs cycle 1, post-F1.22)
 **Mitigación parcial**: F1.22 (TF pose-check post-FIRST_ATTEMPT_TIMEOUT)
@@ -216,9 +218,40 @@ módulo 2π, o usar seed más cuidadoso.
 
 ### Hipótesis nuevas (post-F1.24)
 
-| H | Idea | Coste |
-|---|------|-------|
-| H10 | Normalizar joints IK al rango [-π, π] antes del FJT | Bajo |
-| H11 | Pre-computar trajectoria multi-waypoint con `/compute_cartesian_path` | Medio |
-| H12 | Detectar TRANSPORT por distancia y usar duration ≥20s | Bajo |
-| H13 | Usar Trac-IK con joint limits estrictos en lugar de KDL default | Medio |
+| H | Idea | Coste | Estado |
+|---|------|-------|--------|
+| H10 | Normalizar joints IK al rango [-π, π] antes del FJT | Bajo | ✅ APLICADO commit `57f29ad` |
+| H11 | Trayectoria multi-waypoint para distancias largas (TRANSPORT) | Medio | ✅ APLICADO commit `<HEAD>` |
+| H12 | Detectar TRANSPORT por distancia y usar duration ≥25s | Bajo | ✅ APLICADO (parte de H11) |
+| H13 | Usar Trac-IK con joint limits estrictos en lugar de KDL default | Medio | No necesario (H10 suficiente) |
+
+## ✅ CIERRE 2026-05-08 (T35 VERDE — 3 cycles consecutivos SUCCEEDED)
+
+Validación live final del proyecto (orchestrator default, panel sin tocar
+legacy borrado en F5-legacy-removed):
+
+```
+Cycle 1: SUCCEEDED  duration=232.4s  reason=ok  fases=7/7
+Cycle 2: SUCCEEDED  duration=204.2s  reason=ok  fases=7/7
+Cycle 3: SUCCEEDED  duration=206.8s  reason=ok  fases=7/7
+```
+
+Logs canónicos del cierre:
+```
+[ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=APPROACH ok=True reason=approach:fjt_direct:SUCCESSFUL
+[ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=GRASP_DOWN ok=True reason=grasp_down:fjt_direct:SUCCESSFUL
+[ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=GRASP ok=True reason=grasp_attach:attach_dispatched
+[ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=LIFT ok=True reason=lift:fjt_direct:SUCCESSFUL
+[ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=TRANSPORT ok=True reason=transport:fjt_direct:SUCCESSFUL
+[ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=RELEASE ok=True reason=release_open:target_rad=0.0425
+```
+
+**Conclusión**: el bug estaba en el path MoveIt → simple_controller_manager.
+La solución NO fue arreglar ese bug (es upstream gz_ros2_control / MoveIt).
+La solución FUE bypassar ese path entero usando FJT directo (mismo path
+que HOME_INITIAL siempre usó). Combinado con joint normalization (H10)
+y multi-waypoint trajectory (H11) para distancias largas, el orchestrator
+completa 7/7 fases consistentemente.
+
+Tag de cierre: `T35-3-cycles-verde-20260508`.
+Tag rollback (legacy aún recuperable): `audit-pre-borrar-legacy-20260508`.

@@ -193,6 +193,80 @@ def normalize_joint_to_pi(angle: float) -> float:
     return angle
 
 
+def build_fjt_trajectory_multi_point(
+    *,
+    joint_names: Sequence[str],
+    start_positions: Sequence[float],
+    target_positions: Sequence[float],
+    num_intermediate_points: int = 8,
+    total_duration_sec: float = 20.0,
+) -> Any:
+    """F1.24 H11 (2026-05-08): JointTrajectory con N puntos interpolados.
+
+    A diferencia de build_fjt_trajectory_two_point (start, target con
+    velocidades cero), esta versión genera N+2 waypoints linealmente
+    interpolados con velocidades intermedias no-cero. Esto da al
+    joint_trajectory_controller una rampa suave que evita
+    path_tolerance_violation por aceleración brusca o tracking error
+    en trayectorias largas (TRANSPORT ~1m).
+
+    Patrón usado en HOME_INITIAL exitoso: interpolación lineal en joint
+    space + velocidades estimadas como diferencia central.
+
+    Args:
+        joint_names: orden esperado por el controller.
+        start_positions: posiciones actuales.
+        target_positions: target del IK (normalizado).
+        num_intermediate_points: cuántos puntos entre start y target.
+            Default 8 → 10 puntos totales (start + 8 + target).
+        total_duration_sec: duración total. Velocidad media = delta/total.
+
+    Returns:
+        trajectory_msgs.msg.JointTrajectory con num_intermediate+2 puntos.
+    """
+    from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
+    from builtin_interfaces.msg import Duration
+
+    if len(joint_names) != len(start_positions) or len(joint_names) != len(target_positions):
+        raise ValueError(
+            f"joint_names ({len(joint_names)}), start ({len(start_positions)}) "
+            f"y target ({len(target_positions)}) deben tener misma longitud"
+        )
+    n_inter = max(0, int(num_intermediate_points))
+    total_pts = n_inter + 2  # start + intermediates + target
+    total_t = max(0.5, float(total_duration_sec))
+    n = len(joint_names)
+    deltas = [float(target_positions[i]) - float(start_positions[i]) for i in range(n)]
+    # Velocidad media aproximada (positiva o negativa según signo del delta).
+    v_mid = [d / total_t for d in deltas]
+
+    jt = JointTrajectory()
+    jt.joint_names = list(str(name) for name in joint_names)
+
+    for k in range(total_pts):
+        t_norm = float(k) / float(total_pts - 1)  # 0 .. 1
+        positions = [
+            float(start_positions[i]) + t_norm * deltas[i] for i in range(n)
+        ]
+        # Velocidades: 0 en extremos (k=0 y k=last), v_mid en intermedios.
+        if k == 0 or k == total_pts - 1:
+            velocities = [0.0] * n
+        else:
+            velocities = list(v_mid)
+        time_sec_total = t_norm * total_t
+        sec = int(time_sec_total)
+        nsec = int(round((time_sec_total - sec) * 1_000_000_000.0))
+        if nsec >= 1_000_000_000:
+            sec += 1
+            nsec -= 1_000_000_000
+        p = JointTrajectoryPoint()
+        p.positions = positions
+        p.velocities = velocities
+        p.time_from_start = Duration(sec=sec, nanosec=nsec)
+        jt.points.append(p)
+    return jt
+
+
 def parse_ik_result(
     response: Any,
     joint_names: Sequence[str],
