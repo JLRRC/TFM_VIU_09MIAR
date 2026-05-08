@@ -603,6 +603,13 @@ class ReleaseObjectsService(LifecycleNode):
         *,
         label: str,
     ) -> Tuple[int, int]:
+        # F1.10 (audit-v4 2026-05-08): publicar SIEMPRE, no skip-on-sub_count==0.
+        # Antes: si gz_ros_bridge aún no había subscribido al topic detach,
+        # el publish se saltaba — y con retries=4×0.25s=1s, objetos cuyo
+        # plugin SDF tardaba más en subscribir nunca recibían detach.
+        # Ahora: publish siempre. Si no hay sub, ROS dropea el message (gratis).
+        # Con retries=20×0.5s=10s, ventana suficiente para que gz subscribir.
+        # `ready` sigue contando subs activos — informativo en el log.
         ready = 0
         published = 0
         for name in names:
@@ -613,9 +620,9 @@ class ReleaseObjectsService(LifecycleNode):
                 sub_count = int(pub.get_subscription_count())
             except Exception:
                 sub_count = 0
-            if sub_count <= 0:
-                continue
-            ready += 1
+            if sub_count > 0:
+                ready += 1
+            # F1.10: publicar incondicionalmente (no skip-on-zero-subs).
             pub.publish(Empty())
             published += 1
         if published > 0:

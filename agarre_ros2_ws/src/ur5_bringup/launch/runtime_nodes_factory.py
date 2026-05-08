@@ -298,8 +298,16 @@ def build_runtime_node_actions(
             {"world_name": world_name},
             {"delete_service": gz_delete_service},
             {"spawn_service": gz_spawn_service},
-            {"settle_timeout_sec": 12.0},
-            {"settle_confirmations": 6},
+            # F1.10 (audit-v4 2026-05-08): release_objects no asienta TODOS los
+            # 10 objetos consistentemente. Causa raíz: el detach publisher
+            # skip-on-sub_count==0 falla si el SDF plugin subscriptor no
+            # ha conectado aún (ROS↔gz_ros2_bridge tarda). Subimos retries
+            # de 4 (default) → 20 + retry_sec 0.25 → 0.5 (total 10s ventana).
+            # Settle timeout 12 → 30s para física más lenta en sim.
+            {"detach_publish_retries": 20},
+            {"detach_publish_retry_sec": 0.5},
+            {"settle_timeout_sec": 30.0},
+            {"settle_confirmations": 4},
         ],
         condition=IfCondition(launch_release_service),
     )
