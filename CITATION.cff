@@ -1,0 +1,50 @@
+cff-version: 1.2.0
+title: "TFM UR5+RG2: Pick and Place vía Orchestrator ROS 2 con MoveIt 2 y Gazebo Sim"
+message: "Si usa este software, por favor cítelo usando los metadatos siguientes."
+type: software
+authors:
+  - family-names: "Lozano Rodríguez"
+    given-names: "Jesús"
+    email: "jesus.lozano.rodriguez@gmail.com"
+    affiliation: "VIU — Universidad Internacional de Valencia"
+repository-code: "https://github.com/JLRRC/TFM_VIU_09MIAR"
+url: "https://github.com/JLRRC/TFM_VIU_09MIAR"
+abstract: >-
+  Sistema simulado de pick & place con manipulador UR5 + gripper OnRobot RG2
+  sobre ROS 2 Jazzy y Gazebo Sim moderno. Arquitectura microservicio:
+  orchestrator LifecycleNode (FSM 9 fases con retry+back-off, gates de
+  pose-consistency, attach lógico/físico), 9 servicios ROS IDL tipados,
+  2 acciones (PickPlace, PlanToPose), 16 LifecycleNodes en producción,
+  inferencia de agarres 2D/2.5D con SimpleGraspCNN.
+
+  Stack: ROS 2 Jazzy + Gazebo Harmonic + MoveIt 2 + ros2_control +
+  gz_ros2_control + Qt panel. ~2.500 tests offline + meta-tests
+  (mypy strict 23 mods, T22 URDF↔SDF parity, T28 bridge regression,
+  T31 env reads drift cap).
+keywords:
+  - "ROS 2"
+  - "Jazzy"
+  - "Gazebo Sim"
+  - "MoveIt 2"
+  - "UR5"
+  - "OnRobot RG2"
+  - "Pick and Place"
+  - "Orchestrator"
+  - "LifecycleNode"
+  - "gz_ros2_control"
+  - "Manipulación robótica"
+  - "TFM"
+license: MIT
+version: "1.4"
+date-released: "2026-05-08"
+preferred-citation:
+  type: thesis
+  title: "Pick and Place autónomo con UR5+RG2 en simulación: arquitectura microservicio ROS 2"
+  authors:
+    - family-names: "Lozano Rodríguez"
+      given-names: "Jesús"
+  year: 2026
+  thesis-type: "Trabajo Fin de Máster"
+  institution:
+    name: "VIU — Universidad Internacional de Valencia"
+    address: "Valencia, España"
