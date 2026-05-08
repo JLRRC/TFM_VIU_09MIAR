@@ -63,3 +63,46 @@ Cuando se aborde F10 (robot real):
 - Coverage tests offline: T31 + T-bridge regression + lifecycle contract.
 - Path uso: **fallback no-default** (FJT directo es default).
 - Decisión: **mantener** hasta F10 (cuando se reescriba para HW real).
+
+---
+
+## Audit-v4.1 (2026-05-08) — hallazgos adicionales tras inspección de uso real
+
+Esta sección **amplía** la decisión del audit-v4 con dos hechos nuevos detectados al investigar la FASE G del [AUDIT_20260508_v4_1.md](AUDIT_20260508_v4_1.md):
+
+### G.1 — El bridge tiene un rol operacional residual no-fallback
+
+`ur5_moveit_bridge` **se lanza por default** vía `stack_factories.py:255` (`DeclareLaunchArgument("launch_moveit_bridge", default_value="true")`) **no** como fallback opt-in. El comentario en [`runtime_nodes_factory.py:348-354`](../src/ur5_bringup/launch/runtime_nodes_factory.py#L348-L354) lo justifica explícitamente:
+
+> *"Launch ur5_moveit_bridge as a standalone node so that ``/desired_grasp`` always has a real subscriber in the normal boot. Previously Subscription count was 0 because the bridge was only started on-demand via the panel button; this makes it part of the managed launch."*
+
+Es decir: el bridge **ES** subscriber default de `/desired_grasp`. Sin él, el panel publica grasps a una topic con 0 subs y el flujo MoveIt manual del botón "Agarre Objeto (MoveIt)" no funciona.
+
+### G.2 — La eliminación depende de cerrar `panel_pick_object.py`
+
+El publisher principal de `/desired_grasp` es [`panel_pick_object.py`](../src/ur5_qt_panel/ur5_qt_panel/panel_pick_object.py) (3.814 LOC, último monolito real del audit-v4.1). Mientras ese path siga vivo, el bridge **debe seguir subscribed** al topic. La cadena de dependencias para una eventual eliminación del bridge es:
+
+1. **F3-iter** completa el split de `panel_pick_object.py` → cliente Action `MoveItPick` (o reusar `PickPlace` con `mode=moveit_manual`).
+2. La acción nueva es servida por `pick_orchestrator_lifecycle_node` (no por bridge subscriber).
+3. `/desired_grasp` queda sin publisher activo → el bridge se puede borrar / migrar a `package_data`.
+
+**Hasta entonces, mantener el bridge es OBLIGATORIO** (no opcional como sugería el audit-v4). El comentario "fallback defensivo" del audit-v4 es **incompleto**: el bridge tiene rol operacional activo en el flujo MoveIt manual del panel.
+
+### G.3 — Decisión actualizada (v4.1)
+
+| Aspecto | v4 (decisión) | v4.1 (refinamiento) |
+|---|---|---|
+| Estado | Conservar como fallback | Conservar como **subscriber operacional** + fallback |
+| Adelgazar a ≤300 LOC | Postergado a F10 | **Bloqueado** hasta F3-iter cierre `panel_pick_object` |
+| Borrar | F10 (robot real) | F3-iter completa + migración panel→Action client |
+| Eliminar entry point | F10 | Cuando `/desired_grasp` quede sin publisher activo |
+| Tests gating | Mantener todos | + LOC baseline 1.849 (FASE B audit-v4.1, ya activo) |
+
+**Conclusión v4.1**: la decisión binaria del audit-v4 (slim ≤300 vs documentar fallback) es **falsa dicotomía**. La decisión correcta es **diferir** hasta que F3-iter cierre el publisher único; entonces se evalúa eliminación completa, no slim.
+
+### G.4 — Métricas actualizadas (HEAD audit-v4.1 4df1389)
+
+- LOC: 1.849 (+2 vs v4 — sólo nuevo import de `FjtLifecycleMixin` en cadena MRO).
+- LOC baseline gating: 1.849 (`test_loc_baseline_ur5_tools.py`, FASE B audit-v4.1).
+- Status FJT path bypass: cerrado (FASE A audit-v4.1, `executor.py` 1.546 LOC bajo el baseline v4).
+- Importadores en código no-test: 27 (panel/pick_object/launch).
