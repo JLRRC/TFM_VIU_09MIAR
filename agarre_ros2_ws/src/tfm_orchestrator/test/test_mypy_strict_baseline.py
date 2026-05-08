@@ -82,6 +82,16 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     # F3-step6 (2026-05-08): planning_scene_sync_helpers extraído como
     # módulo puro testeable.
     "src/ur5_tools/ur5_tools/planning_scene_sync_helpers.py",
+    # F7-step4 (2026-05-08): 7 módulos panel/utility puros adicionales
+    # — alcanza target 30+ (baseline anterior 24 → ahora 31).
+    "src/ur5_qt_panel/ur5_qt_panel/panel_clock_helpers.py",
+    "src/ur5_qt_panel/ur5_qt_panel/panel_camera_helpers.py",
+    # logging_utils.py — añadido `panel: Any` annotation en _PanelLogger.
+    "src/ur5_qt_panel/ur5_qt_panel/logging_utils.py",
+    "src/ur5_qt_panel/ur5_qt_panel/panel_ros_handlers.py",
+    "src/ur5_qt_panel/ur5_qt_panel/pick_place_client_logic.py",
+    "src/ur5_qt_panel/ur5_qt_panel/panel_state.py",
+    "src/ur5_qt_panel/ur5_qt_panel/panel_tfm_geometry.py",
 ]
 
 

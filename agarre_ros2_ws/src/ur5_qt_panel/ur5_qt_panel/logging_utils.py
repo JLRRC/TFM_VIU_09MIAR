@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import sys
 from datetime import datetime
-from typing import IO, Optional
+from typing import IO, Any, Optional
 
 
 def timestamped_line(message: str) -> str:
@@ -40,7 +40,7 @@ def emit_log_line(
 class _PanelLogger:
     """Logger façade so ControlPanelV2 can call get_logger().info(...)."""
 
-    def __init__(self, panel) -> None:
+    def __init__(self, panel: Any) -> None:
         self._panel = panel
 
     def info(self, msg: str) -> None:
