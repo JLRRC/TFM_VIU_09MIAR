@@ -172,11 +172,42 @@ def build_fjt_trajectory_two_point(
     return jt
 
 
+def normalize_joint_to_pi(angle: float) -> float:
+    """F1.24 H10 (2026-05-08): normaliza un ángulo joint al rango [-π, π].
+
+    El IK de MoveIt puede devolver joints con wraps angulares (e.g. -3.387 rad
+    cuando una solución equivalente sería +2.896 rad). Para joints UR5 que
+    tienen rangos ±2π, los wraps son válidos pero el controller intenta el
+    movimiento literal (giro de 3π = 540°) que excede límites físicos o
+    requiere wall time excesivo.
+
+    Esta función mapea cualquier ángulo al rango canónico [-π, π] módulo 2π,
+    preservando la pose final (mismo punto en el círculo unitario) pero
+    eliminando los wraps innecesarios.
+    """
+    import math
+    while angle > math.pi:
+        angle -= 2.0 * math.pi
+    while angle < -math.pi:
+        angle += 2.0 * math.pi
+    return angle
+
+
 def parse_ik_result(
     response: Any,
     joint_names: Sequence[str],
+    *,
+    normalize_joints: bool = True,
 ) -> Tuple[bool, str, Optional[List[float]]]:
     """Decodifica un GetPositionIK.Response.
+
+    Args:
+        response: GetPositionIK.Response del servicio.
+        joint_names: nombres en el orden esperado.
+        normalize_joints: F1.24 H10 (2026-05-08): si True (default),
+            aplica normalize_joint_to_pi a cada joint para eliminar wraps
+            angulares que el controller no puede ejecutar dentro de límites
+            UR5. Mismo punto cinemático, joints "limpios" en [-π, π].
 
     Returns:
         Tuple[success, reason, joint_positions]:
@@ -218,9 +249,12 @@ def parse_ik_result(
 
     # Alinear a joint_names esperados.
     name_to_pos = {str(n): float(p) for n, p in zip(sol_names, sol_positions)}
-    ordered = []
+    ordered: List[float] = []
     for name in joint_names:
         if name not in name_to_pos:
             return False, f"ik_joint_missing:{name}", None
-        ordered.append(name_to_pos[name])
+        val = name_to_pos[name]
+        if normalize_joints:
+            val = normalize_joint_to_pi(val)
+        ordered.append(val)
     return True, "ik:SUCCESS", ordered
