@@ -599,13 +599,13 @@ class ExecutorMixin:
         goal_time_override_sec: float | None,
         phase_label_upper: str,
         approach_replan_attempt: int,
-    ) -> tuple[JointTrajectory, float, float, bool]:
+    ) -> tuple[JointTrajectory, float, float, bool, float]:
         """F5 audit-v4 (2026-05-08): extract preparation phase from
         _execute_joint_trajectory_action.
 
         Returns:
             (jt_prepared, timeout_sec_capped, effective_goal_time_tol_sec,
-             cold_start_first_goal)
+             cold_start_first_goal, prepared_traj_sec)
         """
         cold_start_first_goal = False
         try:
@@ -662,7 +662,13 @@ class ExecutorMixin:
                 f"original={float(timeout_sec):.1f} max={approach_max_total_timeout_sec:.1f}"
             )
             timeout_sec = float(approach_max_total_timeout_sec)
-        return jt, float(timeout_sec), effective_goal_time_tol_sec, cold_start_first_goal
+        return (
+            jt,
+            float(timeout_sec),
+            effective_goal_time_tol_sec,
+            cold_start_first_goal,
+            float(prepared_traj_sec),
+        )
 
     def _execute_joint_trajectory_action(
         self,
@@ -679,15 +685,19 @@ class ExecutorMixin:
     ) -> tuple[bool, str, dict[str, Any]]:
         phase_label_upper = str(phase_label or "").upper()
         # F5 audit-v4: preparation extraída a helper testeable.
-        jt, timeout_sec, effective_goal_time_tol_sec, cold_start_first_goal = (
-            self._prepare_fjt_execution(
-                jt,
-                timeout_sec=timeout_sec,
-                retry_on_tolerance_violation=retry_on_tolerance_violation,
-                goal_time_override_sec=goal_time_override_sec,
-                phase_label_upper=phase_label_upper,
-                approach_replan_attempt=approach_replan_attempt,
-            )
+        (
+            jt,
+            timeout_sec,
+            effective_goal_time_tol_sec,
+            cold_start_first_goal,
+            prepared_traj_sec,
+        ) = self._prepare_fjt_execution(
+            jt,
+            timeout_sec=timeout_sec,
+            retry_on_tolerance_violation=retry_on_tolerance_violation,
+            goal_time_override_sec=goal_time_override_sec,
+            phase_label_upper=phase_label_upper,
+            approach_replan_attempt=approach_replan_attempt,
         )
         ready, action_name, action_names, candidates = self._wait_for_expected_controller_action(
             timeout_sec=1.5
