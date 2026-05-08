@@ -213,10 +213,17 @@ class AttachGateEvaluator:
         if len(valid) < 2:
             return None
         ref = valid[0].rel_vec_base
-        return max(
-            math.sqrt(sum((s.rel_vec_base[i] - ref[i]) ** 2 for i in range(3)))
-            for s in valid[1:]
-        )
+        if ref is None:
+            return None
+        max_drift = 0.0
+        for s in valid[1:]:
+            cur = s.rel_vec_base
+            if cur is None:
+                continue
+            d = math.sqrt(sum((cur[i] - ref[i]) ** 2 for i in range(3)))
+            if d > max_drift:
+                max_drift = d
+        return max_drift
 
     def _log_check(
         self,

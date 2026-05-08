@@ -40,9 +40,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 try:
-    import yaml  # type: ignore
+    import yaml
 except ImportError:
-    yaml = None  # type: ignore
+    yaml = None
 
 
 def _resolve_default_yaml_path() -> Path:

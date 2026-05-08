@@ -118,6 +118,21 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     # F8 / #20 (2026-05-08): helpers offline para optimización rendimiento.
     "src/ur5_tools/ur5_tools/tf_batch_lookups.py",
     "src/ur5_tools/ur5_tools/cycle_timing_analyzer.py",
+    # F1.21 (2026-05-08): batch +9 módulos puros (limpieza minimalista).
+    # 2 ya pasaban sin cambios:
+    "src/tfm_grasping/tfm_grasping/geometry.py",
+    "src/tfm_grasping/tfm_grasping/config.py",
+    # 7 limpieza menor (unused-ignore / Optional / Dict[str, Any] / object→Any
+    # en helpers de _matmul3 con generator desempaquetado):
+    "src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo_params.py",
+    "src/ur5_qt_panel/ur5_qt_panel/panel_pick_object_params.py",
+    "src/ur5_qt_panel/ur5_qt_panel/panel_settings.py",
+    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/geometry.py",
+    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/phase_checks.py",
+    "src/ur5_tools/ur5_tools/attach_math.py",
+    "src/ur5_qt_panel/ur5_qt_panel/attach_gate_evaluator.py",
+    # F1.21 cont.: wait_gripper_target — Dict[str, Any] + age_ok narrow.
+    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/wait_gripper_target.py",
 ]
 
 
@@ -143,9 +158,19 @@ def test_f7_mypy_strict_baseline() -> None:
     config = WS_ROOT / "mypy.ini"
     if not config.exists():
         pytest.skip(f"mypy.ini no encontrado en {config}")
-    cmd = [mypy, "--config-file", str(config), "--strict"] + [
-        str(WS_ROOT / m) for m in MYPY_STRICT_CLEAN_MODULES
-    ]
+    # F1.21 (2026-05-08): --follow-imports=silent valida cada módulo del
+    # baseline aisladamente. Sin esto, mypy procesa imports transitivos
+    # (e.g. al chequear tfm_grasping/geometry.py también chequea model.py
+    # del package, que tiene errores no relacionados con el baseline).
+    # El contrato del baseline es: "este archivo es strict-clean", no
+    # "todos sus imports son strict-clean".
+    cmd = [
+        mypy,
+        "--config-file",
+        str(config),
+        "--strict",
+        "--follow-imports=silent",
+    ] + [str(WS_ROOT / m) for m in MYPY_STRICT_CLEAN_MODULES]
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(WS_ROOT))
     msg = (
         f"\n--- STDOUT ---\n{result.stdout}"

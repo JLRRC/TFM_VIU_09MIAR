@@ -19,12 +19,12 @@ Resultado OK si cualquiera de los dos modos pasa.
 from __future__ import annotations
 
 import math
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 Vec3 = Tuple[float, float, float]
 
 
-def _as_tuple3(v) -> Optional[Vec3]:
+def _as_tuple3(v: Any) -> Optional[Vec3]:
     if v is None:
         return None
     try:
@@ -44,7 +44,7 @@ def _vec_dist3(a: Vec3, b: Vec3) -> float:
 def build_approach_coarse_phase_check(
     *,
     target_base: Optional[Vec3],
-    gate_metrics: dict,
+    gate_metrics: Dict[str, Any],
     fallback_tcp: Optional[Vec3],
     fallback_obj: Optional[Vec3],
     handoff_dist_tol: float,
@@ -55,7 +55,7 @@ def build_approach_coarse_phase_check(
     gate_pose_ok: bool,
     relaxed_xy_cap_m: float,
     relaxed_skip_pose_ok: bool,
-) -> dict:
+) -> Dict[str, Any]:
     """Calcula el phase check de APPROACH_COARSE.
 
     Inputs:

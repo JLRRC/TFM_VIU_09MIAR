@@ -36,9 +36,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 try:
-    import yaml  # type: ignore
+    import yaml
 except ImportError:
-    yaml = None  # type: ignore
+    yaml = None
 
 
 # Ruta absoluta del YAML por defecto. Si no existe, se usan los defaults

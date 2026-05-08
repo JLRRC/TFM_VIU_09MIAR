@@ -21,12 +21,12 @@ o matrices/listas de floats.
 from __future__ import annotations
 
 import math
-from typing import Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 Vec3 = Tuple[float, float, float]
 
 
-def _as_tuple3(v) -> Optional[Vec3]:
+def _as_tuple3(v: Any) -> Optional[Vec3]:
     if v is None:
         return None
     try:
@@ -86,7 +86,7 @@ def dynamic_pre_close_reference(
 
 def apply_local_offset_to_fk(
     fk_pos: Sequence[float],
-    fk_rot,  # 3x3 array-like (numpy array or list of lists)
+    fk_rot: Any,  # 3x3 array-like (numpy array or list of lists)
     local_offset: Sequence[float],
     *,
     flip_xy: bool = True,

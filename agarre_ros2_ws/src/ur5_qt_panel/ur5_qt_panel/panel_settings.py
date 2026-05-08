@@ -51,7 +51,7 @@ def _warn_ignored_legacy_gripper_tcp_z_offset(raw_value: object = None, *, sourc
     if raw is None or not str(raw).strip():
         return
     try:
-        value = float(raw)
+        value = float(str(raw))
     except Exception:
         emit_log_line(
             "[PANEL][WARN] PANEL_GRIPPER_TCP_Z_OFFSET inválida en "
@@ -74,7 +74,7 @@ def _load_yaml_overrides(path: str) -> Dict[str, object]:
     if not os.path.isfile(path):
         return {}
     try:
-        import yaml  # type: ignore
+        import yaml
     except Exception:
         emit_log_line(f"[PANEL][WARN] PyYAML no disponible; ignorando {path}", stream=sys.stderr)
         return {}

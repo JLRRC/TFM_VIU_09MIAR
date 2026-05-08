@@ -74,13 +74,15 @@ def _matmul3(
     a: Tuple[Tuple[float, float, float], ...],
     b: Tuple[Tuple[float, float, float], ...],
 ) -> Tuple[Tuple[float, float, float], ...]:
-    return tuple(
-        tuple(
-            a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j]
-            for j in range(3)
+    rows: list[Tuple[float, float, float]] = []
+    for i in range(3):
+        row = (
+            a[i][0] * b[0][0] + a[i][1] * b[1][0] + a[i][2] * b[2][0],
+            a[i][0] * b[0][1] + a[i][1] * b[1][1] + a[i][2] * b[2][1],
+            a[i][0] * b[0][2] + a[i][1] * b[1][2] + a[i][2] * b[2][2],
         )
-        for i in range(3)
-    )
+        rows.append(row)
+    return tuple(rows)
 
 
 def _matvec3(

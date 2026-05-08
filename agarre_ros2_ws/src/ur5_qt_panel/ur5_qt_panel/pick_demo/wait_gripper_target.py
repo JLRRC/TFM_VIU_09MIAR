@@ -15,7 +15,7 @@ panel_pick_object para _ensure_moveit_bridge_path).
 from __future__ import annotations
 
 import time
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 
 def wait_for_gripper_target(
@@ -27,7 +27,7 @@ def wait_for_gripper_target(
     cmd_fn: Optional[Callable[[], None]] = None,
     cmd_retry_sec: float = 0.5,
     # Callables-as-args (closure-captured en run_pick_demo):
-    read_gripper_state: Callable[..., dict],
+    read_gripper_state: Callable[..., Dict[str, Any]],
     append_trace: Callable[[str], None],
     monitor_alcance: Callable[..., None],
     # Params snapshot (caller invoca _get_pick_demo_params() y pasa los 4 valores):
@@ -35,7 +35,7 @@ def wait_for_gripper_target(
     gripper_confirm_max_state_age_sec: float,
     close_min_delta_sum: float,
     close_fallback_opening_sum: float,
-) -> Tuple[bool, dict]:
+) -> Tuple[bool, Dict[str, Any]]:
     """Wait hasta que el gripper alcance el target (closed o open).
 
     Devuelve ``(ok, state)``. ``ok`` True cuando el confirm es estable
@@ -82,9 +82,10 @@ def wait_for_gripper_target(
         state = read_gripper_state(expected_closed=closed)
         last_state = state
         measured_ok = bool(state.get("measured_target_ok"))
+        joint_age = state.get("joint_state_age_sec")
         age_ok = (
-            state.get("joint_state_age_sec") is None
-            or float(state.get("joint_state_age_sec")) <= max_state_age_sec
+            joint_age is None
+            or float(joint_age) <= max_state_age_sec
         )
         opening_sum = state.get("opening_sum")
         close_delta = None
