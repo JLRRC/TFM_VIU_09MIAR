@@ -26,6 +26,8 @@ setup(
     entry_points={
         "console_scripts": [
             "grasp_inference=tfm_grasping.grasp_inference:main",
+            # F17-step2 (2026-05-08): wrapper ROS sobre grasp_selector puro.
+            "grasp_selector_node=tfm_grasping.grasp_selector_node:main",
         ],
     },
 )
