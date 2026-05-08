@@ -519,6 +519,33 @@ class ExecutorMixin:
                 )
         return float(effective)
 
+    def _setup_post_accept_state(
+        self,
+        *,
+        action_name: str,
+        timeout_sec: float,
+    ) -> tuple[Any, float]:
+        """F5-iter3 audit-v4 (2026-05-08): post-accept state setup.
+
+        Captura el start_joint_vec, calcula el deadline monotónico, y
+        actualiza los slots de active_exec_timeout en el lock.
+
+        Returns:
+            (start_joint_vec, exec_deadline_mono). start_joint_vec puede
+            ser None si la captura falló (warning ya emitido).
+        """
+        start_joint_vec, start_joint_reason = self._current_arm_joint_vector()
+        if start_joint_vec is None:
+            self.get_logger().warning(
+                "[BRIDGE_EXEC] start joint snapshot unavailable "
+                f"action={action_name} reason={start_joint_reason}"
+            )
+        exec_deadline_mono = time.monotonic() + max(1.0, float(timeout_sec))
+        with self._pose_lock:
+            self._active_exec_timeout_sec = float(timeout_sec)
+            self._active_exec_timeout_deadline_mono = float(exec_deadline_mono)
+        return start_joint_vec, exec_deadline_mono
+
     def _send_and_accept_fjt_goal(
         self,
         jt: JointTrajectory,
@@ -732,17 +759,11 @@ class ExecutorMixin:
         )
         if goal_handle is None:
             return False, send_reason, send_meta
-        start_joint_vec, start_joint_reason = self._current_arm_joint_vector()
-        if start_joint_vec is None:
-            self.get_logger().warning(
-                "[BRIDGE_EXEC] start joint snapshot unavailable "
-                f"action={action_name} reason={start_joint_reason}"
-            )
-
-        exec_deadline_mono = time.monotonic() + max(1.0, float(timeout_sec))
-        with self._pose_lock:
-            self._active_exec_timeout_sec = float(timeout_sec)
-            self._active_exec_timeout_deadline_mono = float(exec_deadline_mono)
+        # F5-iter3 audit-v4: post-accept state setup extraído a helper.
+        start_joint_vec, exec_deadline_mono = self._setup_post_accept_state(
+            action_name=action_name,
+            timeout_sec=timeout_sec,
+        )
         try:
             result_future = goal_handle.get_result_async()
             _th = self._compute_fjt_polling_thresholds(
