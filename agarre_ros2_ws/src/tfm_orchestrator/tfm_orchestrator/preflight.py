@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
 Vec3 = Tuple[float, float, float]
@@ -95,7 +95,7 @@ class InitialSnapshot:
         }
 
 
-def _coerce_vec3(value) -> Optional[Vec3]:
+def _coerce_vec3(value: Any) -> Optional[Vec3]:
     """Convierte entradas (list/tuple de 3 numbers) en ``Vec3`` o None."""
     if value is None:
         return None
@@ -109,7 +109,7 @@ def _coerce_vec3(value) -> Optional[Vec3]:
         return None
 
 
-def _coerce_joints(value) -> Dict[str, float]:
+def _coerce_joints(value: Any) -> Dict[str, float]:
     """Convierte un dict-like de joints en dict[str, float] saneado."""
     if value is None:
         return {}
@@ -138,9 +138,9 @@ def _compute_dist3d(tcp: Optional[Vec3], obj: Optional[Vec3]) -> Optional[float]
 def compose_initial_snapshot(
     *,
     request_id: str = "",
-    tcp_base=None,
-    object_base=None,
-    joints=None,
+    tcp_base: Any = None,
+    object_base: Any = None,
+    joints: Any = None,
     pose_source: str = "",
     flow_name: str = "DIRECT",
 ) -> InitialSnapshot:
@@ -154,13 +154,19 @@ def compose_initial_snapshot(
     obj = _coerce_vec3(object_base)
     js = _coerce_joints(joints)
 
+    dx: Optional[float]
+    dy: Optional[float]
+    dz: Optional[float]
+    dist: Optional[float]
     if tcp is not None and obj is not None:
         dx = obj[0] - tcp[0]
         dy = obj[1] - tcp[1]
         dz = obj[2] - tcp[2]
         dist = _compute_dist3d(tcp, obj)
     else:
-        dx = dy = dz = None
+        dx = None
+        dy = None
+        dz = None
         dist = None
 
     return InitialSnapshot(

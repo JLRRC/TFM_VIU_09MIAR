@@ -16,12 +16,12 @@ Diseño:
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 Vec3 = Tuple[float, float, float]
 
 
-def _pos_xyz(pose) -> Vec3:
+def _pos_xyz(pose: Any) -> Vec3:
     """Acepta Pose ROS, dict {x,y,z} o tuple3."""
     if pose is None:
         return (0.0, 0.0, 0.0)
@@ -36,7 +36,7 @@ def _pos_xyz(pose) -> Vec3:
     return (float(pose.x), float(pose.y), float(pose.z))
 
 
-def format_pose_xyz(pose) -> str:
+def format_pose_xyz(pose: Any) -> str:
     """Format pose como ``(x.xxx,y.yyy,z.zzz)`` con 3 decimales."""
     x, y, z = _pos_xyz(pose)
     return f"({x:.3f},{y:.3f},{z:.3f})"
@@ -48,7 +48,7 @@ def format_rx_log(
     request_id: int,
     request_uuid: str,
     frame_id: str,
-    pose,
+    pose: Any,
     accepted: bool,
     reason: Optional[str] = None,
 ) -> str:
@@ -76,7 +76,7 @@ def format_recv_log(
     topic_name: str,
     request_id: int,
     frame_id: str,
-    pose,
+    pose: Any,
     stamp_sec: int,
     stamp_nanosec: int,
     frame_raw: str,
@@ -107,7 +107,7 @@ def format_pick_request_log(
     request_id: int,
     request_uuid: str,
     frame_id: str,
-    pose,
+    pose: Any,
     cartesian: bool,
     phase_label: Optional[str],
     ee_target_tol_m: Optional[float],
@@ -137,7 +137,7 @@ def format_exec_start_log(
     frame_id: str,
     ee_frame: str,
     base_frame: str,
-    pose,
+    pose: Any,
 ) -> str:
     """Construye log ``[BRIDGE][EXEC_START]``."""
     return (
@@ -155,7 +155,7 @@ def format_target_log(
     request_uuid: str,
     phase_label: Optional[str],
     frame_id: str,
-    pose,
+    pose: Any,
     cartesian: bool,
     ee_frame: str,
 ) -> str:

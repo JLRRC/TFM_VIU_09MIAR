@@ -39,7 +39,7 @@ Sin estado propio: 100% pure functions con tests offline.
 
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Any, Tuple
 
 
 def build_move_group_goal(
@@ -53,7 +53,7 @@ def build_move_group_goal(
     planning_time_sec: float = 5.0,
     position_tol_m: float = 0.005,
     orientation_tol_rad: float = 0.05,
-):
+) -> Any:
     """Construye un ``moveit_msgs.action.MoveGroup.Goal`` para target pose.
 
     Parameters:
@@ -181,7 +181,7 @@ _MOVEIT_ERROR_NAMES = {
 }
 
 
-def parse_move_group_result(result_wrapper) -> Tuple[bool, str]:
+def parse_move_group_result(result_wrapper: Any) -> Tuple[bool, str]:
     """Decodifica result de MoveGroup en (success, reason).
 
     El ``result_wrapper`` es lo que devuelve ``goal_handle.get_result_async()

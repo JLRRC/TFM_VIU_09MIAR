@@ -109,7 +109,7 @@ def normalize_quat(q: Tuple[float, float, float, float]) -> Tuple[float, float, 
     n = math.sqrt(sum(c * c for c in q))
     if n <= 1e-9:
         return (0.0, 0.0, 0.0, 1.0)
-    return tuple(c / n for c in q)
+    return (q[0] / n, q[1] / n, q[2] / n, q[3] / n)
 
 
 def feedback_sequence(

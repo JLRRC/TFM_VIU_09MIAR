@@ -5,10 +5,10 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 
-def _warn_invalid(node, name: str, value, default) -> None:
+def _warn_invalid(node: Any, name: str, value: Any, default: Any) -> None:
     try:
         node.get_logger().warn(
             f"Parametro '{name}' invalido ({value!r}); usando {default!r}"
@@ -17,7 +17,7 @@ def _warn_invalid(node, name: str, value, default) -> None:
         pass
 
 
-def read_str_param(node, name: str, default: str = "") -> str:
+def read_str_param(node: Any, name: str, default: str = "") -> str:
     try:
         value = node.get_parameter(name).value
     except Exception:
@@ -33,7 +33,7 @@ def read_str_param(node, name: str, default: str = "") -> str:
 
 
 def read_str_list_param(
-    node, name: str, default: Optional[List[str]] = None
+    node: Any, name: str, default: Optional[List[str]] = None
 ) -> List[str]:
     if default is None:
         default = []
@@ -52,7 +52,7 @@ def read_str_list_param(
 
 
 def read_float_param(
-    node,
+    node: Any,
     name: str,
     default: float = 0.0,
     min_value: Optional[float] = None,
@@ -77,7 +77,7 @@ def read_float_param(
 
 
 def read_int_param(
-    node,
+    node: Any,
     name: str,
     default: int = 0,
     min_value: Optional[int] = None,

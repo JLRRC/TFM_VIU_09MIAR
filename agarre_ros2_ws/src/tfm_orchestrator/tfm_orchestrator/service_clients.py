@@ -272,7 +272,7 @@ def call_action_with_timeout(
     start = _time.monotonic()
     feedback_box = {"count": 0}
 
-    def _feedback_wrapper(fb_msg):
+    def _feedback_wrapper(fb_msg: Any) -> None:
         feedback_box["count"] += 1
         if feedback_callback is not None:
             try:

@@ -54,6 +54,27 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     # F7-step1.9 (2026-05-08): initial_snapshot.py — explicit Tuple6 cast en
     # extract_joint_positions; type:ignore innecesario removido.
     "src/tfm_orchestrator/tfm_orchestrator/initial_snapshot.py",
+    # F7-step2 (2026-05-08): batch fix de 6 módulos puros adicionales.
+    # preflight.py — Optional[float] explícito en dx/dy/dz/dist.
+    "src/tfm_orchestrator/tfm_orchestrator/preflight.py",
+    # service_clients.py — type annotation en feedback_wrapper.
+    "src/tfm_orchestrator/tfm_orchestrator/service_clients.py",
+    # evidence_helpers.py — Set[str] explícito + Optional[float] span/rate +
+    # _fmt_sec/_fmt_rate con Any param.
+    "src/ur5_tools/ur5_tools/evidence_helpers.py",
+    # plan_to_pose_logic.py — return tuple explícito (no comprehension).
+    "src/ur5_tools/ur5_tools/plan_to_pose_logic.py",
+    # plan_to_pose_moveit_direct.py — Any return + parse_move_group_result
+    # param tipado.
+    "src/ur5_tools/ur5_tools/plan_to_pose_moveit_direct.py",
+    # tf_geometry_logic.py — clean sin cambios.
+    "src/ur5_tools/ur5_tools/tf_geometry_logic.py",
+    # F7-step2.5 (2026-05-08): log_formatters.py — Any en pose params.
+    "src/ur5_tools/ur5_tools/moveit_bridge/log_formatters.py",
+    # F7-step2.6 (2026-05-08): batch 3 módulos adicionales con typing fixes.
+    "src/ur5_tools/ur5_tools/param_utils.py",
+    "src/ur5_tools/ur5_tools/object_pose_cache.py",
+    "src/ur5_tools/ur5_tools/moveit_bridge_utils.py",
 ]
 
 

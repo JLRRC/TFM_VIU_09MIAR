@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 
 def now_iso() -> str:
@@ -105,7 +105,7 @@ def compute_session_metrics(events: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     attach_count = 0
     detach_count = 0
     objects_attached: List[str] = []
-    seen_objects: set = set()
+    seen_objects: Set[str] = set()
     session_started_iso: Optional[str] = None
     session_finished_iso: Optional[str] = None
     monos: List[float] = []
@@ -378,6 +378,8 @@ def compute_event_rates(
 
     for kind, monos in monos_by_kind.items():
         count = len(monos)
+        span: Optional[float]
+        rate: Optional[float]
         if count >= 2:
             span = max(monos) - min(monos)
             rate = (count / span) if span > 0 else None
@@ -476,7 +478,7 @@ def generate_latency_report_md(
     return "\n".join(lines)
 
 
-def _fmt_sec(value) -> str:
+def _fmt_sec(value: Any) -> str:
     if value is None:
         return "n/d"
     try:
@@ -485,7 +487,7 @@ def _fmt_sec(value) -> str:
         return "n/d"
 
 
-def _fmt_rate(value) -> str:
+def _fmt_rate(value: Any) -> str:
     if value is None:
         return "n/d"
     try:

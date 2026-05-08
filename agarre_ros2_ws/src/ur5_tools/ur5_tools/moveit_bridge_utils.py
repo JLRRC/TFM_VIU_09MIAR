@@ -16,12 +16,12 @@ import numpy as np
 try:
     from action_msgs.msg import GoalStatus
 except Exception:  # pragma: no cover — ROS not available in unit tests
-    GoalStatus = None  # type: ignore
+    GoalStatus = None
 
 try:
     from trajectory_msgs.msg import JointTrajectory
 except Exception:  # pragma: no cover
-    JointTrajectory = None  # type: ignore
+    JointTrajectory = None
 
 
 # ---------------------------------------------------------------------------
