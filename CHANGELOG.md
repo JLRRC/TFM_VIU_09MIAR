@@ -2,6 +2,118 @@
 
 Historial de hitos del proyecto TFM UR5+RG2 Pick & Place (simulación ROS 2 Jazzy + Gazebo Harmonic + MoveIt 2).
 
+## [2026-05-08] 🏆 TFM PUBLICABLE 100/100 — T35 × 3 cycles consecutivos verde
+
+**Tag canónico**: `T35-3-cycles-verde-20260508` (alias `tfm-publicable-100-de-100-20260508`, `tfm-cierre-academico-20260508`)
+**HEAD**: `1dfe0fe`
+**Commits del día**: 25
+
+### Resultados live finales
+
+```
+Cycle 1: SUCCEEDED  duration=232.4s  reason=ok  fases=7/7
+Cycle 2: SUCCEEDED  duration=204.2s  reason=ok  fases=7/7
+Cycle 3: SUCCEEDED  duration=206.8s  reason=ok  fases=7/7
+```
+
+3 cycles consecutivos en LIVE con orchestrator default (legacy borrado), un solo arranque del stack, sin reset entre cycles. Bug bloqueante `BUG_CONTROLLER_FEEDBACK_HANG` cerrado.
+
+### Hitos del día (en orden)
+
+| # | Hito | Commit | LOC |
+|--|--|--|--|
+| 1 | F1.18 cierre offline (heurística per-fase puro) | `3942458` | +228 / -20 |
+| 2 | F3-step40 (seed_metrics + decision_helpers + 20 tests) | `0dbaf58` | -20 panel_pick_demo |
+| 3 | T31 path_tolerance contract (14 tests offline) | `118c2a5` | +252 |
+| 4 | T35 smoke offline + activation guide (18 tests) | `8b4c061` | +291 |
+| 5 | F5 closure status + wiring guardrails (12 tests) | `8af9ac3` | +235 |
+| 6 | T33 zombies guardrail (16 tests offline) | `9fb29fa` | +212 |
+| 7 | F1.20 mypy strict 31→46 módulos | `708c20c` | +19 baseline |
+| 8 | F2-step5 helpers env centralizados (24 tests) | `89af85c` | +239 |
+| 9 | F3-step41a no_server_meta puro (8 tests) | `aca3428` | +178 |
+| 10 | F17 grasp_selector puro (18 tests) | `d493620` | +428 |
+| 11 | F8/#20 tf_batch + cycle_timing CLI (28 tests) | `67e53dd` | +811 |
+| 12 | F1.21 mypy 50→60 módulos | `18eb986` | +66 |
+| 13 | F17-step2 grasp_selector_node ROS (6 tests) | `67cd2a8` | +322 |
+| 14 | F3-step41b time_conversion puro (13 tests) | `064ee4e` | +173 |
+| 15 | F8-step1 cli_cycle_timing entry_point (10 tests) | `30f9a0f` | +266 |
+| 16 | F13-step gripper_attach_models (13 tests) | `34779e6` | +328 |
+| 17 | F1.22 LIVE TF check post-FIRST_ATTEMPT_TIMEOUT | `3fa4bab` | +143 |
+| 18 | F1.23 LIVE controller restart + final TF check | `d7164d9` | +222 |
+| 19 | **F5 LEGACY REMOVED** (-8.040 LOC, default invertido) | `11b66e2` | **-9.335** |
+| 20 | F1.24 H9 LIVE bypass MoveIt FJT directo (4/7 fases) | `9cf4cb2` | +842 |
+| 21 | F1.24 H10 LIVE joint normalize [-π, π] | `57f29ad` | +36 |
+| 22 | **F1.24 H11 LIVE multi-waypoint TRANSPORT** (T35 × 3 verde) | `f86a7bf` | +143 |
+| 23 | docs cierre académico (T35 results + arch + guion) | `1dfe0fe` | +402 |
+
+### Solución del bug bloqueante (3 piezas H9 + H10 + H11)
+
+El bug `BUG_CONTROLLER_FEEDBACK_HANG` (path MoveIt → simple_controller_manager → joint_trajectory_controller perdía el feedback "Goal reached") **NO se arregló upstream**. Se **bypaseó arquitectónicamente** usando el patrón ya exitoso de HOME_INITIAL: FJT directo al action `/joint_trajectory_controller/follow_joint_trajectory`.
+
+| Pieza | Idea | Coste | Resultado |
+|--|--|--|--|
+| H9 | `bypass_moveit_for_short_paths=true` en `plan_to_pose_server`. Llamar `/compute_ik` (síncrono, sin simple_controller_manager) + enviar JointTrajectory directo al FJT action. | Medio | 4/7 fases live OK (APPROACH+GRASP_DOWN+LIFT) |
+| H10 | `normalize_joint_to_pi(angle)` en `parse_ik_result`. El IK devolvía wraps angulares fuera ±2π (e.g. `-3.387`, `+6.202`) → válidos matemáticamente pero fuera límites UR5 → robot parado. Normalizar a [-π, π] elimina el problema. | Bajo | TRANSPORT robot SE MUEVE (faltaba duración) |
+| H11 | `build_fjt_trajectory_multi_point()` para distancias > 0.4m: 10 waypoints linealmente interpolados con velocidades intermedias. Evita `path_tolerance_violation` por aceleración brusca con solo 2 puntos. Duración 25s + timeout 120s para TRANSPORT. | Medio | **TRANSPORT verde + T35 × 3 cycles consecutivos** |
+
+### Métricas del día
+
+| Métrica | Inicio del día | Final |
+|--|--|--|
+| `panel_pick_demo.py` | 8.611 LOC | **536 LOC (-94%)** |
+| `run_pick_demo` legacy closure | 8.040 LOC activo | **borrado físicamente** |
+| Bug `BUG_CONTROLLER_FEEDBACK_HANG` | abierto crítico | **✅ cerrado** |
+| `mypy --strict` baseline | 24 módulos | 63 módulos |
+| Tests offline | ~2.400 | ~2.620+ (+220 nuevos) |
+| Score profesional | 89/100 | **100/100** |
+| Default `should_use_orchestrator` | legacy | orchestrator |
+
+### Tags del día (rollback granular)
+
+```
+audit-pre-sprint-rutacritica-20260508       ← inicio del día
+audit-post-sprint-rutacritica-20260508
+audit-post-f8-partial-20260508
+audit-post-offline-sprint-20260508
+audit-live-bug-confirmed-20260508
+audit-live-f1.23-controller-restart-fail-20260508
+audit-pre-borrar-legacy-20260508            ← antes del borrado
+F5-legacy-removed-20260508                  ← borrado del legacy
+audit-pre-H9-bypass-moveit-20260508
+F1.24-h9-partial-success-20260508           ← 4/7 fases live
+F1.24-h10-joint-normalize-20260508          ← joints limpios
+T35-3-cycles-verde-20260508                 ← HITO PRINCIPAL
+tfm-publicable-100-de-100-20260508          ← alias publicable
+tfm-cierre-academico-20260508               ← docs académicos
+```
+
+### Docs académicos para defensa
+
+- `agarre_ros2_ws/docs/T35_RESULTS_20260508.md`
+- `agarre_ros2_ws/docs/architecture_post_legacy.md`
+- `agarre_ros2_ws/docs/GUION_DEFENSA_20260508.md`
+- `agarre_ros2_ws/docs/BUG_CONTROLLER_FEEDBACK_HANG.md` (estado: **cerrado**)
+
+### Reproducir T35 × 3 verde
+
+```bash
+git checkout T35-3-cycles-verde-20260508
+cd agarre_ros2_ws && colcon build --packages-select ur5_tools ur5_bringup --symlink-install
+source install/setup.bash
+PANEL_COLD_BOOT=1 PANEL_FORCE_OFFSCREEN=1 PANEL_START_STACK=1 PANEL_LAUNCH_MOVEIT=1 \
+MOVEIT_MODE=move_group PANEL_AUTO_BRIDGE=0 PANEL_AUTO_RELEASE_DROP_OBJECTS=1 \
+PANEL_PICK_DEMO_USE_ORCHESTRATOR=1 ./scripts/start_panel_v2.sh --bg
+
+until grep -q "STATE READY" log/ros2_launch.log; do sleep 5; done
+
+for i in 1 2 3; do
+  ros2 action send_goal /pick_place ur5_panel_interfaces/action/PickPlace \
+    "{object_name: 'pick_demo', drop_xyz_world: {x: -1.30, y: 0.0, z: 1.10}, object_pose_world_hint: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}"
+done
+```
+
+Tiempo esperado: ~11 minutos. 3 SUCCEEDED.
+
 ## [2026-05-07] OBJETIVO CUMPLIDO — pinzas agarran objeto físicamente en Gazebo
 
 **Tag**: `objetivo-cumplido-pinzas-agarran-objeto-20260507`
