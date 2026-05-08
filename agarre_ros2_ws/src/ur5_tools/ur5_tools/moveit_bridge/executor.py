@@ -594,22 +594,20 @@ class ExecutorMixin:
             timeout_sec=1.5
         )
         if not ready or not action_name:
-            available = ",".join(sorted(action_names)) if action_names else "none"
-            checked = ",".join(candidates) if candidates else "none"
-            meta = {
-                "action": self._controller_action_name,
-                "status_text": "NO_SERVER",
-                "error_string": f"checked={checked} available={available}",
-            }
-            return (
-                False,
-                (
-                    "fjt_no_action_server:"
-                    f"expected_action={self._controller_action_name};"
-                    f"checked_candidates={checked};available_actions={available}"
-                ),
-                meta,
+            # F3-step41a (2026-05-08): meta + reason delegados a no_server_meta
+            # (puros, testeables offline).
+            from .no_server_meta import build_no_server_meta, build_no_server_reason
+            meta = build_no_server_meta(
+                expected_action=self._controller_action_name,
+                available_actions=action_names,
+                candidates=candidates,
             )
+            reason = build_no_server_reason(
+                expected_action=self._controller_action_name,
+                available_actions=action_names,
+                candidates=candidates,
+            )
+            return False, reason, meta
 
         client = self._ensure_fjt_action_client()
         if client is None:

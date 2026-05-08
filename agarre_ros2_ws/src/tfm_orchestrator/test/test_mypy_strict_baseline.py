@@ -111,6 +111,8 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_qt_panel/ur5_qt_panel/panel_pick_geometry.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_launchers_params.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_ros_emitters.py",
+    # F3-step41a (2026-05-08): no_server_meta extraído de executor.
+    "src/ur5_tools/ur5_tools/moveit_bridge/no_server_meta.py",
 ]
 
 
