@@ -53,6 +53,8 @@ def build_move_group_goal(
     planning_time_sec: float = 5.0,
     position_tol_m: float = 0.005,
     orientation_tol_rad: float = 0.05,
+    velocity_scaling_factor: float = 0.25,
+    acceleration_scaling_factor: float = 0.25,
 ) -> Any:
     """Construye un ``moveit_msgs.action.MoveGroup.Goal`` para target pose.
 
@@ -103,11 +105,11 @@ def build_move_group_goal(
     # F1.11). Con scaling=0.1, una trayectoria de 8s nominal dura 80s sim
     # ≈ 130s wall — supera el first_attempt_timeout (120s). 0.25 = 32s sim
     # ≈ 50s wall, dentro del budget para fases cortas.
-    # NOTA: TRANSPORT (~1m de recorrido) sigue tardando > 120s wall con 0.25
-    # — requiere subir más scaling o tunear first_attempt_timeout por fase.
-    # Pendiente cierre F1.17.
-    req.max_velocity_scaling_factor = 0.25
-    req.max_acceleration_scaling_factor = 0.25
+    # F1.18 (2026-05-08): scaling per-call. Llamadores (plan_to_pose_server)
+    # detectan TRANSPORT (target Z < 0.05 base_link) y pasan 0.5 scaling
+    # para las trayectorias largas (~1m) que con 0.25 superan 120s wall.
+    req.max_velocity_scaling_factor = float(velocity_scaling_factor)
+    req.max_acceleration_scaling_factor = float(acceleration_scaling_factor)
 
     # Goal constraints: position + orientation sobre ee_frame.
     pc = PositionConstraint()
