@@ -7,6 +7,7 @@ from __future__ import annotations
 import pytest
 
 from ur5_tools.fjt_direct_helpers import (
+    build_fjt_path_tolerances,
     build_fjt_trajectory_two_point,
     build_ik_request,
     parse_ik_result,
@@ -238,3 +239,97 @@ def test_parse_ik_result_missing_joint():
     ok, reason, positions = parse_ik_result(resp, ["j1", "j2", "j3"])
     assert ok is False
     assert "ik_joint_missing:j3" in reason
+
+
+# ---------------------------------------------------------------------------
+# F1.24 H14 (2026-05-08) — build_fjt_path_tolerances
+# ---------------------------------------------------------------------------
+
+
+_UR5_JOINTS = (
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint",
+)
+
+
+def test_build_fjt_path_tolerances_one_per_joint():
+    tols = build_fjt_path_tolerances(
+        joint_names=_UR5_JOINTS,
+        position_tolerance_rad=0.3,
+    )
+    assert len(tols) == len(_UR5_JOINTS)
+    for tol, name in zip(tols, _UR5_JOINTS):
+        assert tol.name == name
+
+
+def test_build_fjt_path_tolerances_position_value_applied():
+    tols = build_fjt_path_tolerances(
+        joint_names=_UR5_JOINTS,
+        position_tolerance_rad=0.5,
+    )
+    for tol in tols:
+        assert tol.position == pytest.approx(0.5)
+
+
+def test_build_fjt_path_tolerances_velocity_default_zero():
+    tols = build_fjt_path_tolerances(
+        joint_names=_UR5_JOINTS,
+        position_tolerance_rad=0.3,
+    )
+    for tol in tols:
+        assert tol.velocity == 0.0
+        assert tol.acceleration == 0.0
+
+
+def test_build_fjt_path_tolerances_velocity_explicit():
+    tols = build_fjt_path_tolerances(
+        joint_names=_UR5_JOINTS,
+        position_tolerance_rad=0.3,
+        velocity_tolerance_rad_s=0.1,
+        acceleration_tolerance_rad_s2=0.05,
+    )
+    for tol in tols:
+        assert tol.velocity == pytest.approx(0.1)
+        assert tol.acceleration == pytest.approx(0.05)
+
+
+def test_build_fjt_path_tolerances_empty_joints_returns_empty():
+    tols = build_fjt_path_tolerances(
+        joint_names=(),
+        position_tolerance_rad=0.3,
+    )
+    assert tols == []
+
+
+def test_build_fjt_path_tolerances_position_zero_allowed():
+    """position=0 sí se envía (controller la trataría como abort inmediato);
+    el wiring en plan_to_pose_server no llama a este helper si el param
+    es 0.0 (semántica: 0.0 = no enviar). Pero la función pura acepta 0."""
+    tols = build_fjt_path_tolerances(
+        joint_names=("j1", "j2"),
+        position_tolerance_rad=0.0,
+    )
+    assert len(tols) == 2
+    for tol in tols:
+        assert tol.position == 0.0
+
+
+def test_build_fjt_path_tolerances_str_coerces_joint_names():
+    """Si pasamos joint_names como tuple de no-str, los castea a str."""
+    class _Sym:
+        def __init__(self, n: str) -> None:
+            self._n = n
+
+        def __str__(self) -> str:
+            return self._n
+
+    tols = build_fjt_path_tolerances(
+        joint_names=[_Sym("ja"), _Sym("jb")],
+        position_tolerance_rad=0.2,
+    )
+    assert tols[0].name == "ja"
+    assert tols[1].name == "jb"

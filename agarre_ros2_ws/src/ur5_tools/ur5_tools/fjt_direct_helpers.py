@@ -332,3 +332,52 @@ def parse_ik_result(
             val = normalize_joint_to_pi(val)
         ordered.append(val)
     return True, "ik:SUCCESS", ordered
+
+
+def build_fjt_path_tolerances(
+    *,
+    joint_names: Sequence[str],
+    position_tolerance_rad: float,
+    velocity_tolerance_rad_s: float = 0.0,
+    acceleration_tolerance_rad_s2: float = 0.0,
+) -> List[Any]:
+    """F1.24 H14 (2026-05-08): construye lista de JointTolerance para el
+    campo ``path_tolerance`` del FollowJointTrajectory.Goal.
+
+    Mitiga el flakiness observado en T35 × 5 stress: tras stop+restart del
+    stack, la trayectoria multi-waypoint generada por H11 puede cruzar
+    tracking errors transitorios que el controller interpreta como
+    ``path_tolerance_violation`` y aborta el goal sin "Goal reached".
+
+    Setting de ``position`` generoso (default 0.3 rad ≈ 17°) absorbe esos
+    tracking errors transitorios sin permitir desviaciones realmente
+    peligrosas. ``velocity``/``acceleration`` a 0.0 = no chequear esas
+    tolerancias.
+
+    Args:
+        joint_names: orden esperado por el controller (mismos que los del
+            JointTrajectory ya construido).
+        position_tolerance_rad: tolerancia angular por joint durante el
+            seguimiento de la trayectoria (no al final).
+        velocity_tolerance_rad_s: idem para velocidad. 0.0 = no chequear.
+        acceleration_tolerance_rad_s2: idem para aceleración.
+
+    Returns:
+        Lista de control_msgs.msg.JointTolerance, una por joint.
+
+    Imports lazy: no requiere ROS al importar este módulo.
+    """
+    from control_msgs.msg import JointTolerance
+
+    tolerances: List[Any] = []
+    pos_tol = float(position_tolerance_rad)
+    vel_tol = float(velocity_tolerance_rad_s)
+    acc_tol = float(acceleration_tolerance_rad_s2)
+    for name in joint_names:
+        jt = JointTolerance()
+        jt.name = str(name)
+        jt.position = pos_tol
+        jt.velocity = vel_tol
+        jt.acceleration = acc_tol
+        tolerances.append(jt)
+    return tolerances

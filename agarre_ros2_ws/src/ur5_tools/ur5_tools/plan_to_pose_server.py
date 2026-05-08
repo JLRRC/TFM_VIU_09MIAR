@@ -111,6 +111,12 @@ class PlanToPoseServer(Node):
         self.declare_parameter("fjt_direct_duration_sec", 6.0)
         self.declare_parameter("fjt_direct_ik_timeout_sec", 2.0)
         self.declare_parameter("fjt_direct_result_timeout_sec", 30.0)
+        # F1.24 H14 (2026-05-08): path_tolerance generoso por joint para
+        # absorber tracking errors transitorios post-restart del stack
+        # (T35 × 5 stress flakiness). 0.3 rad ≈ 17° — deja margen sin
+        # permitir desviaciones realmente peligrosas. 0.0 = no enviar
+        # (controller usa default interno, que era el caso pre-H14).
+        self.declare_parameter("fjt_direct_path_tolerance_rad", 0.3)
 
         self._action_name = str(
             self.get_parameter("action_name").value or "/orchestrator/plan_to_pose"
@@ -207,6 +213,9 @@ class PlanToPoseServer(Node):
         )
         self._fjt_direct_result_timeout = float(
             self.get_parameter("fjt_direct_result_timeout_sec").value
+        )
+        self._fjt_direct_path_tolerance_rad = float(
+            self.get_parameter("fjt_direct_path_tolerance_rad").value
         )
         self._fjt_direct_action_client = None  # lazy
         self._fjt_direct_ik_client = None  # lazy
@@ -1073,6 +1082,14 @@ class PlanToPoseServer(Node):
         from control_msgs.action import FollowJointTrajectory as _FJT
         fjt_goal = _FJT.Goal()
         fjt_goal.trajectory = jt
+        # F1.24 H14 (2026-05-08): path_tolerance generoso para absorber
+        # tracking errors transitorios. 0.0 = no enviar (default controller).
+        if self._fjt_direct_path_tolerance_rad > 0.0:
+            from .fjt_direct_helpers import build_fjt_path_tolerances
+            fjt_goal.path_tolerance = build_fjt_path_tolerances(
+                joint_names=list(ur5_joints),
+                position_tolerance_rad=self._fjt_direct_path_tolerance_rad,
+            )
 
         send_future = self._fjt_direct_action_client.send_goal_async(fjt_goal)
         send_event = threading.Event()
