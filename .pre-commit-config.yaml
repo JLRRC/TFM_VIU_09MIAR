@@ -30,3 +30,37 @@ repos:
         args: [--maxkb=1024]
       - id: check-merge-conflict
       - id: check-toml
+
+  # F4 audit-v4 (2026-05-08): quality meta-tests gate (rápido, ~1s).
+  # Bloquea commit si:
+  #   * print() en archivo no listado en LEGACY_PRINT_FILES.
+  #   * archivo .py crece más de +50 LOC sobre baseline LEGACY_OVERSIZE.
+  #   * función nueva > 200 LOC.
+  #   * import circular.
+  #   * env var sin documentar en *_params.py.
+  #   * env reads scattered > baseline (T31).
+  - repo: local
+    hooks:
+      - id: quality-metrics
+        name: F4 quality meta-tests (LOC, prints, env reads)
+        entry: pytest agarre_ros2_ws/src/ur5_qt_panel/test/test_quality_metrics.py -q --no-header
+        language: system
+        pass_filenames: false
+        files: \.py$
+        always_run: false
+
+      - id: mypy-strict-baseline
+        name: F7 mypy strict baseline (23 módulos puros)
+        entry: pytest agarre_ros2_ws/src/tfm_orchestrator/test/test_mypy_strict_baseline.py -q --no-header
+        language: system
+        pass_filenames: false
+        files: \.(py|ini)$
+        always_run: false
+
+      - id: bridge-regression-guard
+        name: F1.5 T28 bridge retry regression guard (AST)
+        entry: pytest agarre_ros2_ws/src/ur5_tools/test/test_bridge_path_tolerance_regression.py -q --no-header
+        language: system
+        pass_filenames: false
+        files: 'agarre_ros2_ws/src/ur5_tools/ur5_tools/plan_to_pose_server\.py'
+        always_run: false

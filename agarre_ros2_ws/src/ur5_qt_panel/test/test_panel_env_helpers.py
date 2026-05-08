@@ -26,6 +26,7 @@ from ur5_qt_panel.panel_env import (
     get_panel_ros_timeout,
     is_panel_ros2_only,
     is_panel_single_cam,
+    is_strict_physics_mode,
 )
 
 
@@ -40,6 +41,7 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "PANEL_MAX_FPS",
         "PANEL_ROS2_ONLY",
         "PANEL_SINGLE_CAM",
+        "PANEL_STRICT_PHYSICS_MODE",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -219,3 +221,37 @@ def test_is_panel_single_cam_explicit_set_overrides(
 def test_is_panel_single_cam_explicit_one(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PANEL_SINGLE_CAM", "1")
     assert is_panel_single_cam() is True
+
+
+# ---------------------------------------------------------------------------
+# is_strict_physics_mode
+# ---------------------------------------------------------------------------
+
+
+def test_is_strict_physics_mode_default_false() -> None:
+    assert is_strict_physics_mode() is False
+
+
+@pytest.mark.parametrize("val", ["1", "true", "True", "TRUE", "yes", "YES", "on", "On"])
+def test_is_strict_physics_mode_truthy_values(
+    monkeypatch: pytest.MonkeyPatch, val: str
+) -> None:
+    """Valores permisivos de truthy: 1/true/yes/on (case-insensitive)."""
+    monkeypatch.setenv("PANEL_STRICT_PHYSICS_MODE", val)
+    assert is_strict_physics_mode() is True
+
+
+@pytest.mark.parametrize("val", ["0", "false", "no", "off", "", "garbage", "2"])
+def test_is_strict_physics_mode_falsy_values(
+    monkeypatch: pytest.MonkeyPatch, val: str
+) -> None:
+    """Cualquier valor que no sea {1,true,yes,on} es false."""
+    monkeypatch.setenv("PANEL_STRICT_PHYSICS_MODE", val)
+    assert is_strict_physics_mode() is False
+
+
+def test_is_strict_physics_mode_strips_whitespace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PANEL_STRICT_PHYSICS_MODE", "  TRUE  ")
+    assert is_strict_physics_mode() is True
