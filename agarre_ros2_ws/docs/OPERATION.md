@@ -189,7 +189,7 @@ git tag --sort=-creatordate | head -10
 ## Soporte
 
 Para diagnosticar bugs nuevos, consultar:
-- `docs/BUG_BRIDGE_PATH_TOLERANCE.md` — bug arquitectónico orchestrator.
-- `docs/BUG_GRASP_DOWN_TCP_TRUNCATION.md` — bug histórico cerrado.
+- `auditoria/bugs_pendientes/BUG_BRIDGE_PATH_TOLERANCE.md` — bug arquitectónico orchestrator.
+- `auditoria/bugs_pendientes/BUG_GRASP_DOWN_TCP_TRUNCATION.md` — bug histórico cerrado.
 - `docs/AUDIT_20260506.md` — auditoría profesional completa.
 - `CHANGELOG.md` — hitos del proyecto.

@@ -329,5 +329,5 @@ desarrolladas iterativamente en abril 2026.
 
 - Memoria `project_b_iter3_20260503` — sprint del orchestrator.
 - Memoria `project_audit_fases_0_10_20260504` — F7 E2E live legacy.
-- `docs/BUG_GRASP_DOWN_TCP_TRUNCATION.md` — bug previo cerrado.
+- `auditoria/bugs_pendientes/BUG_GRASP_DOWN_TCP_TRUNCATION.md` — bug previo cerrado.
 - `auditoria/audit_profesional_20260506.md` Anexo B — sesión cierre.

@@ -6,7 +6,7 @@ Cubre dos capas:
 1. Función pura ``compute_path_tolerance_value`` (lógica de decisión).
 2. AST guardrail sobre executor.py para detectar regresiones del contrato.
 
-Bug relacionado: ``docs/BUG_BRIDGE_PATH_TOLERANCE.md``.
+Bug relacionado: ``auditoria/bugs_pendientes/BUG_BRIDGE_PATH_TOLERANCE.md``.
 """
 
 from __future__ import annotations

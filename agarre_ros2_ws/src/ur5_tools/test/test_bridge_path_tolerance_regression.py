@@ -3,7 +3,7 @@
 # Contenido: T28 — regression test del fix bug bridge race condition (commit f18b2c2).
 """T28 regression — fix bug bridge race condition (controller_manager).
 
-Bug original (`docs/BUG_BRIDGE_PATH_TOLERANCE.md`): el primer goal del
+Bug original (`auditoria/bugs_pendientes/BUG_BRIDGE_PATH_TOLERANCE.md`): el primer goal del
 orchestrator a `/move_action` fallaba con `CONTROL_FAILED` porque MoveIt
 `simple_controller_manager` aún no había detectado el
 `joint_trajectory_controller` action server (race condition de arranque).
@@ -127,12 +127,12 @@ def test_t28_debug_script_exists() -> None:
 def test_t28_bug_doc_references_fix() -> None:
     """T28-e — el bug doc canónico existe y referencia el fix.
 
-    El bug doc en `docs/BUG_BRIDGE_PATH_TOLERANCE.md` (workspace root) debe
-    seguir documentando el bug. Si se cierra y archiva, este test debe
-    actualizarse.
+    El bug doc en `auditoria/bugs_pendientes/BUG_BRIDGE_PATH_TOLERANCE.md`
+    (workspace root) debe seguir documentando el bug. Si se cierra y archiva,
+    este test debe actualizarse.
     """
     repo_root = WS_ROOT.parent  # /home/laboratorio/TFM
-    bug_doc = repo_root / "docs" / "BUG_BRIDGE_PATH_TOLERANCE.md"
+    bug_doc = repo_root / "auditoria" / "bugs_pendientes" / "BUG_BRIDGE_PATH_TOLERANCE.md"
     assert bug_doc.exists(), (
         f"Bug doc no encontrado en {bug_doc}. Si se reorganizaron los docs, "
         "actualiza la ruta en este test."

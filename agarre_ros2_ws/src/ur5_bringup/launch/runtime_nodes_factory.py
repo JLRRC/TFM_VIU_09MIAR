@@ -144,7 +144,7 @@ def _build_orchestrator_service_nodes(
             # en sim por bug de path_tolerance_violation del joint_trajectory
             # _controller cuando max_start_err >> 0 (robot en pose post-aborto).
             # Bug arquitectónico del ur5_moveit_bridge ↔ controller pendiente
-            # de sesión dedicada (ver docs/BUG_BRIDGE_PATH_TOLERANCE.md).
+            # de sesión dedicada (ver auditoria/bugs_pendientes/BUG_BRIDGE_PATH_TOLERANCE.md).
             # MOVEIT_DIRECT da diagnostics más limpias (TIMED_OUT → CONTROL_FAILED
             # tras subir allowed_execution_duration_scaling 1.2→4.0).
             {"mode": "MOVEIT_DIRECT"},

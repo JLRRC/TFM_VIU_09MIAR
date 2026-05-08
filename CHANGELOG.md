@@ -152,7 +152,7 @@ Tiempo esperado: ~11 minutos. 3 SUCCEEDED.
 
 #### Bugs documentados pero abiertos (no críticos para el objetivo)
 
-- **Bug bridge MoveIt-controller** (sim_time vs wall_time) — bloquea el orchestrator path en Gazebo Sim. Doc en `docs/BUG_BRIDGE_PATH_TOLERANCE.md` con plan de fix de 4-8h.
+- **Bug bridge MoveIt-controller** (sim_time vs wall_time) — bloquea el orchestrator path en Gazebo Sim. Doc en `auditoria/bugs_pendientes/BUG_BRIDGE_PATH_TOLERANCE.md` con plan de fix de 4-8h.
 
 ## [2026-05-06] Bloque 2 cerrado — orchestrator cableado al action
 
