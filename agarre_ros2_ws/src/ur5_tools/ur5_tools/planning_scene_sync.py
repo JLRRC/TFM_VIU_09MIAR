@@ -13,6 +13,8 @@ import xml.etree.ElementTree as ET
 from geometry_msgs.msg import Pose, PoseStamped
 from moveit_msgs.msg import AttachedCollisionObject, CollisionObject, PlanningScene
 from moveit_msgs.srv import ApplyPlanningScene
+
+from .moveit_bridge_utils import bridge_env_str
 import rclpy
 from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
@@ -102,7 +104,7 @@ def _tuple_to_pose(values: Tuple[float, float, float, float, float, float, float
 
 
 def _world_file_default(world_name: str) -> str:
-    ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
+    ws_dir = bridge_env_str("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
     return os.path.join(ws_dir, "worlds", f"{world_name}.sdf")
 
 

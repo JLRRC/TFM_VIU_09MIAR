@@ -29,6 +29,7 @@ from ament_index_python.packages import (
     get_package_share_directory,
 )
 from .params import get_moveit_bridge_params as _get_moveit_bridge_params
+from ..moveit_bridge_utils import bridge_env_str
 
 from geometry_msgs.msg import PoseStamped
 from moveit_configs_utils import MoveItConfigsBuilder
@@ -612,7 +613,7 @@ class MoveItPyPlannerMixin:
             if self._srdf_path:
                 srdf_path = Path(self._srdf_path)
             else:
-                _strict = os.environ.get("STRICT_SELF_COLLISION", "0").strip() in (
+                _strict = bridge_env_str("STRICT_SELF_COLLISION", "0").strip() in (
                     "1", "true", "True", "yes",
                 )
                 _srdf_file = "ur5_strict.srdf" if _strict else "ur5.srdf"

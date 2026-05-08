@@ -55,14 +55,7 @@ ENV_READS_ALLOWLIST: frozenset[str] = frozenset({
     "src/ur5_qt_panel/ur5_qt_panel/panel_startup.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_system_status.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py",
-    "src/ur5_tools/ur5_tools/attach_set_pose.py",
-    "src/ur5_tools/ur5_tools/cycle_logger.py",
-    "src/ur5_tools/ur5_tools/evidence_logger.py",
     "src/ur5_tools/ur5_tools/gripper_attach_backend.py",
-    "src/ur5_tools/ur5_tools/gripper_geometry.py",
-    "src/ur5_tools/ur5_tools/moveit_bridge/moveit_commander_planner.py",
-    "src/ur5_tools/ur5_tools/moveit_bridge/moveit_py_planner.py",
-    "src/ur5_tools/ur5_tools/planning_scene_sync.py",
     "src/ur5_tools/ur5_tools/release_objects_service.py",
     "src/ur5_tools/ur5_tools/system_state_manager.py",
     "src/ur5_tools/ur5_tools/world_tf_publisher.py",
@@ -126,11 +119,11 @@ def test_allowlist_entries_still_have_env_reads() -> None:
 
 def test_allowlist_count_baseline() -> None:
     """Sanity: la allowlist tiene un tamaño razonable (no se vació accidentalmente)."""
-    assert len(ENV_READS_ALLOWLIST) >= 20, (
+    assert len(ENV_READS_ALLOWLIST) >= 18, (
         "Allowlist sospechosamente pequeña — ¿se borró por accidente?"
     )
     # Cuando bajemos de 15, eliminar este test (la deuda estará casi cerrada).
-    assert len(ENV_READS_ALLOWLIST) <= 35, (
-        f"Allowlist creciendo ({len(ENV_READS_ALLOWLIST)} > 35). "
+    assert len(ENV_READS_ALLOWLIST) <= 28, (
+        f"Allowlist creciendo ({len(ENV_READS_ALLOWLIST)} > 28). "
         "Estás añadiendo deuda en lugar de cerrarla."
     )

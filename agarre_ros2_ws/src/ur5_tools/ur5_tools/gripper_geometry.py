@@ -13,6 +13,8 @@ from pathlib import Path
 import re
 from typing import Callable, Dict, Iterable, Optional, Tuple
 
+from .moveit_bridge_utils import bridge_env_str
+
 try:
     from ament_index_python.packages import get_package_share_directory
 except Exception:  # pragma: no cover - ament may be unavailable in unit contexts
@@ -70,11 +72,11 @@ def _candidate_urdf_paths(ws_dir: Optional[str] = None) -> Iterable[Path]:
         seen.add(resolved)
         return (resolved,)
 
-    env_path = str(os.environ.get("UR5_GEOMETRY_URDF_XACRO", "") or "").strip()
+    env_path = bridge_env_str("UR5_GEOMETRY_URDF_XACRO", "").strip()
     if env_path:
         yield from _push(Path(env_path))
 
-    ws_dir_value = str(ws_dir or os.environ.get("WS_DIR", "") or "").strip()
+    ws_dir_value = str(ws_dir or bridge_env_str("WS_DIR", "") or "").strip()
     if ws_dir_value:
         yield from _push(
             Path(ws_dir_value) / "src" / "ur5_description" / "urdf" / "ur5.urdf.xacro"

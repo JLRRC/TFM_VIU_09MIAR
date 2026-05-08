@@ -39,6 +39,50 @@ def bridge_env_float(name: str, default: float) -> float:
         return float(default)
 
 
+def bridge_env_str(name: str, default: str) -> str:
+    """Read a string from an env var, returning *default* if unset.
+
+    Audit-v4.1 D.2 round-2 (2026-05-09): consolidación de env reads en
+    ur5_tools backend (attach_set_pose, gripper_geometry, cycle_logger,
+    evidence_logger). Espejo de :func:`panel_env.env_str` pero dentro
+    del package ``ur5_tools`` para evitar cross-boundary imports.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return str(default)
+    return str(raw)
+
+
+def bridge_env_optional_str(name: str) -> Optional[str]:
+    """Read a string env var or None if unset.
+
+    Audit-v4.1 D.2 round-2 (2026-05-09).
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    return str(raw)
+
+
+def bridge_env_int(name: str, default: int) -> int:
+    """Read an int env var with default. Audit-v4.1 D.2 round-2 (2026-05-09)."""
+    raw = os.environ.get(name)
+    if raw is None or str(raw).strip() == "":
+        return int(default)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def bridge_env_bool(name: str, default: bool) -> bool:
+    """Read a bool env var (whitelist 1/true/yes/on). Audit-v4.1 D.2 round-2 (2026-05-09)."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
+
 # ---------------------------------------------------------------------------
 # String / name utilities
 # ---------------------------------------------------------------------------

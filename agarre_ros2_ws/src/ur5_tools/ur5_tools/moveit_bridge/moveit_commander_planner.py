@@ -21,6 +21,8 @@ import time
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.srv import GetCartesianPath
 
+from ..moveit_bridge_utils import bridge_env_bool, bridge_env_float
+
 try:
     from moveit_commander.move_group import MoveGroupCommander  # type: ignore
 except Exception:  # pragma: no cover - moveit_commander opcional
@@ -32,19 +34,10 @@ except Exception:  # pragma: no cover - moveit_commander opcional
 #   MOVEIT_BRIDGE_CARTESIAN_MAX_STEP=<float>
 #   MOVEIT_BRIDGE_CARTESIAN_JUMP_THRESHOLD=<float>
 #   MOVEIT_BRIDGE_CARTESIAN_AVOID_COLLISIONS=true|false
-def _read_float_env(name: str, default: float) -> float:
-    raw = os.environ.get(name, "")
-    if not raw:
-        return default
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return default
-
-
-def _read_bool_env(name: str, default: bool) -> bool:
-    raw = os.environ.get(name, "true" if default else "false").strip().lower()
-    return raw in ("1", "true", "yes", "on")
+# audit-v4.1 D.2 round-2 (2026-05-09): _read_float_env / _read_bool_env
+# eran duplicados de bridge_env_float / bridge_env_bool. Consolidados.
+_read_float_env = bridge_env_float
+_read_bool_env = bridge_env_bool
 
 
 _CART_MAX_STEP_DEFAULT = _read_float_env("MOVEIT_BRIDGE_CARTESIAN_MAX_STEP", 0.005)

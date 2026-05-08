@@ -13,6 +13,8 @@ import subprocess
 import time
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
+from .moveit_bridge_utils import bridge_env_str
+
 try:
     from ros_gz_interfaces.msg import Entity as GzEntity
     from ros_gz_interfaces.srv import SetEntityPose
@@ -68,7 +70,7 @@ class SetPoseMixin:
 
     def _gz_env_prefix(self) -> str:
         exports: List[str] = []
-        gz_partition = os.environ.get("GZ_PARTITION", "").strip()
+        gz_partition = bridge_env_str("GZ_PARTITION", "").strip()
         if not gz_partition:
             part_file = os.path.join(self._ws_dir, "log", "gz_partition.txt")
             try:
@@ -78,7 +80,7 @@ class SetPoseMixin:
                 gz_partition = ""
         if gz_partition:
             exports.append(f"export GZ_PARTITION='{gz_partition}'")
-        gz_ip = os.environ.get("GZ_IP", "").strip()
+        gz_ip = bridge_env_str("GZ_IP", "").strip()
         if gz_ip:
             exports.append(f"export GZ_IP='{gz_ip}'")
         if not exports:

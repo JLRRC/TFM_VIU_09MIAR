@@ -44,8 +44,10 @@ import threading
 import time
 from typing import Any
 
+from .moveit_bridge_utils import bridge_env_str
+
 _DEFAULT_LOG_ROOT = os.path.join(
-    os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws")),
+    bridge_env_str("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws")),
     "log",
     "cycles",
 )

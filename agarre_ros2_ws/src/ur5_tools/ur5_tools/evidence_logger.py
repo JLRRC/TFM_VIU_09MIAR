@@ -34,6 +34,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .moveit_bridge_utils import bridge_env_str
+
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
@@ -89,7 +91,7 @@ class EvidenceLogger(Node):
         if output_root_param:
             root = Path(output_root_param).expanduser().resolve()
         else:
-            ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
+            ws_dir = bridge_env_str("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
             root = Path(ws_dir) / "report" / "runs"
         root.mkdir(parents=True, exist_ok=True)
         self._session_dir = _safe_unique_dir(root)
