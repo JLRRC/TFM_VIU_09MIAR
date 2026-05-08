@@ -77,6 +77,12 @@ def is_panel_single_cam(default_when_ros2_only: bool = True) -> bool:
     return os.environ.get("PANEL_SINGLE_CAM", default) == "1"
 
 
+def is_strict_physics_mode() -> bool:
+    """Lee `PANEL_STRICT_PHYSICS_MODE` con parseo permisivo (1/true/yes/on)."""
+    raw = os.environ.get("PANEL_STRICT_PHYSICS_MODE", "0")
+    return str(raw or "0").strip().lower() in ("1", "true", "yes", "on")
+
+
 def effective_mode(mode: str) -> str:
     normalized = (mode or "").strip().lower()
     if normalized.startswith("gui"):

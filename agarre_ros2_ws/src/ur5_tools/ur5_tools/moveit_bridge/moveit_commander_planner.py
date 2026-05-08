@@ -27,6 +27,35 @@ except Exception:  # pragma: no cover - moveit_commander opcional
     MoveGroupCommander = None  # type: ignore
 
 
+# F2-step5 (audit-v4 2026-05-08): env reads del cartesian path centralizadas
+# como constantes module-level. Override en runtime via env var (no hot-reload):
+#   MOVEIT_BRIDGE_CARTESIAN_MAX_STEP=<float>
+#   MOVEIT_BRIDGE_CARTESIAN_JUMP_THRESHOLD=<float>
+#   MOVEIT_BRIDGE_CARTESIAN_AVOID_COLLISIONS=true|false
+def _read_float_env(name: str, default: float) -> float:
+    raw = os.environ.get(name, "")
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _read_bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "true" if default else "false").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+_CART_MAX_STEP_DEFAULT = _read_float_env("MOVEIT_BRIDGE_CARTESIAN_MAX_STEP", 0.005)
+_CART_JUMP_THRESHOLD_DEFAULT = _read_float_env(
+    "MOVEIT_BRIDGE_CARTESIAN_JUMP_THRESHOLD", 5.0
+)
+_CART_AVOID_COLLISIONS_DEFAULT = _read_bool_env(
+    "MOVEIT_BRIDGE_CARTESIAN_AVOID_COLLISIONS", False
+)
+
+
 class MoveItCommanderMixin:
     """Plan + execute vía moveit_commander y servicio /compute_cartesian_path."""
 
@@ -166,16 +195,10 @@ class MoveItCommanderMixin:
         #   MOVEIT_BRIDGE_CARTESIAN_AVOID_COLLISIONS=true
         #   MOVEIT_BRIDGE_CARTESIAN_JUMP_THRESHOLD=<float>
         #   MOVEIT_BRIDGE_CARTESIAN_MAX_STEP=<float>
-        req.max_step = float(
-            os.environ.get("MOVEIT_BRIDGE_CARTESIAN_MAX_STEP", "0.005") or 0.005
-        )
-        req.jump_threshold = float(
-            os.environ.get("MOVEIT_BRIDGE_CARTESIAN_JUMP_THRESHOLD", "5.0") or 5.0
-        )
-        _avoid_env = os.environ.get(
-            "MOVEIT_BRIDGE_CARTESIAN_AVOID_COLLISIONS", "false"
-        ).strip().lower()
-        req.avoid_collisions = _avoid_env in ("1", "true", "yes")
+        # F2-step5 (audit-v4): defaults leídos a nivel módulo (constantes).
+        req.max_step = _CART_MAX_STEP_DEFAULT
+        req.jump_threshold = _CART_JUMP_THRESHOLD_DEFAULT
+        req.avoid_collisions = _CART_AVOID_COLLISIONS_DEFAULT
         start_state_msg, start_state_reason = self._build_start_robot_state_msg()
         if start_state_msg is not None:
             req.start_state = start_state_msg

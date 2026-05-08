@@ -7568,9 +7568,9 @@ def run_pick_demo(panel) -> None:
                 # rg2_pinch_center ya es el frame de contacto: no restar GRIPPER_TCP_Z_OFFSET
                 tcp_z_correction_m=0.0,
             )
-            _strict_physics_mode_env = str(
-                os.environ.get("PANEL_STRICT_PHYSICS_MODE", "0") or "0"
-            ).strip().lower() in ("1", "true", "yes", "on")
+            # F2-step5 (audit-v4): env read movida a panel_env.is_strict_physics_mode.
+            from .panel_env import is_strict_physics_mode as _is_strict_physics_mode
+            _strict_physics_mode_env = _is_strict_physics_mode()
             _strict_physics_attach_bypass = bool(_strict_physics_mode_env and not attach_ok)
             if _strict_physics_attach_bypass:
                 panel._emit_log(
