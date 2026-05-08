@@ -317,10 +317,10 @@ def run_pick_object(panel) -> None:
     # -- FIN BLOQUE TF EXPLÍCITO --
 
     def _world_ready_scope() -> str:
+        # V1.1 audit-v4: delega al helper puro pick_object.world_ready_helpers.
+        from .pick_object.world_ready_helpers import normalize_world_ready_scope
         raw = _get_pick_object_params().world_ready_scope
-        if raw in ("all", "strict"):
-            return "all"
-        return "target"
+        return normalize_world_ready_scope(raw)
 
     def _world_ready_tracked_names() -> list[str]:
         scope = _world_ready_scope()

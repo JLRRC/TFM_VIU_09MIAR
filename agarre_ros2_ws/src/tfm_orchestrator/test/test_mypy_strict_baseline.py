@@ -153,6 +153,8 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_tools/ur5_tools/trajectory_executor_contract.py",
     # V1.1 audit-v4 (2026-05-08): panel_audit_helpers puros.
     "src/ur5_qt_panel/ur5_qt_panel/panel_audit_helpers.py",
+    # V1.1 audit-v4 (2026-05-08): pick_object world_ready helpers puros.
+    "src/ur5_qt_panel/ur5_qt_panel/pick_object/world_ready_helpers.py",
 ]
 
 
