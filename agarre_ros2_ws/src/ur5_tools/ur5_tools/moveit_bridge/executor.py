@@ -443,12 +443,10 @@ class ExecutorMixin:
                     for jn in joint_names
                 ]
             if goal_time_tol >= 0.0:
-                total = max(0.0, float(goal_time_tol))
-                sec = int(total)
-                nsec = int(round((total - sec) * 1_000_000_000.0))
-                if nsec >= 1_000_000_000:
-                    sec += 1
-                    nsec -= 1_000_000_000
+                # F3-step41b (2026-05-08): conversión delegada a helper puro
+                # (testable offline) que maneja el overflow nsec→sec.
+                from .time_conversion import seconds_to_sec_nsec
+                sec, nsec = seconds_to_sec_nsec(goal_time_tol)
                 goal.goal_time_tolerance.sec = sec
                 goal.goal_time_tolerance.nanosec = nsec
         except Exception as tol_exc:

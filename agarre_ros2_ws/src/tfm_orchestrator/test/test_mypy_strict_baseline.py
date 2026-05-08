@@ -133,6 +133,8 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_qt_panel/ur5_qt_panel/attach_gate_evaluator.py",
     # F1.21 cont.: wait_gripper_target — Dict[str, Any] + age_ok narrow.
     "src/ur5_qt_panel/ur5_qt_panel/pick_demo/wait_gripper_target.py",
+    # F3-step41b (2026-05-08): time_conversion extraído de executor.
+    "src/ur5_tools/ur5_tools/moveit_bridge/time_conversion.py",
 ]
 
 
