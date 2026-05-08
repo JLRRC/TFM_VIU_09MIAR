@@ -98,6 +98,19 @@ class PlanToPoseServer(Node):
         self.declare_parameter("moveit_position_tol_m", 0.005)
         self.declare_parameter("moveit_orientation_tol_rad", 0.05)
         self.declare_parameter("moveit_result_timeout_sec", 60.0)
+        # F1.24 / H9 LIVE (2026-05-08): bypass MoveIt en APPROACH via FJT directo.
+        # Cuando activo, en mode MOVEIT_DIRECT se intenta primero el path
+        # FJT directo (sin pasar por simple_controller_manager) — evita el bug
+        # BUG_CONTROLLER_FEEDBACK_HANG. Si IK falla, falls back a MoveIt path.
+        self.declare_parameter("bypass_moveit_for_short_paths", False)
+        self.declare_parameter(
+            "fjt_direct_action_name",
+            "/joint_trajectory_controller/follow_joint_trajectory",
+        )
+        self.declare_parameter("fjt_direct_compute_ik_service", "/compute_ik")
+        self.declare_parameter("fjt_direct_duration_sec", 6.0)
+        self.declare_parameter("fjt_direct_ik_timeout_sec", 2.0)
+        self.declare_parameter("fjt_direct_result_timeout_sec", 30.0)
 
         self._action_name = str(
             self.get_parameter("action_name").value or "/orchestrator/plan_to_pose"
@@ -174,6 +187,45 @@ class PlanToPoseServer(Node):
                 self.get_logger().warning(
                     f"[PLAN_TO_POSE] no se pudo crear cliente switch_controller: {exc}"
                 )
+
+        # F1.24 / H9 LIVE (2026-05-08): infrastructure para FJT directo
+        # (bypass MoveIt simple_controller_manager).
+        self._bypass_moveit_for_short_paths = bool(
+            self.get_parameter("bypass_moveit_for_short_paths").value
+        )
+        self._fjt_direct_action_name = str(
+            self.get_parameter("fjt_direct_action_name").value
+        )
+        self._fjt_direct_ik_service = str(
+            self.get_parameter("fjt_direct_compute_ik_service").value
+        )
+        self._fjt_direct_duration = float(
+            self.get_parameter("fjt_direct_duration_sec").value
+        )
+        self._fjt_direct_ik_timeout = float(
+            self.get_parameter("fjt_direct_ik_timeout_sec").value
+        )
+        self._fjt_direct_result_timeout = float(
+            self.get_parameter("fjt_direct_result_timeout_sec").value
+        )
+        self._fjt_direct_action_client = None  # lazy
+        self._fjt_direct_ik_client = None  # lazy
+        self._latest_joint_state = None  # latest /joint_states msg
+        self._joint_state_lock = threading.Lock()
+        # Subscriber a joint_states (siempre activo aunque bypass esté off,
+        # cuesta nada y es informativo).
+        try:
+            from sensor_msgs.msg import JointState as _JointState
+            self.create_subscription(
+                _JointState,
+                "/joint_states",
+                self._on_joint_state,
+                10,
+            )
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[PLAN_TO_POSE] no se pudo crear sub /joint_states: {exc}"
+            )
 
         self._cb_group = ReentrantCallbackGroup()
         self._action_server = ActionServer(
@@ -453,6 +505,9 @@ class PlanToPoseServer(Node):
         """Llama directamente a /move_action de MoveIt 2 (sin bridge al panel).
 
         Flujo:
+          0. F1.24 / H9 LIVE (2026-05-08): si bypass_moveit_for_short_paths,
+             intentar primero FJT directo (sin pasar por simple_controller_manager).
+             Si IK ok y controller responde → success. Si falla, falls back a MoveIt.
           1. Construye MoveGroup.Goal con PositionConstraint + OrientationConstraint
              sobre ee_frame del request.
           2. wait_for_server / send_goal / wait result (event-based).
@@ -465,6 +520,24 @@ class PlanToPoseServer(Node):
             build_move_group_goal,
             parse_move_group_result,
         )
+
+        # F1.24 / H9 LIVE: intento prioritario FJT directo (bypass MoveIt).
+        if self._bypass_moveit_for_short_paths:
+            self.get_logger().info(
+                "[PLAN_TO_POSE][FJT_DIRECT] intento prioritario "
+                "(bypass_moveit_for_short_paths=true)"
+            )
+            fjt_result = self._execute_fjt_direct(goal, start_mono)
+            if fjt_result is not None and fjt_result.success:
+                return fjt_result
+            # None = pre-condiciones no cumplidas (joint_state ausente, IK fail,
+            # controller no ready) — fall through al path MoveIt original.
+            if fjt_result is not None and not fjt_result.success:
+                # FJT respondió pero falló (path tolerance, etc) — devolver el fail.
+                return fjt_result
+            self.get_logger().info(
+                "[PLAN_TO_POSE][FJT_DIRECT] fallback al path MoveIt"
+            )
 
         if self._moveit_action_client is None:
             self._moveit_action_client = _ActionClient(
@@ -790,6 +863,254 @@ class PlanToPoseServer(Node):
             duration_sec=time.monotonic() - start_mono,
             attempts=1,
         )
+
+    def _on_joint_state(self, msg) -> None:
+        """Cachea el último JointState para usar como seed IK."""
+        with self._joint_state_lock:
+            self._latest_joint_state = msg
+
+    def _get_latest_joint_state(self):
+        """Devuelve copia del último JointState o None."""
+        with self._joint_state_lock:
+            return self._latest_joint_state
+
+    def _execute_fjt_direct(self, goal: PlanToPoseGoal, start_mono: float) -> Optional["PlanToPoseResult"]:
+        """F1.24 / H9 LIVE (2026-05-08): bypass MoveIt en APPROACH.
+
+        Flujo:
+        1. Lee joint_state actual (seed IK).
+        2. Llama /compute_ik para obtener target joints de la pose XYZ.
+        3. Construye JointTrajectory de 2 puntos (current → target).
+        4. Envía al /joint_trajectory_controller/follow_joint_trajectory action
+           directamente (sin pasar por simple_controller_manager → evita bug).
+        5. Espera "Goal reached, success!" del controller.
+
+        Returns:
+            PlanToPoseResult si se ejecutó (success o failure),
+            None si pre-condiciones no satisfechas (caller debe fallback a MoveIt).
+        """
+        from .fjt_direct_helpers import (
+            build_fjt_trajectory_two_point,
+            build_ik_request,
+            parse_ik_result,
+        )
+        from .plan_to_pose_logic import normalize_quat
+        from .plan_to_pose_moveit_direct import classify_phase_by_target_z
+        import math as _math
+
+        # F1.24 LIVE (2026-05-08): tuning per-distancia para FJT_DIRECT.
+        # Calcula distancia desde current pose (seed) al target XYZ. Si > 0.4m
+        # → trayectoria larga (TRANSPORT/destino lejos): duration=15s, timeout=90s.
+        # Si <= 0.4m → fase corta (APPROACH/GRASP_DOWN/LIFT): duration=8s, timeout=30s.
+        # El criterio basado en target Z (classify_phase_by_target_z) NO funciona
+        # cuando el target está alto (e.g. cesta a Z=0.25 base): falsamente
+        # clasifica como "OTHER" pese a la distancia grande.
+        try:
+            cur_x, cur_y, cur_z = (
+                float(seed_positions[0]) * 0,  # placeholder; usaremos lookup TF
+                0.0, 0.0,
+            )
+            # Mejor: usar TF lookup del ee_frame actual (ya tenemos el helper).
+            tf_pos = self._lookup_ee_position_in_base(
+                ee_frame=ee_frame,
+                base_frame=self._bridge_base_frame,
+                timeout_sec=0.5,
+            )
+            if tf_pos is not None:
+                dx = float(tf_pos[0]) - float(goal.target_xyz[0])
+                dy = float(tf_pos[1]) - float(goal.target_xyz[1])
+                dz = float(tf_pos[2]) - float(goal.target_xyz[2])
+                dist_to_target = _math.sqrt(dx * dx + dy * dy + dz * dz)
+            else:
+                dist_to_target = 0.5  # fallback conservador → larga
+        except Exception:
+            dist_to_target = 0.5
+
+        if dist_to_target > 0.4:
+            fjt_duration_eff = max(self._fjt_direct_duration, 15.0)
+            fjt_result_timeout_eff = max(self._fjt_direct_result_timeout, 90.0)
+        else:
+            fjt_duration_eff = max(float(self._fjt_direct_duration), 8.0)
+            fjt_result_timeout_eff = max(float(self._fjt_direct_result_timeout), 30.0)
+        self.get_logger().info(
+            f"[PLAN_TO_POSE][FJT_DIRECT] dist_to_target={dist_to_target:.3f}m "
+            f"duration={fjt_duration_eff:.1f}s timeout={fjt_result_timeout_eff:.1f}s"
+        )
+        # 1. Joint state actual.
+        js = self._get_latest_joint_state()
+        if js is None or not getattr(js, "name", None) or not getattr(js, "position", None):
+            self.get_logger().warning(
+                "[PLAN_TO_POSE][FJT_DIRECT] no joint_state cached — fallback a MoveIt"
+            )
+            return None
+
+        # Filtrar solo joints del UR5 arm (en el orden esperado por el controller).
+        ur5_joints = (
+            "shoulder_pan_joint",
+            "shoulder_lift_joint",
+            "elbow_joint",
+            "wrist_1_joint",
+            "wrist_2_joint",
+            "wrist_3_joint",
+        )
+        name_to_pos = {str(n): float(p) for n, p in zip(js.name, js.position)}
+        seed_positions = []
+        for jn in ur5_joints:
+            if jn not in name_to_pos:
+                self.get_logger().warning(
+                    f"[PLAN_TO_POSE][FJT_DIRECT] joint {jn} no en /joint_states — fallback"
+                )
+                return None
+            seed_positions.append(name_to_pos[jn])
+
+        # 2. Cliente /compute_ik (lazy).
+        if self._fjt_direct_ik_client is None:
+            try:
+                from moveit_msgs.srv import GetPositionIK
+                self._fjt_direct_ik_client = self.create_client(
+                    GetPositionIK, self._fjt_direct_ik_service
+                )
+            except Exception as exc:
+                self.get_logger().warning(
+                    f"[PLAN_TO_POSE][FJT_DIRECT] cliente IK no disponible: {exc}"
+                )
+                return None
+        if not self._fjt_direct_ik_client.wait_for_service(timeout_sec=2.0):
+            self.get_logger().warning(
+                "[PLAN_TO_POSE][FJT_DIRECT] /compute_ik service no ready — fallback"
+            )
+            return None
+
+        ee_frame = (
+            self._moveit_tip_link_override
+            if self._moveit_tip_link_override
+            else goal.ee_frame
+        )
+        ik_req = build_ik_request(
+            target_xyz=goal.target_xyz,
+            target_quat_xyzw=goal.target_quat_xyzw,
+            ee_frame=ee_frame,
+            base_frame=self._bridge_base_frame,
+            group_name=self._moveit_group_name,
+            current_joints=seed_positions,
+            joint_names=list(ur5_joints),
+            timeout_sec=self._fjt_direct_ik_timeout,
+            avoid_collisions=False,
+        )
+        ik_future = self._fjt_direct_ik_client.call_async(ik_req)
+        ik_event = threading.Event()
+        ik_future.add_done_callback(lambda _f: ik_event.set())
+        ik_event.wait(timeout=float(self._fjt_direct_ik_timeout) + 1.0)
+        if not ik_future.done():
+            self.get_logger().warning(
+                "[PLAN_TO_POSE][FJT_DIRECT] IK timeout — fallback a MoveIt"
+            )
+            return None
+        ok_ik, reason_ik, target_joints = parse_ik_result(
+            ik_future.result(), list(ur5_joints)
+        )
+        if not ok_ik or target_joints is None:
+            self.get_logger().info(
+                f"[PLAN_TO_POSE][FJT_DIRECT] IK failed: {reason_ik} — fallback a MoveIt"
+            )
+            return None
+
+        self.get_logger().info(
+            f"[PLAN_TO_POSE][FJT_DIRECT] IK OK joints="
+            f"({target_joints[0]:+.3f},{target_joints[1]:+.3f},"
+            f"{target_joints[2]:+.3f},{target_joints[3]:+.3f},"
+            f"{target_joints[4]:+.3f},{target_joints[5]:+.3f}) "
+            f"target=({goal.target_xyz[0]:.3f},{goal.target_xyz[1]:.3f},"
+            f"{goal.target_xyz[2]:.3f})"
+        )
+
+        # 3. Build trajectory (duration per-fase F1.24 LIVE).
+        jt = build_fjt_trajectory_two_point(
+            joint_names=list(ur5_joints),
+            start_positions=seed_positions,
+            target_positions=target_joints,
+            duration_sec=fjt_duration_eff,
+        )
+
+        # 4. FJT action client (lazy).
+        if self._fjt_direct_action_client is None:
+            try:
+                from rclpy.action import ActionClient as _ActionClient
+                from control_msgs.action import FollowJointTrajectory
+                self._fjt_direct_action_client = _ActionClient(
+                    self,
+                    FollowJointTrajectory,
+                    self._fjt_direct_action_name,
+                )
+            except Exception as exc:
+                self.get_logger().warning(
+                    f"[PLAN_TO_POSE][FJT_DIRECT] FJT action client error: {exc}"
+                )
+                return None
+        if not self._fjt_direct_action_client.wait_for_server(timeout_sec=2.0):
+            self.get_logger().warning(
+                f"[PLAN_TO_POSE][FJT_DIRECT] FJT action server "
+                f"{self._fjt_direct_action_name} no ready — fallback"
+            )
+            return None
+
+        from control_msgs.action import FollowJointTrajectory as _FJT
+        fjt_goal = _FJT.Goal()
+        fjt_goal.trajectory = jt
+
+        send_future = self._fjt_direct_action_client.send_goal_async(fjt_goal)
+        send_event = threading.Event()
+        send_future.add_done_callback(lambda _f: send_event.set())
+        send_event.wait(timeout=3.0)
+        if not send_future.done():
+            self.get_logger().warning(
+                "[PLAN_TO_POSE][FJT_DIRECT] FJT goal send timeout — fallback"
+            )
+            return None
+
+        gh = send_future.result()
+        if gh is None or not getattr(gh, "accepted", False):
+            self.get_logger().warning(
+                "[PLAN_TO_POSE][FJT_DIRECT] FJT goal rejected — fallback"
+            )
+            return None
+
+        # 5. Esperar result (timeout per-fase F1.24 LIVE).
+        result_future = gh.get_result_async()
+        result_event = threading.Event()
+        result_future.add_done_callback(lambda _f: result_event.set())
+        result_event.wait(timeout=fjt_result_timeout_eff)
+        if not result_future.done():
+            self.get_logger().warning(
+                "[PLAN_TO_POSE][FJT_DIRECT] FJT result timeout — fallback"
+            )
+            try:
+                gh.cancel_goal_async()
+            except Exception:
+                pass
+            return None
+
+        wrapper = result_future.result()
+        ec = getattr(getattr(wrapper, "result", None), "error_code", 0)
+        ec_val = int(ec) if isinstance(ec, int) else int(getattr(ec, "val", 0)) if hasattr(ec, "val") else 0
+        # 0 = SUCCESSFUL en FollowJointTrajectory error_code.
+        if ec_val == 0:
+            self.get_logger().info(
+                "[PLAN_TO_POSE][FJT_DIRECT] success (bypass MoveIt OK)"
+            )
+            return PlanToPoseResult(
+                success=True,
+                reason="fjt_direct:SUCCESSFUL",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=1,
+            )
+        # FJT error code != 0 (e.g. -1 INVALID_GOAL, -3 PATH_TOLERANCE_VIOLATED).
+        self.get_logger().warning(
+            f"[PLAN_TO_POSE][FJT_DIRECT] FJT error_code={ec_val} — fallback a MoveIt"
+        )
+        return None
 
     def _restart_joint_trajectory_controller(self, *, timeout_sec: float = 3.0) -> bool:
         """F1.23 LIVE (2026-05-08): deactivate + activate joint_trajectory_controller.

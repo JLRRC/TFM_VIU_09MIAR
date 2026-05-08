@@ -175,3 +175,50 @@ ausencia de feedback del controller.
 - Commit F1.16: `cleanup_zombies.sh ampliado` (memoria 2026-05-08)
 - Commit F1.13: `c3d4372 feat(F1.13): canonical e2e cycles driver con hard reset HOME`
 - Auditoría v5: `auditoria/audit_profesional_20260508_v5.md` (a generar)
+
+## F1.24 / H9 LIVE (2026-05-08): bypass MoveIt vía FJT directo — ÉXITO PARCIAL
+
+Implementación: `bypass_moveit_for_short_paths=true` en plan_to_pose_server.
+Flujo:
+1. Lee `/joint_states` (seed IK).
+2. Llama `/compute_ik` (síncrono, NO usa simple_controller_manager).
+3. Construye JointTrajectory de 2 puntos (current → target).
+4. Envía a `/joint_trajectory_controller/follow_joint_trajectory` directo.
+5. Espera "Goal reached, success!" del controller.
+
+Helper puro: `ur5_tools/fjt_direct_helpers.py` (16 tests offline + mypy strict).
+
+**Resultado live (2026-05-08 19:24-19:27 cycle 1)**:
+
+| Fase | Resultado FJT_DIRECT | Tiempo |
+|------|---------------------|--------|
+| INITIAL_SNAPSHOT | N/A (no usa plan_to_pose) | 50ms |
+| HOME_INITIAL | ✅ FJT directo (no usa MoveIt) | 17s |
+| SELECT_OBJECT | ✅ Internal | 1ms |
+| **APPROACH** | **✅ fjt_direct:SUCCESSFUL** | **27s** |
+| **GRASP_DOWN** | **✅ fjt_direct:SUCCESSFUL** | **26s** |
+| GRASP | ✅ Internal (attach service) | 1s |
+| **LIFT** | **✅ fjt_direct:SUCCESSFUL** | **33s** |
+| **TRANSPORT** | **❌ FJT result timeout 90s** | (timeout) |
+
+**Conclusión**: `BUG_CONTROLLER_FEEDBACK_HANG` se mitiga
+**completamente para movimientos cortos/medios** (< 0.5m): el path FJT
+directo bypasea simple_controller_manager y el controller responde
+"Goal reached, success!" como en HOME_INITIAL. **APPROACH+GRASP_DOWN+LIFT
+funcionan perfectamente** — primera vez en el historial del proyecto que
+estas 3 fases del orchestrator pasan live sin tocar el legacy.
+
+**TRANSPORT abierto**: el IK calcula joints con wraps angulares fuera
+de los límites UR5 (e.g. `-3.387, +6.202, -1.699, +0.210, +4.712, -4.957`).
+El robot intenta moverse y se queda parado por límites físicos. Solución
+pendiente: post-procesamiento de IK que normalice joints a [-π, π]
+módulo 2π, o usar seed más cuidadoso.
+
+### Hipótesis nuevas (post-F1.24)
+
+| H | Idea | Coste |
+|---|------|-------|
+| H10 | Normalizar joints IK al rango [-π, π] antes del FJT | Bajo |
+| H11 | Pre-computar trajectoria multi-waypoint con `/compute_cartesian_path` | Medio |
+| H12 | Detectar TRANSPORT por distancia y usar duration ≥20s | Bajo |
+| H13 | Usar Trac-IK con joint limits estrictos en lugar de KDL default | Medio |

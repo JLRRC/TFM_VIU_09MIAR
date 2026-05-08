@@ -170,6 +170,12 @@ def _build_orchestrator_service_nodes(
             # Backwards compat: si alguien fija mode="" + use_real_bridge=true,
             # el server cae a REAL_BRIDGE (mode efectivo).
             {"use_real_bridge": False},
+            # F1.24 / H9 LIVE (2026-05-08): bypass MoveIt en APPROACH via FJT
+            # directo. Evita el bug BUG_CONTROLLER_FEEDBACK_HANG del path
+            # MoveIt simple_controller_manager. HOME_INITIAL ya usa FJT directo
+            # y siempre funciona — extender ese patrón a APPROACH/LIFT/TRANSPORT.
+            # Si IK falla o controller no responde, falls back a MoveIt path.
+            {"bypass_moveit_for_short_paths": True},
         ],
         condition=IfCondition(launch_plan_to_pose_server),
     )
