@@ -2,12 +2,37 @@
 
 Historial de hitos del proyecto TFM UR5+RG2 Pick & Place (simulación ROS 2 Jazzy + Gazebo Harmonic + MoveIt 2).
 
-## [2026-05-08] v1.0-audit-v4 — refactor profesional close
+## [2026-05-08] v1.0-audit-v4 — refactor profesional close (round 2)
 
 **Branch**: `v1.0-audit-v4`
-**Tag**: `v1.0-audit-v4-20260508`
+**Tag**: `v1.0-audit-v4-20260508` (round 1) + commits adicionales en branch
 **Base**: `audit-v4-baseline-20260508`
-**Commits**: 11
+**Commits**: 11 (round 1) + 11 (round 2 — ALL PENDING) = 22 total
+
+### Round 2 (post v1.0-audit-v4 close — ALL PENDING)
+
+Items adicionales ejecutados autónomamente:
+
+- CHANGELOG entry para v1.0-audit-v4 (este).
+- T33-style zombie controller_bootstrap guardrail (5 tests).
+- Errores tipados: `tfm_orchestrator.errors` jerarquía (TFMError →
+  PickError/MotionError/HardwareError/ConfigError + 13 subclasses; 28 tests).
+- Diagramas formales PUML: `architecture.puml` + `fsm_pick_phases.puml`
+  para defensa LaTeX.
+- F6 grasp_selector launcher: `grasp_selector.launch.py` opt-in + 4 tests.
+- F6 trajectory_executor_contract: DTOs + canonical reason codes (25 tests).
+- F5-iter2: `_send_and_accept_fjt_goal` extraído.
+- F5-iter3: `_setup_post_accept_state` extraído.
+- Bug fix iter1: `_prepare_fjt_execution` ahora devuelve prepared_traj_sec.
+- Snapshot tests: panel_ros / panel_helpers / internal_helpers /
+  ui_files_loc_baseline (12 ficheros) / panel_v2_mro (17 mixins).
+- F7 pipeline E2E: 6 jobs nuevos en colcon.yml +
+  `e2e-live-on-demand.yml` workflow con Xvfb + label trigger.
+- docs/MIXIN_DIAMOND_PLAN.md: plan iter1..17 para v1.1 elimination.
+
+Resultado round 2: **635 PASS, 11 skipped, 0 fail** offline (sin live).
+
+
 
 Cierre del refactor IMPRESCINDIBLE+RECOMENDABLE de [audit_v4](agarre_ros2_ws/docs/AUDIT_20260508_v4.md). Score honesto: **95+/100**.
 
