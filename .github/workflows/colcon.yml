@@ -105,7 +105,15 @@ jobs:
             test/test_lifecycle_contract.py \
             test/test_evidence_telemetry_f18.py \
             test/test_tf_geometry_logic.py \
-            test/test_perf_helpers.py
+            test/test_perf_helpers.py \
+            test/test_no_print_in_tools.py
+
+      - name: pytest no-print-in-prod gating (ur5_qt_panel)
+        working-directory: agarre_ros2_ws/src/ur5_qt_panel
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_no_print_in_panel.py
 
       - name: pytest tfm_orchestrator (F5 FSM + F6 service clients + F8 timings + T29 GRASP_DOWN)
         working-directory: agarre_ros2_ws/src/tfm_orchestrator

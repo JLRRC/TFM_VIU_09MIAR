@@ -412,10 +412,9 @@ def _resolve_direct_execution_target(
     # DIRECT keeps rg2_pinch_center as the operational grasp semantics.
     # Numeric UR5 IK still solves in tool0, so the only allowed
     # conversion lives here as a fixed, traceable transform.
-    env_xyz = str(
-        os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_XYZ", "") or ""
-    ).strip()
-    env_value = os.environ.get("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "")
+    from .panel_env import env_str  # F2-bis (audit-v4): centralizado.
+    env_xyz = env_str("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_XYZ", "").strip()
+    env_value = env_str("PANEL_PICK_DEMO_DIRECT_IK_TCP_OFFSET_M", "")
     local_offset = None
     offset_source = None
     if env_xyz:
