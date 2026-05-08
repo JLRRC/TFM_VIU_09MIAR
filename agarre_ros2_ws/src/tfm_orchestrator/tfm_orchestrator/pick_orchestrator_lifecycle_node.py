@@ -75,6 +75,14 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
 
     def __init__(self) -> None:
         super().__init__("pick_orchestrator_lifecycle")
+        # F19 audit-v4 (2026-05-08): ReentrantCallbackGroup intencional.
+        # ActionServer.execute_callback ya está serializado por contract
+        # (un solo goal activo a la vez). ReentrantCallbackGroup permite
+        # que las llamadas a /pick_phase + ActionClient async dentro del
+        # execute_callback no se bloqueen mutuamente. MutuallyExclusiveCBG
+        # introduciría deadlocks porque cada call síncrona dentro del
+        # execute esperaría su propio callback group lock.
+        # Verificado live: T35 × 3 ciclos verde con esta config.
         self._cb_group = ReentrantCallbackGroup()
         self._action_server: Optional[ActionServer] = None
         self._service_map: Optional[PhaseServiceMap] = None
