@@ -53,23 +53,12 @@ def camera_required_label(value: Optional[bool]) -> str:
     return "true" if value else "false"
 
 
-def env_float(name: str, default: float) -> float:
-    """Lee una variable de entorno como float; default si ausente o inválida."""
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return float(raw)
-    except Exception:
-        return default
-
-
-def env_flag(name: str, default: bool) -> bool:
-    """Lee una variable de entorno como flag bool truthy/falsy."""
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+# audit-v4.1 FASE D.2 (2026-05-08): env_float / env_flag eran duplicados
+# de panel_env.env_float / panel_env.env_bool. Sin consumidores externos
+# detectados (grep), se re-exportan desde panel_env para preservar la
+# superficie pública. Si algún consumer aparece, basta con importarlos
+# desde aquí; la implementación canónica vive en panel_env.
+from .panel_env import env_float, env_bool as env_flag  # noqa: F401
 
 
 def proto_time_to_seconds(value: Dict[str, object]) -> float:

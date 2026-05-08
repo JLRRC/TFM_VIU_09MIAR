@@ -17,37 +17,27 @@ from .logging_utils import emit_log_line
 # Reexportamos para mantener compat con consumidores actuales.
 from .panel_env import (
     env_bool as _env_bool_pure,
+    env_bool_permissive as _env_bool,
     env_float as _env_float,
     env_int as _env_int,
     env_optional_bool as _env_optional_bool_pure,
+    env_optional_bool_permissive as _env_optional_bool,
     env_optional_str as _env_optional_str,
     env_str as _env_str,
 )
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    """Compat: panel_settings._env_bool tenía semántica distinta del helper
-    genérico (truthy = "no es {0,false,False,vacío}"). Mantenemos ese
-    contrato aquí; el genérico env_bool en panel_env tiene whitelist
-    explícita (1/true/yes/on)."""
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip() not in ("0", "false", "False", "")
-
-
-def _env_optional_bool(name: str) -> Optional[bool]:
-    """Compat: semántica panel_settings (truthy si no es {0,false,no,off,vacío})."""
-    raw = os.environ.get(name)
-    if raw is None:
-        return None
-    return raw.strip().lower() not in ("0", "false", "no", "off", "")
+# audit-v4.1 FASE D.2 (2026-05-08): _env_bool y _env_optional_bool con
+# semántica permisiva (truthy = no es {0,false,vacío}) consolidados en
+# panel_env.env_bool_permissive / env_optional_bool_permissive. Aquí
+# se reimportan con los nombres locales para preservar todos los call
+# sites internos sin tocar lógica.
 
 
 def _warn_ignored_legacy_gripper_tcp_z_offset(raw_value: object = None, *, source: str) -> None:
     raw = raw_value
     if raw is None:
-        raw = os.environ.get("PANEL_GRIPPER_TCP_Z_OFFSET")
+        raw = _env_optional_str("PANEL_GRIPPER_TCP_Z_OFFSET")
     if raw is None or not str(raw).strip():
         return
     try:

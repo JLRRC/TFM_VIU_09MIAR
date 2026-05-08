@@ -23,6 +23,7 @@ except Exception:  # pragma: no cover
     psutil = None
 
 from .logging_utils import emit_log_line, timestamped_line
+from .panel_env import env_str
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_process import (  # noqa: F401
     GZ_LOG_FILTERS,
@@ -818,7 +819,7 @@ def _list_tf_topics() -> Tuple[List[str], List[str]]:
 
 
 def _parse_static_tf_env() -> Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float, float]]]:
-    env = os.environ.get("PANEL_STATIC_TF", "").strip()
+    env = env_str("PANEL_STATIC_TF", "").strip()
     if not env:
         return None
     parts = env.split()
@@ -968,7 +969,7 @@ def diagnose_tf_tree(
     else:
         result["error"] = f"lookup {world_frame}->{result['base_frame']} timed out"
 
-    if os.environ.get("ENABLE_STATIC_TF_FALLBACK", "0") == "1":
+    if env_str("ENABLE_STATIC_TF_FALLBACK", "0") == "1":
         fallback_world = world_frame or WORLD_FRAME or "world"
         fallback_base = "base_link"
         ok, msg = _publish_static_tf(fallback_world, fallback_base)

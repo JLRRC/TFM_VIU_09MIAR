@@ -13,6 +13,7 @@ import math
 import os
 from typing import Optional
 
+from .panel_env import env_optional_str
 from .panel_pick_demo_params import get_pick_demo_params
 
 
@@ -84,8 +85,9 @@ def _pick_demo_env_float(
     minimum: float = 0.0,
     maximum: Optional[float] = None,
 ) -> float:
+    raw = env_optional_str(name)
     try:
-        value = float(os.environ.get(name, str(default)) or default)
+        value = float(raw if raw not in (None, "") else default)
     except Exception:
         value = float(default)
     value = max(float(minimum), float(value))
@@ -95,18 +97,19 @@ def _pick_demo_env_float(
 
 
 def _pick_demo_env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = env_optional_str(name)
     try:
-        value = int(float(os.environ.get(name, str(default)) or default))
+        value = int(float(raw if raw not in (None, "") else default))
     except Exception:
         value = int(default)
     return max(int(minimum), int(value))
 
 
 def _pick_demo_env_flag(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
+    raw = env_optional_str(name)
     if raw is None:
         return bool(default)
-    return str(raw).strip().lower() not in {"", "0", "false", "no", "off"}
+    return raw.strip().lower() not in {"", "0", "false", "no", "off"}
 
 
 # ---------------------------------------------------------------------------

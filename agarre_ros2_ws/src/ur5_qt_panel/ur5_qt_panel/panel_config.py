@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple, Set
 
 from ur5_tools.gripper_geometry import RG2_PINCH_CENTER_FRAME, contact_z_correction_for_frame
 
+from .panel_env import env_float
 from .panel_settings import PanelSettings
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .logging_utils import emit_log_line
@@ -333,9 +334,9 @@ WRIST_CAMERA_TOPIC_CANDIDATES = ("/camera_wrist/image",)
 SETTLE_MANUAL: Set[str] = {"pick_demo"}
 CONTROLLER_CHECK_INTERVAL_SEC = 3.0
 CONTROLLER_LIST_RETRY_WINDOW_SEC = max(
-    0.0, float(os.environ.get("PANEL_CTRL_LIST_RETRY_WINDOW_SEC", "5.0"))
+    0.0, env_float("PANEL_CTRL_LIST_RETRY_WINDOW_SEC", 5.0)
 )
 CONTROLLER_LAST_OK_GRACE_SEC = max(
-    0.0, float(os.environ.get("PANEL_CTRL_LAST_OK_GRACE_SEC", "5.0"))
+    0.0, env_float("PANEL_CTRL_LAST_OK_GRACE_SEC", 5.0)
 )
 CONTROLLER_LIST_RETRY_STEP_SEC = 0.25

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 from PyQt5.QtGui import QImage
 
+from .panel_env import env_float, env_str
 from .panel_config import (
     ROS_AVAILABLE,
     DEBUG_FRAME_LOG,
@@ -236,11 +237,8 @@ class RosWorker(QObject):
                 )
             except Exception:
                 self._moveit_bridge_hb_qos = None
-        try:
-            max_fps = float(os.environ.get("PANEL_MAX_FPS", "60"))
-            if max_fps <= 0:
-                max_fps = 60.0
-        except ValueError:
+        max_fps = env_float("PANEL_MAX_FPS", 60.0)
+        if max_fps <= 0:
             max_fps = 60.0
         self._min_emit_interval = 1.0 / max_fps
         self._force_realtime = force_realtime
@@ -1379,7 +1377,7 @@ class RosWorker(QObject):
         if self._force_realtime:
             use_sim_time = False
         else:
-            use_sim_time = os.environ.get("USE_SIM_TIME", "1") == "1"
+            use_sim_time = env_str("USE_SIM_TIME", "1") == "1"
         try:
             if not rclpy.ok():
                 rclpy.init(args=None)

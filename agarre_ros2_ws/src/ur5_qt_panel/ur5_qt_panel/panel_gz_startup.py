@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import time
 from typing import Dict, Optional, Tuple
+from .panel_env import env_str
 from .panel_readiness import camera_ready_status
 from .panel_shutdown import StopSequence
 from .panel_startup import StartSequence
@@ -325,7 +326,7 @@ def _clean_cache_dirs(panel):
 def _close_terminal(panel):
     """Cerrar la aplicación del panel."""
     if bool(getattr(panel, "_script_motion_active", False)):
-        allow_close = str(os.environ.get("PANEL_ALLOW_CLOSE_WHILE_MOTION", "0")).strip().lower()
+        allow_close = env_str("PANEL_ALLOW_CLOSE_WHILE_MOTION", "0").strip().lower()
         if allow_close not in ("1", "true", "yes", "on"):
             panel._emit_log("[PANEL] Cerrar Terminal bloqueado: movimiento en curso (PICK/TEST)")
             panel._set_status("Cierre bloqueado: espera a que termine el movimiento", error=False)
@@ -514,7 +515,7 @@ def _run_script(panel, script_name: str, label: str):
     panel._run_async(worker)
 
 def _toggle_debug(panel, env_var: str):
-    current = os.environ.get(env_var, "0")
+    current = env_str(env_var, "0")
     new_val = "0" if current == "1" else "1"
     os.environ[env_var] = new_val
     enabled = new_val == "1"

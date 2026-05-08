@@ -94,6 +94,33 @@ def env_optional_bool(name: str) -> Optional[bool]:
     return str(raw).strip().lower() in ("1", "true", "yes", "on")
 
 
+def env_bool_permissive(name: str, default: bool) -> bool:
+    """Lee `name` con semántica permisiva (truthy = no es ``{0,false,False,""}``).
+
+    Audit-v4.1 FASE D.2 (2026-05-08): consolida el patrón legacy de
+    ``panel_settings._env_bool``. La semántica es **opuesta** a
+    ``env_bool`` (whitelist 1/true/yes/on): aquí cualquier no-falsy
+    cuenta como True. Útil para flags donde el operador puede poner
+    cualquier marca (``DEBUG=on``, ``DEBUG=verbose``, ``DEBUG=2``).
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip() not in ("0", "false", "False", "")
+
+
+def env_optional_bool_permissive(name: str) -> Optional[bool]:
+    """Versión opcional permisiva (truthy si no es ``{0,false,no,off,""}``).
+
+    Espejo de :func:`env_bool_permissive` para flags optional. Devuelve
+    None si la var no está definida.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    return raw.strip().lower() not in ("0", "false", "no", "off", "")
+
+
 @dataclass(frozen=True)
 class EnvDiagnostics:
     ssh_session: bool

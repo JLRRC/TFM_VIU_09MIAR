@@ -26,6 +26,7 @@ from .panel_config import (
     UR5_MODEL_NAME,
     WORLDS_DIR,
 )
+from .panel_env import env_optional_float, env_optional_str
 from .panel_launchers_params import get_launchers_params as _get_launchers_params
 from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_utils import (
@@ -53,10 +54,12 @@ def _log_exception(context: str, exc: Exception) -> None:
 
 
 def _env_flag(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
+    """Whitelist+blacklist con default para unknown. audit-v4.1 D.2: usa
+    env_optional_str para que el archivo salga de la allowlist."""
+    raw = env_optional_str(name)
     if raw is None:
         return bool(default)
-    val = str(raw).strip().lower()
+    val = raw.strip().lower()
     if val in ("1", "true", "yes", "on"):
         return True
     if val in ("0", "false", "no", "off"):
@@ -65,13 +68,12 @@ def _env_flag(name: str, default: bool) -> bool:
 
 
 def _env_float_opt(name: str) -> float | None:
-    raw = os.environ.get(name)
-    if raw is None or str(raw).strip() == "":
+    """audit-v4.1 D.2: delegate a panel_env.env_optional_float (semántica idéntica
+    excepto que env_optional_float trata vacío como número inválido → None igual)."""
+    raw = env_optional_str(name)
+    if raw is None or raw.strip() == "":
         return None
-    try:
-        return float(raw)
-    except Exception:
-        return None
+    return env_optional_float(name)
 
 
 def _resolve_gui_config_path(ws_dir: str) -> str:

@@ -33,6 +33,8 @@ from __future__ import annotations
 import os
 from typing import Any, Callable, Optional
 
+from .panel_env import env_optional_str
+
 
 def _legacy_dispatch(panel: Any) -> None:
     """F5 legacy removed (2026-05-08): run_pick_demo borrado.
@@ -169,9 +171,9 @@ def dispatch_pick_demo(
     from .pick_place_client_logic import should_use_orchestrator
 
     if env_value is None:
-        env_value = os.environ.get("PANEL_PICK_DEMO_USE_ORCHESTRATOR")
+        env_value = env_optional_str("PANEL_PICK_DEMO_USE_ORCHESTRATOR")
     if legacy_env_value is None:
-        legacy_env_value = os.environ.get("USE_LEGACY_PICK_DEMO")
+        legacy_env_value = env_optional_str("USE_LEGACY_PICK_DEMO")
     if not should_use_orchestrator(env_value, legacy_env_value=legacy_env_value):
         legacy(panel)
         return "legacy"

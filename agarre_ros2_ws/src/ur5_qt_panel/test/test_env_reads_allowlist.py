@@ -33,7 +33,7 @@ assert WORKSPACE_SRC.name == "src", f"Unexpected layout: {WORKSPACE_SRC}"
 # en el commit message + PR review (typically: nueva integración con sistema
 # externo donde panel_env/bridge_env_* no aplica).
 ENV_READS_ALLOWLIST: frozenset[str] = frozenset({
-    # Legítimos — patrón central
+    # Legítimos — patrón central (panel_env, *_params, bridge_env_*)
     "src/ur5_qt_panel/ur5_qt_panel/panel_env.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_launchers_params.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo_params.py",
@@ -51,19 +51,10 @@ ENV_READS_ALLOWLIST: frozenset[str] = frozenset({
     # DEUDA — pendiente de migración (FASE D.2 — sesión dedicada)
     "src/tfm_grasping/tfm_grasping/model.py",
     "src/ur5_qt_panel/ur5_qt_panel/directo_gate_evaluator.py",
-    "src/ur5_qt_panel/ur5_qt_panel/directo_geometry.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_config.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_gz_startup.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_launchers.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_pick_object.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_ros.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_settings.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_startup.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_system_status.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_utils.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_v2_helpers.py",
-    "src/ur5_qt_panel/ur5_qt_panel/pick_demo_dispatcher.py",
     "src/ur5_tools/ur5_tools/attach_set_pose.py",
     "src/ur5_tools/ur5_tools/cycle_logger.py",
     "src/ur5_tools/ur5_tools/evidence_logger.py",
@@ -78,7 +69,15 @@ ENV_READS_ALLOWLIST: frozenset[str] = frozenset({
 })
 
 
-_ENV_READ_PATTERN = re.compile(r"os\.environ\.get|os\.environ\[")
+# audit-v4.1 FASE D.2 (2026-05-08): regex refinada — sólo READS reales.
+# Excluye writes ``os.environ["FOO"] = value`` y ``os.environ.setdefault(...)``,
+# que no son la deuda perseguida (escribir env vars hacia subprocess es
+# patrón legítimo). Captura:
+#   * ``os.environ.get(...)``
+#   * ``os.environ["FOO"]`` cuando NO va seguido de ``=`` (read no-write).
+_ENV_READ_PATTERN = re.compile(
+    r"os\.environ\.get\(|os\.environ\[[^\]]+\](?!\s*=)"
+)
 
 
 def _scan_production_env_reads() -> set[str]:
@@ -127,11 +126,11 @@ def test_allowlist_entries_still_have_env_reads() -> None:
 
 def test_allowlist_count_baseline() -> None:
     """Sanity: la allowlist tiene un tamaño razonable (no se vació accidentalmente)."""
-    assert len(ENV_READS_ALLOWLIST) >= 30, (
+    assert len(ENV_READS_ALLOWLIST) >= 20, (
         "Allowlist sospechosamente pequeña — ¿se borró por accidente?"
     )
-    # Cuando bajemos de 20, eliminar este test (la deuda estará casi cerrada).
-    assert len(ENV_READS_ALLOWLIST) <= 50, (
-        f"Allowlist creciendo ({len(ENV_READS_ALLOWLIST)} > 50). "
+    # Cuando bajemos de 15, eliminar este test (la deuda estará casi cerrada).
+    assert len(ENV_READS_ALLOWLIST) <= 35, (
+        f"Allowlist creciendo ({len(ENV_READS_ALLOWLIST)} > 35). "
         "Estás añadiendo deuda en lugar de cerrarla."
     )
