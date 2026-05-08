@@ -45,21 +45,56 @@ Resultado live:
 - Cuando el robot SÍ llega al target (run 1) → recovery funcionaría.
 - Cuando el robot NO llega (run 2) → retry sigue colgándose por el mismo bug.
 
+## F1.23 LIVE intentado (2026-05-08 18:30) — controller restart NO resuelve
+
+Implementación: cliente `/controller_manager/switch_controller` que
+deactiva + activa `joint_trajectory_controller` ANTES del retry path
+tras FIRST_ATTEMPT_TIMEOUT.
+
+Resultado live:
+```
+[WARN] first attempt hang timeout=120.0s — cancelando goal
+[WARN] reset joint_trajectory_controller antes del retry
+[INFO] joint_trajectory_controller restarted OK   ← restart exitoso
+[WARN] failed reason=FIRST_ATTEMPT_TIMEOUT:120.0s — intentando retry tras 20s
+[INFO] move_group: Starting trajectory execution ...   ← retry attempt
+[INFO] simple_controller_manager: Goal request accepted!
+< NUNCA llega "Goal reached, success!" del retry attempt >
+```
+
+El **restart del controller funciona técnicamente** (el service responde OK),
+pero el bug del feedback hang **persiste en el retry attempt**. Robot
+medido en (0.029, -0.294, -0.246) base, target (0.433, 0.001, 0.125).
+panel_live_dist_m=0.000 → robot **estático**, NO se mueve durante el retry.
+
+Conclusión: el bug NO está en el controller en sí (restart no ayuda).
+Está en el path **MoveIt simple_controller_manager → action goal handle**:
+una vez que el primer goal queda en estado fantasma (cancelled pero el
+goal_handle sigue activo en el bridge), los siguientes goals se aceptan
+pero no se traducen en trajectory execution real.
+
+## Hipótesis nuevas (post-F1.23)
+
+| H | Hipótesis | Verificación |
+|---|-----------|--------------|
+| H6 | `simple_controller_manager` mantiene un goal_handle stale tras cancel mid-flight | restart de **move_group** (no del controller) entre attempts |
+| H7 | gz_ros2_control plugin no procesa el segundo Trajectory msg porque el primero quedó "in flight" en su queue interna | inspect plugin source / añadir reset call al plugin |
+| H8 | El cancel desde MoveIt llega después del cancel desde plan_to_pose, dejando el bridge en un estado donde el siguiente goal entra a una cola que ya no se procesa | flujo cancel mejorado: esperar confirm del cancel del move_group antes del restart |
+| H9 | Bug específico del simulador (gz_ros2_control fork de ros2_control) — probaria con ros2_control real | requiere hardware real |
+
 ## Plan de fix (próxima sesión live)
 
-1. **Controller restart en plan_to_pose post-retry-fail**:
-   ```python
-   from controller_manager_msgs.srv import SwitchController
-   # Tras retry FIRST_ATTEMPT_TIMEOUT, llamar:
-   # /controller_manager/switch_controller deactivate=[joint_trajectory_controller]
-   # sleep 1
-   # /controller_manager/switch_controller activate=[joint_trajectory_controller]
-   ```
-2. **Verificar gz_ros2_control vs simple_controller_manager**: el bug podría
-   ser específico del bridge MoveIt cuando el controller manager es de
-   gz_ros2_control (no real ros2_control).
-3. **Reducir `allowed_execution_duration_scaling`** de MoveIt a un valor
-   más conservador.
+1. **Restart del move_group node** (no solo del controller) tras
+   FIRST_ATTEMPT_TIMEOUT. Usando `/move_group/get_state` + transition
+   o lanzando un wrapper proceso. Más invasivo pero más probable.
+2. **Aumentar `allowed_execution_duration_scaling`** a 5.0+ y reducir
+   `allowed_goal_duration_margin` para forzar a MoveIt a abortar el
+   goal completo si el feedback no llega en X segundos.
+3. **Bypass MoveIt en APPROACH**: pre-computar trajectoria via
+   `/move_group/compute_cartesian_path` y enviar directamente al
+   FollowJointTrajectory action (igual que HOME_INITIAL hace).
+4. **Investigar gz_ros2_control source** para identificar la queue
+   interna que no se reinicia tras cancel.
 
 ## Síntoma
 

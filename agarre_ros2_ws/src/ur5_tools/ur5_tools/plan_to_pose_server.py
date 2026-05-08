@@ -39,6 +39,13 @@ from geometry_msgs.msg import PoseStamped
 from tf2_ros import Buffer, TransformListener
 from rclpy.duration import Duration
 
+# F1.23 LIVE (2026-05-08): SwitchController para reset del joint_trajectory_controller
+# tras retry-fail (BUG_CONTROLLER_FEEDBACK_HANG mitigation deeper).
+try:
+    from controller_manager_msgs.srv import SwitchController
+except Exception:
+    SwitchController = None  # type: ignore[misc,assignment]
+
 from ur5_panel_interfaces.action import PlanToPose
 
 from .plan_to_pose_logic import (
@@ -152,6 +159,21 @@ class PlanToPoseServer(Node):
         # BUG_CONTROLLER_FEEDBACK_HANG), devolver success en lugar de retry.
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
+
+        # F1.23 LIVE (2026-05-08): cliente para SwitchController. Usado para
+        # restart del joint_trajectory_controller cuando el feedback hang se
+        # confirma tras retry-fail (BUG_CONTROLLER_FEEDBACK_HANG mitigation).
+        self._switch_controller_client = None
+        if SwitchController is not None:
+            try:
+                self._switch_controller_client = self.create_client(
+                    SwitchController,
+                    "/controller_manager/switch_controller",
+                )
+            except Exception as exc:
+                self.get_logger().warning(
+                    f"[PLAN_TO_POSE] no se pudo crear cliente switch_controller: {exc}"
+                )
 
         self._cb_group = ReentrantCallbackGroup()
         self._action_server = ActionServer(
@@ -644,6 +666,17 @@ class PlanToPoseServer(Node):
             or "TIMED_OUT" in reason
             or "FIRST_ATTEMPT_TIMEOUT" in reason
         ):
+            # F1.23 LIVE (2026-05-08): tras FIRST_ATTEMPT_TIMEOUT, hacer
+            # restart del joint_trajectory_controller ANTES del retry.
+            # Hipótesis: el controller queda en estado "ghost-busy" tras
+            # un cancel mal procesado por simple_controller_manager. El
+            # restart fuerza una transición de estado limpia.
+            if "FIRST_ATTEMPT_TIMEOUT" in reason:
+                self.get_logger().warning(
+                    "[PLAN_TO_POSE][MOVEIT_DIRECT] reset joint_trajectory_controller "
+                    "antes del retry (BUG_CONTROLLER_FEEDBACK_HANG mitigation)"
+                )
+                self._restart_joint_trajectory_controller(timeout_sec=3.0)
             # F1.12 audit-v4 (2026-05-08): retry sleep 8 → 20s. 8s era OK
             # para el race condition de startup pero post-GRASP attach el
             # controller_manager pausa más tiempo antes de aceptar un nuevo
@@ -665,9 +698,14 @@ class PlanToPoseServer(Node):
                     result_future_retry.add_done_callback(
                         lambda _f: retry_result_event.set()
                     )
-                    retry_result_event.wait(
-                        timeout=float(max(1.0, self._moveit_result_timeout))
+                    # F1.23 LIVE (2026-05-08): retry timeout cap a
+                    # first_attempt_timeout para detectar feedback hang
+                    # rápidamente y devolver via TF check si robot llegó.
+                    retry_timeout_effective = float(
+                        min(first_attempt_timeout,
+                            max(1.0, self._moveit_result_timeout))
                     )
+                    retry_result_event.wait(timeout=retry_timeout_effective)
                     if result_future_retry.done():
                         wrapper_retry = result_future_retry.result()
                         ok_retry, reason_retry = parse_move_group_result(wrapper_retry)
@@ -685,8 +723,61 @@ class PlanToPoseServer(Node):
                                 attempts=2,
                             )
                         reason = f"{reason_retry}|retry_failed"
+                    else:
+                        # F1.23 LIVE (2026-05-08): retry también colgó por
+                        # feedback hang. Cancel + TF check final.
+                        try:
+                            cancel_r = gh_retry.cancel_goal_async()
+                            evt_cr = threading.Event()
+                            cancel_r.add_done_callback(lambda _f: evt_cr.set())
+                            evt_cr.wait(timeout=2.0)
+                        except Exception:
+                            pass
+                        reason = f"{reason}|retry_first_attempt_hang"
             else:
                 reason = f"{reason}|retry_send_timeout"
+
+            # F1.23 LIVE (2026-05-08): tras todos los intentos fallidos,
+            # último TF check — si el robot sí llegó al target durante
+            # alguno de los attempts (y solo el feedback se perdió),
+            # devolver success.
+            try:
+                final_tf = self._lookup_ee_position_in_base(
+                    ee_frame=effective_ee_frame,
+                    base_frame=self._bridge_base_frame,
+                    timeout_sec=1.5,
+                )
+            except Exception:
+                final_tf = None
+            if final_tf is not None:
+                final_tol = max(0.05, self._moveit_position_tol * 5.0)
+                fdx = float(final_tf[0]) - float(goal.target_xyz[0])
+                fdy = float(final_tf[1]) - float(goal.target_xyz[1])
+                fdz = float(final_tf[2]) - float(goal.target_xyz[2])
+                fdist = (fdx * fdx + fdy * fdy + fdz * fdz) ** 0.5
+                self.get_logger().info(
+                    f"[PLAN_TO_POSE][MOVEIT_DIRECT] final TF check "
+                    f"actual=({final_tf[0]:.3f},{final_tf[1]:.3f},"
+                    f"{final_tf[2]:.3f}) target=({goal.target_xyz[0]:.3f},"
+                    f"{goal.target_xyz[1]:.3f},{goal.target_xyz[2]:.3f}) "
+                    f"dist={fdist:.4f}m tol={final_tol:.4f}m"
+                )
+                if fdist <= final_tol:
+                    self.get_logger().info(
+                        "[PLAN_TO_POSE][MOVEIT_DIRECT] feedback_hang_recovered_final "
+                        "(robot at target post-retry, feedback lost) — success"
+                    )
+                    return PlanToPoseResult(
+                        success=True,
+                        reason=(
+                            f"feedback_hang_recovered_final"
+                            f"|orig={reason}|dist={fdist:.4f}m"
+                        ),
+                        final_xyz=goal.target_xyz,
+                        final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                        duration_sec=time.monotonic() - start_mono,
+                        attempts=2,
+                    )
 
         self.get_logger().warning(
             f"[PLAN_TO_POSE][MOVEIT_DIRECT] failed reason={reason}"
@@ -699,6 +790,87 @@ class PlanToPoseServer(Node):
             duration_sec=time.monotonic() - start_mono,
             attempts=1,
         )
+
+    def _restart_joint_trajectory_controller(self, *, timeout_sec: float = 3.0) -> bool:
+        """F1.23 LIVE (2026-05-08): deactivate + activate joint_trajectory_controller.
+
+        Mitigación del bug BUG_CONTROLLER_FEEDBACK_HANG cuando retry también
+        falla con FIRST_ATTEMPT_TIMEOUT. Hipótesis: el controller queda en
+        un estado "ghost-busy" tras un cancel mal procesado por el bridge
+        simple_controller_manager. El restart fuerza una transición de
+        estado limpia.
+
+        Returns:
+            True si deactivate + activate fueron OK; False en cualquier fail.
+        """
+        if SwitchController is None or self._switch_controller_client is None:
+            self.get_logger().warning(
+                "[PLAN_TO_POSE] switch_controller no disponible; skip restart"
+            )
+            return False
+        if not self._switch_controller_client.wait_for_service(timeout_sec=2.0):
+            self.get_logger().warning(
+                "[PLAN_TO_POSE] switch_controller service not ready"
+            )
+            return False
+        # Step 1: deactivate
+        deactivate_req = SwitchController.Request()
+        deactivate_req.deactivate_controllers = ["joint_trajectory_controller"]
+        deactivate_req.activate_controllers = []
+        deactivate_req.strictness = SwitchController.Request.BEST_EFFORT
+        deactivate_req.activate_asap = False
+        try:
+            future_d = self._switch_controller_client.call_async(deactivate_req)
+            event_d = threading.Event()
+            future_d.add_done_callback(lambda _f: event_d.set())
+            event_d.wait(timeout=float(timeout_sec))
+            if not future_d.done():
+                self.get_logger().warning("[PLAN_TO_POSE] deactivate timeout")
+                return False
+            resp_d = future_d.result()
+            if resp_d is None or not bool(getattr(resp_d, "ok", False)):
+                self.get_logger().warning(
+                    f"[PLAN_TO_POSE] deactivate failed: ok=False "
+                    f"msg={getattr(resp_d, 'message', '?')}"
+                )
+                # Continuar igual al activate (BEST_EFFORT)
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[PLAN_TO_POSE] deactivate exception: {type(exc).__name__}: {exc}"
+            )
+            return False
+        # Pause breve para que el controller release recursos
+        time.sleep(1.0)
+        # Step 2: activate
+        activate_req = SwitchController.Request()
+        activate_req.deactivate_controllers = []
+        activate_req.activate_controllers = ["joint_trajectory_controller"]
+        activate_req.strictness = SwitchController.Request.BEST_EFFORT
+        activate_req.activate_asap = True
+        try:
+            future_a = self._switch_controller_client.call_async(activate_req)
+            event_a = threading.Event()
+            future_a.add_done_callback(lambda _f: event_a.set())
+            event_a.wait(timeout=float(timeout_sec))
+            if not future_a.done():
+                self.get_logger().warning("[PLAN_TO_POSE] activate timeout")
+                return False
+            resp_a = future_a.result()
+            if resp_a is None or not bool(getattr(resp_a, "ok", False)):
+                self.get_logger().warning(
+                    f"[PLAN_TO_POSE] activate failed: ok=False "
+                    f"msg={getattr(resp_a, 'message', '?')}"
+                )
+                return False
+            self.get_logger().info(
+                "[PLAN_TO_POSE] joint_trajectory_controller restarted OK"
+            )
+            return True
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[PLAN_TO_POSE] activate exception: {type(exc).__name__}: {exc}"
+            )
+            return False
 
     def _lookup_ee_position_in_base(
         self,
