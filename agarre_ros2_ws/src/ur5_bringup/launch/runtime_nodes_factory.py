@@ -241,7 +241,8 @@ def build_runtime_node_actions(
             {"model_name": "ur5_rg2"},
             {"base_frame": "base_link"},
             {"world_frame": "world"},
-            {"clock_timeout_sec": 20.0},
+            # F1.9 (audit-v4 2026-05-08): subido 20 → 60s para sim con muchos plugins.
+            {"clock_timeout_sec": 60.0},
             {"pose_timeout_sec": 12.0},
             {"use_sim_time": use_sim_time},
             # static_grace_sec < 0: publish world->base_link on /tf_static

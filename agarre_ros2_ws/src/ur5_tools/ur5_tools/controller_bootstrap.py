@@ -26,8 +26,28 @@ from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from rosgraph_msgs.msg import Clock
+
+
+# F1.9 (audit-v4 2026-05-08): /clock viene del ros_gz_bridge en QoS RELIABLE.
+# Antes usábamos qos_profile_sensor_data (BEST_EFFORT), técnicamente
+# compatible con un publisher RELIABLE pero a veces sufre drops en startup.
+# Forzar RELIABLE/KEEP_LAST_1 para garantizar entrega del primer /clock
+# en sim_time bring-up. KEEP_LAST_1 porque sólo necesitamos el timestamp
+# más reciente (el rate de /clock es 1kHz; no acumulamos historia).
+_CLOCK_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+)
 from sensor_msgs.msg import JointState
 from std_srvs.srv import Trigger
 from trajectory_msgs.msg import JointTrajectoryPoint
@@ -103,11 +123,12 @@ class ControllerBootstrap(Node):
             callback_group=self._cb_group,
         )
 
+        # F1.9 (audit-v4): QoS RELIABLE para match con ros_gz_bridge.
         self.create_subscription(
             Clock,
             "/clock",
             self._on_clock,
-            qos_profile_sensor_data,
+            _CLOCK_QOS,
             callback_group=self._cb_group,
         )
         self.create_subscription(
@@ -444,11 +465,38 @@ class ControllerBootstrap(Node):
                 return False
             self._running = True
         start = time.monotonic()
+        # F1.9 (audit-v4 2026-05-08): logging periódico cada 5s para diagnosticar
+        # si gz sim publica /clock dentro del timeout. Antes era silencioso.
+        last_progress_log = start
         while self._wait_clock and not self._clock_ok():
             # Ensure /clock callbacks are processed while waiting.
             rclpy.spin_once(self, timeout_sec=0.1)
-            if (time.monotonic() - start) > self._clock_timeout:
-                self.get_logger().error("/clock no disponible; abortando bootstrap")
+            now = time.monotonic()
+            elapsed = now - start
+            if (now - last_progress_log) >= 5.0:
+                last_clock_age = (
+                    f"{(now - self._last_clock_wall):.2f}s"
+                    if self._last_clock_wall > 0.0
+                    else "never"
+                )
+                self.get_logger().info(
+                    f"[BOOTSTRAP][CLOCK] esperando /clock "
+                    f"elapsed={elapsed:.1f}s/{self._clock_timeout:.1f}s "
+                    f"last_clock_age={last_clock_age}"
+                )
+                last_progress_log = now
+            if elapsed > self._clock_timeout:
+                self.get_logger().error(
+                    "/clock no disponible; abortando bootstrap "
+                    f"(timeout={self._clock_timeout:.1f}s; "
+                    f"last_clock_wall={self._last_clock_wall:.3f}; "
+                    "verifica que gz sim publica /world/<world>/clock y que "
+                    "ros_gz_bridge está vivo). "
+                    "Posibles causas (F1.9 audit-v4): "
+                    "(a) gz sim no arrancó a tiempo; "
+                    "(b) ros_gz_bridge crash/no leyó YAML; "
+                    "(c) GZ_PARTITION mismatch."
+                )
                 with self._lock:
                     self._running = False
                 return False

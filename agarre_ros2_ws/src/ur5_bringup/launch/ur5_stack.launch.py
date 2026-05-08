@@ -372,7 +372,11 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
             {"controller_manager": LaunchConfiguration("controller_manager")},
             {"wait_for_clock": True},
-            {"clock_timeout_sec": 12.0},
+            # F1.9 (audit-v4 2026-05-08): subido 12 → 60s. En sim con muchos
+            # plugins (10+ detachable joints), gz sim puede tardar > 12s en
+            # publicar el primer /clock. Logging periódico cada 5s ahora
+            # documenta el progreso.
+            {"clock_timeout_sec": 60.0},
             {"service_timeout_sec": 8.0},
             {"autostart": True},
             {"stay_alive": True},
