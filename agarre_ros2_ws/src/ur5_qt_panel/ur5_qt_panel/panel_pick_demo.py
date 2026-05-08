@@ -243,14 +243,9 @@ def _fmt_px(px) -> str:
 
 
 def _execution_type_from_decision(decision: str | None) -> str:
-    decision_txt = str(decision or "").strip().lower()
-    if "fallback_joint_preset" in decision_txt or "target_unavailable" in decision_txt:
-        return "preset"
-    if decision_txt in {"direct_ik_move", "direct_ik_move_refresh"}:
-        return "geometrico"
-    if decision_txt:
-        return "hibrido"
-    return "hibrido"
+    # F3-step40 (2026-05-08): delega a pick_demo.decision_helpers (puro).
+    from .pick_demo.decision_helpers import execution_type_from_decision
+    return execution_type_from_decision(decision)
 
 
 def _grasp_down_permissive_ik_err_tol() -> float:
@@ -383,28 +378,13 @@ def _disable_button_anyway(panel) -> None:
     panel._ui_set_status("Pick demo fallido: cesta no confirmada", error=True)
 
 
-# F3-step1.4: cadena de helpers IK seed deviation promovida del closure.
-# Constante _TWO_PI_R y los 3 helpers (_seed_devs / _seed_max_dev /
-# _seed_sum_dev) sirven para detectar soluciones IK en una rama
-# distinta a la del seed (>90° de deviación angular). Ahora
-# module-level — paridad numérica garantizada (mismo math.pi).
-
-_TWO_PI_R = 2.0 * math.pi
-
-
-def _seed_devs(q_arr, s_arr):
-    return [
-        abs(float(q) + _TWO_PI_R * round((float(s) - float(q)) / _TWO_PI_R) - float(s))
-        for q, s in zip(q_arr, s_arr)
-    ]
-
-
-def _seed_max_dev(q_arr, s_arr):
-    return max(_seed_devs(q_arr, s_arr))
-
-
-def _seed_sum_dev(q_arr, s_arr):
-    return sum(_seed_devs(q_arr, s_arr))
+# F3-step1.4 + F3-step40 (2026-05-08): cadena de helpers IK seed deviation
+# delegada a pick_demo.seed_metrics (puro, testeable offline).
+from .pick_demo.seed_metrics import (
+    seed_devs as _seed_devs,
+    seed_max_dev as _seed_max_dev,
+    seed_sum_dev as _seed_sum_dev,
+)
 
 
 # F3-step1.4: helper UI promovido del closure (4 callsites; 3 callables
