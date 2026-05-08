@@ -80,7 +80,10 @@ def test_build_fjt_goal_basic_structure():
     assert goal.trajectory is jt
     assert len(goal.path_tolerance) == 6
     assert len(goal.goal_tolerance) == 6
-    assert goal.path_tolerance[0].position == pytest.approx(0.10)
+    # F1.7 (2026-05-08): path_tolerance default 10.0 rad (effectively
+    # disabled) para que gz_ros2_control en sim_time no aborte con
+    # PATH_TOLERANCE_VIOLATED. goal_tolerance sigue 0.10 (estricto).
+    assert goal.path_tolerance[0].position == pytest.approx(10.0)
     assert goal.goal_tolerance[0].position == pytest.approx(0.10)
     assert goal.goal_time_tolerance.sec == 5
     assert goal.goal_time_tolerance.nanosec == 0
@@ -89,15 +92,19 @@ def test_build_fjt_goal_basic_structure():
 def test_build_fjt_goal_custom_position_tol():
     jt = build_home_joint_trajectory()
     goal = build_follow_joint_trajectory_goal(jt, position_tol_rad=0.05)
-    assert all(t.position == pytest.approx(0.05) for t in goal.path_tolerance)
+    # F1.7: position_tol_rad sólo afecta a goal_tolerance.
+    # path_tolerance default 10.0 rad salvo path_tol_rad explícito.
+    assert all(t.position == pytest.approx(10.0) for t in goal.path_tolerance)
     assert all(t.position == pytest.approx(0.05) for t in goal.goal_tolerance)
 
 
 def test_build_fjt_goal_position_tol_clamped_min():
     jt = build_home_joint_trajectory()
     goal = build_follow_joint_trajectory_goal(jt, position_tol_rad=0.001)
-    # min is 0.01
-    assert all(t.position == pytest.approx(0.01) for t in goal.path_tolerance)
+    # F1.7: position_tol_rad clamped a min 0.01 sólo afecta goal_tolerance.
+    assert all(t.position == pytest.approx(0.01) for t in goal.goal_tolerance)
+    # path_tolerance default 10.0 sin tocar.
+    assert all(t.position == pytest.approx(10.0) for t in goal.path_tolerance)
 
 
 def test_build_fjt_goal_custom_goal_time_tol():

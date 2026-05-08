@@ -327,10 +327,10 @@ def parse_ik_result(
     for name in joint_names:
         if name not in name_to_pos:
             return False, f"ik_joint_missing:{name}", None
-        val = name_to_pos[name]
+        joint_val: float = name_to_pos[name]
         if normalize_joints:
-            val = normalize_joint_to_pi(val)
-        ordered.append(val)
+            joint_val = float(normalize_joint_to_pi(joint_val))
+        ordered.append(joint_val)
     return True, "ik:SUCCESS", ordered
 
 

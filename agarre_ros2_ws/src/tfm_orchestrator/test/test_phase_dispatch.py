@@ -559,7 +559,13 @@ def _pick_ctx_with_hint(
 
 def test_approach_uses_object_hint_with_default_z_clearance_world_to_base_20260507():
     """2026-05-07: APPROACH convierte hint world → base_link y añade
-    clearance Z (0.10 default)."""
+    clearance Z (0.10 default).
+
+    F1.8 (2026-05-08): la orientación del hint NO pasa directamente al goal.
+    Se aplica ``compute_top_down_grasp_quat`` para forzar TCP-Z down con yaw
+    alineado al objeto. Para hint tuple3 (no quat), normalize completa con
+    identity (yaw=0) → resultado canónico (qx=1, qy=0, qz=0, qw=0): 180°
+    around X (TCP Z apuntando hacia abajo)."""
     hint_world = (0.4, -0.1, 0.03)
     ctx = _pick_ctx_with_hint(hint=hint_world)
     goal = build_plan_to_pose_goal_for_approach(ctx)
@@ -568,8 +574,11 @@ def test_approach_uses_object_hint_with_default_z_clearance_world_to_base_202605
     assert pose.position.x == pytest.approx(expected[0])
     assert pose.position.y == pytest.approx(expected[1])
     assert pose.position.z == pytest.approx(expected[2])
-    # Quat identity (hint era tuple3 → completed con identity).
-    assert pose.orientation.w == pytest.approx(1.0)
+    # F1.8: top-down con yaw=0 → (1, 0, 0, 0).
+    assert pose.orientation.x == pytest.approx(1.0)
+    assert pose.orientation.y == pytest.approx(0.0)
+    assert pose.orientation.z == pytest.approx(0.0)
+    assert pose.orientation.w == pytest.approx(0.0)
 
 
 def test_approach_respects_custom_z_clearance_world_to_base_20260507():
@@ -582,17 +591,21 @@ def test_approach_respects_custom_z_clearance_world_to_base_20260507():
 
 
 def test_approach_uses_hint_quat_when_tuple7():
-    # Quat 90° around Z: (0, 0, sin(45°), cos(45°)) ≈ (0, 0, 0.707, 0.707).
+    """F1.8 (2026-05-08): hint quat 90° around Z (yaw=π/2).
+
+    compute_top_down_grasp_quat aplica top-down (180° around X) ROTANDO
+    sólo por el yaw del objeto. yaw=π/2 → (cos(π/4), sin(π/4), 0, 0)
+    ≈ (0.7071, 0.7071, 0, 0)."""
     ctx = PickContext(
         object_name="box",
         drop_xyz_world=(0.0, 0.0, 0.0),
         object_pose_world_hint=(0.3, 0.4, 0.05, 0.0, 0.0, 0.7071, 0.7071),
     )
     goal = build_plan_to_pose_goal_for_approach(ctx)
-    assert goal.target_pose_base.orientation.x == pytest.approx(0.0)
-    assert goal.target_pose_base.orientation.y == pytest.approx(0.0)
-    assert goal.target_pose_base.orientation.z == pytest.approx(0.7071)
-    assert goal.target_pose_base.orientation.w == pytest.approx(0.7071)
+    assert goal.target_pose_base.orientation.x == pytest.approx(0.7071, abs=1e-3)
+    assert goal.target_pose_base.orientation.y == pytest.approx(0.7071, abs=1e-3)
+    assert goal.target_pose_base.orientation.z == pytest.approx(0.0)
+    assert goal.target_pose_base.orientation.w == pytest.approx(0.0)
 
 
 def test_approach_falls_back_to_neutral_when_hint_is_zero_pose():

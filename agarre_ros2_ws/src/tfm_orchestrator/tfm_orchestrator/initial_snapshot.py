@@ -168,14 +168,16 @@ def capture_tcp_pose_base(
         (tuple7_or_none, reason_text). tuple7 es la pose; reason vacío si OK
         o descripción del error si None.
     """
+    Duration: Optional[Any] = None
     try:
-        from rclpy.duration import Duration  # lazy
+        from rclpy.duration import Duration as _Duration  # lazy
+        Duration = _Duration
     except ImportError:
         Duration = None
 
     try:
         from rclpy.time import Time
-        timeout = (
+        timeout: Optional[Any] = (
             Duration(seconds=float(timeout_sec))
             if Duration is not None
             else None
