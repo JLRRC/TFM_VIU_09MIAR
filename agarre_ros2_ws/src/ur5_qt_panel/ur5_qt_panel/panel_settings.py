@@ -13,45 +13,35 @@ from typing import Dict, List, Optional
 from .logging_utils import emit_log_line
 
 
-def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ.get(name, str(default)))
-    except Exception:
-        return default
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, str(default)))
-    except Exception:
-        return default
+# F2-step5 (2026-05-08): helpers env centralizados en panel_env.
+# Reexportamos para mantener compat con consumidores actuales.
+from .panel_env import (
+    env_bool as _env_bool_pure,
+    env_float as _env_float,
+    env_int as _env_int,
+    env_optional_bool as _env_optional_bool_pure,
+    env_optional_str as _env_optional_str,
+    env_str as _env_str,
+)
 
 
 def _env_bool(name: str, default: bool) -> bool:
+    """Compat: panel_settings._env_bool tenía semántica distinta del helper
+    genérico (truthy = "no es {0,false,False,vacío}"). Mantenemos ese
+    contrato aquí; el genérico env_bool en panel_env tiene whitelist
+    explícita (1/true/yes/on)."""
     raw = os.environ.get(name)
     if raw is None:
         return default
     return raw.strip() not in ("0", "false", "False", "")
 
-def _env_str(name: str, default: str) -> str:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return str(raw)
 
 def _env_optional_bool(name: str) -> Optional[bool]:
+    """Compat: semántica panel_settings (truthy si no es {0,false,no,off,vacío})."""
     raw = os.environ.get(name)
     if raw is None:
         return None
     return raw.strip().lower() not in ("0", "false", "no", "off", "")
-
-
-def _env_optional_str(name: str) -> Optional[str]:
-    """F2-step3 (2026-05-08): helper centralizado para Optional[str] env."""
-    raw = os.environ.get(name)
-    if raw is None:
-        return None
-    return str(raw)
 
 
 def _warn_ignored_legacy_gripper_tcp_z_offset(raw_value: object = None, *, source: str) -> None:

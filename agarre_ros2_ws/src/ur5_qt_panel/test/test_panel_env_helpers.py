@@ -255,3 +255,132 @@ def test_is_strict_physics_mode_strips_whitespace(
 ) -> None:
     monkeypatch.setenv("PANEL_STRICT_PHYSICS_MODE", "  TRUE  ")
     assert is_strict_physics_mode() is True
+
+
+# ---------------------------------------------------------------------------
+# F2-step5 (2026-05-08) — helpers tipo-genéricos: env_str/int/float/bool +
+# optionals. Sustituyen el patrón os.environ.get + cast + fallback.
+# ---------------------------------------------------------------------------
+
+
+from ur5_qt_panel.panel_env import (  # noqa: E402
+    env_bool,
+    env_float,
+    env_int,
+    env_optional_bool,
+    env_optional_float,
+    env_optional_int,
+    env_optional_str,
+    env_str,
+)
+
+_GENERIC_VAR = "_TEST_PANEL_ENV_GENERIC_VAR"
+
+
+def test_env_str_default_when_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_GENERIC_VAR, raising=False)
+    assert env_str(_GENERIC_VAR, "default") == "default"
+
+
+def test_env_str_returns_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "hello")
+    assert env_str(_GENERIC_VAR, "default") == "hello"
+
+
+def test_env_int_default_when_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_GENERIC_VAR, raising=False)
+    assert env_int(_GENERIC_VAR, 42) == 42
+
+
+def test_env_int_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "100")
+    assert env_int(_GENERIC_VAR, 42) == 100
+
+
+def test_env_int_invalid_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "not_an_int")
+    assert env_int(_GENERIC_VAR, 42) == 42
+
+
+def test_env_float_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_GENERIC_VAR, raising=False)
+    assert env_float(_GENERIC_VAR, 1.5) == pytest.approx(1.5)
+
+
+def test_env_float_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "3.14")
+    assert env_float(_GENERIC_VAR, 1.5) == pytest.approx(3.14)
+
+
+def test_env_float_invalid_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "not_a_float")
+    assert env_float(_GENERIC_VAR, 1.5) == pytest.approx(1.5)
+
+
+@pytest.mark.parametrize(
+    "truthy", ["1", "true", "TRUE", "yes", "YES", "on", "On"]
+)
+def test_env_bool_truthy(monkeypatch: pytest.MonkeyPatch, truthy: str) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, truthy)
+    assert env_bool(_GENERIC_VAR, default=False) is True
+
+
+@pytest.mark.parametrize(
+    "falsy", ["0", "false", "FALSE", "no", "off", "", "any"]
+)
+def test_env_bool_falsy(monkeypatch: pytest.MonkeyPatch, falsy: str) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, falsy)
+    assert env_bool(_GENERIC_VAR, default=True) is False
+
+
+def test_env_bool_default_when_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_GENERIC_VAR, raising=False)
+    assert env_bool(_GENERIC_VAR, default=True) is True
+    assert env_bool(_GENERIC_VAR, default=False) is False
+
+
+def test_env_optional_str_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_GENERIC_VAR, raising=False)
+    assert env_optional_str(_GENERIC_VAR) is None
+
+
+def test_env_optional_str_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "hello")
+    assert env_optional_str(_GENERIC_VAR) == "hello"
+
+
+def test_env_optional_int_invalid_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "abc")
+    assert env_optional_int(_GENERIC_VAR) is None
+
+
+def test_env_optional_int_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "7")
+    assert env_optional_int(_GENERIC_VAR) == 7
+
+
+def test_env_optional_float_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "abc")
+    assert env_optional_float(_GENERIC_VAR) is None
+
+
+def test_env_optional_float_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "2.5")
+    assert env_optional_float(_GENERIC_VAR) == pytest.approx(2.5)
+
+
+def test_env_optional_bool_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(_GENERIC_VAR, raising=False)
+    assert env_optional_bool(_GENERIC_VAR) is None
+
+
+def test_env_optional_bool_truthy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "yes")
+    assert env_optional_bool(_GENERIC_VAR) is True
+
+
+def test_env_optional_bool_falsy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_GENERIC_VAR, "no")
+    assert env_optional_bool(_GENERIC_VAR) is False
