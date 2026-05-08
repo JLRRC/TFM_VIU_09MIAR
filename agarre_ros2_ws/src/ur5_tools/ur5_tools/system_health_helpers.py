@@ -66,6 +66,33 @@ def zombie_move_group_check(
     return ZombieCheckResult(process_name=name, process_count=n, healthy=n == 0)
 
 
+def zombie_controller_bootstrap_check(
+    process_cmdlines: Iterable[str],
+    *,
+    name: str = "controller_bootstrap",
+    max_allowed: int = 1,
+) -> ZombieCheckResult:
+    """Audit-v4 (2026-05-08): controller_bootstrap zombie guardrail.
+
+    Observado en stack live: 2× /controller_bootstrap activos
+    simultáneamente cuando el factory bootstrap se relanza sin cleanup
+    previo. El segundo intenta cargar controllers ya activos y produce
+    error spam.
+
+    El nodo es transient (one-shot), así que ``max_allowed=1`` significa
+    "máximo 1 ejecutándose ahora". 0 también es healthy (post-bootstrap).
+
+    Returns:
+        ZombieCheckResult con healthy = (count <= max_allowed).
+    """
+    n = count_processes_with_name(name, process_cmdlines)
+    return ZombieCheckResult(
+        process_name=name,
+        process_count=n,
+        healthy=n <= int(max_allowed),
+    )
+
+
 def list_known_move_group_killers() -> List[str]:
     """Devuelve la lista de scripts canónicos que deben matar move_group.
 

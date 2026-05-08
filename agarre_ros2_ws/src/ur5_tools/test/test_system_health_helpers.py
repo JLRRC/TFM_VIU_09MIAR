@@ -128,3 +128,67 @@ def test_canonical_scripts_kill_move_group(script_relpath):
 def test_at_least_5_scripts_kill_move_group():
     """Invariante: hay >=5 scripts en el set canónico de killers."""
     assert len(list_known_move_group_killers()) >= 5
+
+
+# ---------------------------------------------------------------------------
+# Audit-v4 (2026-05-08): controller_bootstrap zombie guardrail
+# ---------------------------------------------------------------------------
+
+
+def test_zombie_controller_bootstrap_check_zero():
+    from ur5_tools.system_health_helpers import (
+        zombie_controller_bootstrap_check,
+    )
+    out = zombie_controller_bootstrap_check([])
+    assert out.process_name == "controller_bootstrap"
+    assert out.process_count == 0
+    assert out.healthy is True
+
+
+def test_zombie_controller_bootstrap_check_one_allowed():
+    """1 instancia activa es saludable (max_allowed=1 default)."""
+    from ur5_tools.system_health_helpers import (
+        zombie_controller_bootstrap_check,
+    )
+    out = zombie_controller_bootstrap_check(
+        ["python3 controller_bootstrap.py"]
+    )
+    assert out.process_count == 1
+    assert out.healthy is True
+
+
+def test_zombie_controller_bootstrap_check_two_unhealthy():
+    """2 instancias = zombie detectado (issue audit-v4)."""
+    from ur5_tools.system_health_helpers import (
+        zombie_controller_bootstrap_check,
+    )
+    cmds = [
+        "python3 controller_bootstrap.py --first",
+        "python3 controller_bootstrap.py --second",
+    ]
+    out = zombie_controller_bootstrap_check(cmds)
+    assert out.process_count == 2
+    assert out.healthy is False
+
+
+def test_zombie_controller_bootstrap_max_allowed_zero():
+    """max_allowed=0 fuerza que ninguna instancia sea aceptable."""
+    from ur5_tools.system_health_helpers import (
+        zombie_controller_bootstrap_check,
+    )
+    out = zombie_controller_bootstrap_check(
+        ["python3 controller_bootstrap.py"], max_allowed=0
+    )
+    assert out.process_count == 1
+    assert out.healthy is False
+
+
+def test_zombie_controller_bootstrap_ignores_unrelated():
+    from ur5_tools.system_health_helpers import (
+        zombie_controller_bootstrap_check,
+    )
+    out = zombie_controller_bootstrap_check(
+        ["python3 something_else.py", "/usr/bin/foo --bootstrap"]
+    )
+    assert out.process_count == 0
+    assert out.healthy is True

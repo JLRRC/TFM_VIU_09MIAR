@@ -147,6 +147,8 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_tools/ur5_tools/tf_batch_lookups_runtime.py",
     # F5 audit-v4 (2026-05-08): puro release_objects_logic.
     "src/ur5_tools/ur5_tools/release_objects_logic.py",
+    # Audit-v4 (2026-05-08): typed exceptions hierarchy.
+    "src/tfm_orchestrator/tfm_orchestrator/errors.py",
 ]
 
 
