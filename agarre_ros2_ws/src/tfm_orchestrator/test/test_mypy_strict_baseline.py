@@ -79,6 +79,9 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_tools/ur5_tools/generate_latency_table.py",
     "src/tfm_orchestrator/tfm_orchestrator/phase_timings.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_env.py",
+    # F3-step6 (2026-05-08): planning_scene_sync_helpers extraído como
+    # módulo puro testeable.
+    "src/ur5_tools/ur5_tools/planning_scene_sync_helpers.py",
 ]
 
 

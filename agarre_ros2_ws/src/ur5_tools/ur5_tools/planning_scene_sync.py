@@ -74,77 +74,19 @@ class PoseSample:
     stamp_ns: int
 
 
-def _strip_ns(tag: str) -> str:
-    if "}" in tag:
-        return tag.split("}", 1)[1]
-    return tag
-
-
-def _quat_from_rpy(roll: float, pitch: float, yaw: float) -> Tuple[float, float, float, float]:
-    cy = math.cos(yaw * 0.5)
-    sy = math.sin(yaw * 0.5)
-    cp = math.cos(pitch * 0.5)
-    sp = math.sin(pitch * 0.5)
-    cr = math.cos(roll * 0.5)
-    sr = math.sin(roll * 0.5)
-    return (
-        sr * cp * cy - cr * sp * sy,
-        cr * sp * cy + sr * cp * sy,
-        cr * cp * sy - sr * sp * cy,
-        cr * cp * cy + sr * sp * sy,
-    )
-
-
-def _quat_multiply(
-    lhs: Tuple[float, float, float, float],
-    rhs: Tuple[float, float, float, float],
-) -> Tuple[float, float, float, float]:
-    lx, ly, lz, lw = lhs
-    rx, ry, rz, rw = rhs
-    return (
-        (lw * rx) + (lx * rw) + (ly * rz) - (lz * ry),
-        (lw * ry) - (lx * rz) + (ly * rw) + (lz * rx),
-        (lw * rz) + (lx * ry) - (ly * rx) + (lz * rw),
-        (lw * rw) - (lx * rx) - (ly * ry) - (lz * rz),
-    )
-
-
-def _quat_conjugate(quat: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
-    qx, qy, qz, qw = quat
-    return (-qx, -qy, -qz, qw)
-
-
-def _rotate_vector(
-    quat: Tuple[float, float, float, float],
-    vector: Tuple[float, float, float],
-) -> Tuple[float, float, float]:
-    vx, vy, vz = vector
-    vec_quat = (vx, vy, vz, 0.0)
-    rotated = _quat_multiply(_quat_multiply(quat, vec_quat), _quat_conjugate(quat))
-    return (rotated[0], rotated[1], rotated[2])
-
-
-def _compose_pose(
-    parent: Tuple[float, float, float, float, float, float, float],
-    child: Tuple[float, float, float, float, float, float, float],
-) -> Tuple[float, float, float, float, float, float, float]:
-    px, py, pz, pqx, pqy, pqz, pqw = parent
-    cx, cy, cz, cqx, cqy, cqz, cqw = child
-    ox, oy, oz = _rotate_vector((pqx, pqy, pqz, pqw), (cx, cy, cz))
-    qx, qy, qz, qw = _quat_multiply((pqx, pqy, pqz, pqw), (cqx, cqy, cqz, cqw))
-    return (px + ox, py + oy, pz + oz, qx, qy, qz, qw)
-
-
-def _parse_pose_text(text: str) -> Tuple[float, float, float, float, float, float, float]:
-    values = [part for part in (text or "").split() if part]
-    if len(values) < 6:
-        return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
-    try:
-        x, y, z, rr, pp, yy = (float(values[idx]) for idx in range(6))
-    except Exception:
-        return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
-    qx, qy, qz, qw = _quat_from_rpy(rr, pp, yy)
-    return (x, y, z, qx, qy, qz, qw)
+# F3-step6 (audit-v4 2026-05-08): helpers puros movidos a
+# planning_scene_sync_helpers.py para hacerlos testeables sin rclpy.
+# Re-exportados aquí con su nombre interno (underscore prefix) para
+# preservar la API existente sin tocar consumidores.
+from .planning_scene_sync_helpers import (
+    compose_pose as _compose_pose,
+    parse_pose_text as _parse_pose_text,
+    quat_conjugate as _quat_conjugate,
+    quat_from_rpy as _quat_from_rpy,
+    quat_multiply as _quat_multiply,
+    rotate_vector as _rotate_vector,
+    strip_ns as _strip_ns,
+)
 
 
 def _tuple_to_pose(values: Tuple[float, float, float, float, float, float, float]) -> Pose:
