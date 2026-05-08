@@ -169,11 +169,15 @@ def main() -> int:
         # 1) Reset: release suspended objects.
         # F1.9 audit-v4: timeout subido 10 → 60s para acomodar gz subprocess
         # warmup (primera llamada lenta).
+        # F1.17 audit-v4 (2026-05-08): subido 60 → 120s. Cycle 2 falló en run
+        # 12:54 con timeout=60s — subprocess gz cli (~3.5s × 20 calls delete+
+        # spawn de 10 objetos) puede acumular latencia tras cycle 1. 120s
+        # da margen sin penalizar runs sanos (cycle 1 tardó solo 11s).
         log(f"--- reset ({obj_name}) ---")
         release_future = release_client.call_async(Trigger.Request())
-        rclpy.spin_until_future_complete(node, release_future, timeout_sec=60.0)
+        rclpy.spin_until_future_complete(node, release_future, timeout_sec=120.0)
         if release_future.result() is None:
-            log("ERROR: /release_objects timeout (60s)")
+            log("ERROR: /release_objects timeout (120s)")
             continue
         log(f"reset OK: {release_future.result().message}")
 

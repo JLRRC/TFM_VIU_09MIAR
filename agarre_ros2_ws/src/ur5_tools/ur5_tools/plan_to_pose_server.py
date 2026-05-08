@@ -515,7 +515,12 @@ class PlanToPoseServer(Node):
         # F1.12 audit-v4 (2026-05-08): primero subido 60→120s, pero rompió
         # APPROACH por outer orchestrator timeout (500s). Revertido a 60s.
         # El retry sleep es la palanca correcta — no first_attempt.
-        _MOVEIT_FIRST_ATTEMPT_TIMEOUT_SEC = 60.0
+        # F1.17 audit-v4 (2026-05-08): outer timeout subido a 700s (F1.12),
+        # cabe 120 + 20 + 120 = 260s por retry_with_backoff, ×2 = 520s + 3s
+        # backoff = 523s < 700s. Subiendo 60→120s para tolerar OMPL más
+        # lento en targets alejados (cycle 3 box_green a 0.75m falló por
+        # OMPL flaky con 60s).
+        _MOVEIT_FIRST_ATTEMPT_TIMEOUT_SEC = 120.0
         first_attempt_timeout = min(
             _MOVEIT_FIRST_ATTEMPT_TIMEOUT_SEC,
             float(max(1.0, self._moveit_result_timeout)),

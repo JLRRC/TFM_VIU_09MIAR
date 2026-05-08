@@ -98,8 +98,16 @@ def build_move_group_goal(
     # bajo + scaling 0.3 = trayectoria demasiado rápida para tracking.
     # Con 0.1, la trayectoria nominal triplica su duración, dando tiempo
     # al PID para converger antes del goal_time_tolerance.
-    req.max_velocity_scaling_factor = 0.1
-    req.max_acceleration_scaling_factor = 0.1
+    # F1.17 audit-v4 (2026-05-08): subido 0.1 → 0.25. La causa real de la
+    # no convergencia era interpolate_from_desired_state=false (resuelto en
+    # F1.11). Con scaling=0.1, una trayectoria de 8s nominal dura 80s sim
+    # ≈ 130s wall — supera el first_attempt_timeout (120s). 0.25 = 32s sim
+    # ≈ 50s wall, dentro del budget para fases cortas.
+    # NOTA: TRANSPORT (~1m de recorrido) sigue tardando > 120s wall con 0.25
+    # — requiere subir más scaling o tunear first_attempt_timeout por fase.
+    # Pendiente cierre F1.17.
+    req.max_velocity_scaling_factor = 0.25
+    req.max_acceleration_scaling_factor = 0.25
 
     # Goal constraints: position + orientation sobre ee_frame.
     pc = PositionConstraint()
