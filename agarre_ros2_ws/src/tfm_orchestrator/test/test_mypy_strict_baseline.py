@@ -51,6 +51,9 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/tfm_orchestrator/tfm_orchestrator/cartesian_segments.py",
     "src/tfm_orchestrator/tfm_orchestrator/gripper_monitor.py",
     "src/tfm_orchestrator/tfm_orchestrator/lifecycle_helpers.py",
+    # F7-step1.9 (2026-05-08): initial_snapshot.py — explicit Tuple6 cast en
+    # extract_joint_positions; type:ignore innecesario removido.
+    "src/tfm_orchestrator/tfm_orchestrator/initial_snapshot.py",
 ]
 
 

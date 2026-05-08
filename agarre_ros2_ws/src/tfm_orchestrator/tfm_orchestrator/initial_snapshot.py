@@ -171,7 +171,7 @@ def capture_tcp_pose_base(
     try:
         from rclpy.duration import Duration  # lazy
     except ImportError:
-        Duration = None  # type: ignore
+        Duration = None
 
     try:
         from rclpy.time import Time
@@ -222,9 +222,14 @@ def extract_joint_positions(
     if missing:
         return None, f"joint_state_missing:{','.join(missing)}"
     try:
-        ordered = tuple(float(name_to_pos[j]) for j in joint_names_order)
+        vals = [float(name_to_pos[j]) for j in joint_names_order]
     except (TypeError, ValueError) as exc:
         return None, f"joint_state_value_exception:{type(exc).__name__}:{exc}"
+    if len(vals) != 6:
+        return None, f"joint_state_unexpected_count:{len(vals)}"
+    # F7-step1.9: cast explícito a Tuple6 fijo (mypy strict no infiere
+    # length-6 desde generator → tuple).
+    ordered: Tuple6 = (vals[0], vals[1], vals[2], vals[3], vals[4], vals[5])
     return ordered, "ok"
 
 
