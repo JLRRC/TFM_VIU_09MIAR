@@ -15,7 +15,39 @@ from launch_helpers import (
     prepare_runtime_world_sdf,
     resolve_gz_partition,
     resolve_world_name,
+    resolve_ws_dir,
 )
+
+
+# ---------------------------------------------------------------------------
+# resolve_ws_dir (F2-step3 audit-v4)
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_ws_dir_uses_env_if_set(monkeypatch):
+    """WS_DIR env override toma precedencia sobre default."""
+    monkeypatch.setenv("WS_DIR", "/tmp/some_workspace")
+    assert resolve_ws_dir() == "/tmp/some_workspace"
+
+
+def test_resolve_ws_dir_default_when_env_unset(monkeypatch):
+    """Sin WS_DIR env, default es ~/TFM/agarre_ros2_ws (expanded)."""
+    monkeypatch.delenv("WS_DIR", raising=False)
+    result = resolve_ws_dir()
+    assert result.endswith("TFM/agarre_ros2_ws")
+    assert not result.startswith("~")  # tilde expanded
+
+
+def test_resolve_ws_dir_custom_default(monkeypatch):
+    """Custom default override del literal del helper."""
+    monkeypatch.delenv("WS_DIR", raising=False)
+    assert resolve_ws_dir(default="/opt/ws") == "/opt/ws"
+
+
+def test_resolve_ws_dir_env_overrides_custom_default(monkeypatch):
+    """WS_DIR env tiene prioridad incluso con custom default."""
+    monkeypatch.setenv("WS_DIR", "/env/wins")
+    assert resolve_ws_dir(default="/ignored") == "/env/wins"
 
 
 # ---------------------------------------------------------------------------
