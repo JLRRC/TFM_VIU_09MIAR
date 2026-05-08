@@ -1555,9 +1555,9 @@ def run_pick_object(panel) -> None:
                 "[PICK_OBJ][MODE] deterministic_joint_after_approach="
                 f"{str(deterministic_joint_after_approach).lower()}"
             )
-            strict_physics_mode = str(
-                os.environ.get("PANEL_STRICT_PHYSICS_MODE", "0")
-            ).strip().lower() not in ("0", "false", "no", "off")
+            # F2-step5 (audit-v4): env read movida a panel_env.is_strict_physics_mode.
+            from .panel_env import is_strict_physics_mode as _is_strict_physics_mode
+            strict_physics_mode = _is_strict_physics_mode()
             try:
                 carry_joint_move_sec = _get_pick_object_params().carry_joint_time_sec
             except Exception:
