@@ -149,6 +149,8 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_tools/ur5_tools/release_objects_logic.py",
     # Audit-v4 (2026-05-08): typed exceptions hierarchy.
     "src/tfm_orchestrator/tfm_orchestrator/errors.py",
+    # F6 audit-v4 (2026-05-08): trajectory_executor_node contract.
+    "src/ur5_tools/ur5_tools/trajectory_executor_contract.py",
 ]
 
 
