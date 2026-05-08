@@ -519,6 +519,77 @@ class ExecutorMixin:
                 )
         return float(effective)
 
+    def _send_and_accept_fjt_goal(
+        self,
+        jt: JointTrajectory,
+        *,
+        action_name: str,
+        path_tol_override_rad: float | None,
+        effective_goal_time_tol_sec: float,
+        timeout_sec: float,
+        cold_start_first_goal: bool,
+    ) -> tuple[
+        Any,                # goal_handle | None
+        str,                # reason ("" if accepted, else canonical fail reason)
+        dict[str, Any],     # meta
+        Any,                # feedback_state
+        Any,                # feedback_lock
+        list[str],          # joint_names
+        list[float],        # target_joint_positions
+    ]:
+        """F5-iter2 audit-v4 (2026-05-08): build + send goal, wait for accept.
+
+        Extrae el bloque ``client = ensure ... client.send_goal_async ... accepted``
+        del monolito ``_execute_joint_trajectory_action`` (lines 640-668).
+
+        Returns:
+            (goal_handle, reason, meta, feedback_state, feedback_lock,
+             joint_names, target_joint_positions). Si reason != "" el caller
+             debe propagar (False, reason, meta) y abortar.
+        """
+        client = self._ensure_fjt_action_client()
+        if client is None:
+            return (
+                None, "fjt_action_client_unavailable",
+                {"action": action_name}, None, None, [], [],
+            )
+        goal, joint_names, target_joint_positions = self._build_fjt_goal_with_tolerances(
+            jt,
+            path_tol_override_rad=path_tol_override_rad,
+            effective_goal_time_tol_sec=effective_goal_time_tol_sec,
+        )
+        feedback_state, feedback_lock, _feedback_cb = self._make_fjt_feedback_cb(
+            joint_names=joint_names,
+            target_joint_positions=target_joint_positions,
+        )
+        send_future = client.send_goal_async(goal, feedback_callback=_feedback_cb)
+        if not self._wait_future_done(send_future, timeout_sec=min(2.0, timeout_sec)):
+            return (
+                None, "fjt_goal_send_timeout", {"action": action_name},
+                None, None, [], [],
+            )
+        goal_handle = send_future.result()
+        if goal_handle is None or not goal_handle.accepted:
+            return (
+                None,
+                "fjt_goal_rejected",
+                {
+                    "action": action_name,
+                    "accepted": bool(getattr(goal_handle, "accepted", False)),
+                },
+                None, None, [], [],
+            )
+        if cold_start_first_goal:
+            try:
+                with self._pose_lock:
+                    self._first_controller_goal_pending = False
+            except Exception:
+                pass
+        return (
+            goal_handle, "", {}, feedback_state, feedback_lock,
+            joint_names, target_joint_positions,
+        )
+
     def _prepare_fjt_execution(
         self,
         jt: JointTrajectory,
@@ -637,35 +708,20 @@ class ExecutorMixin:
             )
             return False, reason, meta
 
-        client = self._ensure_fjt_action_client()
-        if client is None:
-            return False, "fjt_action_client_unavailable", {"action": action_name}
-        goal, joint_names, target_joint_positions = self._build_fjt_goal_with_tolerances(
+        # F5-iter2 audit-v4: send + accept extraídos a helper.
+        (
+            goal_handle, send_reason, send_meta, feedback_state,
+            feedback_lock, joint_names, target_joint_positions,
+        ) = self._send_and_accept_fjt_goal(
             jt,
+            action_name=action_name,
             path_tol_override_rad=path_tol_override_rad,
             effective_goal_time_tol_sec=effective_goal_time_tol_sec,
+            timeout_sec=timeout_sec,
+            cold_start_first_goal=cold_start_first_goal,
         )
-        feedback_state, feedback_lock, _feedback_cb = self._make_fjt_feedback_cb(
-            joint_names=joint_names,
-            target_joint_positions=target_joint_positions,
-        )
-
-        send_future = client.send_goal_async(goal, feedback_callback=_feedback_cb)
-        if not self._wait_future_done(send_future, timeout_sec=min(2.0, timeout_sec)):
-            return False, "fjt_goal_send_timeout", {"action": action_name}
-        goal_handle = send_future.result()
-        if goal_handle is None or not goal_handle.accepted:
-            return (
-                False,
-                "fjt_goal_rejected",
-                {"action": action_name, "accepted": bool(getattr(goal_handle, "accepted", False))},
-            )
-        if cold_start_first_goal:
-            try:
-                with self._pose_lock:
-                    self._first_controller_goal_pending = False
-            except Exception:
-                pass
+        if goal_handle is None:
+            return False, send_reason, send_meta
         start_joint_vec, start_joint_reason = self._current_arm_joint_vector()
         if start_joint_vec is None:
             self.get_logger().warning(
