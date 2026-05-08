@@ -46,6 +46,14 @@ def _env_optional_bool(name: str) -> Optional[bool]:
     return raw.strip().lower() not in ("0", "false", "no", "off", "")
 
 
+def _env_optional_str(name: str) -> Optional[str]:
+    """F2-step3 (2026-05-08): helper centralizado para Optional[str] env."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    return str(raw)
+
+
 def _warn_ignored_legacy_gripper_tcp_z_offset(raw_value: object = None, *, source: str) -> None:
     raw = raw_value
     if raw is None:
@@ -318,8 +326,9 @@ class PanelSettings:
             debug_frame_log=_env_bool("PANEL_DEBUG_FRAMES", False),
             # F2-step2: PANEL_BASE_FRAME / PANEL_WORLD_FRAME son Optional[str]:
             # ``None`` significa "no override", el panel deduce el frame.
-            base_frame=os.environ.get("PANEL_BASE_FRAME"),
-            world_frame=os.environ.get("PANEL_WORLD_FRAME"),
+            # F2-step3: vía _env_optional_str (helper centralizado).
+            base_frame=_env_optional_str("PANEL_BASE_FRAME"),
+            world_frame=_env_optional_str("PANEL_WORLD_FRAME"),
             arm_traj_topic_default=_env_str(
                 "ARM_TRAJ_TOPIC", "/joint_trajectory_controller/joint_trajectory"
             ),
