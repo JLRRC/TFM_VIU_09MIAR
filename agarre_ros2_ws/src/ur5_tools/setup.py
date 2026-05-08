@@ -47,6 +47,9 @@ setup(
             "object_pose_resolver_service = ur5_tools.object_pose_resolver_service:main",
             # F8-step1 (2026-05-08): CLI sobre cycle_timing_analyzer.
             "cycle_timing = ur5_tools.cli_cycle_timing:main",
+            # F8 audit-v4 (2026-05-08): aggregator multi-cycle + percentiles.
+            "cycle_timing_aggregator = "
+            "ur5_tools.cycle_timing_aggregator:main",
         ],
     },
 )

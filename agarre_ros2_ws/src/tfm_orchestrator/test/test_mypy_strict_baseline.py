@@ -141,6 +141,8 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_tools/ur5_tools/gripper_attach_models.py",
     # F1.24 / H9 LIVE (2026-05-08): bypass MoveIt en APPROACH via FJT directo.
     "src/ur5_tools/ur5_tools/fjt_direct_helpers.py",
+    # F8 audit-v4 (2026-05-08): aggregator multi-cycle + percentiles.
+    "src/ur5_tools/ur5_tools/cycle_timing_aggregator.py",
 ]
 
 

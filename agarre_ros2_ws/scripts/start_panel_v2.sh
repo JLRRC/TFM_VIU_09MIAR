@@ -357,6 +357,23 @@ set -u
 # --- Recursos Gazebo y modo headless ---
 export GZ_SIM_RESOURCE_PATH="$WS_DIR/models:$WS_DIR/worlds:$WS_DIR/install${GZ_SIM_RESOURCE_PATH:+:$GZ_SIM_RESOURCE_PATH}"
 export GZ_SIM_SYSTEM_PLUGIN_PATH="/opt/ros/jazzy/lib${GZ_SIM_SYSTEM_PLUGIN_PATH:+:$GZ_SIM_SYSTEM_PLUGIN_PATH}"
+
+# --- F2 audit-v4 (2026-05-08): GZ_PARTITION consistency.
+# Source-of-truth jerarquía:
+#   1) Si GZ_PARTITION ya está exportado en el entorno → respetar.
+#   2) Si no, autogenerar `ur5pro_<timestamp>` y persistir a
+#      log/gz_partition.txt para que panel_process.py lo recoja.
+# Esta jerarquía coincide con `launch_helpers.resolve_gz_partition` y
+# evita que stack y panel queden en buses gz-transport distintos.
+mkdir -p "$WS_DIR/log"
+if [[ -z "${GZ_PARTITION:-}" ]]; then
+  GZ_PARTITION="ur5pro_$(date +%s)"
+  export GZ_PARTITION
+  log "GZ_PARTITION autogenerada: $GZ_PARTITION"
+else
+  log "GZ_PARTITION heredada: $GZ_PARTITION"
+fi
+echo "$GZ_PARTITION" > "$WS_DIR/log/gz_partition.txt"
 export PANEL_AUTO_BRIDGE_DELAY_MS="${PANEL_AUTO_BRIDGE_DELAY_MS:-1200}"
 export RMW_FASTRTPS_USE_SHM="${RMW_FASTRTPS_USE_SHM:-0}"
 export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_DEFAULT_PROFILES_FILE:-$WS_DIR/scripts/fastdds_no_shm.xml}"

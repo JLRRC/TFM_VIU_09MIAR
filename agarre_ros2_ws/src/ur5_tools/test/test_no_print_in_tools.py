@@ -17,6 +17,7 @@ PKG_ROOT = Path(__file__).resolve().parent.parent / "ur5_tools"
 CLI_ENTRY_POINTS = {
     "cli_cycle_timing.py",
     "generate_latency_table.py",
+    "cycle_timing_aggregator.py",
 }
 
 EXCLUDE_DIRS = {"__pycache__", "build", "install", "log"}

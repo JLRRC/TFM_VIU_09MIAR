@@ -262,7 +262,7 @@ def call_action_with_timeout(
     import threading as _threading
     try:
         import rclpy as _rclpy  # noqa: F401
-        from rclpy.action import ActionClient as _ActionClient  # type: ignore[attr-defined]
+        from rclpy.action import ActionClient as _ActionClient
     except ImportError:
         return ActionCallResult(
             success=False,
@@ -284,7 +284,7 @@ def call_action_with_timeout(
         if client_cache is not None and action_name in client_cache:
             client = client_cache[action_name]
         else:
-            client = _ActionClient(node, action_type, action_name)  # type: ignore[no-untyped-call]
+            client = _ActionClient(node, action_type, action_name)
             if client_cache is not None:
                 client_cache[action_name] = client
 

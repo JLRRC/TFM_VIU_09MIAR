@@ -70,3 +70,37 @@ ros2 trace report
 
 ✅ No hay problemas de performance estructurales detectables estáticamente.
 ⏳ Optimización fina requiere profiling live (post-F8).
+
+## F8 audit-v4 (2026-05-08): aggregator multi-cycle disponible
+
+`cycle_timing_aggregator` ya está cableado como entry_point del paquete
+`ur5_tools` (commit ver tag `audit-v4-f8-aggregator-20260508`).
+
+Uso:
+
+```bash
+# Markdown report con percentiles p50/p95/p99 por fase + cycle total
+cycle_timing_aggregator log/cycle1.log log/cycle2.log log/cycle3.log
+
+# JSON estructurado para tooling
+cycle_timing_aggregator --json log/cycle*.log > F8_baseline.json
+
+# Genera el doc oficial post-validación live
+cycle_timing_aggregator log/T35_*.log --title "F8 Baseline T35 × 3 cycles" \
+    > docs/F8_BASELINE_LIVE.md
+```
+
+### Métricas que produce
+
+Por **cycle total** (excluyendo failures):
+- `n`, `mean`, `min`, `p50`, `p95`, `p99`, `max`
+
+Por **cada fase** (HOME_INITIAL, INITIAL_SNAPSHOT, SELECT_OBJECT,
+APPROACH, GRASP_DOWN, GRASP, LIFT, TRANSPORT, RELEASE, HOME_FINAL):
+- `n`, `mean`, `min`, `p50`, `p95`, `p99`, `max`
+
+### Pendiente de live capture
+
+Generar `docs/F8_BASELINE_LIVE.md` cuando T35 produzca ≥ 3 logs limpios
+con `[ORCHESTRATOR_LC][PHASE] start/end` markers presentes. La
+infraestructura está lista; sólo falta capturar y agregar.
