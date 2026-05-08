@@ -115,6 +115,9 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_tools/ur5_tools/moveit_bridge/no_server_meta.py",
     # F17 (2026-05-08): grasp_selector puro (sin nodo ROS — pendiente).
     "src/tfm_grasping/tfm_grasping/grasp_selector.py",
+    # F8 / #20 (2026-05-08): helpers offline para optimización rendimiento.
+    "src/ur5_tools/ur5_tools/tf_batch_lookups.py",
+    "src/ur5_tools/ur5_tools/cycle_timing_analyzer.py",
 ]
 
 
