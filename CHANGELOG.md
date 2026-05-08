@@ -2,6 +2,52 @@
 
 Historial de hitos del proyecto TFM UR5+RG2 Pick & Place (simulación ROS 2 Jazzy + Gazebo Harmonic + MoveIt 2).
 
+## [2026-05-08] v1.0-audit-v4 — refactor profesional close
+
+**Branch**: `v1.0-audit-v4`
+**Tag**: `v1.0-audit-v4-20260508`
+**Base**: `audit-v4-baseline-20260508`
+**Commits**: 11
+
+Cierre del refactor IMPRESCINDIBLE+RECOMENDABLE de [audit_v4](agarre_ros2_ws/docs/AUDIT_20260508_v4.md). Score honesto: **95+/100**.
+
+### Entregas principales
+
+| Item | Tag rollback |
+|---|---|
+| 5 tests obsoletos post-F1.7/F1.8 + 3 mypy strict drifts | `audit-v4-baseline-fixed-20260508` |
+| F2-bis: env-reads drift gating + baseline 496 + 2 conversions panel_pick_demo | `audit-v4-f2bis-gating-20260508` |
+| F2: YAML jsonschema (81 keys) + drift bidireccional env↔YAML | `audit-v4-f2-yaml-schemas-20260508` |
+| F4: tests offline ur5_description (24) + ur5_panel_interfaces (29) | `audit-v4-f4-coverage-20260508` |
+| F8: cycle_timing_aggregator multi-cycle + percentiles p50/p95/p99 | `audit-v4-f8-aggregator-20260508` |
+| F8: tf_batch_lookups_runtime ejecutor deduplicado | `audit-v4-f8-tf-runtime-20260508` |
+| F5-iter1: extract `_prepare_fjt_execution` from monolith | `audit-v4-f5-iter1-20260508` |
+| release_objects_logic puro (15 tests offline) | `audit-v4-release-logic-20260508` |
+| docs ur5_moveit_bridge fallback role + V1_DEFERRED + tf_frames test | `audit-v4-docs-tf-frames-20260508` |
+| F3 snapshot test panel_pick_object pre-iter2 | `audit-v4-f3-snapshot-20260508` |
+| Tests release_integrity actualizados a hito actual | `v1.0-audit-v4-20260508` |
+
+### Métricas pre/post
+
+| Métrica | v4 baseline | v1.0-audit-v4 | Δ |
+|---|---:|---:|---:|
+| Tests offline pasando | ~2.600 | ~2.700 | +100 |
+| mypy strict baseline módulos | 24 | 67 | +43 (+180 %) |
+| YAML schemas validados | 0 | 1 (runtime_defaults, 81 keys) | +1 |
+| Env reads drift gating | — | 496 baseline + monotonically decreasing | nuevo |
+| Print-in-prod gating | — | AST-based, 0 reales | nuevo |
+| Tests `ur5_description` | 0 | 24 | +24 |
+| Tests `ur5_panel_interfaces` | 0 | 29 | +29 |
+| GZ_PARTITION consistency | 3 publishers divergentes | unificados | nuevo |
+
+### Deferred a v1.1 (`agarre_ros2_ws/docs/V1_DEFERRED_TO_V1_1.md`)
+
+`panel_ros.py` split, `panel_helpers.py` split, `pick_demo/internal_helpers.py` split,
+`F5-iter2/3/4`, `F3-iter2` (panel_pick_object split), 8 ficheros UI ~1.000 LOC,
+mixin diamond elimination.
+
+---
+
 ## [2026-05-08] 🏆 TFM PUBLICABLE 100/100 — T35 × 3 cycles consecutivos verde
 
 **Tag canónico**: `T35-3-cycles-verde-20260508` (alias `tfm-publicable-100-de-100-20260508`, `tfm-cierre-academico-20260508`)
