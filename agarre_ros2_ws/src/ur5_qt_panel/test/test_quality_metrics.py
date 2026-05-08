@@ -702,48 +702,63 @@ def test_env_vars_have_documentation() -> None:
 
 
 # ---------------------------------------------------------------------------
-# T31 — F2 baseline: total env reads en producción (drift cap)
+# T31 — F2 baseline: env reads SCATTERED (excluyendo *_params.py)
 # ---------------------------------------------------------------------------
-# F2 audit-v4 (2026-05-08): el objetivo F2 es bajar 131 → ≤ 30
-# `os.environ.get` reads en producción. Mientras se ejecuta el refactor
-# (mover env reads a `*_params.py` tipados), este test:
-#   1. Asegura que el conteo NO sube (regresión).
-#   2. Detecta cuando el conteo BAJA → el desarrollador debe actualizar el
-#      baseline en el mismo commit (lo que documenta el progreso F2).
-# Decrementar el baseline cuando se haga F2-step3..6.
-ENV_READS_BASELINE_TOTAL = 121
+# F2 audit-v4 (2026-05-08): el objetivo F2 es centralizar env reads en
+# `*_params.py` tipados (con dataclass frozen + ENV_VAR_BY_FIELD). Las
+# reads en `*_params.py` y `panel_settings.py` son el DESTINO esperado;
+# las que quedan FUERA son las "scattered" que se deben migrar.
+#
+# Este test:
+#   1. Asegura que las scattered NO suben (regresión).
+#   2. Detecta cuando bajan → forzar update del baseline en el mismo commit
+#      (documenta progreso F2).
+ENV_READS_BASELINE_SCATTERED = 94  # F2 audit-v4 (2026-05-08); objetivo ≤ 30.
 ENV_READS_DRIFT_MARGIN = 0  # no se permite incremento.
+
+# Archivos que SON el destino legítimo de env reads (no contar como scatter).
+_F2_ENV_READ_DESTINATIONS = (
+    "_params.py",       # *_params.py (panel_pick_demo_params, etc.)
+    "panel_settings.py",  # helper centralizado
+    "panel_env.py",      # helpers centralizados de env
+    "launch_helpers.py", # helpers de launch — env válido aquí
+)
+
+
+def _is_env_read_destination(rel_path: str) -> bool:
+    return any(rel_path.endswith(suffix) for suffix in _F2_ENV_READ_DESTINATIONS)
 
 
 def test_env_reads_total_count_under_baseline() -> None:
-    """T31 — total env reads en producción <= baseline (F2 drift cap)."""
-    total = 0
+    """T31 — env reads SCATTERED (fuera de *_params.py) <= baseline."""
+    scattered = 0
     per_file: Dict[str, int] = {}
     for path in _iter_production_py_files():
+        rel = _rel(path)
+        if _is_env_read_destination(rel):
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
-        # Cuenta `os.environ.get(` y `os.environ[`
         n = text.count("os.environ.get(") + text.count("os.environ[")
         if n:
-            per_file[_rel(path)] = n
-            total += n
+            per_file[rel] = n
+            scattered += n
 
-    upper = ENV_READS_BASELINE_TOTAL + ENV_READS_DRIFT_MARGIN
-    if total > upper:
+    upper = ENV_READS_BASELINE_SCATTERED + ENV_READS_DRIFT_MARGIN
+    if scattered > upper:
         top = sorted(per_file.items(), key=lambda kv: -kv[1])[:5]
         top_str = "\n  ".join(f"{k}: {v}" for k, v in top)
         raise AssertionError(
-            f"Env reads regresion: total={total} > baseline={upper}.\n"
-            f"Top files:\n  {top_str}\n"
-            "Mueve env reads a `*_params.py` tipados (F2-step3..6)."
+            f"Env reads scattered regresion: {scattered} > baseline={upper}.\n"
+            f"Top files (mover a *_params.py):\n  {top_str}"
         )
-    if total < ENV_READS_BASELINE_TOTAL:
+    if scattered < ENV_READS_BASELINE_SCATTERED:
         raise AssertionError(
-            f"Env reads bajaron: total={total} < baseline={ENV_READS_BASELINE_TOTAL}. "
-            "ACTUALIZA ENV_READS_BASELINE_TOTAL al nuevo valor en el mismo commit "
-            f"(progreso F2 hacia ≤ 30). Set baseline = {total}."
+            f"Env reads scattered bajaron: {scattered} < baseline={ENV_READS_BASELINE_SCATTERED}. "
+            f"ACTUALIZA ENV_READS_BASELINE_SCATTERED = {scattered} en el mismo commit "
+            "(documenta progreso F2)."
         )
 
 
