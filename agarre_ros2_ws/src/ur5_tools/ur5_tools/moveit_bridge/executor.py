@@ -519,26 +519,29 @@ class ExecutorMixin:
                 )
         return float(effective)
 
-    def _execute_joint_trajectory_action(
+    def _prepare_fjt_execution(
         self,
         jt: JointTrajectory,
         *,
-        timeout_sec: float = 8.0,
-        retry_on_tolerance_violation: bool = True,
-        path_tol_override_rad: float | None = None,
-        goal_time_override_sec: float | None = None,
-        target_pose: PoseStamped | None = None,
-        ee_target_tol_m: float | None = None,
-        phase_label: str | None = None,
-        approach_replan_attempt: int = 0,
-    ) -> tuple[bool, str, dict[str, Any]]:
+        timeout_sec: float,
+        retry_on_tolerance_violation: bool,
+        goal_time_override_sec: float | None,
+        phase_label_upper: str,
+        approach_replan_attempt: int,
+    ) -> tuple[JointTrajectory, float, float, bool]:
+        """F5 audit-v4 (2026-05-08): extract preparation phase from
+        _execute_joint_trajectory_action.
+
+        Returns:
+            (jt_prepared, timeout_sec_capped, effective_goal_time_tol_sec,
+             cold_start_first_goal)
+        """
         cold_start_first_goal = False
         try:
             with self._pose_lock:
                 cold_start_first_goal = bool(self._first_controller_goal_pending)
         except Exception:
             cold_start_first_goal = False
-        phase_label_upper = str(phase_label or "").upper()
         approach_max_total_timeout_sec = float(
             self._env_float(
                 "PANEL_MOVEIT_BRIDGE_APPROACH_MAX_TOTAL_TIMEOUT_SEC",
@@ -588,6 +591,33 @@ class ExecutorMixin:
                 f"original={float(timeout_sec):.1f} max={approach_max_total_timeout_sec:.1f}"
             )
             timeout_sec = float(approach_max_total_timeout_sec)
+        return jt, float(timeout_sec), effective_goal_time_tol_sec, cold_start_first_goal
+
+    def _execute_joint_trajectory_action(
+        self,
+        jt: JointTrajectory,
+        *,
+        timeout_sec: float = 8.0,
+        retry_on_tolerance_violation: bool = True,
+        path_tol_override_rad: float | None = None,
+        goal_time_override_sec: float | None = None,
+        target_pose: PoseStamped | None = None,
+        ee_target_tol_m: float | None = None,
+        phase_label: str | None = None,
+        approach_replan_attempt: int = 0,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        phase_label_upper = str(phase_label or "").upper()
+        # F5 audit-v4: preparation extraída a helper testeable.
+        jt, timeout_sec, effective_goal_time_tol_sec, cold_start_first_goal = (
+            self._prepare_fjt_execution(
+                jt,
+                timeout_sec=timeout_sec,
+                retry_on_tolerance_violation=retry_on_tolerance_violation,
+                goal_time_override_sec=goal_time_override_sec,
+                phase_label_upper=phase_label_upper,
+                approach_replan_attempt=approach_replan_attempt,
+            )
+        )
         ready, action_name, action_names, candidates = self._wait_for_expected_controller_action(
             timeout_sec=1.5
         )
