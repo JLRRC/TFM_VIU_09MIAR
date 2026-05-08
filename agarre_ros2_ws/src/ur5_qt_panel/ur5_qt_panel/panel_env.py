@@ -31,6 +31,28 @@ def get_gz_transport_ip(default: str = "127.0.0.1") -> str:
     return os.environ.get("GZ_TRANSPORT_IP", default)
 
 
+# F2-step3 (audit-v4 2026-05-08): consolidación de env reads de panel_process.
+def get_gz_partition(default: str = "") -> str:
+    """Lee `GZ_PARTITION` (string vacío si no está)."""
+    return os.environ.get("GZ_PARTITION", default).strip()
+
+
+def get_gz_ip(default: str = "") -> str:
+    """Lee `GZ_IP` (string vacío si no está)."""
+    return os.environ.get("GZ_IP", default).strip()
+
+
+def get_panel_ros_timeout(default: float = 1.5) -> float:
+    """Lee `PANEL_ROS_TIMEOUT` con fallback default."""
+    raw = os.environ.get("PANEL_ROS_TIMEOUT", "")
+    if not raw:
+        return float(default)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 def effective_mode(mode: str) -> str:
     normalized = (mode or "").strip().lower()
     if normalized.startswith("gui"):

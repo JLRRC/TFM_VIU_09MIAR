@@ -122,6 +122,22 @@ def prepare_runtime_world_sdf(
 
 
 # ---------------------------------------------------------------------------
+# Workspace path resolution (F2-step3 audit-v4)
+# ---------------------------------------------------------------------------
+
+
+def resolve_ws_dir(default: str | None = None) -> str:
+    """Devuelve `WS_DIR` desde env o el default `~/TFM/agarre_ros2_ws`.
+
+    Helper centralizado para evitar 3+ duplicados de
+    ``os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))``.
+    Acepta override del default si el caller necesita otra ubicación.
+    """
+    fallback = default if default is not None else os.path.expanduser("~/TFM/agarre_ros2_ws")
+    return os.environ.get("WS_DIR", fallback)
+
+
+# ---------------------------------------------------------------------------
 # Declarative env-var passthrough table
 # ---------------------------------------------------------------------------
 # Each entry: (ENV_VAR_NAME, default_value).
@@ -142,7 +158,7 @@ def load_runtime_defaults(yaml_path: str | None = None) -> dict[str, str]:
         3. Built-in literal default.
     """
     if yaml_path is None:
-        ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
+        ws_dir = resolve_ws_dir()
         yaml_path = os.path.join(ws_dir, "src", "ur5_bringup", "config", "runtime_defaults.yaml")
     try:
         import yaml  # type: ignore

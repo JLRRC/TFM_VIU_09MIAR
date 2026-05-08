@@ -25,6 +25,7 @@ from launch_helpers import (
     prepare_runtime_world_sdf,
     resolve_gz_partition,
     resolve_world_name,
+    resolve_ws_dir,
 )
 from gz_factory import build_gz_actions
 from runtime_nodes_factory import build_runtime_node_actions
@@ -89,7 +90,8 @@ def _env_float(name: str, default: float) -> float:
 
 def _prepare_runtime(context, *_args) -> List[object]:
     logger = get_logger("ur5_stack")
-    ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
+    # F2-step3 (audit-v4): WS_DIR resuelto via launch_helpers.resolve_ws_dir.
+    ws_dir = resolve_ws_dir()
     world_file = LaunchConfiguration("world_file").perform(context)
     strict_physics_mode = (
         str(LaunchConfiguration("strict_physics_mode").perform(context)).strip().lower()
@@ -309,7 +311,8 @@ def _maybe_moveit(context, *_args) -> List[object]:
 
 
 def generate_launch_description():
-    ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
+    # F2-step3 (audit-v4): WS_DIR centralizado en launch_helpers.resolve_ws_dir.
+    ws_dir = resolve_ws_dir()
     world_default = os.path.join(ws_dir, "worlds", "ur5_mesa_objetos.sdf")
     gui_config_default = (
         "/opt/ros/jazzy/opt/gz_sim_vendor/share/gz/gz-sim8/gui/gui.config"

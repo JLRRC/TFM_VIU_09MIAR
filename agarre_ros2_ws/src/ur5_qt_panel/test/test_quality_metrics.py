@@ -713,7 +713,7 @@ def test_env_vars_have_documentation() -> None:
 #   1. Asegura que las scattered NO suben (regresión).
 #   2. Detecta cuando bajan → forzar update del baseline en el mismo commit
 #      (documenta progreso F2).
-ENV_READS_BASELINE_SCATTERED = 94  # F2 audit-v4 (2026-05-08); objetivo ≤ 30.
+ENV_READS_BASELINE_SCATTERED = 88  # F2-step3 audit-v4 (2026-05-08); objetivo ≤ 30.
 ENV_READS_DRIFT_MARGIN = 0  # no se permite incremento.
 
 # Archivos que SON el destino legítimo de env reads (no contar como scatter).
