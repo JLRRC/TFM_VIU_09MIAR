@@ -1,11 +1,65 @@
 # BUG — Controller feedback hang post-F1.18
 
-**Estado**: ABIERTO — bug profundo de simulación (no de la lógica del orchestrator)
+**Estado**: ABIERTO — bug profundo de simulación (mitigación parcial F1.22 aplicada)
 **Detectado**: 2026-05-08 14:17 (validación live de F1.18, HEAD `744006a`)
+**Re-confirmado live**: 2026-05-08 18:13 + 18:19 (2 runs cycle 1, post-F1.22)
+**Mitigación parcial**: F1.22 (TF pose-check post-FIRST_ATTEMPT_TIMEOUT)
 **Última auditoría**: `auditoria/audit_profesional_20260508_v5.md`
 **Bugs relacionados**:
 - [BUG_BRIDGE_PATH_TOLERANCE.md](./BUG_BRIDGE_PATH_TOLERANCE.md) (síntoma adyacente)
 - [BUG_FJT_GOAL_TIME_TOLERANCE.md](./BUG_FJT_GOAL_TIME_TOLERANCE.md) (cerrado en F1.11)
+
+## Validación live confirmada (2026-05-08 sesión rutacrítica)
+
+Reproducido 2/2 runs en cycle 1 APPROACH:
+- Run 1 (HEAD post-F1.18, 18:13): FIRST_ATTEMPT_TIMEOUT 120s exacto.
+  TCP llegó al target (panel_live_dist_m=0). Bug = solo feedback hang.
+- Run 2 (HEAD post-F1.22, 18:19): FIRST_ATTEMPT_TIMEOUT 120s exacto.
+  TCP NO llegó al target (dist=0.6060m base_link). Bug = feedback hang
+  + trayectoria incompleta (cancel mid-execution puede dejar robot en
+  estado intermedio).
+
+Logs canónicos del bug:
+```
+[plan_to_pose_server] [PLAN_TO_POSE][MOVEIT_DIRECT] sending goal target=(0.440,0.003,0.125)
+[move_group] simple_controller_manager.follow_joint_trajectory_controller_handle: Goal request accepted!
+< 120 segundos sin más logs del controller >
+[plan_to_pose_server] first attempt hang timeout=120.0s — cancelando goal
+[move_group] move_group.move_group.move_action: MoveGroupMoveAction: Received request to cancel goal
+[joint_trajectory_controller]: Got request to cancel goal
+[joint_trajectory_controller]: Canceling active action goal because cancel callback received.
+< NUNCA aparece "Goal reached, success!" del APPROACH >
+```
+
+Comparativa: HOME_INITIAL siempre funciona (Goal reached, success! a los 17s).
+La diferencia es que HOME_INITIAL bypasea MoveIt y va directo al
+controller via FollowJointTrajectory; APPROACH va por MoveIt → simple_controller_manager.
+
+## F1.22 mitigación parcial (commit pendiente)
+
+`plan_to_pose_server._execute_moveit_direct` añade TF check post-FIRST_ATTEMPT_TIMEOUT:
+- Si robot está dentro de `moveit_position_tol * 5 = 0.25m` del target → success.
+- Si no, cae al retry path original (sleep 20s + send_goal_async retry).
+
+Resultado live:
+- Cuando el robot SÍ llega al target (run 1) → recovery funcionaría.
+- Cuando el robot NO llega (run 2) → retry sigue colgándose por el mismo bug.
+
+## Plan de fix (próxima sesión live)
+
+1. **Controller restart en plan_to_pose post-retry-fail**:
+   ```python
+   from controller_manager_msgs.srv import SwitchController
+   # Tras retry FIRST_ATTEMPT_TIMEOUT, llamar:
+   # /controller_manager/switch_controller deactivate=[joint_trajectory_controller]
+   # sleep 1
+   # /controller_manager/switch_controller activate=[joint_trajectory_controller]
+   ```
+2. **Verificar gz_ros2_control vs simple_controller_manager**: el bug podría
+   ser específico del bridge MoveIt cuando el controller manager es de
+   gz_ros2_control (no real ros2_control).
+3. **Reducir `allowed_execution_duration_scaling`** de MoveIt a un valor
+   más conservador.
 
 ## Síntoma
 

@@ -36,6 +36,8 @@ import uuid
 
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped
+from tf2_ros import Buffer, TransformListener
+from rclpy.duration import Duration
 
 from ur5_panel_interfaces.action import PlanToPose
 
@@ -144,6 +146,12 @@ class PlanToPoseServer(Node):
         )
         # ActionClient para /move_action (lazy init en _execute_moveit_direct).
         self._moveit_action_client = None
+
+        # F1.22 LIVE (2026-05-08): TF buffer para verificar pose post-FIRST_ATTEMPT_TIMEOUT.
+        # Si el robot ya está en target (controller feedback hang del bug
+        # BUG_CONTROLLER_FEEDBACK_HANG), devolver success en lugar de retry.
+        self._tf_buffer = Buffer()
+        self._tf_listener = TransformListener(self._tf_buffer, self)
 
         self._cb_group = ReentrantCallbackGroup()
         self._action_server = ActionServer(
@@ -561,6 +569,55 @@ class PlanToPoseServer(Node):
             ok = False
             reason = f"FIRST_ATTEMPT_TIMEOUT:{first_attempt_timeout:.1f}s"
             wrapper = None  # type: ignore[assignment]
+
+            # F1.22 LIVE (2026-05-08): BUG_CONTROLLER_FEEDBACK_HANG mitigation.
+            # Tras FIRST_ATTEMPT_TIMEOUT, verificar si el robot ya alcanzó el
+            # target (TF lookup). Si está dentro de moveit_position_tol *
+            # tf_check_factor, considerar success — el controller ejecutó la
+            # trayectoria pero el feedback "Goal reached" no llegó al move_group.
+            try:
+                tf_target_pos = self._lookup_ee_position_in_base(
+                    ee_frame=effective_ee_frame,
+                    base_frame=self._bridge_base_frame,
+                    timeout_sec=1.0,
+                )
+            except Exception as exc:
+                tf_target_pos = None
+                self.get_logger().warning(
+                    f"[PLAN_TO_POSE][MOVEIT_DIRECT] TF lookup post-timeout fail: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            if tf_target_pos is not None:
+                tf_check_tol = max(0.05, self._moveit_position_tol * 5.0)
+                dx = float(tf_target_pos[0]) - float(goal.target_xyz[0])
+                dy = float(tf_target_pos[1]) - float(goal.target_xyz[1])
+                dz = float(tf_target_pos[2]) - float(goal.target_xyz[2])
+                dist = (dx * dx + dy * dy + dz * dz) ** 0.5
+                self.get_logger().info(
+                    f"[PLAN_TO_POSE][MOVEIT_DIRECT] post-timeout TF check "
+                    f"actual=({tf_target_pos[0]:.3f},{tf_target_pos[1]:.3f},"
+                    f"{tf_target_pos[2]:.3f}) target=({goal.target_xyz[0]:.3f},"
+                    f"{goal.target_xyz[1]:.3f},{goal.target_xyz[2]:.3f}) "
+                    f"dist={dist:.4f}m tol={tf_check_tol:.4f}m"
+                )
+                if dist <= tf_check_tol:
+                    self.get_logger().info(
+                        f"[PLAN_TO_POSE][MOVEIT_DIRECT] feedback_hang_recovered "
+                        f"(robot at target post-timeout, dist={dist:.4f}m"
+                        f"<={tf_check_tol:.4f}m) — returning success "
+                        f"reason=feedback_hang_recovered_via_tf"
+                    )
+                    return PlanToPoseResult(
+                        success=True,
+                        reason=(
+                            f"feedback_hang_recovered_via_tf"
+                            f"|orig={reason}|dist={dist:.4f}m"
+                        ),
+                        final_xyz=goal.target_xyz,
+                        final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                        duration_sec=time.monotonic() - start_mono,
+                        attempts=1,
+                    )
         else:
             wrapper = result_future.result()
             ok, reason = parse_move_group_result(wrapper)
@@ -642,6 +699,37 @@ class PlanToPoseServer(Node):
             duration_sec=time.monotonic() - start_mono,
             attempts=1,
         )
+
+    def _lookup_ee_position_in_base(
+        self,
+        *,
+        ee_frame: str,
+        base_frame: str,
+        timeout_sec: float = 1.0,
+    ):
+        """F1.22 LIVE (2026-05-08): lookup posición ee_frame en base_frame.
+
+        Usado tras FIRST_ATTEMPT_TIMEOUT para detectar el bug
+        BUG_CONTROLLER_FEEDBACK_HANG: el robot llegó al target pero el
+        controller feedback no llegó al move_group.
+
+        Returns:
+            Tuple[float, float, float] con (x, y, z) en base_frame, o None
+            si TF lookup falla.
+        """
+        try:
+            ts = self._tf_buffer.lookup_transform(
+                str(base_frame),
+                str(ee_frame),
+                rclpy.time.Time(),
+                timeout=Duration(seconds=float(timeout_sec)),
+            )
+            tx = float(ts.transform.translation.x)
+            ty = float(ts.transform.translation.y)
+            tz = float(ts.transform.translation.z)
+            return (tx, ty, tz)
+        except Exception:
+            return None
 
     def _on_bridge_result(self, msg) -> None:
         """Callback de /desired_grasp/result. Despierta el ejecutor si UUID OK."""
