@@ -61,27 +61,33 @@ def test_service_callback_uses_dispatcher_not_run_pick_demo_directly():
     )
 
 
-def test_dispatcher_imports_run_pick_demo_lazily():
-    """Sólo el dispatcher importa run_pick_demo (legacy)."""
+def test_dispatcher_legacy_dispatch_is_sentinel_only():
+    """F5-legacy-removed (2026-05-08): _legacy_dispatch ya no importa
+    run_pick_demo (borrado). Es ahora un sentinel que emite log y no hace
+    nada. Para recuperar legacy: git checkout audit-pre-borrar-legacy-20260508."""
     src = (PANEL_DIR / "pick_demo_dispatcher.py").read_text(encoding="utf-8")
-    # El dispatcher importa run_pick_demo perezosamente para evitar ciclo
-    assert "from .panel_pick_demo import run_pick_demo" in src
-    # Se usa sólo en _legacy_dispatch
+    # _legacy_dispatch sigue existiendo como sentinel
     assert "_legacy_dispatch" in src
+    # Pero NO debe importar run_pick_demo (función borrada)
+    assert "from .panel_pick_demo import run_pick_demo" not in src
+    # Y debe referenciar el tag de rollback en el log/comentario
+    assert "audit-pre-borrar-legacy-20260508" in src or "F5-legacy-removed" in src
 
 
 # ---------------------------------------------------------------------------
-# Default actual: legacy
+# Default actual: orchestrator (F5-legacy-removed)
 # ---------------------------------------------------------------------------
 
 
-def test_default_is_legacy_until_bug_bridge_closed():
-    """Default = legacy mientras BUG_CONTROLLER_FEEDBACK_HANG esté abierto."""
+def test_default_is_orchestrator_after_f5_legacy_removed():
+    """F5-legacy-removed (2026-05-08): default invertido a orchestrator
+    tras borrado físico del legacy."""
     from ur5_qt_panel.pick_place_client_logic import should_use_orchestrator
 
-    # Sin env vars seteadas → legacy
-    assert should_use_orchestrator(None) is False
-    assert should_use_orchestrator("") is False
+    # Sin env vars seteadas → orchestrator (default invertido)
+    assert should_use_orchestrator(None) is True
+    # Cualquier valor no falsy → orchestrator
+    assert should_use_orchestrator("anything") is True
 
 
 def test_orchestrator_opt_in_explicit():

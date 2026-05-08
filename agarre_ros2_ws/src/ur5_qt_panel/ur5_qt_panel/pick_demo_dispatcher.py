@@ -35,9 +35,23 @@ from typing import Any, Callable, Optional
 
 
 def _legacy_dispatch(panel: Any) -> None:
-    """Importa y llama run_pick_demo perezosamente (evita ciclo)."""
-    from .panel_pick_demo import run_pick_demo
-    run_pick_demo(panel)
+    """F5 legacy removed (2026-05-08): run_pick_demo borrado.
+
+    El path canónico es el orchestrator vía action /pick_place. Esta función
+    queda como sentinel: si alguien fuerza USE_LEGACY_PICK_DEMO=1 cuando el
+    orchestrator está bloqueado por bug, emite log claro y NO ejecuta nada.
+
+    Para recuperar el legacy: git checkout audit-pre-borrar-legacy-20260508.
+    """
+    try:
+        panel._emit_log(
+            "[PICK_DEMO][LEGACY_REMOVED] El legacy run_pick_demo fue borrado "
+            "en F5-legacy-removed-20260508. Path canónico: orchestrator vía "
+            "/pick_place. Si necesitas recuperar el legacy, haz checkout del "
+            "tag audit-pre-borrar-legacy-20260508."
+        )
+    except Exception:
+        pass
 
 
 def _resolve_panel_node(panel: Any) -> Optional[Any]:

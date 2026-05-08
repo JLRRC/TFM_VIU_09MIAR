@@ -68,6 +68,9 @@ LEGACY_PRINT_FILES: Set[str] = {
     #  - ur5_tools/generate_latency_table.py: CLI standalone, prints a stderr
     #    son parte del contrato del tool (no es un nodo ROS).
     "ur5_tools/ur5_tools/generate_latency_table.py",
+    # F8-step1 (2026-05-08): cli_cycle_timing es CLI tool — prints a stdout
+    # son su contrato (consumido por scripts shell).
+    "ur5_tools/ur5_tools/cli_cycle_timing.py",
 }
 
 # Líneas con `print(` que son comentarios o docstrings — los ignoramos
@@ -129,10 +132,9 @@ MAX_LOC_PER_FILE_GLOBAL = 1500
 # Sólo los archivos que SUPERAN el umbral global aparecen aquí. Los que
 # están entre 800-1500 ya cumplen el criterio sin necesidad de exención.
 LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
-    # F3-step1.4 (2026-05-03): +23 LOC por cadena _seed_devs/max/sum
-    # (constante _TWO_PI_R + 3 helpers IK) y _close_only(panel)
-    # promovidos a module-level. run_pick_demo y worker bajaron -7 LOC.
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py":   8623,   # F3-step38: -48 más (_publish_direct_debug_markers fuera)
+    # F5-legacy-removed (2026-05-08): panel_pick_demo.py: 8623 → 536 LOC.
+    # Ya bajo umbral global 1500 → REMOVIDO de LEGACY_OVERSIZE_FILES_LOC.
+    # Si crece de nuevo, el test general (>1500) lo detectará.
 
     "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  3823,   # F3-step5bis-c: -84 más (moveit_bridge_path body fuera con callables-as-args)
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py":          2149,
@@ -204,8 +206,9 @@ MAX_LOC_PER_FUNCTION_GLOBAL = 200
 # completo por orden de prioridad de refactor (las top-3 son F3-step1).
 LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3 step1 — el monolito que decide el TFM (drift hacia abajo).
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo": 8410,   # F3-step3e: -263 LOC (_run_joint_step fuera)
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_demo.py::run_pick_demo.worker": 8137,  # F3-step3e: -263 LOC
+    # F5-legacy-removed (2026-05-08): run_pick_demo + closure worker BORRADOS.
+    # No hay baselines ya que las funciones no existen. Si vuelven, este test
+    # las marcará como new_oversize automáticamente (deseado).
     # F3-step3e (2026-05-03): run_joint_step extracted to pick_demo/joint_step.py.
     # 296 LOC = cuerpo legacy 1:1 con 4 nested defs internos
     # (_local_joint_target_ok / _runtime_target_ok / _strict_refine_runtime_status /
@@ -249,7 +252,10 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # al añadir first-attempt-timeout + cancel-on-hang (Bug B fix).
     # Refactor estructural en F3-step6 cuando se parte el método en validate/
     # send/poll/handle helpers (ver audit v4 §F3-step6).
-    "ur5_tools/ur5_tools/plan_to_pose_server.py::PlanToPoseServer._execute_moveit_direct": 201,
+    # F1.22 + F1.23 LIVE (2026-05-08): TF check post-FIRST_ATTEMPT_TIMEOUT
+    # + controller restart + final TF check post-retry. Trade-off aceptado:
+    # mitigación BUG_CONTROLLER_FEEDBACK_HANG documentada.
+    "ur5_tools/ur5_tools/plan_to_pose_server.py::PlanToPoseServer._execute_moveit_direct": 343,
     # F3-step9 + step9bis/ter/quater/quintus (2026-05-03): build_main_ui bajó
     # de 733 → 44 LOC con 6 sub-helpers (_build_main_ui_topbar_and_leds 122 +
     # _controls_status_row 130 + _camera_and_objects 98 + _manual_joints_and_
@@ -713,7 +719,7 @@ def test_env_vars_have_documentation() -> None:
 #   1. Asegura que las scattered NO suben (regresión).
 #   2. Detecta cuando bajan → forzar update del baseline en el mismo commit
 #      (documenta progreso F2).
-ENV_READS_BASELINE_SCATTERED = 82  # F2-step5 audit-v4 (2026-05-08); objetivo ≤ 30.
+ENV_READS_BASELINE_SCATTERED = 66  # F5-legacy-removed (2026-05-08): 82→66 tras borrar run_pick_demo.
 ENV_READS_DRIFT_MARGIN = 0  # no se permite incremento.
 
 # Archivos que SON el destino legítimo de env reads (no contar como scatter).

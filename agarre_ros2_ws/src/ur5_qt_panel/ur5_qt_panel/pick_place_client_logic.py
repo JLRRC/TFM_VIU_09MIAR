@@ -162,24 +162,18 @@ def should_use_orchestrator(
 ) -> bool:
     """True si el panel debe usar el cliente del orchestrator.
 
-    F12 (2026-05-01): el default era **orchestrator** (True). El
-    legacy ``run_pick_demo`` quedaba en deprecación.
-
-    2026-05-07 (sesión 25 rondas live): default revertido a **legacy**
-    porque el orchestrator está bloqueado por un bug arquitectónico de
-    integración MoveIt ↔ joint_trajectory_controller en Gazebo Sim
-    (timing sim_time vs wall_time, doc:
-    docs/BUG_BRIDGE_PATH_TOLERANCE.md). El legacy ``run_pick_demo``
-    tiene workarounds históricos que sí funcionan (validado live
-    rondas 1-6: lift_delta=0.961m, robot levanta objeto 96cm).
-
-    Para ACTIVAR el orchestrator (tras cerrar el bug del bridge):
-        PANEL_PICK_DEMO_USE_ORCHESTRATOR=1
+    F12 (2026-05-01): default = orchestrator (True). Legacy en deprecación.
+    F5-legacy-removed (2026-05-08): legacy borrado físicamente
+    (run_pick_demo eliminado de panel_pick_demo.py). El orchestrator es
+    ahora el ÚNICO path. Para recuperar legacy:
+        git checkout audit-pre-borrar-legacy-20260508
 
     Reglas actuales:
-      - Si ``legacy_env_value`` (USE_LEGACY_PICK_DEMO) es truthy → False (legacy).
-      - Si ``env_value`` (PANEL_PICK_DEMO_USE_ORCHESTRATOR) es truthy explícito → True.
-      - En cualquier otro caso (incluido None) → False (legacy).
+      - Si ``legacy_env_value`` (USE_LEGACY_PICK_DEMO) es truthy → False
+        (sentinel "legacy_removed" — dispatcher emite log y no ejecuta nada).
+      - En cualquier otro caso (incluido None) → True (orchestrator).
+      - ``env_value`` mantenido por compat con tests; valor falsy fuerza
+        el sentinel legacy_removed.
     """
     truthy = ("1", "true", "yes", "on")
     falsy = ("0", "false", "no", "off")
@@ -188,9 +182,10 @@ def should_use_orchestrator(
         if legacy_norm in truthy:
             return False
     if env_value is None:
-        # 2026-05-07: default ahora legacy (era orchestrator).
-        return False
-    norm = str(env_value).strip().lower()
-    if norm in truthy:
+        # F5-legacy-removed (2026-05-08): default = orchestrator
+        # (era legacy en F1.7, revertido tras borrado físico del legacy).
         return True
-    return False
+    norm = str(env_value).strip().lower()
+    if norm in falsy:
+        return False
+    return True

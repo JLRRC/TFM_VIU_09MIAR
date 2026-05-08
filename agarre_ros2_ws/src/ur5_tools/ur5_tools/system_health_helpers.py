@@ -22,10 +22,11 @@ class ZombieCheckResult(NamedTuple):
     """Resultado del chequeo de zombies de un proceso."""
 
     process_name: str
-    count: int
-    healthy: bool  # True si count == 0 (no zombies; el primer proceso real
-                  # es el "vivo" — el chequeo se hace post-cleanup, así que
-                  # la expectativa es 0 antes de relanzar el stack).
+    process_count: int  # No usar 'count' (colisión con tuple.count).
+    healthy: bool  # True si process_count == 0 (no zombies; el primer
+                  # proceso real es el "vivo" — el chequeo se hace
+                  # post-cleanup, así que la expectativa es 0 antes
+                  # de relanzar el stack).
 
 
 def count_processes_with_name(
@@ -61,8 +62,8 @@ def zombie_move_group_check(
     Returns:
         ZombieCheckResult(name, count, healthy=count==0).
     """
-    count = count_processes_with_name(name, process_cmdlines)
-    return ZombieCheckResult(process_name=name, count=count, healthy=count == 0)
+    n = count_processes_with_name(name, process_cmdlines)
+    return ZombieCheckResult(process_name=name, process_count=n, healthy=n == 0)
 
 
 def list_known_move_group_killers() -> List[str]:

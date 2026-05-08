@@ -67,7 +67,7 @@ def test_count_empty_name_returns_zero():
 def test_zombie_check_healthy_when_no_processes():
     result = zombie_move_group_check([])
     assert result.process_name == "move_group"
-    assert result.count == 0
+    assert result.process_count == 0
     assert result.healthy is True
 
 
@@ -77,7 +77,7 @@ def test_zombie_check_unhealthy_with_zombies():
         "/opt/ros/jazzy/lib/move_group/move_group --params 2",
     ]
     result = zombie_move_group_check(cmdlines)
-    assert result.count == 2
+    assert result.process_count == 2
     assert result.healthy is False
 
 
@@ -85,7 +85,7 @@ def test_zombie_check_custom_name():
     cmdlines = ["panel_v2_main"]
     result = zombie_move_group_check(cmdlines, name="panel_v2")
     assert result.process_name == "panel_v2"
-    assert result.count == 1
+    assert result.process_count == 1
     assert result.healthy is False
 
 

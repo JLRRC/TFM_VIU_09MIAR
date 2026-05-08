@@ -57,12 +57,13 @@ def _make_panel(*, with_node: bool = True, selected: str = "box_red",
 # --------------------------------------------------------------------------
 
 
-def test_no_env_default_is_legacy_20260507(monkeypatch):
-    """2026-05-07: default revertido a legacy (era orchestrator en F12).
+def test_no_env_default_is_orchestrator_20260508(monkeypatch):
+    """F5-legacy-removed (2026-05-08): legacy borrado físicamente.
+    Default invertido a orchestrator. Sin rclpy/Node disponible en el
+    entorno de tests, el dispatcher cae a orchestrator_fallback_no_rclpy
+    (o no_node si rclpy sí, Node no). Lo importante: mode NO es "legacy".
 
-    Razón: bug bridge MoveIt-controller (sim_time vs wall_time) bloquea el
-    orchestrator en Gazebo Sim. El legacy run_pick_demo está validado live
-    (objetivo-cumplido-pinzas-agarran-objeto-20260507).
+    Para recuperar el legacy: git checkout audit-pre-borrar-legacy-20260508.
     """
     monkeypatch.delenv("PANEL_PICK_DEMO_USE_ORCHESTRATOR", raising=False)
     monkeypatch.delenv("USE_LEGACY_PICK_DEMO", raising=False)
@@ -72,8 +73,9 @@ def test_no_env_default_is_legacy_20260507(monkeypatch):
     legacy = _make_legacy_stub()
     panel = _make_panel()
     mode = dispatch_pick_demo(panel, legacy=legacy)
-    assert mode == "legacy"
-    legacy.assert_called_once_with(panel)
+    # Mode debe ser uno de los fallback orchestrator_*, NO "legacy".
+    assert mode != "legacy"
+    assert mode.startswith("orchestrator_fallback") or mode == "orchestrator"
 
 
 def test_legacy_env_forces_legacy_f12():
