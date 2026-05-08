@@ -53,7 +53,7 @@ jobs:
           apt-get install -y python3-pip
           pip3 install --break-system-packages mypy==1.11.2 || pip3 install mypy==1.11.2
 
-      - name: colcon build (ur5_tools + ur5_bringup + tfm_grasping + interfaces)
+      - name: colcon build (ur5_tools + ur5_bringup + tfm_grasping + tfm_orchestrator + interfaces)
         shell: bash
         working-directory: agarre_ros2_ws
         run: |
@@ -66,20 +66,25 @@ jobs:
               ur5_moveit_config \
               ur5_bringup \
               ur5_tools \
-              tfm_grasping
+              tfm_grasping \
+              tfm_orchestrator
 
-      - name: colcon test (excluye ur5_qt_panel; necesita Qt display)
+      - name: colcon test (incluye tfm_orchestrator → test_mypy_strict_baseline gating)
         shell: bash
         working-directory: agarre_ros2_ws
         run: |
           set -euo pipefail
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
+          # audit-v4.1 FASE E (2026-05-08): tfm_orchestrator añadido para que
+          # test_f7_mypy_strict_baseline rompa el CI si un módulo del baseline
+          # deja de pasar `mypy --strict --follow-imports=silent`.
           colcon test \
             --packages-select \
               ur5_tools \
               ur5_bringup \
               tfm_grasping \
+              tfm_orchestrator \
             --pytest-args -q
           colcon test-result --verbose
 
