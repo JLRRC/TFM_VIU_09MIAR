@@ -45,6 +45,8 @@ setup(
             "jt_smoke_test = ur5_tools.jt_smoke_test:main",
             "tf_geometry_service = ur5_tools.tf_geometry_service:main",
             "object_pose_resolver_service = ur5_tools.object_pose_resolver_service:main",
+            # F8-step1 (2026-05-08): CLI sobre cycle_timing_analyzer.
+            "cycle_timing = ur5_tools.cli_cycle_timing:main",
         ],
     },
 )

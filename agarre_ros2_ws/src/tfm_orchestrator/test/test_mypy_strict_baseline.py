@@ -135,6 +135,8 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_qt_panel/ur5_qt_panel/pick_demo/wait_gripper_target.py",
     # F3-step41b (2026-05-08): time_conversion extraído de executor.
     "src/ur5_tools/ur5_tools/moveit_bridge/time_conversion.py",
+    # F8-step1 (2026-05-08): CLI cycle_timing tool.
+    "src/ur5_tools/ur5_tools/cli_cycle_timing.py",
 ]
 
 
