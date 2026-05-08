@@ -101,6 +101,40 @@ ros2 action send_goal /pick_place ur5_panel_interfaces/action/PickPlace \
 Resultado esperado actual: `success: false`, `reason: approach:moveit_err:FAILURE`,
 `duration_sec: ~35s`.
 
+## Update 2026-05-08 07:30 — F1.8 helper offline-shipped, live blocked por /clock
+
+**F1.8 helper** `compute_top_down_grasp_quat` shipped en commit `34672b0`:
+- 8 unit tests verdes verifican el cálculo de TCP top-down quat con yaw del objeto.
+- Wired en `build_plan_to_pose_goal_for_approach` y `_grasp_down`.
+- Fix matemático correcto y tested.
+
+**Validación live BLOQUEADA** por bug raíz adyacente al stack:
+```
+[controller_bootstrap] [ERROR] /clock no disponible; abortando bootstrap
+```
+Cada relanzamiento del stack:
+1. `ros_gz_bridge` arranca pero `/clock` topic no publica (sim_time stuck).
+2. `controller_bootstrap` espera `/clock` con timeout corto → aborta.
+3. Sin controllers cargados → no `/joint_states` → TF tree desconectado
+   (`base_link` ↔ `rg2_tcp` not in same tree).
+4. Orchestrator `INITIAL_SNAPSHOT` falla con
+   `tf_lookup_exception:ConnectivityException`.
+
+Esto es **el bug raíz aguas arriba** documentado en `BUG_BRIDGE_PATH_TOLERANCE.md`
+sección "Update 2026-05-07 22:40 — script aislado confirma bug en capa MoveIt"
+(`No clock received, using time argument instead!`).
+
+**Conclusión F1.8**:
+- ✅ Helper math + integration shipped (offline-correct).
+- ❌ Validación live full-cycle requiere primero arreglar el sim_time clock sync.
+- El bug raíz del clock impide cualquier ciclo live, no sólo F1.8.
+
+**Plan F1.9** (futura sesión): cerrar el sim_time clock sync. Candidatos:
+- Forzar `use_sim_time:=true` en TODO el stack (ya está pero algo no propaga).
+- Subir timeout de `controller_bootstrap` (ahora ~10s, probar 60s).
+- Activar `streaming` mode en `joint_trajectory_controller`.
+- Verificar que `gz_ros2_control` plugin del SDF tiene `<sim_time_publisher>` activo.
+
 ## Update 2026-05-07 23:51 — cadena de bugs en orchestrator path confirmada
 
 Tras pasar la pose real del objeto vía `object_pose_world_hint`, la APPROACH
