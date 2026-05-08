@@ -65,43 +65,51 @@ class PlanToPoseServer(Node):
 
     def __init__(self) -> None:
         super().__init__("plan_to_pose_server")
+        self._init_declare_and_read_params()
+        self._init_setup_tf_and_clients()
+        self._init_setup_action_server_and_bridge()
+
+    # ------------------------------------------------------------------
+    # __init__ helpers (extraídos en F1.24-refactor T15, 2026-05-08)
+    # ------------------------------------------------------------------
+
+    def _init_declare_and_read_params(self) -> None:
+        """Declara y lee TODOS los parámetros ROS de este nodo.
+
+        Sin side effects ROS más allá de declare_parameter / get_parameter.
+        Setea atributos ``self._<name>``. Refactor offline 1:1 (no cambia
+        defaults ni nombres de parámetro respecto a la versión inline).
+        """
+        # --- Action server / scaffolding ---
         self.declare_parameter("action_name", "/orchestrator/plan_to_pose")
         self.declare_parameter("step_delay_sec", 0.10)
         self.declare_parameter("planning_steps", 3)
         self.declare_parameter("executing_steps", 4)
-        # F6.6: opt-in real bridge wiring.
+        # --- Real bridge (F6.6 opt-in) ---
         self.declare_parameter("use_real_bridge", False)
         self.declare_parameter("bridge_pose_topic", "/desired_grasp")
         self.declare_parameter("bridge_result_topic", "/desired_grasp/result")
         self.declare_parameter("bridge_base_frame", "base_link")
         self.declare_parameter("bridge_result_timeout_sec", 60.0)
-        # B-iter3 (2026-05-03): modo MOVEIT_DIRECT — bypassa el bridge al
-        # panel y llama directamente a /move_action de MoveIt 2.
+        # --- Mode resolution (B-iter3, 2026-05-03) ---
         # Valores: "STUB", "REAL_BRIDGE", "MOVEIT_DIRECT".
-        # Backwards compat: si mode="" (default) y use_real_bridge=true,
-        # mode efectivo = "REAL_BRIDGE"; si use_real_bridge=false, "STUB".
+        # Backwards compat: mode="" + use_real_bridge=true ⇒ "REAL_BRIDGE";
+        # mode="" + use_real_bridge=false ⇒ "STUB".
         self.declare_parameter("mode", "")
+        # --- MoveIt direct (B-iter3 / B-iter14, 2026-05-03) ---
         self.declare_parameter("moveit_action_name", "/move_action")
         self.declare_parameter("moveit_group_name", "manipulator")
-        # B-iter14 (2026-05-03): forzar el tip_link real del SRDF para
-        # las constraints de MoveIt. El ee_frame del goal (semántico)
-        # puede ser distinto (rg2_pinch_center) pero MoveIt requiere que
-        # las constraints apunten a un link del kinematic chain del group.
         self.declare_parameter("moveit_tip_link_override", "rg2_tcp")
         self.declare_parameter("moveit_planner_id", "")
-        # 2026-05-07: subido planning_time 5→15 y result_timeout 30→60.
-        # Validación live ronda 9 mostró APPROACH timeout sistemático con 5s
-        # cuando el robot empieza desde pose post HOME_INITIAL no canónica.
-        # 15s es generoso pero válido para una sesión live; el orchestrator
-        # ya espera el result_timeout completo antes de fallar.
+        # 2026-05-07: planning_time 5→15s, result_timeout 30→60s — APPROACH
+        # timeout sistemático con 5s desde pose post-HOME_INITIAL no canónica.
         self.declare_parameter("moveit_planning_time_sec", 15.0)
         self.declare_parameter("moveit_position_tol_m", 0.005)
         self.declare_parameter("moveit_orientation_tol_rad", 0.05)
         self.declare_parameter("moveit_result_timeout_sec", 60.0)
-        # F1.24 / H9 LIVE (2026-05-08): bypass MoveIt en APPROACH via FJT directo.
-        # Cuando activo, en mode MOVEIT_DIRECT se intenta primero el path
-        # FJT directo (sin pasar por simple_controller_manager) — evita el bug
-        # BUG_CONTROLLER_FEEDBACK_HANG. Si IK falla, falls back a MoveIt path.
+        # --- FJT directo (F1.24 H9+H10+H11+H14 LIVE, 2026-05-08) ---
+        # bypass MoveIt vía /compute_ik + envío directo a FJT action,
+        # cierra BUG_CONTROLLER_FEEDBACK_HANG (T35 × 3 cycles verde).
         self.declare_parameter("bypass_moveit_for_short_paths", False)
         self.declare_parameter(
             "fjt_direct_action_name",
@@ -111,13 +119,11 @@ class PlanToPoseServer(Node):
         self.declare_parameter("fjt_direct_duration_sec", 6.0)
         self.declare_parameter("fjt_direct_ik_timeout_sec", 2.0)
         self.declare_parameter("fjt_direct_result_timeout_sec", 30.0)
-        # F1.24 H14 (2026-05-08): path_tolerance generoso por joint para
-        # absorber tracking errors transitorios post-restart del stack
-        # (T35 × 5 stress flakiness). 0.3 rad ≈ 17° — deja margen sin
-        # permitir desviaciones realmente peligrosas. 0.0 = no enviar
-        # (controller usa default interno, que era el caso pre-H14).
+        # H14: 0.3 rad ≈ 17° — absorbe tracking errors transitorios sin
+        # permitir desviaciones peligrosas. 0.0 = no enviar.
         self.declare_parameter("fjt_direct_path_tolerance_rad", 0.3)
 
+        # --- Read into attributes ---
         self._action_name = str(
             self.get_parameter("action_name").value or "/orchestrator/plan_to_pose"
         ).strip()
@@ -139,7 +145,6 @@ class PlanToPoseServer(Node):
             self.get_parameter("bridge_result_timeout_sec").value
         )
 
-        # B-iter3: resolución del modo efectivo.
         _raw_mode = str(self.get_parameter("mode").value or "").strip().upper()
         if _raw_mode in {"STUB", "REAL_BRIDGE", "MOVEIT_DIRECT"}:
             self._mode = _raw_mode
@@ -170,32 +175,7 @@ class PlanToPoseServer(Node):
         self._moveit_result_timeout = float(
             self.get_parameter("moveit_result_timeout_sec").value
         )
-        # ActionClient para /move_action (lazy init en _execute_moveit_direct).
-        self._moveit_action_client = None
 
-        # F1.22 LIVE (2026-05-08): TF buffer para verificar pose post-FIRST_ATTEMPT_TIMEOUT.
-        # Si el robot ya está en target (controller feedback hang del bug
-        # BUG_CONTROLLER_FEEDBACK_HANG), devolver success en lugar de retry.
-        self._tf_buffer = Buffer()
-        self._tf_listener = TransformListener(self._tf_buffer, self)
-
-        # F1.23 LIVE (2026-05-08): cliente para SwitchController. Usado para
-        # restart del joint_trajectory_controller cuando el feedback hang se
-        # confirma tras retry-fail (BUG_CONTROLLER_FEEDBACK_HANG mitigation).
-        self._switch_controller_client = None
-        if SwitchController is not None:
-            try:
-                self._switch_controller_client = self.create_client(
-                    SwitchController,
-                    "/controller_manager/switch_controller",
-                )
-            except Exception as exc:
-                self.get_logger().warning(
-                    f"[PLAN_TO_POSE] no se pudo crear cliente switch_controller: {exc}"
-                )
-
-        # F1.24 / H9 LIVE (2026-05-08): infrastructure para FJT directo
-        # (bypass MoveIt simple_controller_manager).
         self._bypass_moveit_for_short_paths = bool(
             self.get_parameter("bypass_moveit_for_short_paths").value
         )
@@ -217,12 +197,41 @@ class PlanToPoseServer(Node):
         self._fjt_direct_path_tolerance_rad = float(
             self.get_parameter("fjt_direct_path_tolerance_rad").value
         )
-        self._fjt_direct_action_client = None  # lazy
-        self._fjt_direct_ik_client = None  # lazy
-        self._latest_joint_state = None  # latest /joint_states msg
+
+    def _init_setup_tf_and_clients(self) -> None:
+        """Inicializa TF buffer/listener + lazy clients y subs.
+
+        Side effects ROS: TransformListener subscribe, switch_controller
+        client create, /joint_states subscription. Atributos lazy
+        (``_moveit_action_client``, ``_fjt_direct_action_client``,
+        ``_fjt_direct_ik_client``) quedan en None — se inicializan en
+        primer uso.
+        """
+        # ActionClient /move_action (lazy en _execute_moveit_direct).
+        self._moveit_action_client = None
+
+        # F1.22 LIVE: TF buffer para verificar pose post-FIRST_ATTEMPT_TIMEOUT.
+        self._tf_buffer = Buffer()
+        self._tf_listener = TransformListener(self._tf_buffer, self)
+
+        # F1.23 LIVE: cliente SwitchController para restart del JTC.
+        self._switch_controller_client = None
+        if SwitchController is not None:
+            try:
+                self._switch_controller_client = self.create_client(
+                    SwitchController,
+                    "/controller_manager/switch_controller",
+                )
+            except Exception as exc:
+                self.get_logger().warning(
+                    f"[PLAN_TO_POSE] no se pudo crear cliente switch_controller: {exc}"
+                )
+
+        # F1.24 / H9 LIVE: estado lazy del path FJT directo.
+        self._fjt_direct_action_client = None
+        self._fjt_direct_ik_client = None
+        self._latest_joint_state = None
         self._joint_state_lock = threading.Lock()
-        # Subscriber a joint_states (siempre activo aunque bypass esté off,
-        # cuesta nada y es informativo).
         try:
             from sensor_msgs.msg import JointState as _JointState
             self.create_subscription(
@@ -236,6 +245,8 @@ class PlanToPoseServer(Node):
                 f"[PLAN_TO_POSE] no se pudo crear sub /joint_states: {exc}"
             )
 
+    def _init_setup_action_server_and_bridge(self) -> None:
+        """Crea action server + (opcional) wiring del REAL_BRIDGE + log final."""
         self._cb_group = ReentrantCallbackGroup()
         self._action_server = ActionServer(
             self,
@@ -247,9 +258,7 @@ class PlanToPoseServer(Node):
             callback_group=self._cb_group,
         )
 
-        # F6.6: bridge wiring (publisher + subscription + correlation).
-        # Sólo se inicializa si use_real_bridge=true (evita topics extra
-        # innecesarios en modo stub).
+        # F6.6: bridge wiring sólo si REAL_BRIDGE.
         self._bridge_pose_pub = None
         self._bridge_result_sub = None
         self._bridge_result_lock = threading.Lock()

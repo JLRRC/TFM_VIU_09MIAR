@@ -264,12 +264,10 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # fallback_to_moveit) está planificado pero requiere validación live para
     # no romper el camino verde.
     "ur5_tools/ur5_tools/plan_to_pose_server.py::PlanToPoseServer._execute_fjt_direct": 261,
-    # F1.24 (2026-05-08): __init__ +18 LOC al declarar params del bypass FJT
-    # directo (ik_client, fjt_action_client, fjt_direct_*_timeout, normalize_*).
-    # F1.24 H14 (2026-05-08): +9 LOC más al añadir fjt_direct_path_tolerance_rad
-    # declare + getter. Refactor planificado: agrupar declarations en un
-    # helper _init_fjt_direct_*.
-    "ur5_tools/ur5_tools/plan_to_pose_server.py::PlanToPoseServer.__init__": 228,
+    # F1.24-refactor T15 (2026-05-08): __init__ partido en 3 helpers
+    # (_init_declare_and_read_params 124 + _init_setup_tf_and_clients 46 +
+    # _init_setup_action_server_and_bridge 55), todos < 200. __init__ queda
+    # en 5 LOC. Removido del baseline T15.
     # F3-step9 + step9bis/ter/quater/quintus (2026-05-03): build_main_ui bajó
     # de 733 → 44 LOC con 6 sub-helpers (_build_main_ui_topbar_and_leds 122 +
     # _controls_status_row 130 + _camera_and_objects 98 + _manual_joints_and_
