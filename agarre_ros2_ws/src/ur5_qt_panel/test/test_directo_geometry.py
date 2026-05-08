@@ -773,3 +773,56 @@ class TestComputeDemoTransportPrepJointTolExtraPaths:
             minimum_tol_rad=0.02,
         )
         assert result >= 0.02
+
+
+# ---------------------------------------------------------------------------
+# V1.1 audit-v4 (2026-05-08): compute_distance_3d (replaces closure _dist3)
+# ---------------------------------------------------------------------------
+
+
+def test_compute_distance_3d_basic():
+    from ur5_qt_panel.directo_geometry import compute_distance_3d
+    d = compute_distance_3d((0.0, 0.0, 0.0), (3.0, 4.0, 0.0))
+    assert d is not None
+    assert abs(d - 5.0) < 1e-9
+
+
+def test_compute_distance_3d_full_3d():
+    from ur5_qt_panel.directo_geometry import compute_distance_3d
+    d = compute_distance_3d((1.0, 2.0, 3.0), (4.0, 6.0, 3.0))
+    assert d is not None
+    assert abs(d - 5.0) < 1e-9
+
+
+def test_compute_distance_3d_zero():
+    from ur5_qt_panel.directo_geometry import compute_distance_3d
+    assert compute_distance_3d((1.0, 2.0, 3.0), (1.0, 2.0, 3.0)) == 0.0
+
+
+def test_compute_distance_3d_none_input():
+    from ur5_qt_panel.directo_geometry import compute_distance_3d
+    assert compute_distance_3d(None, (0, 0, 0)) is None
+    assert compute_distance_3d((0, 0, 0), None) is None
+    assert compute_distance_3d(None, None) is None
+
+
+def test_compute_distance_3d_invalid_types():
+    """Inputs no convertibles a 3-tuple → None."""
+    from ur5_qt_panel.directo_geometry import compute_distance_3d
+    assert compute_distance_3d("abc", (0, 0, 0)) is None
+    assert compute_distance_3d((1, 2), (0, 0, 0)) is None  # 2-tuple
+
+
+def test_compute_distance_3d_lists():
+    """Acepta lists además de tuples."""
+    from ur5_qt_panel.directo_geometry import compute_distance_3d
+    d = compute_distance_3d([0.0, 0.0, 0.0], [1.0, 0.0, 0.0])
+    assert d is not None
+    assert abs(d - 1.0) < 1e-9
+
+
+def test_compute_distance_3d_negative():
+    from ur5_qt_panel.directo_geometry import compute_distance_3d
+    d = compute_distance_3d((0.0, 0.0, 0.0), (-3.0, -4.0, 0.0))
+    assert d is not None
+    assert abs(d - 5.0) < 1e-9

@@ -50,6 +50,29 @@ def _pick_demo_fmt_scalar(value, *, digits: int = 3) -> str:
         return "none"
 
 
+def compute_distance_3d(
+    a: Optional[object],
+    b: Optional[object],
+) -> Optional[float]:
+    """V1.1 audit-v4 (2026-05-08): distancia euclidiana 3D pura.
+
+    Acepta entradas tipo tuple/list/array; coerciona via _pick_demo_tuple3.
+    Devuelve None si alguno es inválido (semántica del caller histórico
+    en internal_helpers._select_pick_demo_cycle_object_reference._dist3).
+
+    Reemplazo del closure ``_dist3`` interno de internal_helpers (duplicado
+    en múltiples sitios). Pure, testeable offline.
+    """
+    aa = _pick_demo_tuple3(a)
+    bb = _pick_demo_tuple3(b)
+    if aa is None or bb is None:
+        return None
+    dx = float(aa[0]) - float(bb[0])
+    dy = float(aa[1]) - float(bb[1])
+    dz = float(aa[2]) - float(bb[2])
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+
 # ---------------------------------------------------------------------------
 # Environment variable readers
 # ---------------------------------------------------------------------------

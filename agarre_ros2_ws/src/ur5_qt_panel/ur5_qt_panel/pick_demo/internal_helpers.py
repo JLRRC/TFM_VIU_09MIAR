@@ -630,15 +630,8 @@ def _select_pick_demo_cycle_object_reference(
         True,
     )
 
-    def _dist3(a, b):
-        aa = _pick_demo_tuple3(a)
-        bb = _pick_demo_tuple3(b)
-        if aa is None or bb is None:
-            return None
-        dx = float(aa[0]) - float(bb[0])
-        dy = float(aa[1]) - float(bb[1])
-        dz = float(aa[2]) - float(bb[2])
-        return math.sqrt(dx * dx + dy * dy + dz * dz)
+    # V1.1 audit-v4 (2026-05-08): closure _dist3 → directo_geometry.compute_distance_3d
+    from ..directo_geometry import compute_distance_3d as _dist3
 
     trace_fn(
         "[PICK][DIRECT][CYCLE_REF][SELECT] tag=[DIRECT][CYCLE_REF][SELECT] "
