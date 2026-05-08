@@ -124,20 +124,15 @@ def run_pick_object(panel) -> None:
     _step_last_phase = {"value": ""}
 
     def _step_phase_gate(phase: str, *, position=None, decision: str = "", object_position=None) -> None:
+        # V1.1 audit-v4.1 / F3-iter3: normalización de label delegada al
+        # módulo puro pick_object.phase_label_normalize.
+        from .pick_object.phase_label_normalize import normalize_phase_label
         gate_fn = getattr(panel, "_step_wait_for_phase", None)
         if not callable(gate_fn):
             return
-        label = str(phase or "").strip().upper()
+        label = normalize_phase_label(phase)
         if not label:
             return
-        if label.startswith("GRASP_DOWN_MICRO_"):
-            label = "GRASP_DOWN"
-        elif label.startswith("STRICT_LIFT_STAGE_"):
-            label = "LIFT"
-        elif label.startswith("TRANSPORT_STAGE_"):
-            label = "TRANSPORT"
-        elif label == "PRE_GRASP_RECENTER":
-            label = "PRE_GRASP"
         if _step_last_phase["value"] == label:
             panel._emit_log(
                 f"[PICK][MOVEIT][STEP] gate_reuse phase={label} decision={decision or 'n/a'}"
