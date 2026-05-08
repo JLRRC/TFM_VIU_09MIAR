@@ -113,6 +113,8 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_qt_panel/ur5_qt_panel/panel_ros_emitters.py",
     # F3-step41a (2026-05-08): no_server_meta extraído de executor.
     "src/ur5_tools/ur5_tools/moveit_bridge/no_server_meta.py",
+    # F17 (2026-05-08): grasp_selector puro (sin nodo ROS — pendiente).
+    "src/tfm_grasping/tfm_grasping/grasp_selector.py",
 ]
 
 
