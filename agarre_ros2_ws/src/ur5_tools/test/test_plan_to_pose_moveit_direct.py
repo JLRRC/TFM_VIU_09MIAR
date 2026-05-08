@@ -94,6 +94,95 @@ def test_build_goal_custom_group_and_planner():
 
 
 # ---------------------------------------------------------------------------
+# build_move_group_goal — F1.18 scaling per-fase
+# ---------------------------------------------------------------------------
+
+
+def test_build_goal_default_scaling_is_0_25():
+    """F1.18 default: cuando no se pasa scaling, usa 0.25 (fases cortas)."""
+    from ur5_tools.plan_to_pose_moveit_direct import build_move_group_goal
+    g = build_move_group_goal(
+        target_xyz=(0.5, 0.1, 0.6),
+        target_quat_xyzw=(0.0, 0.0, 0.0, 1.0),
+        ee_frame="rg2_pinch_center",
+        base_frame="base_link",
+    )
+    assert g.request.max_velocity_scaling_factor == pytest.approx(0.25)
+    assert g.request.max_acceleration_scaling_factor == pytest.approx(0.25)
+
+
+def test_build_goal_transport_scaling_0_5():
+    """F1.18: cuando se pasa scaling=0.5 (TRANSPORT), se aplica."""
+    from ur5_tools.plan_to_pose_moveit_direct import build_move_group_goal
+    g = build_move_group_goal(
+        target_xyz=(0.5, 0.0, 0.0),
+        target_quat_xyzw=(0.0, 0.0, 0.0, 1.0),
+        ee_frame="rg2_pinch_center",
+        base_frame="base_link",
+        velocity_scaling_factor=0.5,
+        acceleration_scaling_factor=0.5,
+    )
+    assert g.request.max_velocity_scaling_factor == pytest.approx(0.5)
+    assert g.request.max_acceleration_scaling_factor == pytest.approx(0.5)
+
+
+# ---------------------------------------------------------------------------
+# classify_phase_by_target_z — F1.18 heurística per-fase
+# ---------------------------------------------------------------------------
+
+
+def test_classify_phase_transport_drop_pose():
+    """TRANSPORT: target Z < 0.05 base_link (drop a Z_world≈0.85)."""
+    from ur5_tools.plan_to_pose_moveit_direct import classify_phase_by_target_z
+    pt = classify_phase_by_target_z((0.5, 0.0, 0.0))
+    assert pt.phase_label == "TRANSPORT"
+    assert pt.velocity_scaling == pytest.approx(0.5)
+    assert pt.acceleration_scaling == pytest.approx(0.5)
+    assert pt.first_attempt_timeout_sec == pytest.approx(240.0)
+
+
+def test_classify_phase_other_approach():
+    """APPROACH: target Z >> 0.05 (objeto sobre mesa, base_link Z>0.1)."""
+    from ur5_tools.plan_to_pose_moveit_direct import classify_phase_by_target_z
+    pt = classify_phase_by_target_z((0.5, 0.0, 0.30))
+    assert pt.phase_label == "OTHER"
+    assert pt.velocity_scaling == pytest.approx(0.25)
+    assert pt.acceleration_scaling == pytest.approx(0.25)
+    assert pt.first_attempt_timeout_sec == pytest.approx(120.0)
+
+
+def test_classify_phase_boundary_at_threshold():
+    """Z = 0.05 exacto cae en OTHER (umbral es <, no <=)."""
+    from ur5_tools.plan_to_pose_moveit_direct import classify_phase_by_target_z
+    pt = classify_phase_by_target_z((0.5, 0.0, 0.05))
+    assert pt.phase_label == "OTHER"
+
+
+def test_classify_phase_boundary_below_threshold():
+    """Z = 0.049 cae en TRANSPORT."""
+    from ur5_tools.plan_to_pose_moveit_direct import classify_phase_by_target_z
+    pt = classify_phase_by_target_z((0.5, 0.0, 0.049))
+    assert pt.phase_label == "TRANSPORT"
+
+
+def test_classify_phase_custom_threshold():
+    """El umbral es configurable (knob de tuning para regresiones)."""
+    from ur5_tools.plan_to_pose_moveit_direct import classify_phase_by_target_z
+    # Con threshold 0.10, Z=0.08 ahora cae en TRANSPORT
+    pt = classify_phase_by_target_z((0.5, 0.0, 0.08), transport_z_threshold_m=0.10)
+    assert pt.phase_label == "TRANSPORT"
+    pt2 = classify_phase_by_target_z((0.5, 0.0, 0.08), transport_z_threshold_m=0.05)
+    assert pt2.phase_label == "OTHER"
+
+
+def test_classify_phase_negative_z():
+    """Z negativo (poco realista pero válido) cae en TRANSPORT."""
+    from ur5_tools.plan_to_pose_moveit_direct import classify_phase_by_target_z
+    pt = classify_phase_by_target_z((0.5, 0.0, -0.10))
+    assert pt.phase_label == "TRANSPORT"
+
+
+# ---------------------------------------------------------------------------
 # parse_move_group_result
 # ---------------------------------------------------------------------------
 

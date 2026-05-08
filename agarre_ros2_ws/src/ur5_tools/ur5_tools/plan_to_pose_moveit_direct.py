@@ -39,7 +39,63 @@ Sin estado propio: 100% pure functions con tests offline.
 
 from __future__ import annotations
 
-from typing import Any, Tuple
+from typing import Any, NamedTuple, Tuple
+
+
+class PhaseTuning(NamedTuple):
+    """Tuning per-fase (F1.18). Devuelto por classify_phase_by_target_z."""
+
+    velocity_scaling: float
+    acceleration_scaling: float
+    first_attempt_timeout_sec: float
+    phase_label: str  # "TRANSPORT" | "OTHER"
+
+
+# F1.18 (2026-05-08): heurística per-fase. Umbral en target Z (base_link).
+# TRANSPORT (drop pose) está a Z_world≈0.85 ≈ base_link Z=0 → < 0.05.
+# Otras fases (APPROACH/GRASP_DOWN/LIFT) tienen Z > 0.05 base_link.
+_TRANSPORT_Z_THRESHOLD_M = 0.05
+_TRANSPORT_VEL_SCALING = 0.5
+_TRANSPORT_ACC_SCALING = 0.5
+_TRANSPORT_FIRST_ATTEMPT_TIMEOUT_SEC = 240.0
+_DEFAULT_VEL_SCALING = 0.25
+_DEFAULT_ACC_SCALING = 0.25
+_DEFAULT_FIRST_ATTEMPT_TIMEOUT_SEC = 120.0
+
+
+def classify_phase_by_target_z(
+    target_xyz: Tuple[float, float, float],
+    *,
+    transport_z_threshold_m: float = _TRANSPORT_Z_THRESHOLD_M,
+) -> PhaseTuning:
+    """Clasifica la fase por la coordenada Z del target en base_link (F1.18).
+
+    Heurística: el drop pose de TRANSPORT está a Z_world≈0.85 ≈ base_link Z=0
+    (la base del UR5 está a Z_world=0.85). Cualquier otra fase del pick demo
+    (APPROACH, GRASP_DOWN, LIFT) opera con target Z > 0.05 base_link.
+
+    Returns:
+        PhaseTuning con (velocity_scaling, acceleration_scaling,
+        first_attempt_timeout_sec, phase_label).
+
+    Justificación: TRANSPORT (~1m de recorrido) con scaling=0.25 produce
+    trayectorias > 120s wall que disparan first_attempt_timeout. Subir a
+    scaling=0.5 baja la duración a ~50% y timeout 240s da margen para retry.
+    """
+    z = float(target_xyz[2])
+    if z < float(transport_z_threshold_m):
+        return PhaseTuning(
+            velocity_scaling=_TRANSPORT_VEL_SCALING,
+            acceleration_scaling=_TRANSPORT_ACC_SCALING,
+            first_attempt_timeout_sec=_TRANSPORT_FIRST_ATTEMPT_TIMEOUT_SEC,
+            phase_label="TRANSPORT",
+        )
+    return PhaseTuning(
+        velocity_scaling=_DEFAULT_VEL_SCALING,
+        acceleration_scaling=_DEFAULT_ACC_SCALING,
+        first_attempt_timeout_sec=_DEFAULT_FIRST_ATTEMPT_TIMEOUT_SEC,
+        phase_label="OTHER",
+    )
 
 
 def build_move_group_goal(

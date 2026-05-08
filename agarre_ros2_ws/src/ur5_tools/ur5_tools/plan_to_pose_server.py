@@ -462,18 +462,14 @@ class PlanToPoseServer(Node):
             if self._moveit_tip_link_override
             else goal.ee_frame
         )
-        # F1.18 audit-v4 (2026-05-08): heurística per-fase. TRANSPORT (drop
-        # pose) se identifica por target Z < 0.05 base_link (drop está a
-        # Z_world=0.85 = base_link Z=0). Esas trayectorias son largas (~1m)
-        # y con scaling=0.25 superan first_attempt_timeout=120s. Subir a
-        # scaling=0.5 baja la duración a ~50% sim, dentro del budget.
-        is_transport_phase = float(goal.target_xyz[2]) < 0.05
-        if is_transport_phase:
-            mg_velocity_scaling = 0.5
-            mg_acceleration_scaling = 0.5
-        else:
-            mg_velocity_scaling = 0.25
-            mg_acceleration_scaling = 0.25
+        # F1.18 audit-v4 (2026-05-08): heurística per-fase delegada a
+        # classify_phase_by_target_z (función pura, testeable offline).
+        # TRANSPORT (drop pose, target Z < 0.05 base_link) usa scaling=0.5 +
+        # first_attempt_timeout=240s; resto de fases (APPROACH/GRASP_DOWN/LIFT)
+        # mantienen scaling=0.25 + first_attempt_timeout=120s.
+        from ur5_tools.plan_to_pose_moveit_direct import classify_phase_by_target_z
+        phase_tuning = classify_phase_by_target_z(goal.target_xyz)
+        is_transport_phase = phase_tuning.phase_label == "TRANSPORT"
         mg_goal = build_move_group_goal(
             goal.target_xyz,
             goal.target_quat_xyzw,
@@ -484,8 +480,8 @@ class PlanToPoseServer(Node):
             planning_time_sec=self._moveit_planning_time,
             position_tol_m=self._moveit_position_tol,
             orientation_tol_rad=self._moveit_orientation_tol,
-            velocity_scaling_factor=mg_velocity_scaling,
-            acceleration_scaling_factor=mg_acceleration_scaling,
+            velocity_scaling_factor=phase_tuning.velocity_scaling,
+            acceleration_scaling_factor=phase_tuning.acceleration_scaling,
         )
 
         self.get_logger().info(
@@ -534,12 +530,11 @@ class PlanToPoseServer(Node):
         # backoff = 523s < 700s. Subiendo 60→120s para tolerar OMPL más
         # lento en targets alejados (cycle 3 box_green a 0.75m falló por
         # OMPL flaky con 60s).
-        # F1.18 audit-v4 (2026-05-08): TRANSPORT (target Z < 0.05) usa 240s
-        # por trayectoria larga; resto de fases 120s. Outer 700s acomoda
-        # un retry de TRANSPORT (240+20+240=500s) o ×2 cycles cortos.
-        _MOVEIT_FIRST_ATTEMPT_TIMEOUT_SEC = 240.0 if is_transport_phase else 120.0
+        # F1.18 audit-v4 (2026-05-08): timeout per-fase delegado a
+        # classify_phase_by_target_z. TRANSPORT 240s, resto 120s. Outer 700s
+        # acomoda un retry de TRANSPORT (240+20+240=500s) o ×2 cycles cortos.
         first_attempt_timeout = min(
-            _MOVEIT_FIRST_ATTEMPT_TIMEOUT_SEC,
+            phase_tuning.first_attempt_timeout_sec,
             float(max(1.0, self._moveit_result_timeout)),
         )
 
