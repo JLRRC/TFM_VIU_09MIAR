@@ -116,45 +116,18 @@ TCP_FALLBACKS = {
 }
 
 
-@dataclass
-class PoseSample:
-    x: float
-    y: float
-    z: float
-    qx: float
-    qy: float
-    qz: float
-    qw: float
-    stamp_ns: int
-
-
-@dataclass
-class AttachedTarget:
-    name: str
-    offset_x: float
-    offset_y: float
-    offset_z: float
-    qx: float
-    qy: float
-    qz: float
-    qw: float
-    attach_stamp_ns: int
-    coherence_breach_count: int = 0
-
-
-@dataclass
-class DemoTransportState:
-    name: str
-    last_pose: Optional[PoseSample] = None
-    last_spawn_ts: float = 0.0
-    world_offset_x: float = 0.0
-    world_offset_y: float = 0.0
-    world_offset_z: float = -0.1
-    world_qx: float = 0.0
-    world_qy: float = 0.0
-    world_qz: float = 0.0
-    world_qw: float = 1.0
-    use_world_locked_pose: bool = True
+# F#13-step (2026-05-08): dataclasses + helpers movidos a
+# gripper_attach_models.py (testeables offline). Reexportadas aquí para
+# compatibilidad con consumers que hacían `from .gripper_attach_backend import
+# PoseSample` (ej. mixins atajados).
+from .gripper_attach_models import (  # noqa: F401
+    AttachedTarget,
+    DemoTransportState,
+    PoseSample,
+    coherence_breach_exceeded,
+    increment_breach,
+    reset_breach,
+)
 
 
 class GripperAttachBackend(

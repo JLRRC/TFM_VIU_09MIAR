@@ -137,6 +137,8 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_tools/ur5_tools/moveit_bridge/time_conversion.py",
     # F8-step1 (2026-05-08): CLI cycle_timing tool.
     "src/ur5_tools/ur5_tools/cli_cycle_timing.py",
+    # F#13-step (2026-05-08): gripper_attach_models extraído del backend.
+    "src/ur5_tools/ur5_tools/gripper_attach_models.py",
 ]
 
 
