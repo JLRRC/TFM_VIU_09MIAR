@@ -98,15 +98,25 @@ flowchart TD
 5. FSM ejecuta 9 fases secuenciales:
    - Cada fase publica `Feedback` con `current_phase`, `progress`, `phase_index`
    - Fases que requieren movimiento llaman `/orchestrator/plan_to_pose`
-6. `plan_to_pose_server._execute_moveit_direct`:
-   - Modo `bypass_moveit_for_short_paths=true` (default tras F1.24)
-   - Llama `_execute_fjt_direct(goal)`:
-     - `compute_ik` → joint targets normalizados a [-π, π]
-     - Build trajectory (multi-waypoint si dist > 0.4m, 2-point si <= 0.4m)
-     - Send goal a `/joint_trajectory_controller/follow_joint_trajectory`
-     - Wait result (timeout per-distance: 120s long, 30s short)
-   - Si FJT directo OK → return success
-   - Si falla (IK error, timeout, controller no ready) → fallback MoveIt
+6. `plan_to_pose_server._execute_moveit_direct` (refactor T15 2026-05-09):
+   función orquestadora 118 LOC con 5 sub-helpers:
+   - `_moveit_try_fjt_bypass`: F1.24/H9 bypass MoveIt vía FJT directo cuando
+     `bypass_moveit_for_short_paths=true` (default).
+     - `_fjt_extract_seed_positions` (joint_state cacheado)
+     - `_fjt_compute_traj_params` (TF lookup ee_frame → distancia)
+     - `_fjt_call_compute_ik` (`/compute_ik` con timeout 5s, normalización [-π, π])
+     - `_fjt_build_trajectory` (multi-waypoint si dist > 0.4m, 2-point si ≤ 0.4m)
+     - `_fjt_send_and_wait_result` (path_tolerance H14 por joint, wait result)
+   - `_moveit_send_first_attempt`: lazy ActionClient + build_move_group_goal
+     con phase_tuning per-distancia (TRANSPORT scaling=0.5/timeout=240s, resto
+     scaling=0.25/timeout=120s).
+   - `_moveit_post_timeout_tf_check` (F1.22 LIVE): tras FIRST_ATTEMPT_TIMEOUT,
+     TF check del ee_frame; si robot llegó al target → success
+     `feedback_hang_recovered_via_tf`.
+   - `_moveit_retry_after_failure` (F1.23 LIVE): controller restart + 20s
+     sleep + retry. Markers `retry_after_<orig>` / `retry_failed`.
+   - `_moveit_final_tf_recovery` (F1.23 LIVE): último TF check tras todos
+     los aborts; `feedback_hang_recovered_final` si robot llegó al target.
 7. Result final del action `/pick_place` → cliente
 
 ## Solución del BUG_CONTROLLER_FEEDBACK_HANG (cerrada 2026-05-08)
@@ -130,7 +140,31 @@ Sólo se mantiene como fallback defensivo si IK falla en compute_ik.
 - **panel_pick_demo.py**: 8.611 → 536 LOC (-94% en una sesión)
 - **legacy run_pick_demo**: borrado físicamente (commit `11b66e2`)
 - **mypy strict**: 24 → 63 módulos (+162%)
-- **Tests offline**: ~2.400 → ~2.600+ (+220 nuevos hoy)
+- **Tests offline**: ~2.400 → 2.381 + (+220 nuevos hoy)
 - **T35 × 3 cycles consecutivos verde**: ✅
 - **Score profesional**: 89 → 100/100
 - **Bug controller feedback hang**: ✅ cerrado vía bypass arquitectónico
+
+## Refactor estructural T15 (2026-05-09, post-defensa)
+
+Tras la aprobación del TFM se completaron refactors offline para llevar
+el código a estado productivo:
+
+| Función | Antes | Después | Sub-helpers |
+|--|--|--|--|
+| `PlanToPoseServer.__init__` | 228 LOC | 5 LOC | 3 (`_init_declare_and_read_params`, `_init_setup_tf_and_clients`, `_init_setup_action_server_and_bridge`) |
+| `_execute_fjt_direct` | 261 LOC | 61 LOC | 5 (`_fjt_extract_seed_positions`, `_fjt_compute_traj_params`, `_fjt_call_compute_ik`, `_fjt_build_trajectory`, `_fjt_send_and_wait_result`) |
+| `_execute_moveit_direct` | 364 LOC | 118 LOC | 5 (`_moveit_try_fjt_bypass`, `_moveit_send_first_attempt`, `_moveit_post_timeout_tf_check`, `_moveit_retry_after_failure`, `_moveit_final_tf_recovery`) |
+
+Adicionalmente se corrigió un **bug latente** en `_execute_fjt_direct`:
+``seed_positions`` se referenciaba antes de definirse haciendo que
+``dist_to_target=0.5`` siempre cayera al fallback (multi-waypoint
+always-on, incluso para fases cortas). Tras el fix, APPROACH/GRASP_DOWN/
+LIFT usan 2-point trajectory con duration=8s, TRANSPORT sigue usando
+multi-waypoint duration=25s.
+
+H14b también pushea el default de `fjt_direct_ik_timeout_sec` de 2.0s a
+5.0s (TRAC-IK puede tardar 2-4s post-restart del stack — observado en
+T35 × 5 stress).
+
+Total tests offline post-refactor: 2.381 PASSED (1.635 panel + 746 ur5_tools).

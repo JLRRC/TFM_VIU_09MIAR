@@ -4,7 +4,25 @@
 
 Workspace principal del TFM de percepción e inferencia de agarre para UR5+RG2 con ROS 2, Gazebo y MoveIt 2.
 
-## 🏆 Estado actual: TFM PUBLICABLE 100/100 (2026-05-08)
+## ✅ Estado actual: TFM aprobado · post-defensa cleanup (2026-05-09)
+
+TFM aprobado el 2026-05-08 con tag `T35-3-cycles-verde-20260508`. Sprint
+post-defensa de mantenimiento offline en curso para dejar el código en
+estado productivo limpio:
+
+- Refactor T15 estructural: 3 funciones >200 LOC bajadas a <120 LOC con
+  10 sub-helpers (`PlanToPoseServer.{__init__, _execute_fjt_direct, _execute_moveit_direct}`).
+- Fix bug latente `seed_positions` antes de definirse (forzaba multi-waypoint
+  always-on incluso en fases cortas).
+- IK timeout default 2.0→5.0s (TRAC-IK seed-dependent post-restart).
+- Limpieza 18 unused imports, sincronización 5 baselines tras audit-v4.1.
+- Docs nuevos: `agarre_ros2_ws/docs/MIXINS.md` con MRO de los 9 mixins de UR5MoveItBridge.
+
+**Tests offline: 2.381 PASSED · 0 FAILED.**
+
+Ver [CHANGELOG.md](CHANGELOG.md) sección [2026-05-09] para detalle.
+
+## 🏆 Hito principal: TFM PUBLICABLE 100/100 (2026-05-08)
 
 **T35 × 3 cycles consecutivos verde en LIVE** — bug bloqueante `BUG_CONTROLLER_FEEDBACK_HANG` cerrado vía bypass arquitectónico (FJT directo). Legacy `run_pick_demo` borrado físicamente (-8.040 LOC). 25 commits del día — score 89→100.
 

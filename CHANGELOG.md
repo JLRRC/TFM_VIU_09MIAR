@@ -2,6 +2,79 @@
 
 Historial de hitos del proyecto TFM UR5+RG2 Pick & Place (simulación ROS 2 Jazzy + Gazebo Harmonic + MoveIt 2).
 
+## [2026-05-09] Post-defensa — Refactor estructural + cleanup productivo
+
+**Tras la aprobación del TFM**, sprint de mantenimiento offline para dejar
+el código en estado productivo limpio. Foco: refactors estructurales de
+funciones grandes y eliminación de deuda técnica.
+
+### Commits del día (5)
+
+| Commit | Hito |
+|--|--|
+| `27af8e9` | sincronizar 3 baselines tras audit-v4.1 (LEGACY_PRINT_FILES + LEGACY_OVERSIZE_FILES_LOC + ENV_READS_BASELINE_SCATTERED 66→41) |
+| `b68b165` | refactor(F1.24 T15): `_execute_fjt_direct` 261→61 LOC con 5 sub-helpers + **fix bug latente** `seed_positions` antes de definirse |
+| `95128ac` | refactor(F1.24 T15): `_execute_moveit_direct` 364→118 LOC con 5 sub-helpers (`_moveit_try_fjt_bypass`, `_moveit_send_first_attempt`, `_moveit_post_timeout_tf_check`, `_moveit_retry_after_failure`, `_moveit_final_tf_recovery`) |
+| `7d993d4` | chore: limpiar 18 unused imports detectados por autoflake (15 archivos) |
+| `c9a3aea` (ya en main desde 2026-05-08) | fix(F1.24 H14b): subir `fjt_direct_ik_timeout_sec` default 2.0→5.0s |
+
+### Bug latente corregido en `_execute_fjt_direct`
+
+```python
+# Pre-fix (commit 9cf4cb2 F1.24 H9 LIVE):
+try:
+    cur_x, cur_y, cur_z = (
+        float(seed_positions[0]) * 0,  # NameError — undefined
+        0.0, 0.0,
+    )
+    tf_pos = self._lookup_ee_position_in_base(...)
+    ...
+except Exception:
+    dist_to_target = 0.5  # fallback siempre activado
+```
+
+`seed_positions` se referenciaba antes de definirse (línea 935 vs 985),
+provocando NameError cada llamada → fallback al except → `dist_to_target=0.5`
+**siempre** → multi-waypoint trajectory ALWAYS-on, incluso para fases cortas.
+
+**Behavioral change post-fix**: APPROACH/GRASP_DOWN/LIFT ahora usan 2-point
+trajectory con duration=8s (era 25s). TRANSPORT sigue usando multi-waypoint
+duration=25s. Más rápido y semánticamente correcto.
+
+### Métricas de refactor T15
+
+| Función | Antes | Después | Delta |
+|--|--|--|--|
+| `PlanToPoseServer.__init__` | 228 LOC | 5 LOC | -97% |
+| `PlanToPoseServer._execute_fjt_direct` | 261 LOC | 61 LOC | -77% |
+| `PlanToPoseServer._execute_moveit_direct` | 364 LOC | 118 LOC | -68% |
+| Total funciones >200 LOC en plan_to_pose_server.py | 3 | 0 | -100% |
+
+Todos los sub-helpers están <100 LOC. Behavior preservado 1:1 (validado por
+1635 panel + 746 ur5_tools + 5 tests T28 regression bridge path tolerance).
+
+### Refactors deferidos al bloque live
+
+- `align_demo_grasp_direct` (550 LOC), `run_grasp_down_conservative` (534 LOC),
+  `_plan_with_moveit_py` (557 LOC), `executor._execute_joint_trajectory_action`
+  (1343 LOC), `panel_pick_object.run_pick_object` (3702 LOC).
+- Razón: estas funciones son legacy 1:1 sin tests behaviorales offline.
+  Refactor estructural cambiaría comportamiento subtle y requiere validación
+  live (T35 × 3 cycles + manual smoke). Deuda documentada en
+  `agarre_ros2_ws/docs/MIXINS.md` § "Plan F5-iter5/iter6/iter7".
+
+### Docs nuevos
+
+- [agarre_ros2_ws/docs/MIXINS.md](agarre_ros2_ws/docs/MIXINS.md) — arquitectura
+  de los 9 mixins de `UR5MoveItBridge`, MRO, dependencias, plan de extracción.
+
+### Tests
+
+- 1635 panel + 746 ur5_tools = **2381 PASSED, 0 FAILED** (post-refactor T15
+  + cleanup imports + baseline sync).
+
+---
+
 ## [2026-05-08] v4.1 — auditoría delta + plan ejecutivo
 
 **Branch**: `audit/fase-0-1-cleanup`
