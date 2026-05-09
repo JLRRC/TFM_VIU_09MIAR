@@ -897,101 +897,157 @@ class PlanToPoseServer(Node):
         with self._joint_state_lock:
             return self._latest_joint_state
 
-    def _execute_fjt_direct(self, goal: PlanToPoseGoal, start_mono: float) -> Optional["PlanToPoseResult"]:
-        """F1.24 / H9 LIVE (2026-05-08): bypass MoveIt en APPROACH.
+    # UR5 arm joints (orden esperado por el controller).
+    _UR5_JOINTS = (
+        "shoulder_pan_joint",
+        "shoulder_lift_joint",
+        "elbow_joint",
+        "wrist_1_joint",
+        "wrist_2_joint",
+        "wrist_3_joint",
+    )
+
+    def _execute_fjt_direct(
+        self, goal: PlanToPoseGoal, start_mono: float
+    ) -> Optional["PlanToPoseResult"]:
+        """F1.24 / H9+H10+H11+H14 LIVE (2026-05-08): bypass MoveIt vía FJT directo.
 
         Flujo:
-        1. Lee joint_state actual (seed IK).
-        2. Llama /compute_ik para obtener target joints de la pose XYZ.
-        3. Construye JointTrajectory de 2 puntos (current → target).
-        4. Envía al /joint_trajectory_controller/follow_joint_trajectory action
-           directamente (sin pasar por simple_controller_manager → evita bug).
-        5. Espera "Goal reached, success!" del controller.
+        1. Resuelve ee_frame y extrae seed positions del joint_state cacheado.
+        2. Calcula traj params per-distancia (TF lookup ee_frame → target).
+        3. Llama ``/compute_ik`` para obtener target joints (normalizados a [-π, π]).
+        4. Construye JointTrajectory (2-point para fases cortas, multi-waypoint
+           para distancias > 0.4m a.k.a. TRANSPORT).
+        5. Envía al ``/joint_trajectory_controller/follow_joint_trajectory``
+           con path_tolerance=H14 y espera "Goal reached, success!".
 
         Returns:
             PlanToPoseResult si se ejecutó (success o failure),
             None si pre-condiciones no satisfechas (caller debe fallback a MoveIt).
+
+        Refactor T15 (2026-05-09): split en 4 sub-helpers
+        (_fjt_extract_seed_positions, _fjt_compute_traj_params,
+        _fjt_call_compute_ik, _fjt_send_and_wait_result). Fix bug latente
+        F1.24 donde ``seed_positions`` se referenciaba antes de definirse,
+        haciendo que ``dist_to_target=0.5`` siempre (multi-waypoint always-on).
         """
-        from .fjt_direct_helpers import (
-            build_fjt_trajectory_multi_point,
-            build_fjt_trajectory_two_point,
-            build_ik_request,
-            parse_ik_result,
-        )
-        from .plan_to_pose_logic import normalize_quat
-        from .plan_to_pose_moveit_direct import classify_phase_by_target_z
-        import math as _math
+        # 1. Seed.
+        seed_positions = self._fjt_extract_seed_positions()
+        if seed_positions is None:
+            return None
 
-        # F1.24 LIVE (2026-05-08): tuning per-distancia para FJT_DIRECT.
-        # Calcula distancia desde current pose (seed) al target XYZ. Si > 0.4m
-        # → trayectoria larga (TRANSPORT/destino lejos): duration=25s, timeout=120s
-        #   + multi-waypoint trajectory (H11) para evitar path_tolerance fail.
-        # Si <= 0.4m → fase corta (APPROACH/GRASP_DOWN/LIFT): duration=8s, timeout=30s
-        #   + 2-point trajectory simple.
-        # El criterio basado en target Z (classify_phase_by_target_z) NO funciona
-        # cuando el target está alto (e.g. cesta a Z=0.25 base): falsamente
-        # clasifica como "OTHER" pese a la distancia grande.
-        try:
-            cur_x, cur_y, cur_z = (
-                float(seed_positions[0]) * 0,  # placeholder; usaremos lookup TF
-                0.0, 0.0,
-            )
-            # Mejor: usar TF lookup del ee_frame actual (ya tenemos el helper).
-            tf_pos = self._lookup_ee_position_in_base(
-                ee_frame=ee_frame,
-                base_frame=self._bridge_base_frame,
-                timeout_sec=0.5,
-            )
-            if tf_pos is not None:
-                dx = float(tf_pos[0]) - float(goal.target_xyz[0])
-                dy = float(tf_pos[1]) - float(goal.target_xyz[1])
-                dz = float(tf_pos[2]) - float(goal.target_xyz[2])
-                dist_to_target = _math.sqrt(dx * dx + dy * dy + dz * dz)
-            else:
-                dist_to_target = 0.5  # fallback conservador → larga
-        except Exception:
-            dist_to_target = 0.5
-
-        is_long_traj = dist_to_target > 0.4
-        if is_long_traj:
-            fjt_duration_eff = max(self._fjt_direct_duration, 25.0)
-            fjt_result_timeout_eff = max(self._fjt_direct_result_timeout, 120.0)
-        else:
-            fjt_duration_eff = max(float(self._fjt_direct_duration), 8.0)
-            fjt_result_timeout_eff = max(float(self._fjt_direct_result_timeout), 30.0)
-        self.get_logger().info(
-            f"[PLAN_TO_POSE][FJT_DIRECT] dist_to_target={dist_to_target:.3f}m "
-            f"duration={fjt_duration_eff:.1f}s timeout={fjt_result_timeout_eff:.1f}s "
-            f"multi_waypoint={is_long_traj}"
+        # 2. ee_frame efectivo.
+        ee_frame = (
+            self._moveit_tip_link_override
+            if self._moveit_tip_link_override
+            else goal.ee_frame
         )
-        # 1. Joint state actual.
+
+        # 3. Distance-based tuning (TF lookup ee_frame).
+        fjt_duration_eff, fjt_result_timeout_eff, is_long_traj = (
+            self._fjt_compute_traj_params(goal, ee_frame)
+        )
+
+        # 4. IK síncrono → target joints normalizados.
+        target_joints = self._fjt_call_compute_ik(goal, ee_frame, seed_positions)
+        if target_joints is None:
+            return None
+
+        # 5. Build trajectory (per-distancia: H11 multi-waypoint si is_long_traj).
+        jt = self._fjt_build_trajectory(
+            seed_positions=seed_positions,
+            target_joints=target_joints,
+            is_long_traj=is_long_traj,
+            duration_sec=fjt_duration_eff,
+        )
+
+        # 6. Send + wait + parse FJT result.
+        return self._fjt_send_and_wait_result(
+            jt=jt,
+            goal=goal,
+            start_mono=start_mono,
+            result_timeout_sec=fjt_result_timeout_eff,
+        )
+
+    def _fjt_extract_seed_positions(self) -> Optional[list]:
+        """Lee joint_state cacheado y devuelve seed positions ordenadas
+        según ``_UR5_JOINTS``. Devuelve None si falta cualquier joint o
+        no hay joint_state cacheado (caller debe fallback)."""
         js = self._get_latest_joint_state()
-        if js is None or not getattr(js, "name", None) or not getattr(js, "position", None):
+        if (
+            js is None
+            or not getattr(js, "name", None)
+            or not getattr(js, "position", None)
+        ):
             self.get_logger().warning(
                 "[PLAN_TO_POSE][FJT_DIRECT] no joint_state cached — fallback a MoveIt"
             )
             return None
-
-        # Filtrar solo joints del UR5 arm (en el orden esperado por el controller).
-        ur5_joints = (
-            "shoulder_pan_joint",
-            "shoulder_lift_joint",
-            "elbow_joint",
-            "wrist_1_joint",
-            "wrist_2_joint",
-            "wrist_3_joint",
-        )
         name_to_pos = {str(n): float(p) for n, p in zip(js.name, js.position)}
-        seed_positions = []
-        for jn in ur5_joints:
+        seed_positions: list = []
+        for jn in self._UR5_JOINTS:
             if jn not in name_to_pos:
                 self.get_logger().warning(
                     f"[PLAN_TO_POSE][FJT_DIRECT] joint {jn} no en /joint_states — fallback"
                 )
                 return None
             seed_positions.append(name_to_pos[jn])
+        return seed_positions
 
-        # 2. Cliente /compute_ik (lazy).
+    def _fjt_compute_traj_params(
+        self, goal: PlanToPoseGoal, ee_frame: str
+    ) -> tuple:
+        """Calcula (duration_sec, result_timeout_sec, is_long_traj) basado en la
+        distancia TF del ``ee_frame`` actual al target XYZ.
+
+        - dist > 0.4m (TRANSPORT/destino lejos): duration=max(default, 25s),
+          timeout=max(default, 120s), multi_waypoint=True.
+        - dist <= 0.4m (APPROACH/GRASP_DOWN/LIFT): duration=max(default, 8s),
+          timeout=max(default, 30s), multi_waypoint=False.
+        - TF no disponible: fallback conservador (long_traj=True).
+        """
+        import math as _math
+
+        try:
+            tf_pos = self._lookup_ee_position_in_base(
+                ee_frame=ee_frame,
+                base_frame=self._bridge_base_frame,
+                timeout_sec=0.5,
+            )
+        except Exception:
+            tf_pos = None
+        if tf_pos is not None:
+            dx = float(tf_pos[0]) - float(goal.target_xyz[0])
+            dy = float(tf_pos[1]) - float(goal.target_xyz[1])
+            dz = float(tf_pos[2]) - float(goal.target_xyz[2])
+            dist = _math.sqrt(dx * dx + dy * dy + dz * dz)
+        else:
+            dist = 0.5  # conservador → ruta larga
+        is_long = dist > 0.4
+        if is_long:
+            duration_eff = max(float(self._fjt_direct_duration), 25.0)
+            timeout_eff = max(float(self._fjt_direct_result_timeout), 120.0)
+        else:
+            duration_eff = max(float(self._fjt_direct_duration), 8.0)
+            timeout_eff = max(float(self._fjt_direct_result_timeout), 30.0)
+        self.get_logger().info(
+            f"[PLAN_TO_POSE][FJT_DIRECT] dist_to_target={dist:.3f}m "
+            f"duration={duration_eff:.1f}s timeout={timeout_eff:.1f}s "
+            f"multi_waypoint={is_long}"
+        )
+        return duration_eff, timeout_eff, is_long
+
+    def _fjt_call_compute_ik(
+        self,
+        goal: PlanToPoseGoal,
+        ee_frame: str,
+        seed_positions: list,
+    ) -> Optional[list]:
+        """Llama ``/compute_ik`` con timeout configurable y devuelve target
+        joints normalizados a [-π, π] (H10). Devuelve None y loguea si falla."""
+        from .fjt_direct_helpers import build_ik_request, parse_ik_result
+
+        # Cliente lazy.
         if self._fjt_direct_ik_client is None:
             try:
                 from moveit_msgs.srv import GetPositionIK
@@ -1008,12 +1064,6 @@ class PlanToPoseServer(Node):
                 "[PLAN_TO_POSE][FJT_DIRECT] /compute_ik service no ready — fallback"
             )
             return None
-
-        ee_frame = (
-            self._moveit_tip_link_override
-            if self._moveit_tip_link_override
-            else goal.ee_frame
-        )
         ik_req = build_ik_request(
             target_xyz=goal.target_xyz,
             target_quat_xyzw=goal.target_quat_xyzw,
@@ -1021,7 +1071,7 @@ class PlanToPoseServer(Node):
             base_frame=self._bridge_base_frame,
             group_name=self._moveit_group_name,
             current_joints=seed_positions,
-            joint_names=list(ur5_joints),
+            joint_names=list(self._UR5_JOINTS),
             timeout_sec=self._fjt_direct_ik_timeout,
             avoid_collisions=False,
         )
@@ -1035,43 +1085,68 @@ class PlanToPoseServer(Node):
             )
             return None
         ok_ik, reason_ik, target_joints = parse_ik_result(
-            ik_future.result(), list(ur5_joints)
+            ik_future.result(), list(self._UR5_JOINTS)
         )
         if not ok_ik or target_joints is None:
             self.get_logger().info(
                 f"[PLAN_TO_POSE][FJT_DIRECT] IK failed: {reason_ik} — fallback a MoveIt"
             )
             return None
-
         self.get_logger().info(
-            f"[PLAN_TO_POSE][FJT_DIRECT] IK OK joints="
-            f"({target_joints[0]:+.3f},{target_joints[1]:+.3f},"
+            "[PLAN_TO_POSE][FJT_DIRECT] IK OK joints=("
+            f"{target_joints[0]:+.3f},{target_joints[1]:+.3f},"
             f"{target_joints[2]:+.3f},{target_joints[3]:+.3f},"
             f"{target_joints[4]:+.3f},{target_joints[5]:+.3f}) "
             f"target=({goal.target_xyz[0]:.3f},{goal.target_xyz[1]:.3f},"
             f"{goal.target_xyz[2]:.3f})"
         )
+        return target_joints
 
-        # 3. Build trajectory (per-distance F1.24 LIVE).
-        # H11: multi-waypoint para distancias largas (TRANSPORT) — evita
-        # path_tolerance_violation por aceleración brusca con solo 2 puntos.
+    def _fjt_build_trajectory(
+        self,
+        *,
+        seed_positions: list,
+        target_joints: list,
+        is_long_traj: bool,
+        duration_sec: float,
+    ):
+        """Wrapper sobre ``build_fjt_trajectory_*``: multi-waypoint si la
+        trayectoria es larga (TRANSPORT), 2-point si corta."""
+        from .fjt_direct_helpers import (
+            build_fjt_trajectory_multi_point,
+            build_fjt_trajectory_two_point,
+        )
+
+        joint_names = list(self._UR5_JOINTS)
         if is_long_traj:
-            jt = build_fjt_trajectory_multi_point(
-                joint_names=list(ur5_joints),
+            return build_fjt_trajectory_multi_point(
+                joint_names=joint_names,
                 start_positions=seed_positions,
                 target_positions=target_joints,
                 num_intermediate_points=8,
-                total_duration_sec=fjt_duration_eff,
+                total_duration_sec=duration_sec,
             )
-        else:
-            jt = build_fjt_trajectory_two_point(
-                joint_names=list(ur5_joints),
-                start_positions=seed_positions,
-                target_positions=target_joints,
-                duration_sec=fjt_duration_eff,
-            )
+        return build_fjt_trajectory_two_point(
+            joint_names=joint_names,
+            start_positions=seed_positions,
+            target_positions=target_joints,
+            duration_sec=duration_sec,
+        )
 
-        # 4. FJT action client (lazy).
+    def _fjt_send_and_wait_result(
+        self,
+        *,
+        jt,
+        goal: PlanToPoseGoal,
+        start_mono: float,
+        result_timeout_sec: float,
+    ) -> Optional["PlanToPoseResult"]:
+        """Envía el FJT goal (con H14 path_tolerance), espera resultado y
+        decodifica error_code. Devuelve PlanToPoseResult(success=True) si
+        error_code==0, None en cualquier otro caso (caller fallback)."""
+        from .plan_to_pose_logic import normalize_quat
+
+        # Action client lazy.
         if self._fjt_direct_action_client is None:
             try:
                 from rclpy.action import ActionClient as _ActionClient
@@ -1092,19 +1167,17 @@ class PlanToPoseServer(Node):
                 f"{self._fjt_direct_action_name} no ready — fallback"
             )
             return None
-
         from control_msgs.action import FollowJointTrajectory as _FJT
         fjt_goal = _FJT.Goal()
         fjt_goal.trajectory = jt
-        # F1.24 H14 (2026-05-08): path_tolerance generoso para absorber
-        # tracking errors transitorios. 0.0 = no enviar (default controller).
         if self._fjt_direct_path_tolerance_rad > 0.0:
             from .fjt_direct_helpers import build_fjt_path_tolerances
             fjt_goal.path_tolerance = build_fjt_path_tolerances(
-                joint_names=list(ur5_joints),
+                joint_names=list(self._UR5_JOINTS),
                 position_tolerance_rad=self._fjt_direct_path_tolerance_rad,
             )
 
+        # Send goal.
         send_future = self._fjt_direct_action_client.send_goal_async(fjt_goal)
         send_event = threading.Event()
         send_future.add_done_callback(lambda _f: send_event.set())
@@ -1114,7 +1187,6 @@ class PlanToPoseServer(Node):
                 "[PLAN_TO_POSE][FJT_DIRECT] FJT goal send timeout — fallback"
             )
             return None
-
         gh = send_future.result()
         if gh is None or not getattr(gh, "accepted", False):
             self.get_logger().warning(
@@ -1122,11 +1194,11 @@ class PlanToPoseServer(Node):
             )
             return None
 
-        # 5. Esperar result (timeout per-fase F1.24 LIVE).
+        # Wait result.
         result_future = gh.get_result_async()
         result_event = threading.Event()
         result_future.add_done_callback(lambda _f: result_event.set())
-        result_event.wait(timeout=fjt_result_timeout_eff)
+        result_event.wait(timeout=result_timeout_sec)
         if not result_future.done():
             self.get_logger().warning(
                 "[PLAN_TO_POSE][FJT_DIRECT] FJT result timeout — fallback"
@@ -1139,8 +1211,12 @@ class PlanToPoseServer(Node):
 
         wrapper = result_future.result()
         ec = getattr(getattr(wrapper, "result", None), "error_code", 0)
-        ec_val = int(ec) if isinstance(ec, int) else int(getattr(ec, "val", 0)) if hasattr(ec, "val") else 0
-        # 0 = SUCCESSFUL en FollowJointTrajectory error_code.
+        if isinstance(ec, int):
+            ec_val = int(ec)
+        elif hasattr(ec, "val"):
+            ec_val = int(getattr(ec, "val", 0))
+        else:
+            ec_val = 0
         if ec_val == 0:
             self.get_logger().info(
                 "[PLAN_TO_POSE][FJT_DIRECT] success (bypass MoveIt OK)"
@@ -1153,7 +1229,6 @@ class PlanToPoseServer(Node):
                 duration_sec=time.monotonic() - start_mono,
                 attempts=1,
             )
-        # FJT error code != 0 (e.g. -1 INVALID_GOAL, -3 PATH_TOLERANCE_VIOLATED).
         self.get_logger().warning(
             f"[PLAN_TO_POSE][FJT_DIRECT] FJT error_code={ec_val} — fallback a MoveIt"
         )

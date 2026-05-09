@@ -27,7 +27,7 @@ PKG = Path(__file__).resolve().parent.parent / "ur5_tools"
 LOC_BASELINE = {
     "ur5_moveit_bridge.py": 1849,
     "moveit_bridge/executor.py": 1491,
-    "plan_to_pose_server.py": 1322,
+    "plan_to_pose_server.py": 1402,  # F1.24-refactor T15 (2026-05-09): _execute_fjt_direct 261→61 LOC con 5 sub-helpers (fix bug latente seed_positions). +80 LOC justificados.
     "gripper_attach_backend.py": 1207,
     "release_objects_service.py": 1178,
     "system_state_manager.py": 952,

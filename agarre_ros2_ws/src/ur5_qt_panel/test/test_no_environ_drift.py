@@ -60,7 +60,7 @@ BASELINE: Dict[str, int] = {
     "ur5_tools/world_tf_publisher.py": 1,
     "ur5_tools/system_state_manager.py": 1,
     "ur5_tools/planning_scene_sync.py": 1,
-    "ur5_tools/moveit_bridge_utils.py": 1,
+    "ur5_tools/moveit_bridge_utils.py": 5,  # audit-v4.1/D.2 round-2 (2026-05-08): consolidación bridge_env_*.
     "ur5_tools/moveit_bridge/params.py": 1,
     "ur5_tools/moveit_bridge/moveit_py_planner.py": 1,
     "ur5_tools/gripper_attach_backend.py": 1,

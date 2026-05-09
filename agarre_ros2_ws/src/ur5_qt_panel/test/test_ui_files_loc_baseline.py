@@ -22,9 +22,9 @@ LOC_BASELINE = {
     "cameras_tab.py": 1134,
     "panel_status_mgmt.py": 1049,
     "panel_trace_callbacks.py": 1033,
-    "panel_utils.py": 1033,
+    "panel_utils.py": 1034,  # audit-v4.1/D.2 (2026-05-08): +1 LOC migración panel_env.
     "panel_tfm_science.py": 1031,
-    "panel_launchers.py": 1031,
+    "panel_launchers.py": 1033,  # audit-v4.1/D.2 (2026-05-08): +2 LOC migración panel_env.
     "panel_gz_objects.py": 1015,
     "panel_camera_controllers.py": 883,
     # Ya snapshot'd en archivos dedicados pero también incluyen baseline.

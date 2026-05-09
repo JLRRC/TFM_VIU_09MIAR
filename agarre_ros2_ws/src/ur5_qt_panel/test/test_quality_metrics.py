@@ -262,12 +262,13 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     "ur5_tools/ur5_tools/plan_to_pose_server.py::PlanToPoseServer._execute_moveit_direct": 343,
     # F1.24 H9+H10+H11 LIVE (2026-05-08): bypass MoveIt vía FJT directo. La
     # función ejecuta el camino canónico que cierra BUG_CONTROLLER_FEEDBACK_HANG
-    # y deja T35 × 3 cycles consecutivos verde. F1.24 H14 (2026-05-08):
-    # +8 LOC al cablear path_tolerance_rad (anti-flakiness T35 × 5 stress).
-    # Refactor estructural a sub-helpers (build_ik_request / fjt_send_and_wait /
-    # fallback_to_moveit) está planificado pero requiere validación live para
-    # no romper el camino verde.
-    "ur5_tools/ur5_tools/plan_to_pose_server.py::PlanToPoseServer._execute_fjt_direct": 261,
+    # y deja T35 × 3 cycles consecutivos verde.
+    # F1.24-refactor T15 (2026-05-09): _execute_fjt_direct 261→61 LOC con 5
+    # sub-helpers (_fjt_extract_seed_positions, _fjt_compute_traj_params,
+    # _fjt_call_compute_ik, _fjt_build_trajectory, _fjt_send_and_wait_result).
+    # Fix bug latente: seed_positions referenciado antes de definirse hacía
+    # que dist_to_target=0.5 siempre (multi-waypoint always-on). Removido
+    # de la baseline (T15 cumplido).
     # F1.24-refactor T15 (2026-05-08): __init__ partido en 3 helpers
     # (_init_declare_and_read_params 124 + _init_setup_tf_and_clients 46 +
     # _init_setup_action_server_and_bridge 55), todos < 200. __init__ queda
