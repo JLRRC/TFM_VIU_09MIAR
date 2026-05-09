@@ -37,24 +37,29 @@ ENV_READS_ALLOWLIST: frozenset[str] = frozenset({
     "src/ur5_qt_panel/ur5_qt_panel/panel_env.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_launchers_params.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo_params.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_pick_object_params.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_ros_params.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_tfm_params.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_ui_params.py",
-    "src/ur5_tools/ur5_tools/moveit_bridge/params.py",
+    # 2026-05-09: panel_pick_object_params.py + moveit_bridge/params.py +
+    # panel_pick_object.py + panel_tfm_execute.py eliminados con MoveIt-classic.
+    # moveit_bridge_utils.py se mantiene reducido a 4 helpers env mirror
+    # de panel_env (consumido por cycle_logger, gripper_geometry,
+    # attach_set_pose, planning_scene_sync, evidence_logger).
     "src/ur5_tools/ur5_tools/moveit_bridge_utils.py",
     # Legítimos — launch (parámetros de arranque)
     "src/ur5_bringup/launch/launch_helpers.py",
     "src/ur5_bringup/launch/stack_factories.py",
     "src/ur5_bringup/launch/ur5_stack.launch.py",
     "src/ur5_moveit_config/launch/ur5_moveit_bringup.launch.py",
+    # 2026-05-09: panel_motion_helpers tras borrar moveit_bridge inlinea sus
+    # 5 defaults con env reads PANEL_*. Patrón aceptable hasta migrar a
+    # panel_env.
+    "src/ur5_qt_panel/ur5_qt_panel/panel_motion_helpers.py",
     # DEUDA — pendiente de migración (FASE D.2 — sesión dedicada)
     "src/tfm_grasping/tfm_grasping/model.py",
     "src/ur5_qt_panel/ur5_qt_panel/directo_gate_evaluator.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_pick_object.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_startup.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_system_status.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py",
     "src/ur5_tools/ur5_tools/gripper_attach_backend.py",
     "src/ur5_tools/ur5_tools/release_objects_service.py",
     "src/ur5_tools/ur5_tools/system_state_manager.py",

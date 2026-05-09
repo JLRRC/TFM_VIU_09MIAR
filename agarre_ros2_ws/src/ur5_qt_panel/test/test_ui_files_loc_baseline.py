@@ -30,7 +30,7 @@ LOC_BASELINE = {
     # Ya snapshot'd en archivos dedicados pero también incluyen baseline.
     "panel_helpers.py": 1441,
     "panel_ros.py": 2158,
-    "panel_pick_object.py": 3814,
+    # 2026-05-09: panel_pick_object.py BORRADO (path MoveIt-classic eliminado).
     "panel_v2.py": 1252,
 }
 

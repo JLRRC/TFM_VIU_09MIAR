@@ -5,13 +5,75 @@
 """Motion helper utilities for the UR5 panel."""
 from __future__ import annotations
 
+import os
+from dataclasses import dataclass
 from typing import Iterable
 
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-from ur5_tools.moveit_bridge.params import (
-    get_moveit_bridge_params as _get_moveit_bridge_params,
-)
+
+# 2026-05-09: post-borrar moveit_bridge defaults inlined aquí para
+# eliminar dep de ur5_tools.moveit_bridge.params (que vivía en el path
+# MoveIt-classic ya borrado). Sólo se conservan los 5 valores realmente
+# consumidos por panel_motion_helpers — los originales tenían más campos
+# que no se usaban fuera del path borrado.
+@dataclass(frozen=True)
+class _PanelMotionDefaults:
+    tf_gate_timeout_sec: float = 1.2
+    wait_joint_target_max_age_sec: float = 0.35
+    wait_joint_target_max_vel_rad_s: float = 0.05
+    wait_joint_target_stable_samples: int = 3
+    disable_joint_wrap_align: bool = False
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _get_moveit_bridge_params() -> _PanelMotionDefaults:
+    """Defaults inlined post-borrar moveit_bridge (2026-05-09).
+
+    Permite override por env var PANEL_* para mantener compat con
+    operación previa.
+    """
+    return _PanelMotionDefaults(
+        tf_gate_timeout_sec=_env_float("PANEL_MOVEIT_TF_GATE_TIMEOUT_SEC", 1.2),
+        wait_joint_target_max_age_sec=_env_float(
+            "PANEL_WAIT_JOINT_TARGET_MAX_AGE_SEC", 0.35
+        ),
+        wait_joint_target_max_vel_rad_s=_env_float(
+            "PANEL_WAIT_JOINT_TARGET_MAX_VEL_RAD_S", 0.05
+        ),
+        wait_joint_target_stable_samples=_env_int(
+            "PANEL_WAIT_JOINT_TARGET_STABLE_SAMPLES", 3
+        ),
+        disable_joint_wrap_align=_env_flag(
+            "PANEL_DISABLE_JOINT_WRAP_ALIGN", False
+        ),
+    )
 
 
 def build_joint_trajectory(

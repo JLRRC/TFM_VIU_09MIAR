@@ -33,7 +33,8 @@ from .panel_config import (
 )
 from .panel_calibration import start_calibration
 from .panel_objects import get_object_positions
-from .panel_pick_object import run_pick_object
+# 2026-05-09: panel_pick_object borrado. El _run_pick_object ahora es
+# un stub que emite un log [DEPRECATED] y retorna.
 from .logging_utils import emit_log_line
 
 
@@ -269,35 +270,17 @@ def _run_pick_demo(panel):
 
 
 def _run_pick_object(panel):
-    """Ejecuta pick & place del objeto seleccionado hacia la cesta."""
-    panel._log_button("Agarre Objeto (MoveIT)")
-    panel._step_capture_start_pose("Agarre Objeto (MoveIT)")
-    _op_frame = panel._step_operational_frame_name()
-    _fresh_xyz = panel._step_fetch_live_pose(_op_frame)
-    if _fresh_xyz is not None:
-        _px, _py, _pz = _fresh_xyz
-        _pose_str = f"({_px:.4f}, {_py:.4f}, {_pz:.4f})"
-    else:
-        _pose_str = "no disponible (TF no listo)"
+    """DEPRECATED 2026-05-09: el path MoveIt-classic fue borrado.
+
+    El botón "Agarre Objeto (MoveIT)" sigue presente en el panel pero
+    ya no tiene backend. Esta función emite un mensaje y retorna sin
+    efecto. El path canónico es ``dispatch_pick_demo`` (orchestrator
+    → FJT directo, criterio T35 verde).
+    """
     panel._emit_log(
-        f"[BOTON] Pulsado: Agarre Objeto (MoveIT) | "
-        f"frame={_op_frame} | Pose pinza ahora: {_pose_str}"
+        "[BOTON][DEPRECATED] 'Agarre Objeto (MoveIT)' eliminado el 2026-05-09 "
+        "(path MoveIt-classic borrado). Usa 'Pick Demo' (orchestrator → FJT directo)."
     )
-    if panel._step_mode == "STEP_BY_STEP":
-        panel._step_prepare_pipeline_view("PICK_OBJECT")
-        panel._step_pre_insert_inicio_row(
-            _fresh_xyz,
-            target_pos=None,
-            obj_pos=None,
-            flow_name="PICK_OBJECT",
-        )
-    if not panel._pick_confirm_dialog(panel, "Agarre Objeto (MoveIT)", _op_frame, _pose_str):
-        panel._emit_log("[BOTON] Inicio cancelado por el usuario")
-        if panel._step_mode == "STEP_BY_STEP":
-            panel._step_reset_sequence_view(clear_history=True)
-            panel._step_window_refresh()
-        return
-    run_pick_object(panel)
 
 def _get_object_world_position(panel, obj_name: str) -> Optional[tuple]:
     """Obtener posición mundial del objeto desde poses actuales."""

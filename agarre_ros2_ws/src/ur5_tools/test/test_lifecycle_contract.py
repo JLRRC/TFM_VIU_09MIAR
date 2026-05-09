@@ -42,7 +42,7 @@ LIFECYCLE_NODES = [
     "world_tf_publisher.py",
     "system_state_manager.py",
     "gripper_attach_backend.py",
-    "ur5_moveit_bridge.py",
+    # 2026-05-09: ur5_moveit_bridge.py BORRADO (path MoveIt-classic eliminado).
     # F16: tf_geometry_service standalone
     "tf_geometry_service.py",
     # F13b: nodos restantes migrados

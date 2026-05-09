@@ -25,8 +25,8 @@ PKG = Path(__file__).resolve().parent.parent / "ur5_tools"
 # Baseline congelado 2026-05-08 (post FASE A audit-v4.1).
 # Bajar es bueno; subir requiere actualizar este dict + justificar.
 LOC_BASELINE = {
-    "ur5_moveit_bridge.py": 1849,
-    "moveit_bridge/executor.py": 1491,
+    # 2026-05-09: ur5_moveit_bridge.py + moveit_bridge/* BORRADOS
+    # (path MoveIt-classic eliminado).
     "plan_to_pose_server.py": 1476,  # F1.24-refactor T15 (2026-05-09): _execute_fjt_direct + _execute_moveit_direct splits (10 sub-helpers, +154 LOC). Fix bug latente seed_positions. T15 cumplido.
     "gripper_attach_backend.py": 1207,
     "release_objects_service.py": 1178,
@@ -50,7 +50,8 @@ def test_backend_file_loc_does_not_grow(filename: str, baseline: int) -> None:
 
 def test_baseline_count_reasonable() -> None:
     """Sanity: el dict no se vacía accidentalmente."""
-    assert len(LOC_BASELINE) >= 7
+    # 2026-05-09: 7 → 5 tras borrar ur5_moveit_bridge.py + moveit_bridge/executor.py.
+    assert len(LOC_BASELINE) >= 5
 
 
 def test_no_backend_file_below_400_loc_in_baseline() -> None:
@@ -61,17 +62,5 @@ def test_no_backend_file_below_400_loc_in_baseline() -> None:
     )
 
 
-def test_executor_below_v4_baseline() -> None:
-    """Audit-v4.1 FASE A: executor.py debe estar por debajo del baseline v4 (1.546).
-
-    Esto bloquea cualquier intento futuro de re-introducir helpers in-place
-    que vuelvan a inflar el archivo (la regresión histórica fue 1546→1663
-    en commits 3b31f45/f645c44/a006ded/b9fbd7b antes de F5-iter4).
-    """
-    path = PKG / "moveit_bridge/executor.py"
-    n = sum(1 for _ in path.read_text(encoding="utf-8").splitlines())
-    assert n <= 1546, (
-        f"executor.py creció a {n} LOC. El baseline v4 era 1.546 — "
-        f"si extraes helpers, ponlos en un módulo aparte (ver "
-        f"moveit_bridge/fjt_lifecycle_mixin.py)."
-    )
+# 2026-05-09: test_executor_below_v4_baseline ELIMINADO — moveit_bridge/executor.py
+# fue borrado con el path MoveIt-classic.

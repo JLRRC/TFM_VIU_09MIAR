@@ -100,7 +100,7 @@ def _reset_param_caches():
 def _reset_all() -> None:
     for mod_name in (
         "ur5_qt_panel.panel_pick_demo_params",
-        "ur5_qt_panel.panel_pick_object_params",
+        # 2026-05-09: panel_pick_object_params borrado.
         "ur5_qt_panel.panel_ros_params",
         "ur5_qt_panel.panel_ui_params",
         "ur5_qt_panel.panel_tfm_params",
@@ -113,7 +113,7 @@ def _reset_all() -> None:
     # Direct invocation (avoids fragile name juggling).
     for func_name in (
         ("ur5_qt_panel.panel_pick_demo_params", "reset_pick_demo_params_cache"),
-        ("ur5_qt_panel.panel_pick_object_params", "reset_pick_object_params_cache"),
+        # 2026-05-09: panel_pick_object_params borrado.
         ("ur5_qt_panel.panel_ros_params", "reset_panel_ros_params_cache"),
         ("ur5_qt_panel.panel_ui_params", "reset_panel_ui_params_cache"),
         ("ur5_qt_panel.panel_tfm_params", "reset_panel_tfm_params_cache"),

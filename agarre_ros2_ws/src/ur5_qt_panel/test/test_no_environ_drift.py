@@ -42,11 +42,14 @@ ALLOWED_PATTERNS = (
 
 
 BASELINE: Dict[str, int] = {
-    "ur5_qt_panel/panel_pick_object.py": 11,
+    # 2026-05-09: panel_pick_object.py + panel_tfm_execute.py +
+    # moveit_bridge/* eliminados con MoveIt-classic.
+    # moveit_bridge_utils.py reducido a 4 helpers env (mirror panel_env).
+    "ur5_tools/moveit_bridge_utils.py": 4,
     "ur5_tools/release_objects_service.py": 3,
     "ur5_qt_panel/panel_settings.py": 3,
     "ur5_qt_panel/directo_geometry.py": 3,
-    "ur5_tools/moveit_bridge/moveit_commander_planner.py": 2,
+    "ur5_qt_panel/panel_motion_helpers.py": 3,  # 2026-05-09: defaults inlined post-borrar moveit_bridge.
     "ur5_tools/gripper_geometry.py": 2,
     "ur5_tools/attach_set_pose.py": 2,
     "ur5_qt_panel/pick_demo_dispatcher.py": 2,
@@ -60,13 +63,9 @@ BASELINE: Dict[str, int] = {
     "ur5_tools/world_tf_publisher.py": 1,
     "ur5_tools/system_state_manager.py": 1,
     "ur5_tools/planning_scene_sync.py": 1,
-    "ur5_tools/moveit_bridge_utils.py": 5,  # audit-v4.1/D.2 round-2 (2026-05-08): consolidación bridge_env_*.
-    "ur5_tools/moveit_bridge/params.py": 1,
-    "ur5_tools/moveit_bridge/moveit_py_planner.py": 1,
     "ur5_tools/gripper_attach_backend.py": 1,
     "ur5_tools/evidence_logger.py": 1,
     "ur5_tools/cycle_logger.py": 1,
-    "ur5_qt_panel/panel_tfm_execute.py": 1,
     "ur5_qt_panel/panel_system_status.py": 1,
     "ur5_qt_panel/panel_startup.py": 1,
     "ur5_qt_panel/directo_gate_evaluator.py": 1,

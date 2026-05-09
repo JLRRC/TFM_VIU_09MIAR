@@ -138,13 +138,9 @@ LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
     # F5-legacy-removed (2026-05-08): panel_pick_demo.py: 8623 → 536 LOC.
     # Ya bajo umbral global 1500 → REMOVIDO de LEGACY_OVERSIZE_FILES_LOC.
     # Si crece de nuevo, el test general (>1500) lo detectará.
-
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py":  3823,   # F3-step5bis-c: -84 más (moveit_bridge_path body fuera con callables-as-args)
+    # 2026-05-09: panel_pick_object.py + ur5_moveit_bridge.py BORRADOS
+    # (path MoveIt-classic eliminado).
     "ur5_qt_panel/ur5_qt_panel/panel_ros.py":          2149,
-    "ur5_tools/ur5_tools/ur5_moveit_bridge.py":        1838,  # F3-step21a/b: +75 LOC docstrings + helpers
-    # F3-step6a..f (2026-05-03): _execute_joint_trajectory_action 1.343→1.027 LOC
-    # (-316 LOC, -23.5%) extracción de 6 helpers. File creció 1394→1551 por
-    # dataclass _FjtPollingThresholds + 5 metodos helper.
     # audit-v4.1/A (2026-05-08, commit 13ac4f5): F5-iter4 extrajo 3 helpers FJT
     # a fjt_lifecycle_mixin.py — executor.py 1.663→1.491 LOC (bajo el umbral
     # 1500 global). Removido de la baseline LEGACY_OVERSIZE_FILES_LOC.
@@ -243,15 +239,9 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3-step29 (2026-05-03): build_runtime_node_actions bajó 238→173 con 2
     # helpers (_build_gripper_attach_backend_node 36 + _build_orchestrator_
     # service_nodes 50). Removido de baseline.
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object": 3702,   # F3-step5bis-c: -88 más (moveit_bridge_path)
-    "ur5_qt_panel/ur5_qt_panel/panel_pick_object.py::run_pick_object.worker": 2696,  # F3-step5bis-c: -88 más
-    # F3-step4a/b/c (2026-05-03): 3 funciones grandes de panel_pick_object
-    # extraídas a pick_object/<modulo>.py con dataclass + función pura.
-    # F3-step25a/b (2026-05-03): wait_moveit_result bajó de 263 → 193 LOC con
-    # 2 sub-helpers (_wait_moveit_emit_diag_and_extend 79 + _wait_moveit_raise_
-    # timeout 65). Removido de baseline (T15 cumplido).
+    # 2026-05-09: panel_pick_object.py BORRADO (path MoveIt-classic eliminado).
+    # 2026-05-09: moveit_bridge/executor.py BORRADO.
     # Otros gigantes históricos.
-    "ur5_tools/ur5_tools/moveit_bridge/executor.py::ExecutorMixin._execute_joint_trajectory_action": 1343,
     # F1.7 audit-v4 (2026-05-08): _execute_moveit_direct creció 183 → 201 LOC
     # al añadir first-attempt-timeout + cancel-on-hang (Bug B fix).
     # F1.22 + F1.23 LIVE (2026-05-08): TF check post-FIRST_ATTEMPT_TIMEOUT
@@ -282,8 +272,8 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3-step6 + step6-bis/ter/quater/v (2026-05-03): ControlPanelV2.__init__
     # bajó de 678 → 177 LOC con 6 sub-helpers _init_*. Removido de la
     # baseline (T15 cumplido para esta función).
-    "ur5_tools/ur5_tools/moveit_bridge/moveit_py_planner.py::MoveItPyPlannerMixin._plan_with_moveit_py": 557,
-    "ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py::execute_tfm_world_grasp": 408,  # F3-step33: -54 LOC con _execute_tfm_canonical_pick_object_route (71 LOC)
+    # 2026-05-09: moveit_bridge/moveit_py_planner.py + panel_tfm_execute.py
+    # BORRADOS (path MoveIt-classic eliminado).
     # F3-step30 (2026-05-03): _refresh_trace_data bajó 438→116 con 3 helpers
     # (_refresh_trace_data_resolve_object_pose 109 + _resolve_tcp_pose 154 +
     # _emit_audits 117). Removido de baseline.
@@ -304,8 +294,7 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3-step10a/b (2026-05-03): build_step_window bajó de 346 → 186 LOC con
     # 2 sub-helpers (_build_step_runtime_section 111 + _build_step_pipeline_
     # history_widgets 90). Removido de baseline (T15 cumplido).
-    "ur5_tools/ur5_tools/moveit_bridge/geometry.py::GeometryMixin._compute_approach_ik_seeded": 229,  # F3-step31a: -112 LOC con _eval_ik_seed_candidate (143 LOC)
-    "ur5_tools/ur5_tools/moveit_bridge/trajectory_prep.py::TrajectoryPrepMixin._prepare_joint_trajectory_for_controller": 283,  # F3-step32a/b: -56 LOC con 2 helpers
+    # 2026-05-09: moveit_bridge/{geometry,trajectory_prep}.py BORRADOS.
     # F3-step12 (a/b/c) (2026-05-03): on_tfm_grasp_object_clicked bajó de
     # 318 → 199 LOC con 3 sub-helpers (_tfm_grasp_compute_yaw_from_minor_axis 59
     # + _tfm_grasp_compute_width_and_preopen 44 + _tfm_grasp_run_pre_checks 98).
@@ -316,7 +305,7 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     # F3-step14a/b (2026-05-03): start_moveit_bridge bajó de 287 → 100 LOC
     # con 2 sub-helpers (_build_moveit_bridge_ros_args 101 + _verify_moveit_
     # bridge_ready_async 36). Removido de baseline (T15 cumplido).
-    "ur5_qt_panel/ur5_qt_panel/panel_tfm_execute.py::execute_tfm_world_grasp.worker": 286,
+    # 2026-05-09: panel_tfm_execute.py BORRADO.
     # F3-step15a/b/c (2026-05-03): handle_infer_result bajó de 283 → 154 LOC
     # con 3 sub-helpers (_handle_infer_compute_alignment_2d 41 +
     # _handle_infer_write_audit 79 + _handle_infer_log_postprocess_adjustments 76).
@@ -737,7 +726,7 @@ def test_env_vars_have_documentation() -> None:
 #   1. Asegura que las scattered NO suben (regresión).
 #   2. Detecta cuando bajan → forzar update del baseline en el mismo commit
 #      (documenta progreso F2).
-ENV_READS_BASELINE_SCATTERED = 41  # audit-v4.1/D.2 round-2 (2026-05-08, commit c8ec647): 66→41 tras migrar 7 archivos backend a bridge_env_*.
+ENV_READS_BASELINE_SCATTERED = 21  # 2026-05-09: 41→21 tras borrar path MoveIt-classic (panel_pick_object + ur5_moveit_bridge + moveit_bridge/* + panel_tfm_execute) y reducir moveit_bridge_utils a destination de env reads.
 ENV_READS_DRIFT_MARGIN = 0  # no se permite incremento.
 
 # Archivos que SON el destino legítimo de env reads (no contar como scatter).
@@ -746,6 +735,14 @@ _F2_ENV_READ_DESTINATIONS = (
     "panel_settings.py",  # helper centralizado
     "panel_env.py",      # helpers centralizados de env
     "launch_helpers.py", # helpers de launch — env válido aquí
+    # 2026-05-09: moveit_bridge_utils.py reducido a 4 helpers env (mirror
+    # de panel_env para backend ur5_tools). Tras borrar MoveIt-classic
+    # sigue siendo el destino legítimo de env reads en ur5_tools backend.
+    "moveit_bridge_utils.py",
+    # 2026-05-09: panel_motion_helpers.py inlineó los 5 defaults que vivían
+    # en moveit_bridge/params.py (borrado). Lecturas env legitimadas hasta
+    # migrar a panel_env (deuda audit-v4.2).
+    "panel_motion_helpers.py",
 )
 
 
@@ -877,4 +874,6 @@ def test_meta_test_finds_production_files() -> None:
     files = _iter_production_py_files()
     assert len(files) > 50, f"Solo {len(files)} archivos productivos detectados"
     assert any("panel_v2.py" in str(p) for p in files)
-    assert any("ur5_moveit_bridge.py" in str(p) for p in files)
+    # 2026-05-09: ur5_moveit_bridge.py borrado, sustituyo por plan_to_pose_server
+    # como sanity check de que el discovery sigue encontrando código backend.
+    assert any("plan_to_pose_server.py" in str(p) for p in files)

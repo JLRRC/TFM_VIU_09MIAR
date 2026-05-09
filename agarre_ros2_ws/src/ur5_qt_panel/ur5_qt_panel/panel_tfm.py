@@ -31,12 +31,13 @@ from .panel_tfm_inference import (  # noqa: F401
     tfm_infer_grasp,
 )
 
-# F3: TFM execute flow extraído a panel_tfm_execute.py.
-from .panel_tfm_execute import (  # noqa: F401
-    execute_tfm_world_grasp,
-    tfm_visualize_grasp,
-    wait_tfm_moveit_result,
-)
+# 2026-05-09: panel_tfm_execute borrado (path MoveIt-classic eliminado).
+# Las funciones execute_tfm_world_grasp / tfm_visualize_grasp /
+# wait_tfm_moveit_result eran wrappers que terminaban llamando
+# run_pick_object (ahora deprecated). El botón "TFM Grasp Object" del
+# panel queda sin backend efectivo (su handler emitirá un log
+# [DEPRECATED]). La inferencia TFM (panel_tfm_inference) sigue funcional
+# — sólo se desactiva el "execute via MoveIt" downstream.
 
 # F3: canonical state helpers extraídos a panel_tfm_canonical.py.
 # Re-exportados aquí para preservar API pública (panel_v2 los importa
@@ -51,6 +52,29 @@ from .panel_tfm_canonical import (  # noqa: F401
     tfm_canonical_state_reset,
     tfm_canonical_use_pick_object,
 )
+
+
+def execute_tfm_world_grasp(panel, *args, **kwargs) -> bool:
+    """DEPRECATED 2026-05-09: path MoveIt-classic borrado.
+    El botón TFM Grasp Object ya no ejecuta — solo loguea la inferencia."""
+    panel._emit_log(
+        "[TFM_GRASP][DEPRECATED] execute_tfm_world_grasp llamado pero el "
+        "path MoveIt-classic fue eliminado el 2026-05-09. La inferencia TFM "
+        "sigue funcional (botón Inferir TFM); para ejecutar el grasp usa "
+        "'Pick Demo' (orchestrator → FJT directo)."
+    )
+    return False
+
+
+def tfm_visualize_grasp(panel, *args, **kwargs) -> None:
+    """DEPRECATED 2026-05-09: stub no-op (la visualización dependía del
+    pipeline TFM execute → MoveIt borrado)."""
+    return None
+
+
+def wait_tfm_moveit_result(*args, **kwargs):
+    """DEPRECATED 2026-05-09: stub que devuelve None (no MoveIt result)."""
+    return None
 
 def _tfm_grasp_compute_yaw_from_minor_axis(
     panel,
@@ -429,18 +453,14 @@ def on_tfm_grasp_object_clicked(panel) -> None:
         f"{grasp_base_d.get('z', 0.0):.3f}) yaw_base={minor_axis_yaw_deg:.1f}",
     )
 
-    # MOVEIT: publicar petición
+    # 2026-05-09: path MoveIt-classic borrado. La inferencia TFM termina
+    # logueando el target — la ejecución se desactiva (execute_tfm_world_grasp
+    # ahora devuelve False con [DEPRECATED]).
     panel._emit_log(
-        "[TFM_GRASP][MOVEIT] publish topic=/desired_grasp/request "
-        f"mode=moveit_sequence source=infer_model object_id={object_id} "
-        f"frame=base_link tcp=rg2_pinch_center "
-        f"yaw_base={minor_axis_yaw_deg:.2f}deg"
-    )
-    panel._audit_append(
-        "logs/execute.log",
-        "[TFM_GRASP] execute REQUEST "
-        f"object_id={object_id} source=infer_model mode=moveit_sequence "
-        f"pose_topic={MOVEIT_POSE_TOPIC} result_topic=/desired_grasp/result",
+        "[TFM_GRASP][DEPRECATED] inferencia OK pero path execute MoveIt-classic "
+        f"fue borrado el 2026-05-09. object_id={object_id} "
+        f"yaw_base={minor_axis_yaw_deg:.2f}deg — para ejecutar el grasp use "
+        "el botón Pick Demo (orchestrator → FJT directo)."
     )
 
     handled = execute_tfm_world_grasp(panel)

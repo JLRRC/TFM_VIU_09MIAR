@@ -345,20 +345,10 @@ def build_runtime_node_actions(
         condition=IfCondition(launch_scene_sync),
     )
 
-    # FIX-DESIRED-GRASP: launch ur5_moveit_bridge as a standalone node so
-    # that /desired_grasp always has a real subscriber in the normal boot.
-    # Previously Subscription count was 0 because the bridge was only
-    # started on-demand via the panel button; this makes it part of the
-    # managed launch. When MoveIt (move_group) is not running the bridge
-    # will subscribe but will fall back to a no-op, ensuring the topic is
-    # live without crashing the stack.
-    moveit_bridge = Node(
-        package="ur5_tools",
-        executable="ur5_moveit_bridge",
-        output="screen",
-        parameters=bridge_params,
-        condition=IfCondition(launch_moveit_bridge),
-    )
+    # 2026-05-09: ur5_moveit_bridge BORRADO con el path MoveIt-classic.
+    # Antes: bridge subscribía a /desired_grasp para el botón panel "Agarre
+    # Objeto MoveIt". Ese botón quedó deprecated; el path canónico es
+    # orchestrator → /pick_place → plan_to_pose_server → FJT directo.
 
     tf_geometry_service, object_pose_resolver, plan_to_pose_server_node, pick_orchestrator_node = (
         _build_orchestrator_service_nodes(
@@ -380,7 +370,7 @@ def build_runtime_node_actions(
         release_service,
         gripper_attach_backend,
         planning_scene_sync,
-        moveit_bridge,
+        # 2026-05-09: moveit_bridge eliminado del actions list (path borrado).
         tf_geometry_service,
         object_pose_resolver,
         plan_to_pose_server_node,

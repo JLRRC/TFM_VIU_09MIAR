@@ -12,13 +12,10 @@ package_name = "ur5_tools"
 setup(
     name=package_name,
     version="0.0.0",
-    packages=[package_name, package_name + ".moveit_bridge"],
+    packages=[package_name],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
-        ("share/" + package_name + "/config", [
-            "config/moveit_bridge_runtime.yaml",
-        ]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -35,7 +32,7 @@ setup(
             "gz_ros_control_guard = ur5_tools.gz_ros_control_guard:main",
             "gripper_attach_backend = ur5_tools.gripper_attach_backend:main",
             "planning_scene_sync = ur5_tools.planning_scene_sync:main",
-            "ur5_moveit_bridge = ur5_tools.ur5_moveit_bridge:main",
+            # 2026-05-09: ur5_moveit_bridge entry borrada (path MoveIt-classic eliminado).
             "plan_to_pose_server = ur5_tools.plan_to_pose_server:main",
             "release_objects_service = ur5_tools.release_objects_service:main",
             "system_state_manager = ur5_tools.system_state_manager:main",
