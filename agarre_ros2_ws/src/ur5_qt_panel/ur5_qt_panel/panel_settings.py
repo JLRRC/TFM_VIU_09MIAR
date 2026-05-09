@@ -16,11 +16,9 @@ from .logging_utils import emit_log_line
 # F2-step5 (2026-05-08): helpers env centralizados en panel_env.
 # Reexportamos para mantener compat con consumidores actuales.
 from .panel_env import (
-    env_bool as _env_bool_pure,
     env_bool_permissive as _env_bool,
     env_float as _env_float,
     env_int as _env_int,
-    env_optional_bool as _env_optional_bool_pure,
     env_optional_bool_permissive as _env_optional_bool,
     env_optional_str as _env_optional_str,
     env_str as _env_str,

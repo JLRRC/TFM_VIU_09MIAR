@@ -15,7 +15,7 @@ Sin tf2_ros al importar (lazy). Tests offline con mock Buffer.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 from .tf_batch_lookups import LookupRequest, batch_lookup_requests
 

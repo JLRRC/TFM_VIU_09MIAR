@@ -15,7 +15,7 @@ Sin estado, sin ROS. Tests offline en ``test/test_system_health_helpers.py``.
 
 from __future__ import annotations
 
-from typing import Callable, Iterable, List, NamedTuple, Sequence
+from typing import Iterable, List, NamedTuple
 
 
 class ZombieCheckResult(NamedTuple):

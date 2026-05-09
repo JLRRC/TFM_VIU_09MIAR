@@ -15,7 +15,6 @@ La clase concreta debe heredar también de ``rclpy.node.Node``.
 from __future__ import annotations
 
 import json
-import os
 import time
 
 from geometry_msgs.msg import PoseStamped

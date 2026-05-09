@@ -30,7 +30,6 @@ ambos extensamente testeados offline.
 
 from __future__ import annotations
 
-import os
 from typing import Any, Callable, Optional
 
 from .panel_env import env_optional_str

@@ -21,7 +21,6 @@ Sin estado propio. Requiere que la clase concreta herede también de
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from ament_index_python.packages import (

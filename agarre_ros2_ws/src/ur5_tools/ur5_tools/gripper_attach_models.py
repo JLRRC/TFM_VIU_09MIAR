@@ -12,7 +12,7 @@ Sin estado mutable global. Sin ROS. Tests en ``test/test_gripper_attach_models.p
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 

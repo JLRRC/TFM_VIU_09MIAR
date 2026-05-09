@@ -8,7 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 import math
-import os
 from pathlib import Path
 import re
 from typing import Callable, Dict, Iterable, Optional, Tuple

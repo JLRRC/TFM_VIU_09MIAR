@@ -30,7 +30,6 @@ gripper geometry. Su extracción se evaluará en F14-step2.
 from __future__ import annotations
 
 import math
-import os
 from typing import Dict, Optional
 
 
