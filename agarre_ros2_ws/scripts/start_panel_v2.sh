@@ -664,6 +664,13 @@ PANEL_LAUNCH_RELEASE_SERVICE="${PANEL_LAUNCH_RELEASE_SERVICE:-${PANEL_START_STAC
 PANEL_LAUNCH_ATTACH_BACKEND="${PANEL_LAUNCH_ATTACH_BACKEND:-${PANEL_START_STACK}}"
 PANEL_LAUNCH_SCENE_SYNC="${PANEL_LAUNCH_SCENE_SYNC:-${PANEL_START_STACK}}"
 PANEL_LAUNCH_TF_GEOMETRY_SERVICE="${PANEL_LAUNCH_TF_GEOMETRY_SERVICE:-${PANEL_START_STACK}}"
+# FIX-DUPLICATE-LAUNCH (2026-05-09): plan_to_pose_server y pick_orchestrator_lifecycle
+# tienen default_value="true" en stack_factories.py — sin estos flags, el panel
+# launch los duplicaba al arrancar sobre un stack externo (observado en T35×5
+# con 2 action servers /pick_place causando UNKNOWN status). Mismo patrón que
+# RELEASE_SERVICE / ATTACH_BACKEND para consistencia.
+PANEL_LAUNCH_PLAN_TO_POSE_SERVER="${PANEL_LAUNCH_PLAN_TO_POSE_SERVER:-${PANEL_START_STACK}}"
+PANEL_LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE="${PANEL_LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE:-${PANEL_START_STACK}}"
 # FIX-MOVE-GROUP-DEFAULT: move_group no es necesario en modo auto/bridge (el bridge usa moveit_py
 # directamente). Lanzarlo junto al bridge genera conflictos de TF (jump-back-in-time) y un SIGSEGV
 # al apagar (MoveItCpp destructor race en Jazzy/2.12.4). Solo lo lanzamos si moveit_mode=move_group.
@@ -688,6 +695,8 @@ if [[ "${PANEL_MODE}" == "manual" ]]; then
   PANEL_LAUNCH_ATTACH_BACKEND="0"
   PANEL_LAUNCH_SCENE_SYNC="0"
   PANEL_LAUNCH_TF_GEOMETRY_SERVICE="0"
+  PANEL_LAUNCH_PLAN_TO_POSE_SERVER="0"
+  PANEL_LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE="0"
   PANEL_MANAGED="0"
 fi
 HEADLESS="true"
@@ -743,6 +752,15 @@ fi
 LAUNCH_TF_GEOMETRY_SERVICE="false"
 if [[ "${PANEL_LAUNCH_TF_GEOMETRY_SERVICE}" == "1" ]]; then
   LAUNCH_TF_GEOMETRY_SERVICE="true"
+fi
+# FIX-DUPLICATE-LAUNCH (2026-05-09): ver bloque doc encima.
+LAUNCH_PLAN_TO_POSE_SERVER="false"
+if [[ "${PANEL_LAUNCH_PLAN_TO_POSE_SERVER}" == "1" ]]; then
+  LAUNCH_PLAN_TO_POSE_SERVER="true"
+fi
+LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE="false"
+if [[ "${PANEL_LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE}" == "1" ]]; then
+  LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE="true"
 fi
 LAUNCH_MOVEIT="false"
 if [[ "${PANEL_LAUNCH_MOVEIT}" == "1" ]]; then
@@ -824,6 +842,8 @@ if [[ "${DEBUG_LOGS_TO_STDOUT}" == "1" ]]; then
     launch_attach_backend:="$LAUNCH_ATTACH_BACKEND" \
     launch_scene_sync:="$LAUNCH_SCENE_SYNC" \
     launch_tf_geometry_service:="$LAUNCH_TF_GEOMETRY_SERVICE" \
+    launch_plan_to_pose_server:="$LAUNCH_PLAN_TO_POSE_SERVER" \
+    launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -875,6 +895,8 @@ if [[ "${PANEL_WRITE_PID}" == "1" ]]; then
     launch_attach_backend:="$LAUNCH_ATTACH_BACKEND" \
     launch_scene_sync:="$LAUNCH_SCENE_SYNC" \
     launch_tf_geometry_service:="$LAUNCH_TF_GEOMETRY_SERVICE" \
+    launch_plan_to_pose_server:="$LAUNCH_PLAN_TO_POSE_SERVER" \
+    launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -910,6 +932,8 @@ if [[ "${PANEL_AUTO_EXIT_ON_PANEL}" == "1" ]]; then
     launch_attach_backend:="$LAUNCH_ATTACH_BACKEND" \
     launch_scene_sync:="$LAUNCH_SCENE_SYNC" \
     launch_tf_geometry_service:="$LAUNCH_TF_GEOMETRY_SERVICE" \
+    launch_plan_to_pose_server:="$LAUNCH_PLAN_TO_POSE_SERVER" \
+    launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -957,6 +981,8 @@ if [[ "$PANEL_LOG_FILTER" == "1" ]]; then
     launch_attach_backend:="$LAUNCH_ATTACH_BACKEND" \
     launch_scene_sync:="$LAUNCH_SCENE_SYNC" \
     launch_tf_geometry_service:="$LAUNCH_TF_GEOMETRY_SERVICE" \
+    launch_plan_to_pose_server:="$LAUNCH_PLAN_TO_POSE_SERVER" \
+    launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -986,6 +1012,8 @@ else
     launch_attach_backend:="$LAUNCH_ATTACH_BACKEND" \
     launch_scene_sync:="$LAUNCH_SCENE_SYNC" \
     launch_tf_geometry_service:="$LAUNCH_TF_GEOMETRY_SERVICE" \
+    launch_plan_to_pose_server:="$LAUNCH_PLAN_TO_POSE_SERVER" \
+    launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     moveit_mode:="$MOVEIT_MODE" \
