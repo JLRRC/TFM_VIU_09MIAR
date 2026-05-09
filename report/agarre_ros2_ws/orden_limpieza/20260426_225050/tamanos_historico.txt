@@ -1,0 +1,8 @@
+4,0K	historico/BORRAR
+8,0K	historico/step_cartesian_debug/manual_moves.jsonl
+12K	historico/step_cartesian_debug
+16K	historico/2026-04-17_auditoria_arquitectura_completa.md
+64K	historico/2026-04-18_base_conocimiento_tecnica.md
+92K	historico/2026-04-18_base_conocimiento_tecnica.html
+260K	historico/2026-04-18_base_conocimiento_tecnica.pdf
+452K	historico

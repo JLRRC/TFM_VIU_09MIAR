@@ -34,6 +34,7 @@ Thumbs.db
 BORRAR/
 bags/
 experiments/
+reports/repro_startup/
 .venv*/
 .venv_ai/
 .matplotlib_cache/
@@ -44,3 +45,7 @@ experiments/
 src/tfm_grasping/models/*.pth
 src/tfm_grasping/models/*.pt
 src/tfm_grasping/models/*.ckpt
+
+# --- Coverage ---
+.coverage
+htmlcov/

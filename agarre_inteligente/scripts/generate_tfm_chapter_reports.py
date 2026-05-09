@@ -87,7 +87,7 @@ def manifest_text(chapter: Chapter, item: Item, copied_assets: Iterable[Path]) -
         lines.append(f"- Pagina en el PDF: {item.page}")
     lines.append(f"- Tipo: {title_case_kind(item.kind)}")
     if copied_assets:
-        lines.append("- Estado: artefacto materializado dentro de reports/capitulos")
+        lines.append("- Estado: artefacto materializado dentro de report/capitulos")
     else:
         lines.append("- Estado: referencia documental sin fichero independiente localizado fuera del PDF")
     if item.notes:
@@ -163,7 +163,7 @@ def write_manifest(path: Path, chapter: Chapter, item: Item, copied_assets: Iter
 
 
 def build_filtered_exp4_table(root: Path, destination: Path) -> None:
-    summary_path = root / "reports/tables/summary_results.csv"
+    summary_path = root / "report/tables/summary_results.csv"
     if not summary_path.exists():
         return
     with summary_path.open("r", encoding="utf-8", newline="") as handle:
@@ -229,8 +229,8 @@ def inventory_text(chapters: Iterable[Chapter]) -> str:
         "# Inventario de artefactos del TFM",
         "",
         "Inventario alineado con la numeracion del documento `TFM_Jesus_Lozano_V10.pdf`.",
-        "La tabla maestra de correspondencia adicional queda en `reports/CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.md` y `reports/CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.csv`.",
-        "El PDF maestro del TFM se conserva en `reports/TFM_Jesus_Lozano_V10.pdf`.",
+        "La tabla maestra de correspondencia adicional queda en `report/CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.md` y `report/CORRESPONDENCIA_PDF_ARTEFACTOS_TFM.csv`.",
+        "El PDF maestro del TFM se conserva en `report/TFM_Jesus_Lozano_V10.pdf`.",
         "",
     ]
     for chapter in chapters:
@@ -262,7 +262,7 @@ def mapping_rows(chapters: Iterable[Chapter]) -> list[dict[str, str]]:
     for chapter in chapters:
         for group_name, items in (("ilustracion", chapter.illustrations), ("tabla", chapter.tables), ("artefacto", chapter.artifacts)):
             for item in items:
-                chapter_folder = f"reports/capitulos/{chapter_dir_name(chapter)}"
+                chapter_folder = f"report/capitulos/{chapter_dir_name(chapter)}"
                 item_folder = {
                     "illustration": "ilustraciones",
                     "table": "tablas",
@@ -314,7 +314,7 @@ def write_master_mapping(reports_dir: Path, chapters: Iterable[Chapter]) -> None
     md_lines = [
         "# Correspondencia PDF -> Artefactos del TFM",
         "",
-        "Tabla maestra de correspondencia entre la numeracion del PDF y los artefactos reales organizados en `reports/capitulos/`.",
+        "Tabla maestra de correspondencia entre la numeracion del PDF y los artefactos reales organizados en `report/capitulos/`.",
         "",
         "| Cap. | Tipo | Numero | Titulo | Pag. PDF | Manifest | Fuente real |",
         "|---|---|---|---|---|---|---|",
@@ -329,10 +329,10 @@ def write_master_mapping(reports_dir: Path, chapters: Iterable[Chapter]) -> None
 
 
 def build_chapters() -> tuple[Chapter, ...]:
-    pdf_ref = "reports/TFM_Jesus_Lozano_V10.pdf"
+    pdf_ref = "report/TFM_Jesus_Lozano_V10.pdf"
     trace_ref = "agarre_inteligente/docs/TRAZABILIDAD_TFM.md"
-    validation_ref = "reports/docs/workspace/VALIDACION_WORKSPACE_2026_03_16.md"
-    release_ref = "reports/docs/workspace/RELEASE_v1.0.0.md"
+    validation_ref = "report/docs/workspace/VALIDACION_WORKSPACE_2026_03_16.md"
+    release_ref = "report/docs/workspace/RELEASE_v1.0.0.md"
 
     return (
         Chapter(
@@ -348,7 +348,7 @@ def build_chapters() -> tuple[Chapter, ...]:
                     "1-3",
                     "Diagrama general del pipeline del trabajo e integración",
                     "13",
-                    assets=("reports/figures/diagrama_pipeline.png",),
+                    assets=("report/figures/diagrama_pipeline.png",),
                     references=(pdf_ref, trace_ref),
                 ),
             ),
@@ -390,13 +390,13 @@ def build_chapters() -> tuple[Chapter, ...]:
             title="Metodologia",
             page_range="33-54",
             illustrations=(
-                Item("illustration", "4-1", "Vision global del pipeline experimental", "33", assets=("reports/figures/diagrama_pipeline.png",), references=(pdf_ref, trace_ref)),
+                Item("illustration", "4-1", "Vision global del pipeline experimental", "33", assets=("report/figures/diagrama_pipeline.png",), references=(pdf_ref, trace_ref)),
                 Item("illustration", "4-2", "Ejemplo de anotaciones Cornell sobre una imagen", "36", references=(pdf_ref,), render_pdf_page=True),
                 Item("illustration", "4-3", "Flujo del pipeline: auditoría → índices limpios → dataset Subset estricto", "38", references=(pdf_ref, trace_ref), render_pdf_page=True),
                 Item("illustration", "4-4", "Ejemplo de evaluación tipo Cornell con fallo por incumplimiento de umbrales de IoU y/o Δθ", "47", references=(pdf_ref,), render_pdf_page=True),
                 Item("illustration", "4-5", "Galería cualitativa: 4 aciertos + 4 fallos con explicación del tipo de fallo", "48", references=(pdf_ref,), render_pdf_page=True),
                 Item("illustration", "4-6", "Arquitectura ROS 2 del entorno simulado (nodos y tópicos)", "50", references=(pdf_ref, validation_ref), render_pdf_page=True),
-                Item("illustration", "4-7", "Entorno de emulación ROS 2/Gazebo: ejemplo de consistencia visual (overlay) y consumo de la hipótesis de agarre en la escena table-top", "52", assets=("reports/tfm_ros_gazebo_results/evidence/images/ros_gazebo_imagen_camara.png",), references=(pdf_ref, validation_ref), notes="Se usa la captura de escena simulada como soporte visual más fiel a la descripción editorial de entorno y adquisición."),
+                Item("illustration", "4-7", "Entorno de emulación ROS 2/Gazebo: ejemplo de consistencia visual (overlay) y consumo de la hipótesis de agarre en la escena table-top", "52", assets=("report/tfm_ros_gazebo_results/evidence/images/ros_gazebo_imagen_camara.png",), references=(pdf_ref, validation_ref), notes="Se usa la captura de escena simulada como soporte visual más fiel a la descripción editorial de entorno y adquisición."),
             ),
             tables=(
                 Item("table", "4-1", "Fases del trabajo, entradas, salidas y evidencias de verificación", "35", references=(pdf_ref, trace_ref), render_pdf_page=True),
@@ -410,8 +410,8 @@ def build_chapters() -> tuple[Chapter, ...]:
                 Item("table", "4-9", "Especificaciones de hardware utilizadas", "53", references=(pdf_ref, validation_ref), render_pdf_page=True),
             ),
             artifacts=(
-                Item("artifact", "4-A1", "Diagrama de arquitectura del modelo ResNet18Grasp", "41", assets=("reports/figures/diagrama_arquitectura_resnet18.png",), references=(trace_ref,)),
-                Item("artifact", "4-A2", "Diagrama de arquitectura del modelo SimpleGraspCNN", "42", assets=("reports/figures/diagrama_arquitectura_simplecnn.png",), references=(trace_ref,)),
+                Item("artifact", "4-A1", "Diagrama de arquitectura del modelo ResNet18Grasp", "41", assets=("report/figures/diagrama_arquitectura_resnet18.png",), references=(trace_ref,)),
+                Item("artifact", "4-A2", "Diagrama de arquitectura del modelo SimpleGraspCNN", "42", assets=("report/figures/diagrama_arquitectura_simplecnn.png",), references=(trace_ref,)),
             ),
         ),
         Chapter(
@@ -420,35 +420,35 @@ def build_chapters() -> tuple[Chapter, ...]:
             title="Resultados y discusion",
             page_range="56-77",
             illustrations=(
-                Item("illustration", "5-1", "Curvas de perdida (train_loss y val_loss) para EXP1", "57", assets=("reports/tfm_figuras_cap5_1/ilustracion_5_2_curvas_loss_exp1_simple_rgb.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_2; aqui se reordena segun la numeracion real del PDF."),
-                Item("illustration", "5-2", "Curvas de perdida (train_loss y val_loss) para EXP2", "57", assets=("reports/tfm_figuras_cap5_1/ilustracion_5_3_curvas_loss_exp2_simple_rgbd.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_3; aqui se reordena segun la numeracion real del PDF."),
-                Item("illustration", "5-3", "Curvas de perdida (train_loss y val_loss) para EXP3", "57", assets=("reports/tfm_figuras_cap5_1/ilustracion_5_4_curvas_loss_exp3_resnet18_rgb_augment.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_4; aqui se reordena segun la numeracion real del PDF."),
-                Item("illustration", "5-4", "Curvas de perdida (train_loss y val_loss) para EXP4", "57", assets=("reports/tfm_figuras_cap5_1/ilustracion_5_5_curvas_loss_exp4_resnet18_rgbd.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_5; aqui se reordena segun la numeracion real del PDF."),
-                Item("illustration", "5-5", "Comparativa de val_success por seed y experimento en best_epoch", "58", assets=("reports/tfm_figuras_cap5_1/ilustracion_5_6_val_success_por_seed_y_experimento.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_6; aqui se reordena segun la numeracion real del PDF."),
-                Item("illustration", "5-6", "Comparativa de val_loss por seed y experimento en best_epoch", "59", assets=("reports/tfm_figuras_cap5_1/ilustracion_5_7_val_loss_por_seed_y_experimento.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_7; aqui se reordena segun la numeracion real del PDF."),
-                Item("illustration", "5-7", "Evolucion del exito de agarre en validacion por epoca", "59", assets=("reports/figures/val_success_by_epoch.png",), references=(pdf_ref, trace_ref)),
-                Item("illustration", "5-8", "Evolucion del IoU medio en validacion por epoca", "60", assets=("reports/figures/val_iou_by_epoch.png",), references=(pdf_ref, trace_ref)),
-                Item("illustration", "5-9", "Evolucion del error angular medio en validacion por epoca", "60", assets=("reports/figures/val_angle_deg_by_epoch.png",), references=(pdf_ref, trace_ref)),
-                Item("illustration", "5-10", "Exito final de agarre en validacion agregado por experimento", "62", assets=("reports/figures/bar_val_success_final.png",), references=(pdf_ref, trace_ref)),
-                Item("illustration", "5-11", "IoU medio final en validacion agregado por experimento", "62", assets=("reports/figures/bar_val_iou_final.png",), references=(pdf_ref, trace_ref)),
-                Item("illustration", "5-12", "Error angular medio final en validacion agregado por experimento", "62", assets=("reports/figures/bar_val_angle_final.png",), references=(pdf_ref, trace_ref)),
-                Item("illustration", "5-13", "Aciertos representativos en validacion para EXP3_RESNET18_RGB_AUGMENT", "64", assets=("reports/tfm_visual_revision/final/cap5_aciertos_cualitativos_v1.png", "reports/tfm_visual_revision/final/cap5_aciertos_cualitativos_v1.pdf"), references=(pdf_ref,)),
-                Item("illustration", "5-14", "Fallos cualitativos representativos en validacion organizados por tipologia", "66", assets=("reports/tfm_visual_revision/final/cap5_fallos_cualitativos_E1_E4_v1.png", "reports/tfm_visual_revision/final/cap5_fallos_cualitativos_E1_E4_v1.pdf"), references=(pdf_ref,)),
-                Item("illustration", "5-15", "Caso ilustrativo de objeto pequeno en la escena", "68", assets=("reports/tfm_visual_revision/final/cap5_caso_ilustrativo_v1.png", "reports/tfm_visual_revision/final/cap5_caso_ilustrativo_v1.pdf"), references=(pdf_ref,)),
-                Item("illustration", "5-16", "Evidencia funcional del pipeline percepcion-publicacion-consumo en ROS 2", "71", assets=("reports/tfm_ros_gazebo_results/evidence/images/ros_gazebo_frame_panel_infer.png",), references=(pdf_ref, validation_ref, release_ref)),
-                Item("illustration", "5-17", "Resultado de inferencia del modelo EXP3_RESNET18_RGB_AUGMENT sobre la imagen simulada", "72", assets=("reports/tfm_ros_gazebo_results/evidence/images/ros_gazebo_overlay_prediccion.png",), references=(pdf_ref, validation_ref)),
-                Item("illustration", "5-18", "Evidencia funcional adicional del pipeline percepcion-publicacion-consumo en ROS 2", "73", assets=("reports/tfm_ros_gazebo_results/evidence/images/ros_gazebo_exp3_vs_referencia.png",), references=(pdf_ref, validation_ref), notes="Se prioriza la comparativa visual del caso integrado frente al overlay auxiliar del panel, por ser mas coherente con la narrativa del TFM."),
+                Item("illustration", "5-1", "Curvas de perdida (train_loss y val_loss) para EXP1", "57", assets=("report/tfm_figuras_cap5_1/ilustracion_5_2_curvas_loss_exp1_simple_rgb.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_2; aqui se reordena segun la numeracion real del PDF."),
+                Item("illustration", "5-2", "Curvas de perdida (train_loss y val_loss) para EXP2", "57", assets=("report/tfm_figuras_cap5_1/ilustracion_5_3_curvas_loss_exp2_simple_rgbd.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_3; aqui se reordena segun la numeracion real del PDF."),
+                Item("illustration", "5-3", "Curvas de perdida (train_loss y val_loss) para EXP3", "57", assets=("report/tfm_figuras_cap5_1/ilustracion_5_4_curvas_loss_exp3_resnet18_rgb_augment.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_4; aqui se reordena segun la numeracion real del PDF."),
+                Item("illustration", "5-4", "Curvas de perdida (train_loss y val_loss) para EXP4", "57", assets=("report/tfm_figuras_cap5_1/ilustracion_5_5_curvas_loss_exp4_resnet18_rgbd.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_5; aqui se reordena segun la numeracion real del PDF."),
+                Item("illustration", "5-5", "Comparativa de val_success por seed y experimento en best_epoch", "58", assets=("report/tfm_figuras_cap5_1/ilustracion_5_6_val_success_por_seed_y_experimento.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_6; aqui se reordena segun la numeracion real del PDF."),
+                Item("illustration", "5-6", "Comparativa de val_loss por seed y experimento en best_epoch", "59", assets=("report/tfm_figuras_cap5_1/ilustracion_5_7_val_loss_por_seed_y_experimento.png",), references=(pdf_ref, trace_ref), notes="El fichero fuente historico estaba numerado como 5_7; aqui se reordena segun la numeracion real del PDF."),
+                Item("illustration", "5-7", "Evolucion del exito de agarre en validacion por epoca", "59", assets=("report/figures/val_success_by_epoch.png",), references=(pdf_ref, trace_ref)),
+                Item("illustration", "5-8", "Evolucion del IoU medio en validacion por epoca", "60", assets=("report/figures/val_iou_by_epoch.png",), references=(pdf_ref, trace_ref)),
+                Item("illustration", "5-9", "Evolucion del error angular medio en validacion por epoca", "60", assets=("report/figures/val_angle_deg_by_epoch.png",), references=(pdf_ref, trace_ref)),
+                Item("illustration", "5-10", "Exito final de agarre en validacion agregado por experimento", "62", assets=("report/figures/bar_val_success_final.png",), references=(pdf_ref, trace_ref)),
+                Item("illustration", "5-11", "IoU medio final en validacion agregado por experimento", "62", assets=("report/figures/bar_val_iou_final.png",), references=(pdf_ref, trace_ref)),
+                Item("illustration", "5-12", "Error angular medio final en validacion agregado por experimento", "62", assets=("report/figures/bar_val_angle_final.png",), references=(pdf_ref, trace_ref)),
+                Item("illustration", "5-13", "Aciertos representativos en validacion para EXP3_RESNET18_RGB_AUGMENT", "64", assets=("report/tfm_visual_revision/final/cap5_aciertos_cualitativos_v1.png", "report/tfm_visual_revision/final/cap5_aciertos_cualitativos_v1.pdf"), references=(pdf_ref,)),
+                Item("illustration", "5-14", "Fallos cualitativos representativos en validacion organizados por tipologia", "66", assets=("report/tfm_visual_revision/final/cap5_fallos_cualitativos_E1_E4_v1.png", "report/tfm_visual_revision/final/cap5_fallos_cualitativos_E1_E4_v1.pdf"), references=(pdf_ref,)),
+                Item("illustration", "5-15", "Caso ilustrativo de objeto pequeno en la escena", "68", assets=("report/tfm_visual_revision/final/cap5_caso_ilustrativo_v1.png", "report/tfm_visual_revision/final/cap5_caso_ilustrativo_v1.pdf"), references=(pdf_ref,)),
+                Item("illustration", "5-16", "Evidencia funcional del pipeline percepcion-publicacion-consumo en ROS 2", "71", assets=("report/tfm_ros_gazebo_results/evidence/images/ros_gazebo_frame_panel_infer.png",), references=(pdf_ref, validation_ref, release_ref)),
+                Item("illustration", "5-17", "Comparativa visual en simulacion entre la referencia proyectada y la prediccion de EXP3_RESNET18_RGB_AUGMENT", "72", assets=("report/tfm_ros_gazebo_results/evidence/images/ros_gazebo_overlay_prediccion.png",), references=(pdf_ref, validation_ref), notes="Se usa el mismo codigo visual que en las figuras cualitativas del capitulo: referencia verde discontinua y prediccion roja continua, con un zoom de la region de agarre para facilitar la interpretacion."),
+                Item("illustration", "5-18", "Evidencia funcional adicional del pipeline percepcion-publicacion-consumo en ROS 2", "73", assets=("report/tfm_ros_gazebo_results/evidence/images/ros_gazebo_exp3_vs_referencia.png",), references=(pdf_ref, validation_ref), notes="Se prioriza la comparativa visual del caso integrado frente al overlay auxiliar del panel, por ser mas coherente con la narrativa del TFM."),
             ),
             tables=(
-                Item("table", "5-1", "Resultados agregados en validacion (best_epoch por ejecucion) bajo split object-wise", "61", assets=("reports/tables/table_validation_aggregated.csv",), references=(pdf_ref, trace_ref)),
-                Item("table", "5-2", "Resumen de metricas finales por experimento en validacion", "62", assets=("reports/tables/table_metrics_final.csv",), references=(pdf_ref, trace_ref)),
-                Item("table", "5-3", "Medicion de latencia de inferencia por experimento y dispositivo", "69", assets=("reports/tables/table_latency.csv", "reports/bench/latency_results.csv"), references=(pdf_ref, trace_ref)),
-                Item("table", "5-4", "Comparativa por modalidad entre SimpleGraspCNN y ResNet18Grasp", "77", assets=("reports/tables/table_ab_comparison_by_modality.csv",), references=(pdf_ref, trace_ref)),
+                Item("table", "5-1", "Resultados agregados en validacion (best_epoch por ejecucion) bajo split object-wise", "61", assets=("report/tables/table_validation_aggregated.csv",), references=(pdf_ref, trace_ref)),
+                Item("table", "5-2", "Resumen de metricas finales por experimento en validacion", "62", assets=("report/tables/table_metrics_final.csv",), references=(pdf_ref, trace_ref)),
+                Item("table", "5-3", "Medicion de latencia de inferencia por experimento y dispositivo", "69", assets=("report/tables/table_latency.csv", "report/bench/latency_results.csv"), references=(pdf_ref, trace_ref)),
+                Item("table", "5-4", "Comparativa por modalidad entre SimpleGraspCNN y ResNet18Grasp", "77", assets=("report/tables/table_ab_comparison_by_modality.csv",), references=(pdf_ref, trace_ref)),
             ),
             artifacts=(
-                Item("artifact", "5-A1", "Resumen tecnico para la redaccion de la subseccion ROS 2 + Gazebo", assets=("reports/tfm_ros_gazebo_results/final_pack/resumen_para_redaccion.md",), references=(validation_ref, release_ref)),
-                Item("artifact", "5-A2", "Artefacto principal de inferencia y grasp publicado", assets=("reports/panel_audit/artifacts/grasp_last.json",), references=(validation_ref,)),
-                Item("artifact", "5-A3", "Resumen tabular completo del bloque experimental", assets=("reports/tables/TABLES_SUMMARY.md",), references=(trace_ref,)),
+                Item("artifact", "5-A1", "Resumen tecnico para la redaccion de la subseccion ROS 2 + Gazebo", assets=("report/tfm_ros_gazebo_results/final_pack/resumen_para_redaccion.md",), references=(validation_ref, release_ref)),
+                Item("artifact", "5-A2", "Artefacto principal de inferencia y grasp publicado", assets=("report/evidence/ros2/panel_audit/artifacts/grasp_last.json",), references=(validation_ref,)),
+                Item("artifact", "5-A3", "Resumen tabular completo del bloque experimental", assets=("report/tables/TABLES_SUMMARY.md",), references=(trace_ref,)),
             ),
         ),
         Chapter(
@@ -472,10 +472,10 @@ def build_chapters() -> tuple[Chapter, ...]:
             title="Anexos",
             page_range="86-88",
             tables=(
-                Item("table", "8-1", "Resultados por semilla y experimento en la mejor epoca de validacion", "86", assets=("reports/tables/results_by_seed.csv",), references=(pdf_ref, trace_ref)),
+                Item("table", "8-1", "Resultados por semilla y experimento en la mejor epoca de validacion", "86", assets=("report/tables/results_by_seed.csv",), references=(pdf_ref, trace_ref)),
                 Item("table", "8-2", "Resultados de validación del experimento de referencia para la integración ROS 2 (EXP4_RESNET18_RGBD), reportados por semilla en best_epoch", "86", references=(pdf_ref, validation_ref), notes="Se materializa a partir de summary_results.csv filtrando el experimento de referencia citado en el PDF actual."),
-                Item("table", "8-3", "Resumen de experimentos base en validación (media ± desviación estándar cuando procede, n = 3 semillas por experimento)", "87", assets=("reports/tables/summary_results.csv",), references=(pdf_ref, trace_ref)),
-                Item("table", "8-4", "Comparativa por modalidad entre SimpleGraspCNN y ResNet18Grasp (mejor época de validación)", "87", assets=("reports/tables/table_ab_comparison_by_modality.csv",), references=(pdf_ref, trace_ref)),
+                Item("table", "8-3", "Resumen de experimentos base en validación (media ± desviación estándar cuando procede, n = 3 semillas por experimento)", "87", assets=("report/tables/summary_results.csv",), references=(pdf_ref, trace_ref)),
+                Item("table", "8-4", "Comparativa por modalidad entre SimpleGraspCNN y ResNet18Grasp (mejor época de validación)", "87", assets=("report/tables/table_ab_comparison_by_modality.csv",), references=(pdf_ref, trace_ref)),
             ),
             artifacts=(
                 Item("artifact", "8-A1", "Documento PDF del TFM utilizado como referencia editorial", assets=(pdf_ref,), references=(trace_ref, release_ref)),
@@ -486,9 +486,9 @@ def build_chapters() -> tuple[Chapter, ...]:
 
 def main() -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    reports_dir = repo_root / "reports"
+    reports_dir = repo_root / "report"
     chapters_dir = reports_dir / "capitulos"
-    pdf_rel = "reports/TFM_Jesus_Lozano_V10.pdf"
+    pdf_rel = "report/TFM_Jesus_Lozano_V10.pdf"
 
     if chapters_dir.exists():
         shutil.rmtree(chapters_dir)

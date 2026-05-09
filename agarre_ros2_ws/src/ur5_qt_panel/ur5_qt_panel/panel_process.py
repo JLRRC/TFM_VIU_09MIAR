@@ -14,22 +14,30 @@ import time
 from typing import List, Optional, Tuple, Union
 
 from .panel_config import FASTRTPS_PROFILES, GZ_PARTITION_FILE
-from .logging_utils import timestamped_line
+from .panel_env import (
+    get_gz_ip,
+    get_gz_partition,
+    get_gz_transport_ip,
+    get_panel_ros_timeout,
+)
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
+from .logging_utils import emit_log_line, timestamped_line
 
-ROS_CMD_TIMEOUT = float(os.environ.get("PANEL_ROS_TIMEOUT", "1.5"))
+# F2-step3 (audit-v4 2026-05-08): env read movida a panel_env.py.
+ROS_CMD_TIMEOUT = get_panel_ros_timeout()
 STDBUF_PREFIX = "stdbuf -oL -eL " if shutil.which("stdbuf") else ""
 GZ_LOG_FILTERS = [
     r"libEGL warning: egl: failed to create dri2 screen",
     r"libEGL warning: Not allowed to force software rendering when API explicitly selects a hardware device\\.",
 ]
 
-_DEBUG_EXCEPTIONS = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
+_DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 
 
 def _log_exception(context: str, exc: Exception) -> None:
     if not _DEBUG_EXCEPTIONS:
         return
-    print(timestamped_line(f"[PROCESS][WARN] {context}: {exc}"), flush=True)
+    emit_log_line(timestamped_line(f"[PROCESS][WARN] {context}: {exc}"))
 
 
 def run_cmd(
@@ -204,15 +212,17 @@ def read_gz_partition_file() -> str:
 def resolve_gz_partition(preferred: str = "") -> str:
     if preferred:
         return preferred
-    env_part = os.environ.get("GZ_PARTITION", "").strip()
+    # F2-step3 (audit-v4): env read movida a panel_env.get_gz_partition.
+    env_part = get_gz_partition()
     if env_part:
         return env_part
     return read_gz_partition_file()
 
 
 def build_gz_env(partition: str = "") -> str:
-    gz_ip = os.environ.get("GZ_IP", "").strip()
-    gz_transport_ip = os.environ.get("GZ_TRANSPORT_IP", "").strip()
+    # F2-step3 (audit-v4): env reads movidas a panel_env helpers.
+    gz_ip = get_gz_ip()
+    gz_transport_ip = get_gz_transport_ip(default="").strip()
     env = ""
     if gz_ip:
         env += f"export GZ_IP='{gz_ip}' ; "

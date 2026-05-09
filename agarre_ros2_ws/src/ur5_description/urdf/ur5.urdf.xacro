@@ -15,6 +15,9 @@
   <xacro:property name="ur_pkg_share" value="$(optenv UR_DESCRIPTION_SHARE /opt/ros/jazzy/share/ur_description)"/>
   <xacro:property name="robot_name" value="ur5_rg2"/>
   <xacro:property name="tf_prefix_value" value=""/>
+  <!-- Offset físico real flange→yemas: 0.175 m (ur5_hand_joint Z=0.07 + finger_joint X=0.105).
+       Corregido con Opción 3 SDF fix (2026-04-24). -->
+  <xacro:property name="rg2_contact_tcp_xyz" value="0 0 0.175"/>
   <xacro:property name="joint_limits_file" value="${ur_pkg_share}/config/${ur_type}/joint_limits.yaml"/>
   <xacro:property name="kinematics_file" value="${ur_pkg_share}/config/${ur_type}/default_kinematics.yaml"/>
   <xacro:property name="physical_file" value="${ur_pkg_share}/config/${ur_type}/physical_parameters.yaml"/>
@@ -37,16 +40,29 @@
     safety_k_position="${safety_k_position}"
     force_abs_paths="${force_abs_paths}"
     >
-    <origin xyz="-0.85 0 0.775" rpy="0 0 0"/>
+    <!-- Keep the URDF world origin aligned with the Gazebo world include pose.
+         If these diverge, robot_state_publisher TF and the rendered Gazebo model
+         disagree in Z, which makes the panel report a different TCP height than
+         the one visible in the simulator. -->
+    <origin xyz="-0.85 0 0.850" rpy="0 0 0"/>
   </xacro:ur_robot>
 
-  <!-- RG2 gripper (simplified kinematic stub for ros2_control) -->
+  <!-- RG2 gripper: simplified prismatic box geometry, coherent with SDF/TF/ros2_control. -->
   <link name="rg2_base_link">
     <inertial>
-      <mass value="0.5"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+      <mass value="0.30"/>
+      <origin xyz="0 0 0.010" rpy="0 0 0"/>
+      <inertia ixx="0.00050" ixy="0.0" ixz="0.0" iyy="0.00040" iyz="0.0" izz="0.00060"/>
     </inertial>
+    <visual>
+      <origin xyz="0 0 0.010" rpy="0 0 0"/>
+      <geometry><box size="0.060 0.080 0.020"/></geometry>
+      <material name="rg2_gray"><color rgba="0.4 0.4 0.4 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.010" rpy="0 0 0"/>
+      <geometry><box size="0.060 0.080 0.020"/></geometry>
+    </collision>
   </link>
 
   <joint name="rg2_mount_joint" type="fixed">
@@ -55,7 +71,10 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <!-- Virtual TCP at the gripper fingertips (fixed offset from tool0). -->
+  <!-- Virtual TCP frame at the operational grasp center used by planning/attach.
+       The RG2 contact midpoint is slightly in front of tool0 in tool local +Z:
+       the previous -0.0877005 value landed near the finger hinges, leaving the
+       semantic TCP about 9.3 cm behind the visible pinch center. -->
   <link name="rg2_tcp">
     <inertial>
       <mass value="0.01"/>
@@ -67,39 +86,76 @@
   <joint name="rg2_tcp_joint" type="fixed">
     <parent link="tool0"/>
     <child link="rg2_tcp"/>
-    <origin xyz="0 0 0.23" rpy="0 0 0"/>
+    <origin xyz="${rg2_contact_tcp_xyz}" rpy="0 0 0"/>
   </joint>
 
+    <!-- Operational pinch-center: contact midpoint between the two RG2 fingers.
+      Keep it coincident with the semantic TCP so DIRECTO, MoveIt and attach all
+      reason about the same visible closure center. -->
+  <link name="rg2_pinch_center">
+    <inertial>
+      <mass value="0.01"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-5" ixy="0.0" ixz="0.0" iyy="1e-5" iyz="0.0" izz="1e-5"/>
+    </inertial>
+  </link>
+
+  <joint name="rg2_pinch_center_joint" type="fixed">
+    <parent link="tool0"/>
+    <child link="rg2_pinch_center"/>
+    <origin xyz="${rg2_contact_tcp_xyz}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Finger links: box 12x10x175 mm; joint origin at ±20 mm Y from rg2_base_link. -->
+  <!-- Visual center at 0 0 0.0875 (half of 175 mm) in finger-link frame. -->
   <link name="rg2_finger_link1">
     <inertial>
       <mass value="0.05"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <inertia ixx="1e-4" ixy="0.0" ixz="0.0" iyy="1e-4" iyz="0.0" izz="1e-4"/>
+      <origin xyz="0 0 0.0875" rpy="0 0 0"/>
+      <inertia ixx="1.3e-4" ixy="0.0" ixz="0.0" iyy="1.3e-4" iyz="0.0" izz="1.0e-6"/>
     </inertial>
+    <visual>
+      <origin xyz="0 0 0.0875" rpy="0 0 0"/>
+      <geometry><box size="0.012 0.010 0.175"/></geometry>
+      <material name="rg2_dark_gray"><color rgba="0.25 0.25 0.25 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0875" rpy="0 0 0"/>
+      <geometry><box size="0.012 0.010 0.175"/></geometry>
+    </collision>
   </link>
 
   <link name="rg2_finger_link2">
     <inertial>
       <mass value="0.05"/>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-      <inertia ixx="1e-4" ixy="0.0" ixz="0.0" iyy="1e-4" iyz="0.0" izz="1e-4"/>
+      <origin xyz="0 0 0.0875" rpy="0 0 0"/>
+      <inertia ixx="1.3e-4" ixy="0.0" ixz="0.0" iyy="1.3e-4" iyz="0.0" izz="1.0e-6"/>
     </inertial>
+    <visual>
+      <origin xyz="0 0 0.0875" rpy="0 0 0"/>
+      <geometry><box size="0.012 0.010 0.175"/></geometry>
+      <material name="rg2_dark_gray"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0875" rpy="0 0 0"/>
+      <geometry><box size="0.012 0.010 0.175"/></geometry>
+    </collision>
   </link>
 
   <joint name="rg2_finger_joint1" type="prismatic">
     <parent link="rg2_base_link"/>
     <child link="rg2_finger_link1"/>
-    <origin xyz="0 0.02 0" rpy="0 0 0"/>
+    <origin xyz="0 0.020 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <limit lower="0.0" upper="0.04" effort="20" velocity="0.2"/>
+    <limit lower="0.0" upper="0.0425" effort="20" velocity="0.2"/>
   </joint>
 
   <joint name="rg2_finger_joint2" type="prismatic">
     <parent link="rg2_base_link"/>
     <child link="rg2_finger_link2"/>
-    <origin xyz="0 -0.02 0" rpy="0 0 0"/>
+    <origin xyz="0 -0.020 0" rpy="0 0 0"/>
     <axis xyz="0 -1 0"/>
-    <limit lower="0.0" upper="0.04" effort="20" velocity="0.2"/>
+    <limit lower="0.0" upper="0.0425" effort="20" velocity="0.2"/>
   </joint>
 
   <!-- ros2_control (gz_ros2_control) with UR5 + RG2 joints -->
@@ -110,43 +166,59 @@
 
     <joint name="shoulder_pan_joint">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="shoulder_lift_joint">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">-1.5707963267948966</param>
+      </state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="elbow_joint">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="wrist_1_joint">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">-1.5707963267948966</param>
+      </state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="wrist_2_joint">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="wrist_3_joint">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
       <state_interface name="velocity"/>
     </joint>
 
     <joint name="rg2_finger_joint1">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
       <state_interface name="velocity"/>
     </joint>
     <joint name="rg2_finger_joint2">
       <command_interface name="position"/>
-      <state_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
       <state_interface name="velocity"/>
     </joint>
   </ros2_control>

@@ -55,6 +55,7 @@ data/external/*
 experiments/runs/*
 experiments/checkpoints/*
 experiments/results/*
+experiments/**/checkpoints/
 !experiments/runs/.gitkeep
 !experiments/checkpoints/.gitkeep
 !experiments/results/.gitkeep

@@ -141,8 +141,8 @@ DIRS=(
     "experiments/checkpoints"
     "experiments/results"
     "models"
-    "reports/figures"
-    "reports/tables"
+    "report/figures"
+    "report/tables"
 )
 
 for dir in "${DIRS[@]}"; do

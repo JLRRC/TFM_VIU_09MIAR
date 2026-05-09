@@ -17,6 +17,12 @@ from moveit_configs_utils import MoveItConfigsBuilder
 def generate_launch_description():
     ws_dir = os.environ.get("WS_DIR", "")
     ws_src = Path(ws_dir) / "src" if ws_dir else None
+    strict_self_collision = os.environ.get("STRICT_SELF_COLLISION", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
     def _pkg_share(pkg_name: str) -> str:
         try:
@@ -32,9 +38,10 @@ def generate_launch_description():
     ur5_description_share = _pkg_share("ur5_description")
     moveit_share = _pkg_share("ur5_moveit_config")
 
-    srdf_path = Path(moveit_share) / "config" / "ur5.srdf"
+    srdf_file = "ur5_strict.srdf" if strict_self_collision else "ur5.srdf"
+    srdf_path = Path(moveit_share) / "config" / srdf_file
     if not srdf_path.is_file() and ws_src:
-        fallback = ws_src / "ur5_moveit_config" / "config" / "ur5.srdf"
+        fallback = ws_src / "ur5_moveit_config" / "config" / srdf_file
         if fallback.is_file():
             srdf_path = fallback
 
@@ -77,6 +84,14 @@ def generate_launch_description():
         parameters=[
             {"use_sim_time": use_sim_time},
             moveit_config.to_dict(),
+            # 2026-05-07 (rondas 11-26):
+            # 1.2 → CONTROL_FAILED 9s | 4.0 → 71s | 10.0 → 105s | 30.0 → 287s
+            # Subido a 100 + max_velocity_scaling_factor 0.3 (en
+            # plan_to_pose_moveit_direct.py) para que la trayectoria sea más
+            # lenta Y el upper bound más holgado.
+            {"trajectory_execution.allowed_execution_duration_scaling": 100.0},
+            {"trajectory_execution.allowed_goal_duration_margin": 120.0},
+            {"trajectory_execution.allowed_start_tolerance": 0.15},
         ],
     )
 
@@ -97,6 +112,10 @@ def generate_launch_description():
             DeclareLaunchArgument("start_ros2_control", default_value="false"),
             DeclareLaunchArgument("launch_rviz", default_value="false"),
             DeclareLaunchArgument("use_sim_time", default_value="true"),
+            DeclareLaunchArgument(
+                "strict_self_collision",
+                default_value=os.environ.get("STRICT_SELF_COLLISION", "false"),
+            ),
             bringup_launch,
             move_group_node,
             rviz_node,

@@ -1,0 +1,7 @@
+# Convertir un punto en frame world a frame base_link via TF.
+# Si TF no esta disponible o el frame no existe, success=false y detail describe la causa.
+geometry_msgs/Point world_xyz
+---
+geometry_msgs/Point base_xyz
+bool success
+string detail

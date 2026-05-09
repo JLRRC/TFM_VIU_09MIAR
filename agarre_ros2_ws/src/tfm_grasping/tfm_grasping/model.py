@@ -6,7 +6,7 @@
 from dataclasses import dataclass
 import os
 import sys
-from typing import Optional, Tuple, List
+from typing import Any, List, Optional, Tuple
 
 try:
     import numpy as np  # type: ignore
@@ -46,7 +46,8 @@ class GraspModel:
     def __init__(self, model_path: str = "", img_size: int = 224) -> None:
         self.info = ModelInfo(model_path=model_path, loaded=False)
         self._img_size = int(max(1, img_size))
-        self._model = None
+        # F7 (audit-v4): tipado Any porque PyTorch es optional dep.
+        self._model: Any = None
         self._device = self._resolve_device()
         self._last_error: str = ""
 
@@ -72,7 +73,7 @@ class GraspModel:
         if src_dir not in sys.path:
             sys.path.insert(0, src_dir)
 
-    def _build_model_candidates(self, state_dict) -> List[Tuple[object, int, str]]:
+    def _build_model_candidates(self, state_dict: Any) -> List[Tuple[Any, int, str]]:
         self._ensure_graspnet_on_path()
         if torch is None:
             self._last_error = "torch no disponible"
@@ -116,31 +117,41 @@ class GraspModel:
             candidates: List[Tuple[object, int, str]] = []
             conv_key = "features.0.weight"
             in_ch = 3
+            kernel_size = 3
             if conv_key in state_dict and hasattr(state_dict[conv_key], "shape"):
                 try:
                     in_ch = int(state_dict[conv_key].shape[1])
+                    kernel_size = int(state_dict[conv_key].shape[2])
                 except Exception:
                     in_ch = 3
 
-            try:
-                from graspnet.models.simple_cnn import SimpleGraspCNN as SimpleCnn  # type: ignore
-                candidates.append((SimpleCnn(in_channels=in_ch, img_size=self._img_size), in_ch, "simple_cnn"))
-            except Exception as exc:
-                self._last_error = f"no se pudo importar simple_cnn.SimpleGraspCNN: {exc}"
+            if kernel_size == 7:
+                # SimpleGrasp architecture (EXP1.1/EXP1.2): kernel 7x7
+                try:
+                    from models.simple_grasp import SimpleGrasp  # type: ignore
+                    candidates.append((SimpleGrasp(input_channels=in_ch), in_ch, "simple_grasp"))
+                except Exception as exc:
+                    self._last_error = f"no se pudo importar models.simple_grasp: {exc}"
+            else:
+                # SimpleCNN architecture (EXP1): kernel 3x3
+                try:
+                    from graspnet.models.simple_cnn import SimpleGraspCNN as SimpleCnn  # type: ignore
+                    candidates.append((SimpleCnn(in_channels=in_ch, img_size=self._img_size), in_ch, "simple_cnn"))
+                except Exception as exc:
+                    self._last_error = f"no se pudo importar simple_cnn.SimpleGraspCNN: {exc}"
 
-            # Fallback for current agarre_inteligente layout.
-            try:
-                from models.simple_cnn import SimpleCNN  # type: ignore
+                # Fallback for current agarre_inteligente layout.
+                try:
+                    from models.simple_cnn import SimpleCNN  # type: ignore
+                    candidates.append((SimpleCNN(input_channels=in_ch), in_ch, "simple_cnn"))
+                except Exception:
+                    pass
 
-                candidates.append((SimpleCNN(input_channels=in_ch), in_ch, "simple_cnn"))
-            except Exception:
-                pass
-
-            try:
-                from graspnet.models.simple_grasp_cnn import SimpleGraspCNN as SimpleLegacy  # type: ignore
-                candidates.append((SimpleLegacy(in_channels=in_ch), in_ch, "simple_grasp_cnn"))
-            except Exception:
-                pass
+                try:
+                    from graspnet.models.simple_grasp_cnn import SimpleGraspCNN as SimpleLegacy  # type: ignore
+                    candidates.append((SimpleLegacy(in_channels=in_ch), in_ch, "simple_grasp_cnn"))
+                except Exception:
+                    pass
 
             if candidates:
                 return candidates
@@ -218,7 +229,9 @@ class GraspModel:
         y0 = max(0, min(frame.height - roi_size, y0))
         return x0, y0, roi_size, roi_size
 
-    def _preprocess(self, rgb: "np.ndarray", roi: Optional[tuple[int, int, int]]):
+    def _preprocess(
+        self, rgb: Any, roi: Optional[tuple[int, int, int]]
+    ) -> Tuple[Any, Optional[Tuple[int, int, int, int]]]:
         if np is None:
             self._last_error = "numpy no disponible"
             return None, None
@@ -330,6 +343,11 @@ class GraspModel:
             tensor = tensor.to(self._device)
         with torch.no_grad():
             pred = self._model(tensor).squeeze(0).cpu().numpy()
+        if self.info.model_name == "simple_grasp":
+            # SimpleGrasp was trained on normalized targets: cx/cy/w/h ∈ [0,1], angle ∈ [-1,1].
+            # Clip diverged outputs to the decoder threshold so _decode_model_axis always
+            # multiplies by img_size instead of treating values as raw pixel coordinates.
+            pred = pred.clip(-1.5, 1.5)
         return self._decode_prediction(pred, frame, roi_info)
 
     def last_error(self) -> str:

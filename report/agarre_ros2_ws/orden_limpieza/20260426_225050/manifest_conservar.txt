@@ -1,0 +1,64 @@
+# MANIFEST CONSERVAR — auditoria/ raíz TFM (2026-04-26)
+# Formato: ruta | motivo | evidencia
+
+auditoria_arquitectura_20260426.md | informe_arquitectura_reciente_20260426 | modificado_hoy
+guion_defensa_20260424.md | guion_defensa_TFM | valor_academico
+informe_auditoria_global_20260424.md | informe_auditoria_global_mas_reciente | valor_academico
+informe_fix_visual_grasp_20260419_v2.md | v2_del_informe_fix_visual | reemplaza_v1
+regla_global_mesa_cesta_20260417.md | regla_geometrica_global_del_sistema | citado_en_docs
+informe_moveit_ciclo_completo_20260417.md | evidencia_ciclo_completo_moveit | TFM
+panel_audit/ | evidencias_botones_panel_citadas_por_scripts | scripts/panel_block_smoke_test.sh
+tf_frames/ | evidencia_TF_geometria | diagnostico_geometria
+moveit_grasp_20260416/ | evidencia_MoveIt_grasp_inicial | TFM
+directo_visual_smoke_final/ | ultimo_smoke_test_visual_named_final | validacion_completa
+manual_directo_20260423_053012/ | citado_en_incidents/2026-04-22_rg2_tcp_incident_closure.md | trazabilidad
+manual_directo_startupretry_20260423_090729/ | citado_en_incidents/2026-04-22_rg2_tcp_incident_closure.md | trazabilidad
+manual_directo_postcheck_20260423_092724/ | citado_en_incidents/2026-04-22_y_2026-04-23 | trazabilidad
+manual_directo_postcheck_min035_20260423_093612/ | citado_en_incidents/2026-04-22_y_2026-04-23 | trazabilidad
+spatial_20260424/ | sesion_spatial_mas_reciente | ultima_ejecucion
+fase5_revalidacion_20260420/ | FASE5_revalidacion_citada_en_memoria | memory/project
+geom_restore_20260420/ | restauracion_geometrica_citada_en_memoria | memory/project
+directo_validation_20260424_cesta_stage1_recover2_micro/ | validacion_cesta_named_especifica | evidencia
+directo_debug_transport_final_20260423_1/ | sesion_FINAL_debug_transport | ultima_iteracion
+pregrasp_fix_20260423_111605/ | fix_pregrasp_version_final | supersede_patch
+panelc2_final_20260422_141028/ | panel_c2_sesion_final_mayor | evidencia_panel
+directo_validation_fix_20260424_postcheck_tol_050/ | postcheck_tolerancia_0.050_named | evidencia_tuning
+directo_validation_fix_20260424_postcheck_tol_055/ | postcheck_tolerancia_0.055_named | evidencia_tuning
+directo_validation_fix_20260424_clean_rerun/ | clean_rerun_named_validacion | evidencia
+directo_validation_fix_20260424_wrong_direction_guard/ | guard_fix_named_evidencia | bug_resuelto
+directo_validation_fix_20260424_transport_fraction_fix/ | transport_fraction_named_fix | evidencia
+directo_validation_fix_20260424_gate_relaxed_rerun_104905/ | gate_relaxed_final_rerun | ultima_iteracion_gate
+directo_validation_fix_20260424_gate_probe_094406/ | gate_probe_named | evidencia_diagnostico
+directo_validation_fix_20260424_15/ | iteracion_numerada_final_15 | ultima_iteracion_numerada
+directo_release_fix_probe_20260421_5/ | release_fix_probe_ultima | ultima_iteracion_probes
+refine_runtime_exec_20260423_153932/ | refine_runtime_ultima_iteracion | ultima_de_8
+manual_final_20260422/ | sesion_manual_final_20260422 | evidencia_consolidada
+
+# MANIFEST CONSERVAR — historico/ raíz TFM
+evidencias_test19_ciclo_completo_20260417.md | evidencia_test19_pick_place | TFM_academico
+resumen_tests_moveit_test1_a_test16.md | resumen_tests_1_a_16 | TFM_academico
+directo_transport_postcheck_runtime_20260424.md | postcheck_transport_runtime_reciente | diagnostico
+DIRECTO_DEBUG_TRACE.log | citado_en_summary.json_auto_validation | trazabilidad
+DIRECTO_DEBUG_SNAPSHOTS/ | snapshots_debug_recientes_20260425 | evidencia_visual
+directo_debug_snapshots_20260417/ | snapshots_debug_historicos_20260417 | TFM
+directo_debug_snapshots_20260418_20260419/ | snapshots_debug_20260418-19 | TFM
+moveit_grasp_20260416/ | moveit_grasp_evidencia | TFM
+moveit_pick_audit_20260416/ | moveit_pick_audit | TFM
+moveit_grasp_test19_20260417.log | log_test19_pick_place | TFM
+camera_debug_top_20260420/ | citado_en_report/evidence/auto_validation | trazabilidad
+regla_global_mesa_cesta_20260417.log | regla_geometrica_global | docs
+directo_debug_20260415/ | diagnostico_espacial_20260415_citado_memoria | memory/project
+directo_debug_trace_20260415_20260419.log | trace_periodo_diagnostico_critico | diagnostico
+directo_debug_trace_20260418_early.log | trace_early_20260418 | diagnostico
+stack_manual_20260420_155332.log | CITADO_en_summary.json | trazabilidad_directa
+stack_manual_20260426_*.log (18 ficheros) | logs_arranque_hoy_no_mover | recientes
+test14_20260416_2305.log | log_raw_test14 | evidencia_pre_TFM
+test15_20260417_0003.log | log_raw_test15 | evidencia_pre_TFM
+test16_20260417.log | log_raw_test16 | evidencia_pre_TFM
+
+# MANIFEST CONSERVAR — agarre_ros2_ws/historico/ (workspace)
+2026-04-17_auditoria_arquitectura_completa.md | citado_base_conocimiento_actual | report/BaseDeConocimiento
+2026-04-18_base_conocimiento_tecnica.md | base_conocimiento_anterior_citada | report/BaseDeConocimiento
+2026-04-18_base_conocimiento_tecnica.html | version_HTML_base_anterior | citada_base_actual
+2026-04-18_base_conocimiento_tecnica.pdf | version_PDF_base_anterior | citada_base_actual
+step_cartesian_debug/manual_moves.jsonl | path_activo_en_panel_helpers.py:723 | codigo_activo

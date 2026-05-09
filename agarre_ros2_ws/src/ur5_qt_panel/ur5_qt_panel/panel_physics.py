@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -46,6 +47,7 @@ OBJECT_SETTLE_WINDOW_SEC = 1.0
 OBJECT_SETTLE_POLL_SEC = 0.6
 OBJECT_SETTLE_TIMEOUT_SEC = 10.0
 OBJECT_SETTLE_XY_EPS = 0.002
+OBJECT_SETTLE_GROSS_Z_JUMP_M = 0.50
 SETTLE_PATTERNS = ("box_", "cyl_", "cross_")
 
 
@@ -86,6 +88,39 @@ def _parse_sdf_gravity(world_path: str) -> Tuple[float, float, float]:
 class PanelPhysics:
     def __init__(self, panel: "ControlPanelV2") -> None:
         self._panel = panel
+
+    def _settle_position_with_stable_fallback(
+        self,
+        name: str,
+        raw_pos: Tuple[float, float, float],
+    ) -> Tuple[float, float, float]:
+        p = self._panel
+        stable_pos = get_object_positions().get(name)
+        if stable_pos is None:
+            return raw_pos
+        try:
+            sx, sy, sz = (float(stable_pos[0]), float(stable_pos[1]), float(stable_pos[2]))
+        except Exception:
+            return raw_pos
+        from .panel_pick_demo_params import get_pick_demo_params as _gpd
+        divergence_tol_m = max(0.05, _gpd().object_source_divergence_tol_m)
+        dx = float(raw_pos[0]) - sx
+        dy = float(raw_pos[1]) - sy
+        dz = float(raw_pos[2]) - sz
+        div_m = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if div_m <= divergence_tol_m or dz <= OBJECT_SETTLE_GROSS_Z_JUMP_M:
+            return raw_pos
+        p._emit_log_throttled(
+            f"PHYSICS:SETTLE_DIV:{name}",
+            "[PHYSICS][SETTLE] "
+            f"model={name} "
+            f"raw_world=({float(raw_pos[0]):.3f},{float(raw_pos[1]):.3f},{float(raw_pos[2]):.3f}) "
+            f"stable_world=({sx:.3f},{sy:.3f},{sz:.3f}) "
+            f"delta_m={div_m:.3f} z_jump={dz:.3f} "
+            "fallback=stable_object_cache",
+            min_interval=1.5,
+        )
+        return (sx, sy, sz)
 
     def _footprint_radius(self, name: str) -> Optional[float]:
         p = self._panel
@@ -139,6 +174,10 @@ class PanelPhysics:
         if p._closing:
             return
         if p._settle_worker_active:
+            now = time.monotonic()
+            if (now - getattr(p, "_last_settle_active_log", 0.0)) > 5.0:
+                p._emit_log("[PHYSICS][SETTLE] gating: settle_worker_already_active, skipping")
+                p._last_settle_active_log = now
             return
         if not p._pose_info_ok:
             now = time.monotonic()
@@ -146,7 +185,27 @@ class PanelPhysics:
                 p._emit_log("[PHYSICS][SETTLE] gating: pose_info_ready=false, settle NO iniciado")
                 p._last_settle_gating_log = now
             p._update_pose_info_status()
+            if p._gz_running and not p._closing:
+                QTimer.singleShot(
+                    int(max(0.25, POSE_INFO_POLL_SEC) * 1000),
+                    lambda: (
+                        p._gz_running
+                        and not p._closing
+                        and not p._settle_worker_active
+                        and not p._objects_settled
+                        and p.signal_start_objects_settle_watch.emit()
+                    ),
+                )
+            else:
+                p._emit_log(
+                    f"[PHYSICS][SETTLE] gating: gz_running={p._gz_running} closing={p._closing} "
+                    "→ no retry scheduled"
+                )
             return
+        p._emit_log(
+            f"[PHYSICS][SETTLE] starting worker: pose_info_ok={p._pose_info_ok} "
+            f"gz_running={p._gz_running} settled={p._objects_settled}"
+        )
         p._ensure_pose_subscription()
         p._objects_settled = False
         p._objects_seen_fall = False
@@ -234,31 +293,37 @@ class PanelPhysics:
 
     def objects_settle_worker(self) -> None:
         p = self._panel
-        settled = self.wait_for_objects_to_settle(
-            timeout=OBJECT_SETTLE_TIMEOUT_SEC,
-            log_snapshot=p._settle_log_snapshot_active,
-        )
-        if not settled:
-            self.log_settle_snapshot("fail/timeout")
-            p._emit_log("[PHYSICS][SETTLE][DIAG] Snapshot automático por fallo de settle.")
-        if not settled and ALLOW_UNSETTLED_ON_TIMEOUT:
-            p._emit_log("[PHYSICS][SETTLE] Continuando sin estabilizar (override).")
-            settled = True
-        p._objects_settled = settled
-        if settled:
-            p._emit_log("[PHYSICS][SETTLE] OK")
-            p.signal_handle_objects_settled.emit()
-            p.signal_status.emit("Objetos estabilizados", False)
-        else:
-            p._emit_log("[PHYSICS][SETTLE] Timeout: objetos no estabilizados.")
-            p.signal_status.emit("Timeout: objetos no estabilizados", True)
-        p._settle_worker_active = False
-        p.signal_refresh_controls.emit()
+        p._emit_log("[PHYSICS][SETTLE] worker start")
+        try:
+            settled = self.wait_for_objects_to_settle(
+                timeout=OBJECT_SETTLE_TIMEOUT_SEC,
+                log_snapshot=p._settle_log_snapshot_active,
+            )
+            if not settled:
+                self.log_settle_snapshot("fail/timeout")
+                p._emit_log("[PHYSICS][SETTLE][DIAG] Snapshot automático por fallo de settle.")
+            if not settled and ALLOW_UNSETTLED_ON_TIMEOUT:
+                p._emit_log("[PHYSICS][SETTLE] Continuando sin estabilizar (override).")
+                settled = True
+            p._objects_settled = settled
+            if settled:
+                p._emit_log("[PHYSICS][SETTLE] OK")
+                p.signal_handle_objects_settled.emit()
+                p.signal_status.emit("Objetos estabilizados", False)
+            else:
+                p._emit_log("[PHYSICS][SETTLE] Timeout: objetos no estabilizados.")
+                p.signal_status.emit("Timeout: objetos no estabilizados", True)
+        except Exception as exc:
+            p._emit_log(f"[PHYSICS][SETTLE] ERROR en worker: {exc}")
+            import traceback
+            p._emit_log(f"[PHYSICS][SETTLE] TRACE: {traceback.format_exc()}")
+        finally:
+            p._settle_worker_active = False
+            p.signal_refresh_controls.emit()
 
     def log_settle_snapshot(self, reason: str) -> None:
         p = self._panel
-        world_path = p.world_combo.currentText().strip()
-        world_name = p._gz_world_name or (read_world_name(world_path) if world_path else GZ_WORLD)
+        world_name = p._gz_world_name or GZ_WORLD
         targets = p._settle_targets()
         if not targets:
             return
@@ -293,11 +358,10 @@ class PanelPhysics:
     ) -> bool:
         p = self._panel
         p._log_calib_blocked("esperando caída/estabilidad de objetos")
-        world_path = p.world_combo.currentText().strip()
-        world_name = p._gz_world_name or (read_world_name(world_path) if world_path else GZ_WORLD)
+        world_name = p._gz_world_name or GZ_WORLD
         targets = p._settle_targets()
         if not targets:
-            p._log("[PHYSICS][SETTLE] No hay objetos dinámicos configurados para monitorizar.")
+            p._emit_log("[PHYSICS][SETTLE] No hay objetos dinámicos configurados para monitorizar.")
             return False
         start: Optional[float] = None
         pose_wait_start = time.time()
@@ -367,9 +431,12 @@ class PanelPhysics:
                 if name not in targets:
                     continue
                 position = pose.get("position") or {}
-                x = float(position.get("x") or 0.0)
-                y = float(position.get("y") or 0.0)
-                z = float(position.get("z") or 0.0)
+                raw_pos = (
+                    float(position.get("x") or 0.0),
+                    float(position.get("y") or 0.0),
+                    float(position.get("z") or 0.0),
+                )
+                x, y, z = self._settle_position_with_stable_fallback(name, raw_pos)
                 prev = last_positions.get(name)
                 dz = z - prev[2] if prev else 0.0
                 dx = x - prev[0] if prev else 0.0
@@ -507,9 +574,7 @@ class PanelPhysics:
 
     def check_physics_runtime(self) -> None:
         p = self._panel
-        world_path = p.world_combo.currentText().strip()
-        world_name = self.detect_world_name() or (read_world_name(world_path) if world_path else GZ_WORLD)
-        p._gz_world_name = world_name
+        world_name = p._gz_world_name or GZ_WORLD
         p._ensure_pose_subscription()
         if not p._pose_info_ok:
             return

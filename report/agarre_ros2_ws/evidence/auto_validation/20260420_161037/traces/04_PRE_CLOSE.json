@@ -1,0 +1,154 @@
+{
+  "attach_state": {
+    "attach_topic_published": false,
+    "follow_confirmed": false,
+    "logical_attached": false,
+    "logical_state": "SELECTED",
+    "owner": "NONE"
+  },
+  "dist_target_tcp": 0.008041066367574266,
+  "dist_target_tcp_after": 0.008041066367574266,
+  "dist_target_tcp_before": 0.008256578835950355,
+  "dist_tcp_obj": 0.008041066367574266,
+  "dist_tcp_obj_after": 0.008041066367574266,
+  "dist_tcp_obj_before": 0.008256578835950355,
+  "frame_usado": "base_link",
+  "gripper_state": {
+    "closed_flag": false,
+    "expected_closed": false,
+    "force_estimate": 0.0,
+    "joint_positions": {
+      "rg2_finger_joint1": 0.49999999999999833,
+      "rg2_finger_joint2": 0.5000000000000001
+    },
+    "joint_state_age_sec": 0.0,
+    "max_abs_err": 1.6653345369377348e-15,
+    "measured_target_ok": true,
+    "opening_sum": 0.9999999999999984,
+    "target_mag": 0.5
+  },
+  "ik_solution": null,
+  "joint_goal": null,
+  "note": "{\"attempt_used\": 1, \"best_xy_dist\": 0.007094331480835574, \"best_z_error\": 0.003785394189217209, \"consecutive_ok\": 3, \"gripper_state\": {\"closed_flag\": false, \"expected_closed\": false, \"force_estimate\": 0.0, \"joint_positions\": {\"rg2_finger_joint1\": 0.49999999999999833, \"rg2_finger_joint2\": 0.5000000000000001}, \"joint_state_age_sec\": 0.0, \"max_abs_err\": 1.6653345369377348e-15, \"measured_target_ok\": true, \"opening_sum\": 0.9999999999999984, \"target_mag\": 0.5}, \"min_consecutive\": 3, \"object_base\": [0.4355986544822348, -6.151402686148624e-07, 0.024999441999490668], \"ok\": true, \"pose_consistency\": {\"fk_live_delta_m\": 0.005832225373821603, \"fk_live_ok\": true, \"fk_trace_delta_m\": 0.006246208694536259, \"joint_state_age_sec\": 0.0, \"joint_state_fresh_ok\": true, \"ok_for_gate\": true, \"panel_fk_age_sec\": 0.10546959599014372, \"panel_fk_base\": [0.4421100941602784, 0.0022747449816987453, 0.022971636362527005], \"panel_fk_fresh_ok\": true, \"panel_trace_base\": [0.44244967147523057, 0.0018999955787073488, 0.029197338988562707], \"phase\": \"none\", \"phase_end_age_sec\": null, \"phase_end_delta_m\": null, \"phase_jump_ok\": true, \"phase_jump_tol_m\": 1.0, \"source_age_tol_sec\": 300.0, \"source_sync_delta_sec\": 0.019766789977438748, \"source_sync_ok\": true, \"source_sync_tol_sec\": 300.0, \"source_tol_m\": 1.0, \"sources_fresh_ok\": true, \"sources_ok\": true, \"target_base\": null, \"target_live_delta_m\": null, \"tcp_base\": [0.44242633973152734, 0.0019261057260136507, 0.028784836188707877], \"tf_stamp_age_sec\": 1.871, \"trace_age_sec\": 0.08570280601270497, \"trace_fresh_ok\": true, \"trace_live_delta_m\": 0.0004139863161321446, \"trace_live_ok\": true}, \"pose_source_ok\": true, \"realign_retries\": 2, \"reason\": \"ok\", \"tcp_base\": [0.44242633973152734, 0.0019261057260136507, 0.028784836188707877], \"tcp_obj_dist\": 0.00804106636757427, \"wait_timeout_sec\": 1.2, \"xy_dist\": 0.007094331480835574, \"xy_tol\": 0.016, \"z_error\": 0.003785394189217209, \"z_gap\": 0.003785394189217209, \"z_tol\": 0.01}",
+  "object_name": "pick_demo",
+  "object_pose_base_after": [
+    0.4355986544822348,
+    -6.151402686148624e-07,
+    0.024999441999490668
+  ],
+  "object_pose_world": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "object_pose_world_after": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "object_pose_world_before": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "offsets_aplicados": {
+    "tcp_z_offset_m": 0.0
+  },
+  "phase": "PRE_CLOSE",
+  "pose_consistency": {
+    "fk_live_delta_m": 0.005832225373821603,
+    "fk_live_ok": true,
+    "fk_trace_delta_m": 0.006246208694536259,
+    "joint_state_age_sec": 0.0,
+    "joint_state_fresh_ok": true,
+    "ok_for_gate": true,
+    "panel_fk_age_sec": 0.10817967395996675,
+    "panel_fk_base": [
+      0.4421100941602784,
+      0.0022747449816987453,
+      0.022971636362527005
+    ],
+    "panel_fk_fresh_ok": true,
+    "panel_trace_base": [
+      0.44244967147523057,
+      0.0018999955787073488,
+      0.029197338988562707
+    ],
+    "phase": "PRE_CLOSE",
+    "phase_end_age_sec": null,
+    "phase_end_delta_m": null,
+    "phase_jump_ok": true,
+    "phase_jump_tol_m": 1.0,
+    "source_age_tol_sec": 300.0,
+    "source_sync_delta_sec": 0.019766789977438748,
+    "source_sync_ok": true,
+    "source_sync_tol_sec": 300.0,
+    "source_tol_m": 1.0,
+    "sources_fresh_ok": true,
+    "sources_ok": true,
+    "target_base": [
+      0.4355986544822348,
+      -6.151402686148624e-07,
+      0.024999441999490668
+    ],
+    "target_live_delta_m": 0.00804106636757427,
+    "tcp_base": [
+      0.44242633973152734,
+      0.0019261057260136507,
+      0.028784836188707877
+    ],
+    "tf_stamp_age_sec": 1.871,
+    "trace_age_sec": 0.088412883982528,
+    "trace_fresh_ok": true,
+    "trace_live_delta_m": 0.0004139863161321446,
+    "trace_live_ok": true
+  },
+  "result": "ok",
+  "seq": 4,
+  "target_minus_tcp_after": [
+    -0.006827685249292559,
+    -0.0019267208662822656,
+    -0.003785394189217195
+  ],
+  "target_minus_tcp_before": [
+    -0.006851016992995784,
+    -0.0019006107189759637,
+    -0.004197896989072025
+  ],
+  "target_pose_base": [
+    0.4355986544822348,
+    -6.151402686148624e-07,
+    0.024999441999490668
+  ],
+  "target_pose_world": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "tcp_obj_dx_base": 0.006827685249292559,
+  "tcp_obj_dy_base": 0.0019267208662822656,
+  "tcp_obj_dz_base": 0.003785394189217209,
+  "tcp_obj_xy_dist_base": 0.007094331480835574,
+  "tcp_pose_base_after": [
+    0.44242633973152734,
+    0.0019261057260136507,
+    0.028784836188707877
+  ],
+  "tcp_pose_base_before": [
+    0.44244967147523057,
+    0.0018999955787073488,
+    0.029197338988562707
+  ],
+  "tcp_pose_world_after": [
+    -0.40757366026847264,
+    0.0019261057260136507,
+    0.8787848361887078
+  ],
+  "tcp_pose_world_before": [
+    -0.4075503285247694,
+    0.0018999955787073488,
+    0.8791973389885627
+  ],
+  "timestamp_enter": "2026-04-20T15:56:16.027+02:00",
+  "timestamp_exit": "2026-04-20T15:56:16.218+02:00"
+}

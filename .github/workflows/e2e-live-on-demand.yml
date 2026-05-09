@@ -1,0 +1,113 @@
+# Workflow E2E live (T35 × N cycles) — manual / label triggered.
+# F7 audit-v4 (2026-05-08): pipeline reproducible para validación T35.
+#
+# Triggers:
+#   - workflow_dispatch (manual desde GitHub UI con cycles param).
+#   - label `run-t35-on-demand` en un PR (CI lo arranca al añadir label).
+#
+# El job NO se ejecuta en cada push (es caro: 5+ min con Xvfb + Gazebo
+# headless). Es opt-in para validación manual / pre-merge.
+#
+# Container: ros:jazzy-desktop (incluye Gazebo + MoveIt + ros_gz).
+# Headless: Xvfb display :99 + QT_QPA_PLATFORM=offscreen.
+
+name: e2e-live-on-demand
+
+on:
+  workflow_dispatch:
+    inputs:
+      cycles:
+        description: 'Número de ciclos T35 a correr'
+        required: true
+        default: '3'
+        type: string
+      timeout_min:
+        description: 'Timeout total en minutos'
+        required: false
+        default: '20'
+        type: string
+  pull_request:
+    types: [labeled]
+
+jobs:
+  e2e-t35:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.label.name == 'run-t35-on-demand')
+    runs-on: ubuntu-22.04
+    timeout-minutes: ${{ fromJSON(inputs.timeout_min || '20') }}
+    container:
+      image: ros:jazzy-desktop
+      options: --user root --privileged
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install xvfb + jsonschema + system deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y xvfb python3-pip
+          pip3 install --break-system-packages jsonschema PyQt5 || \
+            pip3 install jsonschema PyQt5
+
+      - name: Install rosdep deps
+        shell: bash
+        working-directory: agarre_ros2_ws
+        run: |
+          set -euo pipefail
+          rosdep update --rosdistro=jazzy || true
+          rosdep install --from-paths src --ignore-src \
+            --rosdistro=jazzy -y \
+            --skip-keys "PyQt5 python3-pyqt5" \
+            || true
+
+      - name: colcon build
+        shell: bash
+        working-directory: agarre_ros2_ws
+        run: |
+          set -euo pipefail
+          source /opt/ros/jazzy/setup.bash
+          colcon build --symlink-install
+
+      - name: T35 × ${{ inputs.cycles || '3' }} ciclos (Xvfb + headless)
+        shell: bash
+        working-directory: agarre_ros2_ws
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PANEL_NO_GZ: "0"
+          PICK_E2E_LIVE: "1"
+          GZ_PARTITION: "ci_t35_runtime"
+        run: |
+          set -euo pipefail
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          # Xvfb display para Gazebo GUI (aunque headless, plugins exigen DISPLAY).
+          Xvfb :99 -screen 0 1280x720x24 &
+          XVFB_PID=$!
+          export DISPLAY=:99
+          sleep 2
+          CYCLES="${{ inputs.cycles || '3' }}"
+          # Llama al guardrail si existe; si no, smoke offline.
+          if [ -f scripts/validate_pick_3_cycles.sh ]; then
+            CYCLES="$CYCLES" timeout 1200 bash scripts/validate_pick_3_cycles.sh \
+              || (echo "T35 fallido"; exit 1)
+          else
+            echo "WARN: validate_pick_3_cycles.sh missing — skipping live run"
+          fi
+          kill "$XVFB_PID" 2>/dev/null || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-t35-logs
+          path: |
+            agarre_ros2_ws/log/
+            agarre_ros2_ws/auditoria/pick_*_pytest_*.log
+          retention-days: 14

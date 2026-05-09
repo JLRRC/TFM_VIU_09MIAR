@@ -1,0 +1,186 @@
+# Ruta/archivo: .github/workflows/colcon.yml
+# Contenido: CI rápido — pytest del subset offline (sin ROS, sin Qt).
+# Uso breve: dispara en push y PR a cualquier rama. Tiempo < 1 min.
+#
+# Notas:
+#   * Cubre los 6 dataclasses *_params.py (PickDemo, PickObject, PanelRos,
+#     PanelUi, MoveItBridge, PanelTfm) + helpers puros (pure_helpers,
+#     ros_msg_helpers, directo_geometry). ~198 tests.
+#   * NO requiere PyQt5, ROS, Gazebo ni rclpy.
+#   * Para el build colcon completo (con container ROS 2 Jazzy), ver
+#     colcon-full.yml (manual / push a main).
+
+name: colcon
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pytest + PyYAML + PyQt5 (Qt headless smoke)
+        run: pip install pytest pyyaml PyQt5
+
+      - name: pytest offline subset ur5_qt_panel
+        working-directory: agarre_ros2_ws/src/ur5_qt_panel
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q \
+            test/test_panel_pick_demo_params.py \
+            test/test_panel_pick_object_params.py \
+            test/test_panel_ros_params.py \
+            test/test_panel_ui_params.py \
+            test/test_panel_tfm_params.py \
+            test/test_pick_demo_pure_helpers.py \
+            test/test_panel_ros_msg_helpers.py \
+            test/test_directo_geometry.py \
+            test/test_pick_place_client_logic.py \
+            test/test_pick_demo_dispatcher.py \
+            test/test_orientation_helpers.py \
+            test/test_pick_demo_metrics.py \
+            test/test_pick_demo_geometry.py \
+            test/test_pick_demo_phase_checks.py \
+            test/test_pick_object_parsing.py \
+            test/test_panel_ros_handlers.py \
+            test/test_pick_object_wait_helpers.py \
+            test/test_panel_v2_helpers.py \
+            test/test_panel_v2_publisher_mixin.py \
+            test/test_panel_v2_base_pose_mixin.py \
+            test/test_panel_v2_gripper_attach_mixin.py \
+            test/test_panel_v2_motion_mixin.py \
+            test/test_panel_v2_traj_settle_mixin.py \
+            test/test_panel_v2_system_state_mixin.py \
+            test/test_panel_clock_helpers.py \
+            test/test_pick_object_diagnostics.py \
+            test/test_panel_v2_step_debug_mixin.py \
+            test/test_panel_v2_runtime_diagnostics_mixin.py \
+            test/test_panel_v2_subprocess_motion_mixin.py \
+            test/test_panel_v2_audit_log_mixin.py \
+            test/test_panel_v2_tfm_remote_mixin.py \
+            test/test_panel_v2_ready_reasons_mixin.py \
+            test/test_panel_v2_droprecover_mixin.py \
+            test/test_panel_v2_calibpick_mixin.py \
+            test/test_panel_v2_overlaysselection_mixin.py \
+            test/test_panel_v2_tfmsciencetrace_mixin.py \
+            test/test_panel_tf_geometry_client_logic.py \
+            test/test_logging_utils.py \
+            test/test_quality_metrics.py
+
+      - name: pytest T18 Qt headless smoke (panel_v2 offscreen)
+        working-directory: agarre_ros2_ws/src/ur5_qt_panel
+        env:
+          PYTHONPATH: .
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          pytest -q test/test_panel_v2_qt_smoke.py
+
+      - name: pytest offline subset ur5_tools (F4/F10/F6.5/F13 helpers puros)
+        working-directory: agarre_ros2_ws/src/ur5_tools
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q \
+            test/test_evidence_logger_offline.py \
+            test/test_gripper_geometry_contract.py \
+            test/test_attach_backend_imports.py \
+            test/test_plan_to_pose_logic.py \
+            test/test_moveit_bridge_log_formatters.py \
+            test/test_lifecycle_contract.py \
+            test/test_evidence_telemetry_f18.py \
+            test/test_tf_geometry_logic.py \
+            test/test_perf_helpers.py \
+            test/test_no_print_in_tools.py
+
+      - name: pytest no-print-in-prod gating (ur5_qt_panel)
+        working-directory: agarre_ros2_ws/src/ur5_qt_panel
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_no_print_in_panel.py
+
+      - name: pytest tfm_orchestrator (F5 FSM + F6 service clients + F8 timings + T29 GRASP_DOWN)
+        working-directory: agarre_ros2_ws/src/tfm_orchestrator
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q \
+            test/test_pick_fsm.py \
+            test/test_service_clients.py \
+            test/test_phase_timings.py \
+            test/test_lifecycle_helpers.py \
+            test/test_grasp_down_phase_in_fsm.py \
+            test/test_pick_gates.py
+
+      - name: pytest ur5_bringup (F17 launch + T4 schemas + T26 grasp evidence + T30 release integrity)
+        working-directory: agarre_ros2_ws/src/ur5_bringup
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q \
+            test/test_launch_factories.py \
+            test/test_yaml_schemas.py \
+            test/test_grasp_evidence_regression.py \
+            test/test_release_integrity.py
+
+      - name: pytest ur5_bringup audit-v4 schemas + jsonschema drift
+        working-directory: agarre_ros2_ws/src/ur5_bringup
+        env:
+          PYTHONPATH: .
+        run: |
+          pip install jsonschema
+          pytest -q \
+            test/test_yaml_jsonschema.py \
+            test/test_yaml_env_consistency.py \
+            test/test_grasp_selector_launch.py
+
+      - name: pytest ur5_description URDF/Xacro structural
+        working-directory: agarre_ros2_ws/src/ur5_description
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_urdf_xacro_parses.py
+
+      - name: pytest ur5_panel_interfaces IDL inventory
+        working-directory: agarre_ros2_ws/src/ur5_panel_interfaces
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_idl_inventory.py
+
+      - name: pytest tfm_orchestrator typed errors
+        working-directory: agarre_ros2_ws/src/tfm_orchestrator
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_errors.py
+
+      - name: pytest panel_v2 MRO + UI LOC baselines (audit-v4)
+        working-directory: agarre_ros2_ws/src/ur5_qt_panel
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q \
+            test/test_panel_v2_mro.py \
+            test/test_ui_files_loc_baseline.py \
+            test/test_internal_helpers_snapshot.py \
+            test/test_panel_helpers_snapshot.py \
+            test/test_panel_ros_snapshot.py \
+            test/test_pick_object_snapshot.py \
+            test/test_no_environ_drift.py

@@ -3,7 +3,7 @@
 # Uso breve: Se importa desde el stack ROS 2 para calculo y publicacion de informacion de agarre.
 """High-level TFM module orchestrating perception, inference, and ROS publication."""
 
-from typing import Optional, Callable
+from typing import Any, Callable, Dict, Optional
 
 from .config import DEFAULT_FRAME_ID
 from .geometry import Grasp2D
@@ -41,7 +41,7 @@ class TFMGraspModule:
     def last_error(self) -> str:
         return self._model.last_error()
 
-    def model_info(self) -> dict:
+    def model_info(self) -> Dict[str, Any]:
         """Return basic model metadata for audit/logging."""
         info = self._model.info
         return {
@@ -95,7 +95,7 @@ class TFMGraspModule:
         self._last_grasp = grasp
         return grasp
 
-    def infer_grasp_params(self) -> Optional[dict]:
+    def infer_grasp_params(self) -> Optional[Dict[str, Any]]:
         """Return grasp parameters in Cornell format (cx, cy, w, h, angle_deg)."""
         grasp = self.infer_grasp()
         if grasp is None:
@@ -108,7 +108,7 @@ class TFMGraspModule:
             "angle_deg": float(grasp.angle_rad * 180.0 / 3.141592653589793),
         }
 
-    def get_grasp_representation(self) -> Optional[dict]:
+    def get_grasp_representation(self) -> Optional[Dict[str, Any]]:
         """Return the latest grasp representation as a serializable dict."""
         if self._last_grasp is None:
             if self._logger:

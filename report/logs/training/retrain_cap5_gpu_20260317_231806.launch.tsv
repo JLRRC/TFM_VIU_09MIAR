@@ -1,0 +1,3 @@
+timestamp	stage	command	notes
+2026-03-17T23:18:06+01:00	EXP1_running	/home/laboratorio/.venv-tfm/bin/python scripts/run_experiment.py --config config/exp1_simple_rgb.yaml	Proceso activo en GPU; lanzado manualmente tras descartar Python CPU-only
+2026-03-17T23:18:06+01:00	EXP2_EXP4_queued	/home/laboratorio/TFM/recrear_experimentos_cap5_gpu.sh config/exp2_simple_rgbd.yaml config/exp3_resnet18_rgb_augment.yaml config/exp4_resnet18_rgbd.yaml	Cola secuencial esperando a que termine EXP1

@@ -1,0 +1,16 @@
+timestamp	event	detail
+2026-04-14T16:17:48+02:00	start	devices=cpu,cuda warmup=5 repeats=20
+2026-04-14T16:17:48+02:00	checkpoint	EXP1_SIMPLE_RGB seed=2 path=/home/laboratorio/TFM/agarre_inteligente/experiments/EXP1_SIMPLE_RGB/seed_2/checkpoints/best.pth
+2026-04-14T16:17:50+02:00	benchmark	EXP1_SIMPLE_RGB seed=2 device=cpu
+2026-04-14T16:17:52+02:00	benchmark	EXP1_SIMPLE_RGB seed=2 device=cuda
+2026-04-14T16:17:52+02:00	checkpoint	EXP2_SIMPLE_RGBD seed=0 path=/home/laboratorio/TFM/agarre_inteligente/experiments/EXP2_SIMPLE_RGBD/seed_0/checkpoints/best.pth
+2026-04-14T16:17:54+02:00	benchmark	EXP2_SIMPLE_RGBD seed=0 device=cpu
+2026-04-14T16:17:56+02:00	benchmark	EXP2_SIMPLE_RGBD seed=0 device=cuda
+2026-04-14T16:17:56+02:00	checkpoint	EXP3_RESNET18_RGB_AUGMENT seed=2 path=/home/laboratorio/TFM/agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/seed_2/checkpoints/best.pth
+2026-04-14T16:17:58+02:00	benchmark	EXP3_RESNET18_RGB_AUGMENT seed=2 device=cpu
+2026-04-14T16:18:00+02:00	benchmark	EXP3_RESNET18_RGB_AUGMENT seed=2 device=cuda
+2026-04-14T16:18:00+02:00	checkpoint	EXP4_RESNET18_RGBD seed=2 path=/home/laboratorio/TFM/agarre_inteligente/experiments/EXP4_RESNET18_RGBD/seed_2/checkpoints/best.pth
+2026-04-14T16:18:02+02:00	benchmark	EXP4_RESNET18_RGBD seed=2 device=cpu
+2026-04-14T16:18:04+02:00	benchmark	EXP4_RESNET18_RGBD seed=2 device=cuda
+2026-04-14T16:18:04.659146	generated	/home/laboratorio/TFM/reports/tables/cap5/Tabla_5-3_medicion_de_latencia_de_inferencia_por_experimento_y_dispositivo.csv
+2026-04-14T16:18:04.659170	rows	8

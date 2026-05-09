@@ -1,0 +1,8 @@
+# Calcular la pose de approach (con z_clearance vertical) sobre un objeto dado.
+# El frame de referencia es base_link.
+geometry_msgs/Pose object_pose_base
+float64 z_clearance_m
+---
+geometry_msgs/Pose approach_pose_base
+bool success
+string detail

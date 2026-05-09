@@ -2,12 +2,10 @@
 # Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_ros.py
 # Contenido: Codigo del panel Qt y de la logica ROS 2 asociada al UR5.
 # Uso breve: Se usa en build con colcon y en ejecucion mediante el entry point panel_v2.
-"""ROS worker implementation for the panel."""
+"""Implementacion del worker ROS para el panel."""
 from __future__ import annotations
 
 import json
-import math
-import os
 import threading
 import time
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
@@ -15,6 +13,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 from PyQt5.QtGui import QImage
 
+from .panel_env import env_float, env_str
 from .panel_config import (
     ROS_AVAILABLE,
     DEBUG_FRAME_LOG,
@@ -25,12 +24,29 @@ from .panel_config import (
     CAMERA_USE_BGR,
     CAMERA_COPY_FRAME,
 )
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
+from .panel_ros_emitters import safe_signal_emit as _safe_signal_emit
+from .panel_ros_msg_helpers import (
+    extract_grasp_rect as _extract_grasp_rect,
+    resolve_ros_message_class as _resolve_ros_message_class,
+)
+from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
+from .panel_ros_handlers import (
+    format_rx_result_log as _fmt_rx_result_log,
+    parse_moveit_result_payload as _parse_moveit_result_payload,
+)
 
 CLOCK_MAX_AGE_SEC = 8.0
 
+
+# F15 (2026-05-01): _steady_time canónico vive en panel_clock_helpers
+# para evitar duplicación con panel_v2_helpers.runtime_time.
+from .panel_clock_helpers import steady_time as _steady_time  # noqa: E402,F401
+
 try:
     import rclpy
-    from rclpy.executors import SingleThreadedExecutor
+    from rclpy.callback_groups import ReentrantCallbackGroup
+    from rclpy.executors import SingleThreadedExecutor, MultiThreadedExecutor
     from rclpy.parameter import Parameter
     from rclpy.qos import (
         qos_profile_sensor_data,
@@ -49,7 +65,9 @@ try:
     from cv_bridge import CvBridge
 except Exception:  # pragma: no cover
     rclpy = None  # type: ignore
+    ReentrantCallbackGroup = None  # type: ignore
     SingleThreadedExecutor = None  # type: ignore
+    MultiThreadedExecutor = None  # type: ignore
     Parameter = None  # type: ignore
     qos_profile_sensor_data = None  # type: ignore
     QoSProfile = None  # type: ignore
@@ -93,8 +111,13 @@ class RosWorker(QObject):
     joint_state = pyqtSignal(object)
     grasp_rect = pyqtSignal(object)
     system_state = pyqtSignal(str, str)
-    robot_test_request = pyqtSignal(str)
+    camera_connect_request = pyqtSignal(str)
+    camera_disconnect_request = pyqtSignal(str)
+    recover_request = pyqtSignal(str)
     tfm_infer_request = pyqtSignal(str)
+    tfm_execute_request = pyqtSignal(str)
+    pick_demo_request = pyqtSignal(str)
+    direct2_request = pyqtSignal(str)
     pick_object_request = pyqtSignal(str)
     object_select_request = pyqtSignal(str, str)
 
@@ -102,11 +125,13 @@ class RosWorker(QObject):
         super().__init__()
         self._lock = threading.Lock()
         self._running = False
-        self._debug_exceptions = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
+        self._debug_exceptions = _get_panel_ui_params().debug_exceptions
         self._node = None
         self._exec = None
         self._bridge = None
         self._thread: Optional[QThread] = None
+        self._service_callback_group = None
+        self._io_callback_group = None
         self._subs: Dict[str, object] = {}
         self._pose_sub = None
         self._pose_topic = ""
@@ -119,7 +144,10 @@ class RosWorker(QObject):
         self._pubs: Dict[str, object] = {}
         self._fps: Dict[str, List[float]] = {}
         self._frame_count: Dict[str, int] = {}
+        self._image_msg_count: Dict[str, int] = {}
         self._frame_buffers: Dict[str, object] = {}
+        self._latest_image_snapshot: Dict[str, Tuple[QImage, int, int, float, float]] = {}
+        self._image_decode_error_logged: Dict[str, bool] = {}
         self._last_clock_wall = 0.0
         self._last_clock_stamp_ns: Optional[int] = None
         self._last_clock_advance_wall = 0.0
@@ -133,45 +161,47 @@ class RosWorker(QObject):
         self._last_joint_wall: float = 0.0
         self._depth_cache: Dict[str, Tuple[float, float, int]] = {}
         self._latest_depth_frame: Dict[str, Tuple[object, float]] = {}
-        self._test_robot_topic = str(
-            os.environ.get("PANEL_TEST_TRIGGER_TOPIC", "/panel/test_robot") or "/panel/test_robot"
-        ).strip() or "/panel/test_robot"
-        self._test_robot_service = str(
-            os.environ.get("PANEL_TEST_TRIGGER_SERVICE", "/panel/test_robot") or "/panel/test_robot"
-        ).strip() or "/panel/test_robot"
-        self._tfm_infer_topic = str(
-            os.environ.get("PANEL_TFM_INFER_TRIGGER_TOPIC", "/panel/tfm_infer") or "/panel/tfm_infer"
-        ).strip() or "/panel/tfm_infer"
-        self._tfm_infer_service = str(
-            os.environ.get("PANEL_TFM_INFER_TRIGGER_SERVICE", "/panel/tfm_infer") or "/panel/tfm_infer"
-        ).strip() or "/panel/tfm_infer"
-        self._pick_object_topic = str(
-            os.environ.get("PANEL_PICK_OBJECT_TRIGGER_TOPIC", "/panel/pick_object") or "/panel/pick_object"
-        ).strip() or "/panel/pick_object"
-        self._pick_object_service = str(
-            os.environ.get("PANEL_PICK_OBJECT_TRIGGER_SERVICE", "/panel/pick_object") or "/panel/pick_object"
-        ).strip() or "/panel/pick_object"
-        self._select_object_topic = str(
-            os.environ.get("PANEL_SELECT_OBJECT_TOPIC", "/panel/select_object") or "/panel/select_object"
-        ).strip() or "/panel/select_object"
-        self._select_object_service = str(
-            os.environ.get("PANEL_SELECT_OBJECT_SERVICE", "/panel/select_object") or "/panel/select_object"
-        ).strip() or "/panel/select_object"
-        self._test_robot_sub = None
-        self._test_robot_srv = None
+        _ros_params = _get_panel_ros_params()
+        self._camera_connect_service = _ros_params.camera_connect_trigger_service.strip() or "/panel/camera_connect"
+        self._camera_disconnect_service = _ros_params.camera_disconnect_trigger_service.strip() or "/panel/camera_disconnect"
+        self._recover_topic = _ros_params.recover_trigger_topic.strip() or "/panel/recover"
+        self._recover_service = _ros_params.recover_trigger_service.strip() or "/panel/recover"
+        self._tfm_infer_topic = _ros_params.tfm_infer_trigger_topic.strip() or "/panel/tfm_infer"
+        self._tfm_infer_service = _ros_params.tfm_infer_trigger_service.strip() or "/panel/tfm_infer"
+        self._tfm_execute_topic = _ros_params.tfm_execute_trigger_topic.strip() or "/panel/tfm_execute"
+        self._tfm_execute_service = _ros_params.tfm_execute_trigger_service.strip() or "/panel/tfm_execute"
+        self._pick_demo_service = _ros_params.pick_demo_trigger_service.strip() or "/panel/pick_demo"
+        self._pick_object_topic = _ros_params.pick_object_trigger_topic.strip() or "/panel/pick_object"
+        self._pick_object_service = _ros_params.pick_object_trigger_service.strip() or "/panel/pick_object"
+        self._select_object_topic = _ros_params.select_object_topic.strip() or "/panel/select_object"
+        self._select_object_service = _ros_params.select_object_service.strip() or "/panel/select_object"
+        self._camera_connect_srv = None
+        self._camera_disconnect_srv = None
+        self._recover_sub = None
+        self._recover_srv = None
         self._tfm_infer_sub = None
         self._tfm_infer_srv = None
+        self._tfm_execute_sub = None
+        self._tfm_execute_srv = None
+        self._pick_demo_srv = None
+        self._direct2_srv = None
         self._pick_object_sub = None
         self._pick_object_srv = None
         self._select_object_sub = None
         self._select_object_srv = None
-        self._object_select_timeout_sec = float(
-            os.environ.get("PANEL_SELECT_OBJECT_SERVICE_TIMEOUT_SEC", "5.0") or "5.0"
-        )
+        self._pick_demo_timeout_sec = _ros_params.pick_demo_service_timeout_sec
+        self._pick_demo_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
+        self._object_select_timeout_sec = _ros_params.select_object_service_timeout_sec
         self._object_select_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
+        self._tfm_infer_timeout_sec = _ros_params.tfm_infer_service_timeout_sec
+        self._tfm_execute_timeout_sec = _ros_params.tfm_execute_service_timeout_sec
+        self._tfm_infer_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
+        self._tfm_execute_pending: Dict[str, Tuple[threading.Event, Dict[str, object]]] = {}
         self._cleanup_done = False
         self._system_diag_reason: str = ""
         self._system_state_last: str = ""
+        self._system_state_reason: str = ""
+        self._system_state_wall: float = 0.0
         self._moveit_result_sub = None
         self._moveit_result_topic: str = ""
         self._moveit_result_last: str = ""
@@ -208,11 +238,8 @@ class RosWorker(QObject):
                 )
             except Exception:
                 self._moveit_bridge_hb_qos = None
-        try:
-            max_fps = float(os.environ.get("PANEL_MAX_FPS", "60"))
-            if max_fps <= 0:
-                max_fps = 60.0
-        except ValueError:
+        max_fps = env_float("PANEL_MAX_FPS", 60.0)
+        if max_fps <= 0:
             max_fps = 60.0
         self._min_emit_interval = 1.0 / max_fps
         self._force_realtime = force_realtime
@@ -263,6 +290,16 @@ class RosWorker(QObject):
             return []
         try:
             return [name for name, _ in node.get_topic_names_and_types()]
+        except Exception:
+            return []
+
+    def list_action_names(self) -> List[str]:
+        with self._lock:
+            node = self._node
+        if node is None:
+            return []
+        try:
+            return [name for name, _ in node.get_action_names_and_types()]
         except Exception:
             return []
 
@@ -370,6 +407,23 @@ class RosWorker(QObject):
         except Exception:
             return []
 
+    def image_frame_snapshot(
+        self, topic: str
+    ) -> Optional[Tuple[QImage, int, int, float, float, int]]:
+        topic = (topic or "").strip()
+        if not topic:
+            return None
+        with self._lock:
+            item = self._latest_image_snapshot.get(topic)
+            count = int(self._frame_count.get(topic, 0))
+        if not item:
+            return None
+        qimg, w, h, fps, wall = item
+        try:
+            return (qimg.copy(), int(w), int(h), float(fps), float(wall), count)
+        except Exception:
+            return None
+
     def service_names_and_types(self) -> List[Tuple[str, List[str]]]:
         with self._lock:
             node = self._node
@@ -388,6 +442,14 @@ class RosWorker(QObject):
             if svc_name == target:
                 return True
         return False
+
+    def system_state_snapshot(self) -> Tuple[str, str, float]:
+        with self._lock:
+            return (
+                self._system_state_last,
+                self._system_state_reason,
+                float(self._system_state_wall),
+            )
 
     def call_trigger_detail(
         self, service_name: str, timeout_sec: float = 3.0
@@ -541,9 +603,9 @@ class RosWorker(QObject):
                     self._moveit_result_seq,
                 )
             self._moveit_result_event.clear()
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            remaining = max(0.01, deadline - time.time())
+        deadline = _steady_time() + timeout
+        while _steady_time() < deadline:
+            remaining = max(0.01, deadline - _steady_time())
             self._moveit_result_event.wait(timeout=remaining)
             with self._lock:
                 if self._moveit_result_seq > since_seq and self._moveit_result_wall >= (since_wall - 1e-3):
@@ -563,13 +625,13 @@ class RosWorker(QObject):
             )
 
     def drain_moveit_results(self, duration_sec: float = 0.2) -> int:
-        """Consume stale moveit result updates for a short window."""
+        """Consume durante una ventana corta los resultados viejos de MoveIt."""
         drained = 0
         timeout = max(0.0, float(duration_sec))
-        deadline = time.time() + timeout
+        deadline = _steady_time() + timeout
         _raw, cursor_wall, cursor_seq = self.moveit_result_snapshot()
-        while time.time() < deadline:
-            wait_chunk = min(0.05, max(0.01, deadline - time.time()))
+        while _steady_time() < deadline:
+            wait_chunk = min(0.05, max(0.01, deadline - _steady_time()))
             ok, _raw, wall, seq = self.wait_for_moveit_result(
                 since_wall=cursor_wall,
                 since_seq=cursor_seq,
@@ -684,7 +746,7 @@ class RosWorker(QObject):
             last = float(self._moveit_bridge_hb_wall)
         if last <= 0.0:
             return float("inf")
-        return max(0.0, time.time() - last)
+        return max(0.0, _steady_time() - last)
 
     def has_recent_moveit_bridge_heartbeat(self, max_age_sec: float = 1.0) -> bool:
         age = self.moveit_bridge_heartbeat_age()
@@ -695,90 +757,43 @@ class RosWorker(QObject):
             data = getattr(msg, "data", "") or ""
         except Exception:
             data = ""
+        req_id, req_uuid, success, parse_status = _parse_moveit_result_payload(data)
         with self._lock:
             self._moveit_result_last = str(data)
-            self._moveit_result_wall = time.time()
+            self._moveit_result_wall = _steady_time()
             self._moveit_result_seq += 1
             self._moveit_result_event.set()
+            seq = int(self._moveit_result_seq)
+            topic = str(self._moveit_result_topic or "/desired_grasp/result")
+            wall_ts = float(self._moveit_result_wall)
+        self.log.emit(
+            _fmt_rx_result_log(
+                ts_wall=wall_ts,
+                req_id=req_id,
+                req_uuid=req_uuid,
+                success_str=success,
+                parse_status=parse_status,
+                topic=topic,
+                seq=seq,
+            )
+        )
 
     def _on_moveit_bridge_heartbeat(self, _msg: "Bool") -> None:
         with self._lock:
-            self._moveit_bridge_hb_wall = time.time()
+            self._moveit_bridge_hb_wall = _steady_time()
             self._moveit_bridge_hb_event.set()
 
     def _resolve_ros_message_class(self, type_name: str):
-        normalized = (type_name or "").strip()
-        if not normalized or ros_get_message is None:
-            return None
-        candidates = [normalized]
-        if "/msg/" in normalized:
-            candidates.append(normalized.replace("/msg/", ".msg."))
-        elif ".msg." in normalized:
-            candidates.append(normalized.replace(".msg.", "/msg/"))
-        for candidate in candidates:
-            try:
-                return ros_get_message(candidate)
-            except Exception:
-                continue
-        return None
+        return _resolve_ros_message_class(type_name)
 
     def _extract_grasp_rect(self, msg: object) -> Optional[Dict[str, float]]:
-        # vision_msgs/BoundingBox2D contract.
-        try:
-            center = getattr(msg, "center", None)
-            position = getattr(center, "position", None) if center is not None else None
-            if position is not None and hasattr(msg, "size_x") and hasattr(msg, "size_y"):
-                cx = float(getattr(position, "x"))
-                cy = float(getattr(position, "y"))
-                width = float(getattr(msg, "size_x"))
-                height = float(getattr(msg, "size_y"))
-                theta_rad = float(getattr(center, "theta", 0.0))
-                return {
-                    "cx": cx,
-                    "cy": cy,
-                    "w": width,
-                    "h": height,
-                    "theta_rad": theta_rad,
-                    "angle_deg": math.degrees(theta_rad),
-                }
-        except Exception:
-            pass
-        # Generic custom message contract: (c_x, c_y, w, h, theta).
-        try:
-            if all(hasattr(msg, attr) for attr in ("c_x", "c_y", "w", "h", "theta")):
-                theta_rad = float(getattr(msg, "theta", 0.0))
-                return {
-                    "cx": float(getattr(msg, "c_x")),
-                    "cy": float(getattr(msg, "c_y")),
-                    "w": float(getattr(msg, "w")),
-                    "h": float(getattr(msg, "h")),
-                    "theta_rad": theta_rad,
-                    "angle_deg": math.degrees(theta_rad),
-                }
-        except Exception:
-            pass
-        # Fallback: std_msgs/Float32MultiArray style [cx, cy, w, h, theta].
-        try:
-            data = list(getattr(msg, "data", []))
-            if len(data) >= 5:
-                theta_rad = float(data[4])
-                return {
-                    "cx": float(data[0]),
-                    "cy": float(data[1]),
-                    "w": float(data[2]),
-                    "h": float(data[3]),
-                    "theta_rad": theta_rad,
-                    "angle_deg": math.degrees(theta_rad),
-                }
-        except Exception:
-            pass
-        return None
+        return _extract_grasp_rect(msg)
 
     def _on_grasp_rect(self, msg: object) -> None:
         payload = self._extract_grasp_rect(msg)
         if not payload:
             return
-        now = time.time()
+        now = _steady_time()
         payload["ts_wall"] = now
         with self._lock:
             payload["topic"] = self._grasp_rect_topic
@@ -790,38 +805,62 @@ class RosWorker(QObject):
         except RuntimeError:
             pass
 
-    def _emit_robot_test_request(self, source: str) -> None:
-        try:
-            self.robot_test_request.emit(source)
-        except RuntimeError:
-            pass
+    def _emit_camera_disconnect_request(self, source: str) -> None:
+        _safe_signal_emit(self.camera_disconnect_request, source)
+
+    def _emit_camera_connect_request(self, source: str) -> None:
+        _safe_signal_emit(self.camera_connect_request, source)
+
+    def _emit_recover_request(self, source: str) -> None:
+        _safe_signal_emit(self.recover_request, source)
 
     def _emit_tfm_infer_request(self, source: str) -> None:
-        try:
-            self.tfm_infer_request.emit(source)
-        except RuntimeError:
-            pass
+        _safe_signal_emit(self.tfm_infer_request, source)
+
+    def _emit_tfm_execute_request(self, source: str) -> None:
+        _safe_signal_emit(self.tfm_execute_request, source)
 
     def _emit_pick_object_request(self, source: str) -> None:
+        _safe_signal_emit(self.pick_object_request, source)
+
+    def _emit_pick_demo_request(self, source: str) -> None:
+        _safe_signal_emit(self.pick_demo_request, source)
+
+    def _emit_direct2_request(self, source: str) -> None:
         try:
-            self.pick_object_request.emit(source)
+            self.direct2_request.emit(source)
         except RuntimeError:
             pass
 
     def _emit_object_select_request(self, name: str, source: str) -> None:
-        try:
-            self.object_select_request.emit(name, source)
-        except RuntimeError:
-            pass
+        _safe_signal_emit(self.object_select_request, name, source)
 
-    def _on_test_robot_topic(self, _msg: "Empty") -> None:
-        self._emit_robot_test_request(f"topic:{self._test_robot_topic}")
-
-    def _on_test_robot_service(self, _request: object, response: object) -> object:
-        self._emit_robot_test_request(f"service:{self._test_robot_service}")
+    def _on_camera_disconnect_service(self, _request: object, response: object) -> object:
+        self._emit_camera_disconnect_request(f"service:{self._camera_disconnect_service}")
         try:
             response.success = True
-            response.message = "test_robot_triggered"
+            response.message = "camera_disconnect_triggered"
+        except Exception:
+            pass
+        return response
+
+    def _on_camera_connect_service(self, _request: object, response: object) -> object:
+        self._emit_camera_connect_request(f"service:{self._camera_connect_service}")
+        try:
+            response.success = True
+            response.message = "camera_connect_triggered"
+        except Exception:
+            pass
+        return response
+
+    def _on_recover_topic(self, _msg: "Empty") -> None:
+        self._emit_recover_request(f"topic:{self._recover_topic}")
+
+    def _on_recover_service(self, _request: object, response: object) -> object:
+        self._emit_recover_request(f"service:{self._recover_service}")
+        try:
+            response.success = True
+            response.message = "recover_triggered"
         except Exception:
             pass
         return response
@@ -830,10 +869,68 @@ class RosWorker(QObject):
         self._emit_tfm_infer_request(f"topic:{self._tfm_infer_topic}")
 
     def _on_tfm_infer_service(self, _request: object, response: object) -> object:
-        self._emit_tfm_infer_request(f"service:{self._tfm_infer_service}")
+        request_id = f"tfminfer-{time.monotonic_ns()}"
+        done = threading.Event()
+        result: Dict[str, object] = {
+            "success": False,
+            "message": "timeout esperando confirmación del panel",
+        }
+        with self._lock:
+            self._tfm_infer_pending[request_id] = (done, result)
+        self._safe_log(
+            f"[ROS][TFM_INFER][SERVICE] request_id={request_id} waiting_ack=true"
+        )
+        self._emit_tfm_infer_request(f"service:{self._tfm_infer_service}#{request_id}")
+        ack_ok = done.wait(timeout=max(0.1, self._tfm_infer_timeout_sec))
+        with self._lock:
+            _pending = self._tfm_infer_pending.pop(request_id, None)
+        if _pending is not None:
+            _done, payload = _pending
+            result = payload
+        self._safe_log(
+            "[ROS][TFM_INFER][SERVICE] "
+            f"request_id={request_id} ack={str(bool(ack_ok)).lower()} "
+            f"success={str(bool(result.get('success', False))).lower()} "
+            f"message={str(result.get('message', '') or 'n/a')}"
+        )
         try:
-            response.success = True
-            response.message = "tfm_infer_triggered"
+            response.success = bool(result.get("success", False))
+            response.message = str(result.get("message", "") or "")
+        except Exception:
+            pass
+        return response
+
+    def _on_tfm_execute_topic(self, _msg: "Empty") -> None:
+        self._emit_tfm_execute_request(f"topic:{self._tfm_execute_topic}")
+
+    def _on_tfm_execute_service(self, _request: object, response: object) -> object:
+        request_id = f"tfmexec-{time.monotonic_ns()}"
+        done = threading.Event()
+        result: Dict[str, object] = {
+            "success": False,
+            "message": "timeout esperando confirmación del panel",
+        }
+        with self._lock:
+            self._tfm_execute_pending[request_id] = (done, result)
+        self._safe_log(
+            f"[ROS][TFM_EXECUTE][SERVICE] request_id={request_id} waiting_ack=true"
+        )
+        self._emit_tfm_execute_request(f"service:{self._tfm_execute_service}#{request_id}")
+        ack_ok = done.wait(timeout=max(0.1, self._tfm_execute_timeout_sec))
+        with self._lock:
+            _pending = self._tfm_execute_pending.pop(request_id, None)
+        if _pending is not None:
+            _done, payload = _pending
+            result = payload
+        self._safe_log(
+            "[ROS][TFM_EXECUTE][SERVICE] "
+            f"request_id={request_id} ack={str(bool(ack_ok)).lower()} "
+            f"success={str(bool(result.get('success', False))).lower()} "
+            f"message={str(result.get('message', '') or 'n/a')}"
+        )
+        try:
+            response.success = bool(result.get("success", False))
+            response.message = str(result.get("message", "") or "")
         except Exception:
             pass
         return response
@@ -846,6 +943,70 @@ class RosWorker(QObject):
         try:
             response.success = True
             response.message = "pick_object_triggered"
+        except Exception:
+            pass
+        return response
+
+    def _on_pick_demo_service(self, _request: object, response: object) -> object:
+        request_id = f"pickdemo-{time.monotonic_ns()}"
+        done = threading.Event()
+        result: Dict[str, object] = {
+            "success": False,
+            "message": "timeout esperando confirmación del panel",
+        }
+        with self._lock:
+            self._pick_demo_pending[request_id] = (done, result)
+        self._safe_log(
+            f"[ROS][PICK_DEMO][SERVICE] request_id={request_id} waiting_ack=true"
+        )
+        self._emit_pick_demo_request(f"service:{self._pick_demo_service}#{request_id}")
+        ack_ok = done.wait(timeout=max(0.1, self._pick_demo_timeout_sec))
+        with self._lock:
+            _pending = self._pick_demo_pending.pop(request_id, None)
+        if _pending is not None:
+            _done, payload = _pending
+            result = payload
+        self._safe_log(
+            "[ROS][PICK_DEMO][SERVICE] "
+            f"request_id={request_id} ack={str(bool(ack_ok)).lower()} "
+            f"success={str(bool(result.get('success', False))).lower()} "
+            f"message={str(result.get('message', '') or 'n/a')}"
+        )
+        try:
+            response.success = bool(result.get("success", False))
+            response.message = str(result.get("message", "") or "")
+        except Exception:
+            pass
+        return response
+
+    def _on_direct2_service(self, _request: object, response: object) -> object:
+        request_id = f"direct2-{time.monotonic_ns()}"
+        done = threading.Event()
+        result: Dict[str, object] = {
+            "success": False,
+            "message": "timeout esperando confirmacion del panel",
+        }
+        with self._lock:
+            self._direct2_pending[request_id] = (done, result)
+        self._safe_log(
+            f"[ROS][DIRECT2][SERVICE] request_id={request_id} waiting_ack=true"
+        )
+        self._emit_direct2_request(f"service:{self._direct2_service}#{request_id}")
+        ack_ok = done.wait(timeout=max(0.1, self._direct2_timeout_sec))
+        with self._lock:
+            _pending = self._direct2_pending.pop(request_id, None)
+        if _pending is not None:
+            _done, payload = _pending
+            result = payload
+        self._safe_log(
+            "[ROS][DIRECT2][SERVICE] "
+            f"request_id={request_id} ack={str(bool(ack_ok)).lower()} "
+            f"success={str(bool(result.get('success', False))).lower()} "
+            f"message={str(result.get('message', '') or 'n/a')}"
+        )
+        try:
+            response.success = bool(result.get("success", False))
+            response.message = str(result.get("message", "") or "")
         except Exception:
             pass
         return response
@@ -874,7 +1035,12 @@ class RosWorker(QObject):
             f"[ROS][SELECT_OBJECT][SERVICE] request_id={request_id} name={name or 'clear'} waiting_ack=true"
         )
         self._emit_object_select_request(name, f"service:{self._select_object_service}#{request_id}")
-        ack_ok = done.wait(timeout=max(0.1, self._object_select_timeout_sec))
+        wait_timeout = max(0.1, self._object_select_timeout_sec)
+        remote_wait_timeout = max(
+            2.0,
+            _get_panel_ros_params().remote_select_on_table_wait_sec + 5.0,
+        )
+        ack_ok = done.wait(timeout=max(wait_timeout, remote_wait_timeout))
         with self._lock:
             _pending = self._object_select_pending.pop(request_id, None)
         if _pending is not None:
@@ -893,6 +1059,44 @@ class RosWorker(QObject):
             pass
         return response
 
+    def complete_pick_demo_request(self, request_id: str, success: bool, message: str) -> None:
+        req_id = str(request_id or "").strip()
+        if not req_id:
+            return
+        with self._lock:
+            pending = self._pick_demo_pending.get(req_id)
+        if pending is None:
+            self._safe_log(
+                f"[ROS][PICK_DEMO][ACK] request_id={req_id} pending=false success={str(bool(success)).lower()} message={message or 'n/a'}"
+            )
+            return
+        done, payload = pending
+        payload["success"] = bool(success)
+        payload["message"] = str(message or "")
+        self._safe_log(
+            f"[ROS][PICK_DEMO][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
+        )
+        done.set()
+
+    def complete_direct2_request(self, request_id: str, success: bool, message: str) -> None:
+        req_id = str(request_id or "").strip()
+        if not req_id:
+            return
+        with self._lock:
+            pending = self._direct2_pending.get(req_id)
+        if pending is None:
+            self._safe_log(
+                f"[ROS][DIRECT2][ACK] request_id={req_id} pending=false success={str(bool(success)).lower()} message={message or 'n/a'}"
+            )
+            return
+        done, payload = pending
+        payload["success"] = bool(success)
+        payload["message"] = str(message or "")
+        self._safe_log(
+            f"[ROS][DIRECT2][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
+        )
+        done.set()
+
     def complete_object_select_request(self, request_id: str, success: bool, message: str) -> None:
         req_id = str(request_id or "").strip()
         if not req_id:
@@ -909,6 +1113,44 @@ class RosWorker(QObject):
         payload["message"] = str(message or "")
         self._safe_log(
             f"[ROS][SELECT_OBJECT][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
+        )
+        done.set()
+
+    def complete_tfm_infer_request(self, request_id: str, success: bool, message: str) -> None:
+        req_id = str(request_id or "").strip()
+        if not req_id:
+            return
+        with self._lock:
+            pending = self._tfm_infer_pending.get(req_id)
+        if pending is None:
+            self._safe_log(
+                f"[ROS][TFM_INFER][ACK] request_id={req_id} pending=false success={str(bool(success)).lower()} message={message or 'n/a'}"
+            )
+            return
+        done, payload = pending
+        payload["success"] = bool(success)
+        payload["message"] = str(message or "")
+        self._safe_log(
+            f"[ROS][TFM_INFER][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
+        )
+        done.set()
+
+    def complete_tfm_execute_request(self, request_id: str, success: bool, message: str) -> None:
+        req_id = str(request_id or "").strip()
+        if not req_id:
+            return
+        with self._lock:
+            pending = self._tfm_execute_pending.get(req_id)
+        if pending is None:
+            self._safe_log(
+                f"[ROS][TFM_EXECUTE][ACK] request_id={req_id} pending=false success={str(bool(success)).lower()} message={message or 'n/a'}"
+            )
+            return
+        done, payload = pending
+        payload["success"] = bool(success)
+        payload["message"] = str(message or "")
+        self._safe_log(
+            f"[ROS][TFM_EXECUTE][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
         )
         done.set()
 
@@ -955,7 +1197,7 @@ class RosWorker(QObject):
                         f"[PHYSICS][POSE_INFO][DIAG] TFMessage sin nombres: frame_id={frame_id or 'n/a'} child_frame_id={child_id or 'n/a'}"
                     )
                     self._pose_info_empty_logged = True
-            self._pose_last_wall = time.time()
+            self._pose_last_wall = _steady_time()
             self._pose_msg_count += 1
         self._pose_event.set()
 
@@ -968,7 +1210,7 @@ class RosWorker(QObject):
         with self._lock:
             last = float(self._pose_last_wall)
             count = int(self._pose_msg_count)
-        age = time.time() - last if last else float("inf")
+        age = _steady_time() - last if last else float("inf")
         return count, age
 
     def pose_info_details(self) -> Tuple[int, float, int, str]:
@@ -978,7 +1220,7 @@ class RosWorker(QObject):
             count = int(self._pose_msg_count)
             entities = int(self._pose_last_entities)
             topic = str(self._pose_topic)
-        age = time.time() - last if last else float("inf")
+        age = _steady_time() - last if last else float("inf")
         return count, age, entities, topic
 
     def wait_for_pose_info(self, timeout_sec: float) -> bool:
@@ -1033,7 +1275,7 @@ class RosWorker(QObject):
             return False, f"position_mismatch:names={len(joint_names)},pos={len(positions)}"
 
         # Validar que el mensaje no sea muy antiguo
-        age = time.time() - wall
+        age = _steady_time() - wall
         if age > timeout_sec:
             return False, f"stale_joint_state:age={age:.2f}s"
 
@@ -1068,9 +1310,20 @@ class RosWorker(QObject):
                     except Exception:
                         msg_cls = Image
                         callback = self._on_image
-                sub = self._node.create_subscription(msg_cls, topic, lambda msg, t=topic: callback(msg, t), qos_profile_sensor_data)
+                kwargs = {}
+                if self._io_callback_group is not None:
+                    kwargs["callback_group"] = self._io_callback_group
+                sub = self._node.create_subscription(
+                    msg_cls,
+                    topic,
+                    lambda msg, t=topic: callback(msg, t),
+                    qos_profile_sensor_data,
+                    **kwargs,
+                )
                 self._subs[topic] = sub
-                self._fps[topic] = [0.0, time.time(), 0.0]
+                self._fps[topic] = [0.0, _steady_time(), 0.0]
+                self._image_msg_count[topic] = 0
+                self._image_decode_error_logged[topic] = False
                 qos_summary = self._format_qos(getattr(sub, "qos_profile", None))
                 self._safe_log(f"[ROS] Suscrito a {topic} ({qos_summary})")
                 return True
@@ -1110,13 +1363,17 @@ class RosWorker(QObject):
                 self._joint_sub = None
             try:
                 self._joint_topic = topic
+                # joint_state_broadcaster publica con RELIABLE (rclcpp::QoS(1)).
+                # BEST_EFFORT subscriber puede ser incompatible en algunos RMW.
+                _js_qos = 10  # RELIABLE VOLATILE KEEP_LAST(10)
                 self._joint_sub = self._node.create_subscription(
                     JointState,
                     topic,
                     lambda msg, t=topic: self._on_joint_state(msg, t),
-                    qos_profile_sensor_data,
+                    _js_qos,
+                    callback_group=self._io_callback_group,
                 )
-                self._safe_log(f"[ROS] Suscrito a {topic} (joint_states)")
+                self._safe_log(f"[ROS] Suscrito a {topic} (joint_states, qos=RELIABLE)")
             except Exception as exc:
                 self._safe_log(f"[ROS] ERROR suscribiendo joint_states: {exc}")
 
@@ -1134,7 +1391,7 @@ class RosWorker(QObject):
                 self._safe_log("[ROS] Unsubscribe joint_states")
 
     def _format_qos(self, profile: Optional["QoSProfile"]) -> str:
-        """Describe a QoS profile for logging."""
+        """Describe un perfil QoS para logging."""
         if profile is None:
             return "QoS=default"
         reliability = self._reliability_name(getattr(profile, "reliability", None))
@@ -1178,7 +1435,7 @@ class RosWorker(QObject):
         if self._force_realtime:
             use_sim_time = False
         else:
-            use_sim_time = os.environ.get("USE_SIM_TIME", "1") == "1"
+            use_sim_time = env_str("USE_SIM_TIME", "1") == "1"
         try:
             if not rclpy.ok():
                 rclpy.init(args=None)
@@ -1200,117 +1457,68 @@ class RosWorker(QObject):
             node_kwargs = {}
             if overrides:
                 node_kwargs["parameter_overrides"] = overrides
-            self._node = rclpy.create_node("panel_superpro", **node_kwargs)
+                node_kwargs["automatically_declare_parameters_from_overrides"] = True
+            try:
+                self._node = rclpy.create_node("panel_superpro", **node_kwargs)
+            except TypeError:
+                node_kwargs.pop("automatically_declare_parameters_from_overrides", None)
+                self._node = rclpy.create_node("panel_superpro", **node_kwargs)
+            try:
+                effective_sim_time = bool(use_sim_time)
+                if not self._node.has_parameter("use_sim_time"):
+                    self._node.declare_parameter("use_sim_time", effective_sim_time)
+                current_sim_time = bool(self._node.get_parameter("use_sim_time").value)
+                if current_sim_time != effective_sim_time and Parameter is not None:
+                    self._node.set_parameters([Parameter("use_sim_time", value=effective_sim_time)])
+                    current_sim_time = bool(self._node.get_parameter("use_sim_time").value)
+                self.log.emit(
+                    "[ROS][SIM_TIME] "
+                    f"requested={str(bool(use_sim_time)).lower()} "
+                    f"effective={str(bool(current_sim_time)).lower()} "
+                    f"force_realtime={str(bool(self._force_realtime)).lower()}"
+                )
+            except Exception as exc:
+                self.log.emit(f"[ROS][SIM_TIME] WARN no se pudo confirmar use_sim_time: {exc}")
             self._bridge = CvBridge()
-            self._exec = SingleThreadedExecutor()
+            if ReentrantCallbackGroup is not None:
+                self._service_callback_group = ReentrantCallbackGroup()
+                self._io_callback_group = ReentrantCallbackGroup()
+            executor_threads = max(1, _get_panel_ros_params().ros_executor_threads)
+            if MultiThreadedExecutor is not None and executor_threads > 1:
+                self._exec = MultiThreadedExecutor(num_threads=executor_threads)
+                self.log.emit(
+                    f"[ROS] Executor multi-hilo activo (threads={executor_threads})"
+                )
+            else:
+                self._exec = SingleThreadedExecutor()
+                self.log.emit("[ROS] Executor monohilo activo")
             self._exec.add_node(self._node)
-            self._node.create_subscription(Clock, "/clock", self._update_clock, qos_profile_sensor_data)
+            self._node.create_subscription(
+                Clock,
+                "/clock",
+                self._update_clock,
+                qos_profile_sensor_data,
+                callback_group=self._io_callback_group,
+            )
             if String is not None:
                 try:
                     self._subs["/system_state"] = self._node.create_subscription(
-                        String, "/system_state", self._on_system_state, 10
+                        String,
+                        "/system_state",
+                        self._on_system_state,
+                        10,
+                        callback_group=self._io_callback_group,
                     )
                     self._subs["/system_diag"] = self._node.create_subscription(
-                        String, "/system_diag", self._on_system_diag, 10
+                        String,
+                        "/system_diag",
+                        self._on_system_diag,
+                        10,
+                        callback_group=self._io_callback_group,
                     )
                 except Exception:
                     pass
-            if Empty is not None:
-                try:
-                    self._test_robot_sub = self._node.create_subscription(
-                        Empty,
-                        self._test_robot_topic,
-                        self._on_test_robot_topic,
-                        10,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger topic listo: {self._test_robot_topic} (std_msgs/Empty)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create test_robot topic", exc)
-                try:
-                    self._tfm_infer_sub = self._node.create_subscription(
-                        Empty,
-                        self._tfm_infer_topic,
-                        self._on_tfm_infer_topic,
-                        10,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger topic listo: {self._tfm_infer_topic} (std_msgs/Empty)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create tfm_infer topic", exc)
-                try:
-                    self._pick_object_sub = self._node.create_subscription(
-                        Empty,
-                        self._pick_object_topic,
-                        self._on_pick_object_topic,
-                        10,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger topic listo: {self._pick_object_topic} (std_msgs/Empty)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create pick_object topic", exc)
-            if String is not None:
-                try:
-                    self._select_object_sub = self._node.create_subscription(
-                        String,
-                        self._select_object_topic,
-                        self._on_select_object_topic,
-                        10,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger topic listo: {self._select_object_topic} (std_msgs/String)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create select_object topic", exc)
-            if Trigger is not None:
-                try:
-                    self._test_robot_srv = self._node.create_service(
-                        Trigger,
-                        self._test_robot_service,
-                        self._on_test_robot_service,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._test_robot_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create test_robot service", exc)
-                try:
-                    self._tfm_infer_srv = self._node.create_service(
-                        Trigger,
-                        self._tfm_infer_service,
-                        self._on_tfm_infer_service,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._tfm_infer_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create tfm_infer service", exc)
-                try:
-                    self._pick_object_srv = self._node.create_service(
-                        Trigger,
-                        self._pick_object_service,
-                        self._on_pick_object_service,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._pick_object_service} (std_srvs/Trigger)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create pick_object service", exc)
-            if SelectObject is not None:
-                try:
-                    self._select_object_srv = self._node.create_service(
-                        SelectObject,
-                        self._select_object_service,
-                        self._on_select_object_service,
-                    )
-                    self.log.emit(
-                        f"[ROS] Trigger service listo: {self._select_object_service} (ur5_panel_interfaces/SelectObject)"
-                    )
-                except Exception as exc:
-                    self._log_exception("create select_object service", exc)
+            self._thread_main_create_optional_subs_and_services()
             try:
                 self.log.emit("[ROS] OK: nodo listo.")
             except RuntimeError:
@@ -1343,6 +1551,175 @@ class RosWorker(QObject):
                 time.sleep(0.1)
         # Limpieza final (evita logs si ya estamos apagando)
         self._cleanup_ros()
+
+
+    def _thread_main_create_optional_subs_and_services(self) -> None:
+        """F3-step7: bloque de creación de subs/services condicional extraído.
+
+        Crea subscripciones y services que dependen de imports opcionales
+        (Empty, String, Trigger, SelectObject). Cada bloque protegido por
+        try/except interno. ~160 LOC fuera de _thread_main.
+        """
+        if Empty is not None:
+            try:
+                self._tfm_infer_sub = self._node.create_subscription(
+                    Empty,
+                    self._tfm_infer_topic,
+                    self._on_tfm_infer_topic,
+                    10,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger topic listo: {self._tfm_infer_topic} (std_msgs/Empty)"
+                )
+            except Exception as exc:
+                self._log_exception("create tfm_infer topic", exc)
+            try:
+                self._tfm_execute_sub = self._node.create_subscription(
+                    Empty,
+                    self._tfm_execute_topic,
+                    self._on_tfm_execute_topic,
+                    10,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger topic listo: {self._tfm_execute_topic} (std_msgs/Empty)"
+                )
+            except Exception as exc:
+                self._log_exception("create tfm_execute topic", exc)
+            try:
+                self._pick_object_sub = self._node.create_subscription(
+                    Empty,
+                    self._pick_object_topic,
+                    self._on_pick_object_topic,
+                    10,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger topic listo: {self._pick_object_topic} (std_msgs/Empty)"
+                )
+            except Exception as exc:
+                self._log_exception("create pick_object topic", exc)
+            try:
+                self._recover_sub = self._node.create_subscription(
+                    Empty,
+                    self._recover_topic,
+                    self._on_recover_topic,
+                    10,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger topic listo: {self._recover_topic} (std_msgs/Empty)"
+                )
+            except Exception as exc:
+                self._log_exception("create recover topic", exc)
+        if String is not None:
+            try:
+                self._select_object_sub = self._node.create_subscription(
+                    String,
+                    self._select_object_topic,
+                    self._on_select_object_topic,
+                    10,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger topic listo: {self._select_object_topic} (std_msgs/String)"
+                )
+            except Exception as exc:
+                self._log_exception("create select_object topic", exc)
+        if Trigger is not None:
+            try:
+                self._camera_connect_srv = self._node.create_service(
+                    Trigger,
+                    self._camera_connect_service,
+                    self._on_camera_connect_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._camera_connect_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create camera_connect service", exc)
+            try:
+                self._camera_disconnect_srv = self._node.create_service(
+                    Trigger,
+                    self._camera_disconnect_service,
+                    self._on_camera_disconnect_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._camera_disconnect_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create camera_disconnect service", exc)
+            try:
+                self._tfm_infer_srv = self._node.create_service(
+                    Trigger,
+                    self._tfm_infer_service,
+                    self._on_tfm_infer_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._tfm_infer_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create tfm_infer service", exc)
+            try:
+                self._tfm_execute_srv = self._node.create_service(
+                    Trigger,
+                    self._tfm_execute_service,
+                    self._on_tfm_execute_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._tfm_execute_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create tfm_execute service", exc)
+            try:
+                self._recover_srv = self._node.create_service(
+                    Trigger,
+                    self._recover_service,
+                    self._on_recover_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._recover_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create recover service", exc)
+            try:
+                self._pick_demo_srv = self._node.create_service(
+                    Trigger,
+                    self._pick_demo_service,
+                    self._on_pick_demo_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._pick_demo_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create pick_demo service", exc)
+            try:
+                self._pick_object_srv = self._node.create_service(
+                    Trigger,
+                    self._pick_object_service,
+                    self._on_pick_object_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._pick_object_service} (std_srvs/Trigger)"
+                )
+            except Exception as exc:
+                self._log_exception("create pick_object service", exc)
+        if SelectObject is not None:
+            try:
+                self._select_object_srv = self._node.create_service(
+                    SelectObject,
+                    self._select_object_service,
+                    self._on_select_object_service,
+                    callback_group=self._service_callback_group,
+                )
+                self.log.emit(
+                    f"[ROS] Trigger service listo: {self._select_object_service} (ur5_panel_interfaces/SelectObject)"
+                )
+            except Exception as exc:
+                self._log_exception("create select_object service", exc)
 
     def _cleanup_ros(self):
         with self._lock:
@@ -1405,18 +1782,18 @@ class RosWorker(QObject):
                 self._grasp_rect_type = ""
                 self._grasp_rect_last_wall = 0.0
                 self._grasp_rect_count = 0
-            if self._node and self._test_robot_sub is not None:
+            if self._node and self._camera_connect_srv is not None:
                 try:
-                    self._node.destroy_subscription(self._test_robot_sub)
+                    self._node.destroy_service(self._camera_connect_srv)
                 except Exception as exc:
-                    self._log_exception("destroy test_robot subscription", exc)
-                self._test_robot_sub = None
-            if self._node and self._test_robot_srv is not None:
+                    self._log_exception("destroy camera_connect service", exc)
+                self._camera_connect_srv = None
+            if self._node and self._camera_disconnect_srv is not None:
                 try:
-                    self._node.destroy_service(self._test_robot_srv)
+                    self._node.destroy_service(self._camera_disconnect_srv)
                 except Exception as exc:
-                    self._log_exception("destroy test_robot service", exc)
-                self._test_robot_srv = None
+                    self._log_exception("destroy camera_disconnect service", exc)
+                self._camera_disconnect_srv = None
             if self._node and self._tfm_infer_sub is not None:
                 try:
                     self._node.destroy_subscription(self._tfm_infer_sub)
@@ -1429,6 +1806,24 @@ class RosWorker(QObject):
                 except Exception as exc:
                     self._log_exception("destroy tfm_infer service", exc)
                 self._tfm_infer_srv = None
+            if self._node and self._tfm_execute_sub is not None:
+                try:
+                    self._node.destroy_subscription(self._tfm_execute_sub)
+                except Exception as exc:
+                    self._log_exception("destroy tfm_execute subscription", exc)
+                self._tfm_execute_sub = None
+            if self._node and self._tfm_execute_srv is not None:
+                try:
+                    self._node.destroy_service(self._tfm_execute_srv)
+                except Exception as exc:
+                    self._log_exception("destroy tfm_execute service", exc)
+                self._tfm_execute_srv = None
+            if self._node and self._pick_demo_srv is not None:
+                try:
+                    self._node.destroy_service(self._pick_demo_srv)
+                except Exception as exc:
+                    self._log_exception("destroy pick_demo service", exc)
+                self._pick_demo_srv = None
             if self._node and self._select_object_sub is not None:
                 try:
                     self._node.destroy_subscription(self._select_object_sub)
@@ -1442,8 +1837,14 @@ class RosWorker(QObject):
                     self._log_exception("destroy select_object service", exc)
                 self._select_object_srv = None
             with self._lock:
-                pending = list(self._object_select_pending.values())
+                pending = list(self._pick_demo_pending.values())
+                pending.extend(self._object_select_pending.values())
+                pending.extend(self._tfm_infer_pending.values())
+                pending.extend(self._tfm_execute_pending.values())
+                self._pick_demo_pending.clear()
                 self._object_select_pending.clear()
+                self._tfm_infer_pending.clear()
+                self._tfm_execute_pending.clear()
             for done, payload in pending:
                 payload["success"] = False
                 payload["message"] = str(payload.get("message") or "shutdown")
@@ -1472,7 +1873,7 @@ class RosWorker(QObject):
         self._bridge = None
 
     def _update_clock(self, msg: "Clock") -> None:
-        now = time.time()
+        now = _steady_time()
         try:
             stamp_ns = int(msg.clock.sec) * 1_000_000_000 + int(msg.clock.nanosec)
         except Exception:
@@ -1493,10 +1894,10 @@ class RosWorker(QObject):
         with self._lock:
             if self._last_clock_wall <= 0.0:
                 return False, float("inf")
-            age = time.time() - self._last_clock_wall
+            age = _steady_time() - self._last_clock_wall
             if self._last_clock_advance_wall <= 0.0:
                 return False, float("inf")
-            advance_age = time.time() - self._last_clock_advance_wall
+            advance_age = _steady_time() - self._last_clock_advance_wall
             ok = age < CLOCK_MAX_AGE_SEC and advance_age < CLOCK_MAX_AGE_SEC
             return ok, max(age, advance_age)
 
@@ -1508,17 +1909,45 @@ class RosWorker(QObject):
             return False
         return self.clock_alive()[0]
 
+    def ros_now_ns(self) -> int:
+        """Return the worker node ROS time in ns; 0 means sim clock is not valid yet."""
+        with self._lock:
+            node = self._node
+            fallback = int(self._last_clock_stamp_ns or 0)
+        if node is not None:
+            try:
+                return int(node.get_clock().now().nanoseconds or 0)
+            except Exception:
+                pass
+        return fallback
+
+    def wait_for_valid_ros_time(self, timeout_sec: float) -> bool:
+        """Wait until node.get_clock().now().nanoseconds > 0."""
+        deadline = _steady_time() + max(0.1, float(timeout_sec))
+        while _steady_time() < deadline:
+            if self.ros_now_ns() > 0:
+                return True
+            remaining = max(0.0, min(0.1, deadline - _steady_time()))
+            self._clock_event.wait(remaining)
+        return self.ros_now_ns() > 0
+
     def node_ready(self) -> bool:
         with self._lock:
             return self._node is not None
+
+    def is_worker_running(self) -> bool:
+        """Devuelve True si el bucle de spin sigue activo."""
+        with self._lock:
+            return bool(self._running)
 
     def _on_joint_state(self, msg: "JointState", topic: str):
         if not ROS_AVAILABLE:
             return
 
-        now = time.time()
+        now = _steady_time()
+        wall_now = time.time()  # reloj de pared para checks de frescura en _wait_for_joint_target
 
-        # construir payload
+        # Construir payload
         stamp = None
         try:
             if msg.header and (msg.header.stamp.sec or msg.header.stamp.nanosec):
@@ -1536,10 +1965,18 @@ class RosWorker(QObject):
             "effort": list(msg.effort),
         }
 
-        # ✅ guardar SIEMPRE (para consumo interno del panel)
+        # Guardar SIEMPRE para el consumo interno del panel
         with self._lock:
             self._last_joint_payload = payload
-            self._last_joint_wall = now
+            # Usamos reloj de pared (`time.time()`) para que _wait_for_joint_target
+            # calcule bien state_age_sec = time.time() - ts. Si aqui se usara
+            # time.monotonic(), apareceria un desfase enorme frente a time.time(),
+            # state_age_sec saldria siempre gigante y _wait_for_joint_target
+            # acabaria cayendo en _last_joint_time (camino de senal Qt), que se
+            # queda viejo cuando el hilo principal de Qt se bloquea reconectando
+            # camaras. Eso provocaba timeouts en HOME/MESA aunque el robot ya
+            # estuviera en posicion.
+            self._last_joint_wall = wall_now
             should_emit = (now - self._last_joint_emit) >= self._joint_emit_interval
             if should_emit:
                 self._last_joint_emit = now
@@ -1572,12 +2009,17 @@ class RosWorker(QObject):
             return
         if not state:
             return
+        wall_now = _steady_time()
         with self._lock:
             reason = self._system_diag_reason
-            if state == self._system_state_last and not reason:
-                return
             self._system_state_last = state
+            self._system_state_reason = reason
+            self._system_state_wall = wall_now
         try:
+            # Emitimos siempre, incluso si el estado no cambia, para que
+            # _external_state_last se mantenga fresco. Si aqui deduplicamos,
+            # la ventana de liveness de 2 segundos se quedaria sin alimento y
+            # bloquearia la entrada en ready del modo gestionado.
             self.system_state.emit(state, reason or "")
         except RuntimeError:
             pass
@@ -1624,7 +2066,7 @@ class RosWorker(QObject):
     def _on_image(self, msg: "Image", topic: str):
         if not ROS_AVAILABLE or not self._bridge:
             return
-        now = time.time()
+        now = _steady_time()
         last = self._last_emit.get(topic, 0.0)
         if (now - last) < self._min_emit_interval:
             return
@@ -1633,6 +2075,11 @@ class RosWorker(QObject):
             import numpy as np
 
             enc = (msg.encoding or "").lower()
+            self._image_msg_count[topic] = self._image_msg_count.get(topic, 0) + 1
+            if self._image_msg_count.get(topic, 0) == 1:
+                self._safe_log(
+                    f"[ROS][CAMERA] first_msg topic={topic} size={int(msg.width)}x{int(msg.height)} enc={enc or 'n/a'} step={int(msg.step)}"
+                )
             if any(flag in enc for flag in ("32fc1", "16uc1", "mono16")) or "depth" in topic:
                 try:
                     cv_depth = self._bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
@@ -1644,25 +2091,37 @@ class RosWorker(QObject):
                     self._latest_depth_frame[topic] = (np.ascontiguousarray(cv_depth), now)
                 bgr = self._decode_depth_to_bgr(cv_depth, topic)
             else:
-                try:
-                    bgr = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
-                except Exception:
-                    w = int(msg.width)
-                    h = int(msg.height)
-                    step = int(msg.step)
-                    data = msg.data
-                    if step == w * 3 and len(data) >= h * step:
-                        arr = np.frombuffer(data, dtype=np.uint8).reshape((h, w, 3))
+                w = int(msg.width)
+                h = int(msg.height)
+                step = int(msg.step)
+                data = msg.data
+                row_bytes = max(0, w * 3)
+                if enc in ("rgb8", "bgr8") and step >= row_bytes and len(data) >= h * step:
+                    arr = np.frombuffer(data, dtype=np.uint8).reshape((h, step))
+                    arr = arr[:, :row_bytes].reshape((h, w, 3))
+                    if enc == "rgb8":
                         bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
                     else:
-                        bgr = self._bridge.imgmsg_to_cv2(msg)
+                        bgr = np.ascontiguousarray(arr)
+                else:
+                    try:
+                        bgr = self._bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+                    except Exception:
+                        if step == row_bytes and len(data) >= h * step:
+                            arr = np.frombuffer(data, dtype=np.uint8).reshape((h, w, 3))
+                            bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+                        else:
+                            bgr = self._bridge.imgmsg_to_cv2(msg)
             self._emit_frame(topic, bgr)
         except Exception as exc:
-            if DEBUG_FRAME_LOG:
+            if not self._image_decode_error_logged.get(topic, False):
+                self._image_decode_error_logged[topic] = True
+                self._safe_log(f"[ROS][CAMERA] decode_error topic={topic}: {exc}")
+            elif DEBUG_FRAME_LOG:
                 self.log.emit(f"[ROS] ERROR frame {topic}: {exc}")
 
     def _emit_frame(self, topic: str, bgr):
-        now = time.time()
+        now = _steady_time()
         last = self._last_emit.get(topic, 0.0)
         if (now - last) < self._min_emit_interval:
             return
@@ -1680,13 +2139,13 @@ class RosWorker(QObject):
                 new_h = max(1, int(h * scale))
                 bgr = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
                 h, w = bgr.shape[:2]
-            rec = self._fps.get(topic, [0.0, time.time(), 0.0])
+            rec = self._fps.get(topic, [0.0, _steady_time(), 0.0])
             rec[0] += 1.0
-            dt = max(1e-6, time.time() - rec[1])
+            dt = max(1e-6, _steady_time() - rec[1])
             if dt >= 1.0:
                 rec[2] = rec[0] / dt
                 rec[0] = 0.0
-                rec[1] = time.time()
+                rec[1] = _steady_time()
                 if DEBUG_FRAME_LOG:
                     frames_total = self._frame_count.get(topic, 0)
                     self.log.emit(f"[CAMERA] {topic} frames={frames_total} fps={rec[2]:.1f}")
@@ -1708,6 +2167,15 @@ class RosWorker(QObject):
                     qimg = qimg.copy()
                 else:
                     self._frame_buffers[topic] = rgb
+            with self._lock:
+                prev = self._latest_image_snapshot.get(topic)
+                prev_wall = float(prev[4]) if prev is not None else 0.0
+                if prev is None or (now - prev_wall) >= 0.20:
+                    self._latest_image_snapshot[topic] = (qimg.copy(), int(w), int(h), fps, now)
+            if self._frame_count.get(topic, 0) == 1:
+                self._safe_log(
+                    f"[ROS][CAMERA] first_frame topic={topic} size={int(w)}x{int(h)} fps={float(fps):.2f}"
+                )
             self.image.emit(topic, qimg, w, h, fps)
         except Exception as exc:
             if DEBUG_FRAME_LOG:
@@ -1716,7 +2184,7 @@ class RosWorker(QObject):
     def _on_compressed_image(self, msg: "CompressedImage", topic: str):
         if not ROS_AVAILABLE:
             return
-        now = time.time()
+        now = _steady_time()
         last = self._last_emit.get(topic, 0.0)
         if (now - last) < self._min_emit_interval:
             return

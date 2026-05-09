@@ -1,0 +1,13 @@
+# F5-step3: Resolver la pose de un objeto en world a partir de su nombre.
+# Pensado para que el orchestrator pueda obtener la pose del objeto sin
+# depender de un hint del cliente (PickPlace.action.object_pose_world_hint).
+#
+# El server canónico (futuro F5-step4) consulta gz_pose_bridge para
+# objetos de Gazebo o tf2 para objetos publicados por evidence_logger /
+# planning_scene. Mientras no exista, el orchestrator hace fallback al
+# placeholder previo (pose 0,0,0).
+string object_name
+---
+geometry_msgs/Pose pose_world
+bool success
+string detail

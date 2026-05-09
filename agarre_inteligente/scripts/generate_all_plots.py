@@ -13,8 +13,9 @@ def run(cmd):
 
 
 def main() -> int:
-    run([sys.executable, "scripts/summarize_results.py", "--experiments-root", "experiments", "--output", "reports/tables/summary_results.csv"])
-    run([sys.executable, "scripts/generate_figures.py", "--experiments-root", "experiments", "--summary", "reports/tables/summary_results.csv", "--out-dir", "reports/figures"])
+    run([sys.executable, "scripts/summarize_results.py", "--experiments-root", "experiments", "--output", "report/tables/summary_results.csv"])
+    run([sys.executable, "scripts/validate_official_scope.py", "--summary", "report/tables/summary_results.csv", "--results-by-seed", "report/tables/results_by_seed.csv"])
+    run([sys.executable, "scripts/generate_figures.py", "--experiments-root", "experiments", "--summary", "report/tables/summary_results.csv", "--out-dir", "report/figures"])
     return 0
 
 

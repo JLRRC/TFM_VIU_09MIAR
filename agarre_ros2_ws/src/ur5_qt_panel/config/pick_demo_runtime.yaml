@@ -1,0 +1,285 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/config/pick_demo_runtime.yaml
+# Contenido: Parámetros runtime del flujo pick_demo (F2 parcial).
+# Uso breve: editar valores y relanzar el panel; los env vars siguen
+# teniendo prioridad si quieres override puntual sin tocar este fichero.
+#
+# Prioridad de resolución en panel_pick_demo_params.load_pick_demo_params():
+#   env var (PANEL_PICK_DEMO_*)  >  esta clave YAML  >  default del dataclass
+#
+# Para conocer la env var equivalente de cada clave consulta el comentario
+# de cada campo en panel_pick_demo_params.py:PickDemoParams o
+# ENV_VAR_BY_FIELD.
+
+# ── IK seed override ────────────────────────────────────────────────────────
+# Cadena vacía = el flujo elige seed dinámicamente.
+# Ejemplo manual: "0,0,1.57,-1.57,-1.57,0"
+ik_seed_joints: ""
+
+# ── Tolerancias de gates (metros) ──────────────────────────────────────────
+# Z error tol del util GRASP_DOWN antes de decidir si bajamos más.
+grasp_down_util_z_err_tol_m: 0.025
+# Tolerancia Z al cerrar la pinza.
+close_z_err_tol_m: 0.012
+# Tolerancia XY al cerrar la pinza.
+close_xy_tol_m: 0.012
+# Tolerancia XY mantenida en el approach grueso (subir si el robot no llega).
+approach_coarse_keep_xy_tol_m: 0.020
+
+# ── Geometría TCP ──────────────────────────────────────────────────────────
+# Offset Z extra aplicado al TCP en el grasp (cero por defecto desde el
+# fix de 2026-04-08, commit 9b58910). Subir solo para depuración.
+grasp_tcp_z_offset_m: 0.0
+
+# ── Pinza RG2 ──────────────────────────────────────────────────────────────
+# Threshold de apertura para considerar la pinza "cerrada" en gates.
+gripper_closed_opening_thr_m: 0.020
+
+# ── Tiempos ────────────────────────────────────────────────────────────────
+# Tiempo del trayectoria joint en segundos. null = usa el spinbox del panel.
+# Para el botón CESTA / MESA conviene >= 5 (memoria 2026-04-28).
+move_sec: null
+
+# ── Pesos y tolerancias IK GRASP_DOWN ──────────────────────────────────────
+grasp_down_ik_err_tol: 0.080
+grasp_down_ik_seed_weight: 0.65
+grasp_down_rot_weight: 0.10
+
+# ── Tolerancias TCP por fase del pick (DIRECTO) ────────────────────────────
+# Consumidas en directo_geometry._direct_runtime_target_tol_m. Cada fase
+# del flujo tiene su tolerancia objetivo del TCP en metros. Los defaults
+# coinciden con los fallbacks históricos de los env vars del mismo nombre.
+approach_coarse_tcp_tol_m: 0.015
+approach_coarse_refine_tcp_tol_m: 0.020  # Fix 2026-05-04: 0.006→0.020 para que COARSE_REFINE no rechace
+grasp_down_tcp_tol_m: 0.020
+grasp_align_tcp_tol_m: 0.015
+# Cesta es grande: 100mm de tolerancia (Fix 2026-05-04 bug CESTA_STAGE_1
+# abort: con 60mm el detector no_progress abortaba el goal del controller
+# antes de aterrizar — la cesta tolera 100mm sin problema y permite
+# target_reached temprano).
+basket_transport_tcp_tol_m: 0.100
+# Default genérico cuando ninguna fase específica aplica.
+direct_ik_tcp_tol_m: 0.040
+
+# ── GRASP_DOWN: branch guard (gates de seguridad de rama IK) ───────────────
+grasp_down_branch_guard_xy_tol_m: 0.010
+grasp_down_branch_guard_z_min_m: 0.015
+grasp_down_branch_guard_max_dev_rad: 0.35
+grasp_down_branch_guard_sum_dev_rad: 0.75
+
+# ── GRASP_DOWN: deltas máximos del branch IK (límites por junta) ───────────
+grasp_down_branch_max_delta_rad: 0.95
+grasp_down_branch_sum_delta_rad: 1.80
+grasp_down_branch_shoulder_lift_delta_rad: 0.80
+grasp_down_branch_elbow_delta_rad: 0.85
+grasp_down_branch_wrist1_delta_rad: 0.85
+
+# ── GRASP_DOWN: deltas máximos del phase IK (rama principal) ───────────────
+grasp_down_phase_max_delta_rad: 2.35
+grasp_down_phase_sum_delta_rad: 6.20
+grasp_down_phase_critical_sum_delta_rad: 2.85
+grasp_down_phase_shoulder_lift_delta_rad: 1.20
+grasp_down_phase_elbow_delta_rad: 1.15
+grasp_down_phase_wrist1_delta_rad: 1.10
+
+# ── GRASP_DOWN: tolerancias estrictas + paso del segmento ──────────────────
+grasp_down_strict_xy_tol_m: 0.012
+grasp_down_strict_z_tol_m: 0.025
+grasp_down_strict_dist_tol_m: 0.025
+grasp_down_segment_xy_step_m: 0.020
+grasp_down_segment_z_step_m: 0.005
+# Tiempo de asentamiento del check de fase AC
+ac_phase_check_settle_sec: 3.0
+# Muestras estables requeridas en check de fase AC
+ac_phase_check_stable_samples: 3
+# Umbral de movimiento para considerar AC estable
+ac_phase_check_threshold_m: 0.004
+# Tolerancia XY para salir del alineamiento
+align_exit_xy_tol_m: 0.006
+# Tolerancia Z para salir del alineamiento
+align_exit_z_tol_m: 0.010
+# Tolerancia error IK durante alineamiento
+align_ik_err_tol: 0.08
+# Peso del seed en IK del alineamiento
+align_ik_seed_weight: 0.50
+# Tolerancia de movimiento para considerar align ineficaz
+align_no_effect_tol_m: 0.002
+# Peso de rotación en IK del alineamiento
+align_rot_weight: 0.10
+# Factor de lock XY durante align
+align_xy_lock_factor: 2.0
+# Cap del bias Z aplicado en align
+align_z_bias_cap_m: 0.030
+# Ganancia del bias Z en align
+align_z_bias_gain: 0.70
+# Mejora Z mínima requerida por iteración de align
+align_z_improve_min_m: 0.006
+# Tolerancia residual Z al finalizar align
+align_z_residual_tol_m: 0.015
+# Periodo de poll del gate AC
+approach_coarse_gate_poll_sec: 0.10
+# Tiempo de asentamiento del gate AC
+approach_coarse_gate_settle_sec: 0.80
+# Muestras estables requeridas en gate AC
+approach_coarse_gate_stable_samples: 2
+# Tolerancia Z del gate AC
+approach_coarse_gate_z_tol_m: 0.008
+# Tolerancia de distancia en handoff AC
+# F7 (2026-05-04): bump 0.015→0.035 para absorber DH/SDF divergencia + lag TF
+# observados (live: tcp_obj_dist=0.029m, dz_obj=0.028m). Margen 6mm sobre observado.
+approach_coarse_handoff_dist_tol_m: 0.035
+# Tolerancia Z en handoff AC
+approach_coarse_handoff_dz_tol_m: 0.035
+# Distancia máxima permitida para saltar AC
+approach_coarse_max_skip_m: 0.06
+# Tolerancia XY del handoff relajado AC
+approach_coarse_relaxed_handoff_xy_tol_m: 0.010
+# Permitir skip AC sin pose válida (modo relajado)
+approach_coarse_relaxed_skip_pose_ok: false
+# Tolerancia XY para skip AC
+approach_coarse_skip_xy_tol_m: 0.03
+# Tolerancia Z para skip AC
+approach_coarse_skip_z_tol_m: 0.04
+# Tolerancia distancia del util AC
+approach_coarse_util_dist_tol_m: 0.26
+# Tolerancia XY del util AC
+approach_coarse_util_xy_tol_m: 0.18
+# Tolerancia Z del util AC
+approach_coarse_util_z_err_tol_m: 0.18
+# Corrección XY máxima durante AC
+approach_coarse_xy_corr_max_m: 0.040
+# Tolerancia XY al aplicar corrección AC
+approach_coarse_xy_corr_tol_m: 0.015
+# Tolerancia Z al aplicar corrección AC
+approach_coarse_z_corr_tol_m: 0.020
+# Distancia TCP máxima para follow del attach
+attach_follow_max_tcp_dist_m: 0.040
+# Drift relativo máximo tolerado tras attach
+attach_max_rel_drift_m: 0.012
+# Gap TF↔visual máximo aceptable en attach
+attach_max_tf_visual_gap_m: 0.020
+# Muestras estables mínimas para attach
+attach_min_stable_samples: 5
+# Tiempo de asentamiento previo al attach
+attach_settle_sec: 1.8
+# Ventana temporal de estabilidad para attach
+attach_stable_window_sec: 0.35
+# Tolerancia XY del gate de attach
+attach_xy_tol_m: 0.012
+# Tolerancia Z del gate de attach
+attach_z_tol_m: 0.015
+# Distancia TCP máxima en carry hacia home
+carry_home_max_tcp_dist_m: 0.200
+# Tiempo de asentamiento durante carry
+carry_settle_sec: 3.0
+# Timeout de confirmación de cierre
+close_confirm_timeout_sec: 1.8
+# Apertura suma fallback para confirmar cierre
+close_fallback_opening_sum: 0.40
+# Delta de apertura mínimo para validar cierre
+close_min_delta_sum: 0.08
+# Pausa de debug en GRASP_ALIGN_IK
+debug_pause_grasp_align_ik: false
+# Tolerancia angular IK directa
+direct_ik_joint_tol_rad: 0.03
+# Intentos en runtime de IK directa
+direct_ik_runtime_attempts: 5
+# Delta para considerar runtime IK estable
+direct_ik_runtime_settle_delta_m: 0.003
+# Periodo de poll del settle runtime IK
+direct_ik_runtime_settle_poll_sec: 0.10
+# Muestras de settle runtime IK
+direct_ik_runtime_settle_samples: 3
+# Tiempo total de settle runtime IK
+direct_ik_runtime_settle_sec: 2.5
+# Peso del seed en IK directa
+direct_ik_seed_weight: 0.035
+# Timeout del TCP en IK directa
+direct_ik_tcp_timeout_sec: 4.0
+# Z extra en grasp down (0 por defecto)
+extra_grasp_down_m: 0.0
+# Distancia máxima para fallback al preset
+fallback_preset_max_dist_m: 0.10
+# Distancia XY máxima para fallback al preset
+fallback_preset_max_xy_m: 0.05
+# Tolerancia angular GRASP_ALIGN
+grasp_align_joint_tol_rad: 0.010
+# Intentos máximos en GRASP_ALIGN
+grasp_align_max_attempts: 3
+# Desactivar fallback permisivo en GRASP_DOWN
+grasp_down_disable_permissive_fallback: false
+# Z extra en GRASP_DOWN
+grasp_down_extra_z_m: 0.00
+# Periodo poll del gate GRASP_DOWN
+grasp_down_gate_poll_sec: 0.10
+# Tiempo settle gate GRASP_DOWN
+grasp_down_gate_settle_sec: 0.80
+# Muestras estables gate GRASP_DOWN
+grasp_down_gate_stable_samples: 2
+# Intentos máximos en GRASP_DOWN
+grasp_down_max_attempts: 4
+# Tolerancia error IK permisivo en GRASP_DOWN
+grasp_down_permissive_ik_err_tol: 0.015
+# Peso rotación permisivo en GRASP_DOWN
+grasp_down_permissive_rot_weight: 0.35
+# Peso seed permisivo en GRASP_DOWN
+grasp_down_permissive_seed_weight: 0.65
+# Usar MoveIt cartesian en GRASP_DOWN
+# Fix 2026-05-04: false porque /compute_cartesian_path retorna fraction=0
+# para CUALQUIER waypoint en este setup (KDL+UR5+ROS Jazzy). El path
+# conservative usa FollowJointTrajectory direct + IK numérico que SÍ funciona.
+grasp_down_use_moveit_cartesian: false
+# Tolerancia distancia util GRASP_DOWN
+grasp_down_util_dist_tol_m: 0.22
+# Edad máxima del estado para confirmar gripper
+gripper_confirm_max_state_age_sec: 0.35
+# Muestras estables para confirmar gripper
+gripper_confirm_stable_samples: 2
+# Tolerancia target del gripper
+gripper_target_tol_m: 0.035
+# Tolerancia salto del target en handoff
+handoff_target_jump_tol_m: 0.040  # Fix 2026-05-04: 0.005→0.040 para tolerar jitter del object pose
+# Distancia TCP máxima en attach manual-like
+manual_like_attach_max_tcp_dist_m: 0.14
+# Espera en attach manual-like
+manual_like_attach_wait_sec: 0.9
+# Tolerancia XY attach manual-like
+manual_like_attach_xy_tol_m: 0.060
+# Tolerancia Z attach manual-like
+manual_like_attach_z_tol_m: 0.060
+# Tolerancia XY ref manual stale
+manual_ref_stale_xy_tol_m: 0.08
+# Tolerancia Z below ref manual stale
+manual_ref_stale_z_below_tol_m: 0.005
+# Settle tras align
+post_align_settle_sec: 0.20
+# Hold tras attach
+post_attach_hold_sec: 0.90
+# Hold tras close
+post_close_hold_sec: 0.45
+# Modo tras cierre (basket|table|...)
+post_close_mode: basket
+# Muestras consecutivas requeridas pre-close
+pre_close_consecutive: 3
+# Reintentos de realineación pre-close
+pre_close_realign_retries: 2
+# Espera pre-close
+pre_close_wait_sec: 1.2
+# Timeout confirmación apertura tras release
+release_open_confirm_timeout_sec: 1.8
+# Espera tras release
+release_wait_sec: 1.6
+# Modo de ruta (direct_ik_hybrid|...)
+route_mode: direct_ik_hybrid
+# Tolerancia stale del selected base
+selected_base_stale_tol_m: 0.080
+# Altura del lift corto
+short_lift_m: 0.120
+# Limitar a release corto
+short_release_only: false
+# Saltar align si target alcanzable
+skip_align_if_reachable: true
+# Tiempo extra de timeout por step
+step_timeout_extra_sec: 0
+# Tolerancia de divergencia entre fuentes de pose del objeto.
+object_source_divergence_tol_m: 0.150
+

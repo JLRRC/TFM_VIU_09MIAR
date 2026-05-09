@@ -1,0 +1,86 @@
+@startuml architecture
+!theme plain
+
+title TFM UR5+RG2 Pick & Place — arquitectura post-v1.0-audit-v4
+
+skinparam component {
+  BackgroundColor<<canonical>> #B3E5FC
+  BackgroundColor<<fallback>> #FFE0B2
+  BackgroundColor<<infra>> #E1BEE7
+  BackgroundColor<<ui>> #C8E6C9
+}
+
+package "ur5_qt_panel  (UI)" <<ui>> {
+  [ControlPanelV2\n(panel_v2.py 1.252 LOC + 17 mixins)] as Panel
+  [panel_pick_demo.py 536\n(action client puro)] as PickDemoClient
+  [panel_pick_object.py 3.814\n(MoveIt manual flow)] as PickObjFlow
+}
+
+package "tfm_orchestrator  (CANONICAL PATH)" <<canonical>> {
+  [pick_orchestrator_lifecycle_node\n(803 LOC, 9 fases FSM)] as Orch
+  [phase_dispatch.py\n(puro)] as Dispatch
+  [PickPlace.action server] as PickAction
+  [8 helpers puros\n(initial_snapshot, home_initial,\nphase_progress, pick_gates,\nretry, pose_consistency,\ncartesian_segments, gripper_monitor)] as Helpers
+}
+
+package "ur5_tools" {
+  [plan_to_pose_server\n(MOVEIT_DIRECT + FJT bypass)] <<canonical>> as PlanToPose
+  [gripper_attach_backend\n(LifecycleNode + 4 srv)] <<infra>> as GripperBE
+  [release_objects_service] <<infra>> as ReleaseSvc
+  [tf_geometry_service] <<infra>> as TFGeom
+  [object_pose_resolver_service] <<infra>> as ObjPose
+  [world_tf_publisher] <<infra>> as WorldTF
+  [system_state_manager] <<infra>> as Sys
+  [evidence_logger] <<infra>> as Evi
+  [gz_pose_bridge] <<infra>> as GzPose
+  [ur5_moveit_bridge\n(FALLBACK 1.847 LOC)] <<fallback>> as MoveItBridge
+}
+
+package "Gazebo Sim Harmonic + ros2_control" {
+  [/joint_trajectory_controller/\n  follow_joint_trajectory] as FJT
+  [Gazebo Sim Harmonic\n+ gz_ros2_control\n+ ros_gz_bridge] as Gz
+}
+
+package "tfm_grasping" {
+  [grasp_inference_node] as Inf
+  [grasp_selector (puro)] as Sel
+}
+
+package "ur5_panel_interfaces (IDL)" {
+  [9 srv + 2 action] as IDL
+}
+
+Panel --> PickDemoClient : event "pick demo"
+Panel --> PickObjFlow : event "pick object" (MoveIt manual)
+PickDemoClient --> PickAction : action goal
+PickAction <-- Orch : implements
+Orch --> Dispatch : delegates phase logic
+Orch --> Helpers : pure helpers
+Orch --> PlanToPose : action plan_to_pose
+Orch --> GripperBE : srv attach/detach/open/close
+Orch --> ReleaseSvc : srv release_objects
+Orch --> TFGeom : srv world_to_base
+Orch --> ObjPose : srv resolve_world
+Orch --> Evi : sub phase events
+
+PlanToPose --> FJT : FJT directo (canonical, post-F1.24)
+PlanToPose ..> MoveItBridge : fallback (IK fail)
+MoveItBridge --> FJT : controller path
+FJT --> Gz : exec
+Gz --> WorldTF : TF
+Gz --> GzPose : object poses
+GzPose --> ObjPose : pose updates
+
+PickObjFlow ..> MoveItBridge : direct manual (legacy path)
+
+note bottom of Orch
+  T35 × 3 cycles consecutivos verde live
+  (2026-05-08). Path canónico.
+end note
+
+note bottom of MoveItBridge
+  Fallback defensivo no-canonical.
+  Conservado para F10 robot real.
+end note
+
+@enduml

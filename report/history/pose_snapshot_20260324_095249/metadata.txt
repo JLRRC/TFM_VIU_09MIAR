@@ -1,0 +1,4 @@
+timestamp=20260324_095249
+world_pose_topic=/world/ur5_mesa_objetos/pose/info
+host=laboratorio-MS-7C56
+nodes=/controller_bootstrap /controller_manager /gripper_attach_backend /gripper_controller /gz_pose_bridge /gz_ros_control /joint_state_broadcaster /joint_trajectory_controller /move_group /move_group/moveit /move_group_private_93919718872384 /moveit_279773594 /moveit_simple_controller_manager /panel_superpro /panel_tf_helper /panel_v2_moveit_publisher /planning_scene_sync /release_objects_service /robot_state_publisher /ros_gz_bridge_main /system_state_manager /transform_listener_impl_556b639b1910 /world_tf_publisher 

@@ -16,15 +16,8 @@ import numpy as np
 import pandas as pd
 import torch
 
-from src.models.resnet_variants import ResNetGrasp
-from src.models.simple_cnn import SimpleCNN
+from src.models.factory import build_model
 from src.utils.config_loader import load_config
-
-
-def build_model(model_cfg: dict):
-    if model_cfg["name"] == "SimpleGraspCNN":
-        return SimpleCNN(input_channels=int(model_cfg["input_channels"]))
-    return ResNetGrasp(input_channels=int(model_cfg["input_channels"]), pretrained=False)
 
 
 def measure(model, x, warmup: int, repeats: int, device: str):
@@ -44,20 +37,27 @@ def measure(model, x, warmup: int, repeats: int, device: str):
             t1 = time.perf_counter()
             times.append((t1 - t0) * 1000.0)
     arr = np.array(times)
-    return float(arr.mean()), float(arr.std()), float(np.percentile(arr, 95)), float(1000.0 / arr.mean())
+    return (
+        float(arr.mean()),
+        float(arr.std()),
+        float(np.percentile(arr, 95)),
+        float(1000.0 / arr.mean()),
+        float(arr.min()),
+    )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
     ap.add_argument("--checkpoint", required=True)
-    ap.add_argument("--output", default="reports/bench/latency_results.csv")
+    ap.add_argument("--output", default="report/bench/latency_results.csv")
     ap.add_argument("--warmup", type=int, default=20)
     ap.add_argument("--repeats", type=int, default=100)
+    ap.add_argument("--device", choices=("cpu", "cuda"), default=None)
     args = ap.parse_args()
 
     cfg = load_config(args.config)
-    device = cfg["benchmark"].get("device", "cpu")
+    device = args.device or cfg["benchmark"].get("device", "cpu")
     if device == "cuda" and not torch.cuda.is_available():
         device = "cpu"
 
@@ -69,7 +69,7 @@ def main() -> int:
     image_size = int(cfg["data"].get("image_size", 224))
     x = torch.randn(1, channels, image_size, image_size, device=device)
 
-    mean_ms, std_ms, p95_ms, fps = measure(model, x, args.warmup, args.repeats, device)
+    mean_ms, std_ms, p95_ms, fps, min_ms = measure(model, x, args.warmup, args.repeats, device)
     n_params = sum(p.numel() for p in model.parameters())
     model_size_mb = sum(p.numel() * p.element_size() for p in model.parameters()) / (1024 * 1024)
 
@@ -77,10 +77,13 @@ def main() -> int:
         "experiment": cfg["experiment"]["name"],
         "device": device,
         "batch_size": 1,
+        "warmup": int(args.warmup),
+        "repeats": int(args.repeats),
         "latency_ms_mean": mean_ms,
         "latency_ms_std": std_ms,
         "latency_ms_p95": p95_ms,
         "fps": fps,
+        "latency_ms_min": min_ms,
         "n_params": int(n_params),
         "model_size_mb": model_size_mb,
     }

@@ -265,7 +265,7 @@ def main():
     print("[OK] Preparación completada")
     
     # Actualizar archivos de índices limpios
-    audit_dir = Path("reports/cornell_audit")
+    audit_dir = Path("report/cornell_audit")
     if audit_dir.exists():
         # Guardar índices (para trazabilidad)
         with open(audit_dir / "clean_idx_train_v2.txt", "w") as f:

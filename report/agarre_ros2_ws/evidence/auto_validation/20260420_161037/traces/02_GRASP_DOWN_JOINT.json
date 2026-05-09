@@ -1,0 +1,281 @@
+{
+  "attach_state": {
+    "attach_topic_published": false,
+    "follow_confirmed": false,
+    "logical_attached": false,
+    "logical_state": "SELECTED",
+    "owner": "NONE"
+  },
+  "dist_target_tcp": 0.017023498569931676,
+  "dist_target_tcp_after": 0.017023498569931676,
+  "dist_target_tcp_before": 0.023932648959334113,
+  "dist_tcp_obj": 0.01693412123566078,
+  "dist_tcp_obj_after": 0.01693412123566078,
+  "dist_tcp_obj_before": 0.02482307483552643,
+  "frame_usado": "world",
+  "gripper_state": {
+    "closed_flag": false,
+    "expected_closed": false,
+    "force_estimate": 0.0,
+    "joint_positions": {
+      "rg2_finger_joint1": 0.49999999999999595,
+      "rg2_finger_joint2": 0.49999999999999944
+    },
+    "joint_state_age_sec": 0.0,
+    "max_abs_err": 4.052314039881821e-15,
+    "measured_target_ok": true,
+    "opening_sum": 0.9999999999999953,
+    "target_mag": 0.5
+  },
+  "ik_solution": {
+    "err_norm": 0.13546530864702047,
+    "ik_ok": true,
+    "ik_solution": [
+      -0.735205571441317,
+      -0.9354637000581578,
+      1.839542367789161,
+      -0.9596985714934704,
+      -0.7450525378345201,
+      -6.13982359630452
+    ],
+    "label": "GRASP_DOWN_JOINT",
+    "offset_vector": [
+      0.0,
+      -0.175,
+      1.071565949253934e-17
+    ],
+    "runtime_target_dist": 0.01609552231839183,
+    "runtime_target_ok": true,
+    "runtime_target_pos": [
+      0.44299217523826173,
+      0.001270855407645184,
+      0.040181130821886
+    ],
+    "runtime_target_stable_dist": 0.01609552231839183,
+    "runtime_target_stable_elapsed_sec": 0.20251507102511823,
+    "runtime_target_stable_motion_delta_m": 0.0,
+    "runtime_target_stable_ok": true,
+    "runtime_target_stable_pos": [
+      0.44299217523826173,
+      0.001270855407645184,
+      0.040181130821886
+    ],
+    "runtime_target_stable_pose_consistency": {
+      "fk_live_delta_m": 0.007433255367585935,
+      "fk_live_ok": true,
+      "fk_trace_delta_m": 0.007902698650668304,
+      "joint_state_age_sec": 0.0,
+      "joint_state_fresh_ok": true,
+      "ok_for_gate": true,
+      "panel_fk_age_sec": 0.17961670603835955,
+      "panel_fk_base": [
+        0.4426454232308004,
+        0.0016784969840708541,
+        0.03276716584016159
+      ],
+      "panel_fk_fresh_ok": true,
+      "panel_trace_base": [
+        0.4430112602110803,
+        0.0012476063575748444,
+        0.04064962373951837
+      ],
+      "phase": "none",
+      "phase_end_age_sec": null,
+      "phase_end_delta_m": null,
+      "phase_jump_ok": true,
+      "phase_jump_tol_m": 1.0,
+      "source_age_tol_sec": 300.0,
+      "source_sync_delta_sec": 0.09961518197087571,
+      "source_sync_ok": true,
+      "source_sync_tol_sec": 300.0,
+      "source_tol_m": 1.0,
+      "sources_fresh_ok": true,
+      "sources_ok": true,
+      "target_base": [
+        0.4389793900251413,
+        0.004803519846162981,
+        0.024999441999490668
+      ],
+      "target_live_delta_m": 0.01609552231839183,
+      "tcp_base": [
+        0.44299217523826173,
+        0.001270855407645184,
+        0.040181130821886
+      ],
+      "tf_stamp_age_sec": 1.91,
+      "trace_age_sec": 0.27923188800923526,
+      "trace_fresh_ok": true,
+      "trace_live_delta_m": 0.0004694575256488622,
+      "trace_live_ok": true
+    },
+    "runtime_target_stable_samples": 3,
+    "runtime_target_wait_dist": 0.01654776983253282,
+    "runtime_target_wait_ok": true,
+    "runtime_target_wait_pos": [
+      0.4430112602110803,
+      0.0012476063575748444,
+      0.04064962373951837
+    ],
+    "seed": [
+      0.0,
+      -1.5708,
+      0.0,
+      -1.5708,
+      0.0,
+      -3.07
+    ],
+    "target_execution_frame": "tool0",
+    "target_ik": [
+      -0.4389793900251413,
+      0.170196480153837,
+      0.024999441999490658
+    ],
+    "target_source_frame": "rg2_pinch_center",
+    "target_tcp_runtime": [
+      0.4389793900251413,
+      0.004803519846162981,
+      0.024999441999490668
+    ],
+    "target_tcp_world": [
+      -0.4110206099748587,
+      0.004803519846162981,
+      0.8749994419994906
+    ],
+    "tcp_offset_m": 0.175
+  },
+  "joint_goal": [
+    -0.735205571441317,
+    -0.9354637000581578,
+    1.839542367789161,
+    -0.9596985714934704,
+    -0.7450525378345201,
+    -6.13982359630452
+  ],
+  "note": "permissive_direct_descent:pre_motion",
+  "object_name": "pick_demo",
+  "object_pose_base_after": [
+    0.4355986544822348,
+    -6.151402686148624e-07,
+    0.024999441999490668
+  ],
+  "object_pose_world": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "object_pose_world_after": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "object_pose_world_before": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "offsets_aplicados": {
+    "execution_mode": "hybrid_geometric_with_runtime_refine",
+    "grasp_down_extra_z_m": 0.0,
+    "mode": "direct_rg2_tcp",
+    "relative_mode": "keep_current_xy_plus_object_z",
+    "tcp_source": "live_tcp",
+    "tcp_z_offset_m": 0.0
+  },
+  "phase": "GRASP_DOWN_JOINT",
+  "pose_consistency": {
+    "fk_live_delta_m": 0.007433255367585935,
+    "fk_live_ok": true,
+    "fk_trace_delta_m": 0.007902698650668304,
+    "joint_state_age_sec": 0.0,
+    "joint_state_fresh_ok": true,
+    "ok_for_gate": true,
+    "panel_fk_age_sec": 0.19071664504008368,
+    "panel_fk_base": [
+      0.4426454232308004,
+      0.0016784969840708541,
+      0.03276716584016159
+    ],
+    "panel_fk_fresh_ok": true,
+    "panel_trace_base": [
+      0.4430112602110803,
+      0.0012476063575748444,
+      0.04064962373951837
+    ],
+    "phase": "GRASP_DOWN_JOINT",
+    "phase_end_age_sec": null,
+    "phase_end_delta_m": null,
+    "phase_jump_ok": true,
+    "phase_jump_tol_m": 1.0,
+    "source_age_tol_sec": 300.0,
+    "source_sync_delta_sec": 0.09961518197087571,
+    "source_sync_ok": true,
+    "source_sync_tol_sec": 300.0,
+    "source_tol_m": 1.0,
+    "sources_fresh_ok": true,
+    "sources_ok": true,
+    "target_base": [
+      0.437231561951743,
+      0.006382720294709989,
+      0.024999441999490668
+    ],
+    "target_live_delta_m": 0.017023498569931666,
+    "tcp_base": [
+      0.44299217523826173,
+      0.001270855407645184,
+      0.040181130821886
+    ],
+    "tf_stamp_age_sec": 1.913,
+    "trace_age_sec": 0.2903318270109594,
+    "trace_fresh_ok": true,
+    "trace_live_delta_m": 0.0004694575256488622,
+    "trace_live_ok": true
+  },
+  "result": "ok",
+  "seq": 2,
+  "target_minus_tcp_after": [
+    -0.005760613286518723,
+    0.005111864887064804,
+    -0.015181688822395345
+  ],
+  "target_minus_tcp_before": [
+    0.0,
+    0.0,
+    -0.023932648959334113
+  ],
+  "target_pose_base": [
+    0.437231561951743,
+    0.006382720294709989,
+    0.024999441999490668
+  ],
+  "target_pose_world": [
+    -0.41276843804825697,
+    0.006382720294709989,
+    0.8749994419994906
+  ],
+  "tcp_obj_dx_base": 0.00739352075602695,
+  "tcp_obj_dy_base": 0.001271470547913799,
+  "tcp_obj_dz_base": 0.015181688822395331,
+  "tcp_obj_xy_dist_base": 0.007502052154178451,
+  "tcp_pose_base_after": [
+    0.44299217523826173,
+    0.001270855407645184,
+    0.040181130821886
+  ],
+  "tcp_pose_base_before": [
+    0.437231561951743,
+    0.006382720294709989,
+    0.048932090958824816
+  ],
+  "tcp_pose_world_after": [
+    -0.40700782476173825,
+    0.001270855407645184,
+    0.890181130821886
+  ],
+  "tcp_pose_world_before": [
+    -0.41276843804825697,
+    0.006382720294709989,
+    0.8989320909588248
+  ],
+  "timestamp_enter": "2026-04-20T15:55:46.673+02:00",
+  "timestamp_exit": "2026-04-20T15:56:09.025+02:00"
+}

@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime
+from typing import IO, Any, Optional
 
 
 def timestamped_line(message: str) -> str:
@@ -13,3 +15,33 @@ def timestamped_line(message: str) -> str:
 
     timestamp = datetime.now().isoformat(timespec="seconds")
     return f"[{timestamp}] {message}"
+
+
+def emit_log_line(
+    line: str,
+    *,
+    stream: Optional[IO[str]] = None,
+    flush: bool = True,
+) -> None:
+    """Write *line* to *stream* (default ``sys.stdout``) appending a newline.
+
+    Single point of control for the panel's diagnostic output. Replaces the
+    duplicated module-level ``print()`` calls inside the legacy
+    ``_log_exception`` helpers so that future migration to ``logging`` stdlib
+    only needs to be done here.
+    """
+
+    target = stream if stream is not None else sys.stdout
+    target.write(line if line.endswith("\n") else f"{line}\n")
+    if flush:
+        target.flush()
+
+
+class _PanelLogger:
+    """Logger façade so ControlPanelV2 can call get_logger().info(...)."""
+
+    def __init__(self, panel: Any) -> None:
+        self._panel = panel
+
+    def info(self, msg: str) -> None:
+        self._panel._log(msg)

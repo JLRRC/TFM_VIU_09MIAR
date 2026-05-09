@@ -7,27 +7,26 @@ Uso:
   ros2 run tfm_grasping grasp_inference
 """
 
-import os
+import logging
 import sys
 from pathlib import Path
 from typing import Optional
 
+_logger = logging.getLogger(__name__)
+
 try:
     import cv2
-    import numpy as np
     import rclpy
     from rclpy.node import Node
     from sensor_msgs.msg import Image
-    from geometry_msgs.msg import Point
     from std_msgs.msg import Float32MultiArray
     from cv_bridge import CvBridge
     import torch
     from torchvision import transforms
 except ImportError as e:
-    print(f"❌ Dependencia faltante: {e}")
+    _logger.critical("Dependencia faltante: %s", e)
     sys.exit(1)
 
-# Agregar src/ de agarre_inteligente al path
 VISION_DIR = Path.home() / "TFM" / "agarre_inteligente"
 if (VISION_DIR / "src").exists():
     sys.path.insert(0, str(VISION_DIR / "src"))
@@ -35,8 +34,7 @@ if (VISION_DIR / "src").exists():
 try:
     from graspnet.models.simple_grasp_cnn import SimpleGraspCNN
 except ImportError as e:
-    print(f"❌ No se pudo importar SimpleGraspCNN: {e}")
-    print(f"   VISION_DIR: {VISION_DIR}")
+    _logger.critical("No se pudo importar SimpleGraspCNN: %s (VISION_DIR=%s)", e, VISION_DIR)
     sys.exit(1)
 
 
@@ -48,7 +46,7 @@ class GraspInferenceNode(Node):
         
         # Parámetros
         self.img_size = 224
-        self.declare_parameter("model_path", "models/exp1_simple_rgb_best.pth")
+        self.declare_parameter("model_path", "")
         self.declare_parameter("image_topic", "/camera/rgb/image_raw")
         self.declare_parameter("output_topic", "/tfm/grasp_prediction")
         self.declare_parameter("device", "auto")
@@ -112,6 +110,12 @@ class GraspInferenceNode(Node):
     def _load_model(self, model_rel_path: str) -> Optional[torch.nn.Module]:
         """Cargar modelo entrenado."""
         try:
+            model_rel_path = str(model_rel_path or "").strip()
+            if not model_rel_path:
+                self.get_logger().error(
+                    "Parametro model_path vacio. Este nodo legacy requiere un checkpoint explicito compatible con SimpleGraspCNN."
+                )
+                return None
             # Construir ruta absoluta del modelo
             node_dir = Path(__file__).parent
             model_path = node_dir / model_rel_path
@@ -196,9 +200,7 @@ def main(args=None):
         node = GraspInferenceNode()
         rclpy.spin(node)
     except Exception as e:
-        print(f"❌ Error fatal: {e}")
-        import traceback
-        traceback.print_exc()
+        _logger.exception("Error fatal en grasp_inference: %s", e)
     finally:
         rclpy.shutdown()
 

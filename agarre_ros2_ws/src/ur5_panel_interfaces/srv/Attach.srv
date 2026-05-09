@@ -1,0 +1,9 @@
+# Adherir un objeto al TCP del gripper (attach logico + fisico via Gazebo).
+# La respuesta incluye method (drop_anchor / tool_anchor / follow / demo_transport)
+# y detail con metricas geometricas (distancia al TCP en m).
+string object_name
+---
+bool success
+string message
+string method
+float64 tcp_obj_dist_m

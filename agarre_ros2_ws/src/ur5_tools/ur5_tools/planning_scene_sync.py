@@ -4,15 +4,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
 import os
 import time
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 
 from geometry_msgs.msg import Pose, PoseStamped
 from moveit_msgs.msg import AttachedCollisionObject, CollisionObject, PlanningScene
 from moveit_msgs.srv import ApplyPlanningScene
+
+from .moveit_bridge_utils import bridge_env_str
 import rclpy
 from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
@@ -74,77 +75,15 @@ class PoseSample:
     stamp_ns: int
 
 
-def _strip_ns(tag: str) -> str:
-    if "}" in tag:
-        return tag.split("}", 1)[1]
-    return tag
-
-
-def _quat_from_rpy(roll: float, pitch: float, yaw: float) -> Tuple[float, float, float, float]:
-    cy = math.cos(yaw * 0.5)
-    sy = math.sin(yaw * 0.5)
-    cp = math.cos(pitch * 0.5)
-    sp = math.sin(pitch * 0.5)
-    cr = math.cos(roll * 0.5)
-    sr = math.sin(roll * 0.5)
-    return (
-        sr * cp * cy - cr * sp * sy,
-        cr * sp * cy + sr * cp * sy,
-        cr * cp * sy - sr * sp * cy,
-        cr * cp * cy + sr * sp * sy,
-    )
-
-
-def _quat_multiply(
-    lhs: Tuple[float, float, float, float],
-    rhs: Tuple[float, float, float, float],
-) -> Tuple[float, float, float, float]:
-    lx, ly, lz, lw = lhs
-    rx, ry, rz, rw = rhs
-    return (
-        (lw * rx) + (lx * rw) + (ly * rz) - (lz * ry),
-        (lw * ry) - (lx * rz) + (ly * rw) + (lz * rx),
-        (lw * rz) + (lx * ry) - (ly * rx) + (lz * rw),
-        (lw * rw) - (lx * rx) - (ly * ry) - (lz * rz),
-    )
-
-
-def _quat_conjugate(quat: Tuple[float, float, float, float]) -> Tuple[float, float, float, float]:
-    qx, qy, qz, qw = quat
-    return (-qx, -qy, -qz, qw)
-
-
-def _rotate_vector(
-    quat: Tuple[float, float, float, float],
-    vector: Tuple[float, float, float],
-) -> Tuple[float, float, float]:
-    vx, vy, vz = vector
-    vec_quat = (vx, vy, vz, 0.0)
-    rotated = _quat_multiply(_quat_multiply(quat, vec_quat), _quat_conjugate(quat))
-    return (rotated[0], rotated[1], rotated[2])
-
-
-def _compose_pose(
-    parent: Tuple[float, float, float, float, float, float, float],
-    child: Tuple[float, float, float, float, float, float, float],
-) -> Tuple[float, float, float, float, float, float, float]:
-    px, py, pz, pqx, pqy, pqz, pqw = parent
-    cx, cy, cz, cqx, cqy, cqz, cqw = child
-    ox, oy, oz = _rotate_vector((pqx, pqy, pqz, pqw), (cx, cy, cz))
-    qx, qy, qz, qw = _quat_multiply((pqx, pqy, pqz, pqw), (cqx, cqy, cqz, cqw))
-    return (px + ox, py + oy, pz + oz, qx, qy, qz, qw)
-
-
-def _parse_pose_text(text: str) -> Tuple[float, float, float, float, float, float, float]:
-    values = [part for part in (text or "").split() if part]
-    if len(values) < 6:
-        return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
-    try:
-        x, y, z, rr, pp, yy = (float(values[idx]) for idx in range(6))
-    except Exception:
-        return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0)
-    qx, qy, qz, qw = _quat_from_rpy(rr, pp, yy)
-    return (x, y, z, qx, qy, qz, qw)
+# F3-step6 (audit-v4 2026-05-08): helpers puros movidos a
+# planning_scene_sync_helpers.py para hacerlos testeables sin rclpy.
+# Re-exportados aquí con su nombre interno (underscore prefix) para
+# preservar la API existente sin tocar consumidores.
+from .planning_scene_sync_helpers import (
+    compose_pose as _compose_pose,
+    parse_pose_text as _parse_pose_text,
+    strip_ns as _strip_ns,
+)
 
 
 def _tuple_to_pose(values: Tuple[float, float, float, float, float, float, float]) -> Pose:
@@ -160,7 +99,7 @@ def _tuple_to_pose(values: Tuple[float, float, float, float, float, float, float
 
 
 def _world_file_default(world_name: str) -> str:
-    ws_dir = os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
+    ws_dir = bridge_env_str("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
     return os.path.join(ws_dir, "worlds", f"{world_name}.sdf")
 
 
@@ -214,6 +153,8 @@ class PlanningSceneSync(Node):
         self._attached_state: Dict[str, bool] = {name: False for name in self._object_names}
         self._last_signature = ""
         self._last_modes: Dict[str, str] = {}
+        self._pending_signature = ""
+        self._pending_modes: Optional[Dict[str, str]] = None
         self._last_service_log = 0.0
         self._last_attach_warn: Dict[str, float] = {}
         self._apply_future = None
@@ -501,7 +442,7 @@ class PlanningSceneSync(Node):
             f"[SCENE_SYNC] attach fallback a world collision para {name}; TF {self._world_frame}->{self._ee_frame} no disponible"
         )
 
-    def _build_scene_request(self) -> Tuple[ApplyPlanningScene.Request, str]:
+    def _build_scene_request(self) -> Tuple[ApplyPlanningScene.Request, str, Dict[str, str]]:
         scene = PlanningScene()
         scene.is_diff = True
         scene.robot_state.is_diff = True
@@ -552,8 +493,6 @@ class PlanningSceneSync(Node):
             if attached:
                 attached_object = self._attached_add(collision_world)
                 if attached_object is not None:
-                    if previous_mode == "world":
-                        scene.world.collision_objects.append(self._collision_remove(name))
                     scene.robot_state.attached_collision_objects.append(attached_object)
                     signature_parts.append(
                         "{}:attached:{:.3f}:{:.3f}:{:.3f}".format(
@@ -581,8 +520,7 @@ class PlanningSceneSync(Node):
 
         request = ApplyPlanningScene.Request()
         request.scene = scene
-        self._last_modes = next_modes
-        return request, "|".join(signature_parts)
+        return request, "|".join(signature_parts), next_modes
 
     def _timer_cb(self) -> None:
         if self._apply_future is not None and not self._apply_future.done():
@@ -596,21 +534,38 @@ class PlanningSceneSync(Node):
                 )
             return
 
-        request, signature = self._build_scene_request()
+        request, signature, next_modes = self._build_scene_request()
         if signature == self._last_signature:
             return
-        self._last_signature = signature
+        self._pending_signature = signature
+        self._pending_modes = next_modes
         self._apply_future = self._apply_client.call_async(request)
         self._apply_future.add_done_callback(self._on_apply_done)
 
     def _on_apply_done(self, future) -> None:
+        self._apply_future = None
         try:
             response = future.result()
         except Exception as exc:
+            self._pending_signature = ""
+            self._pending_modes = None
             self.get_logger().error(f"[SCENE_SYNC] apply_planning_scene failed: {exc}")
             return
         if response is None or not bool(getattr(response, "success", False)):
-            self.get_logger().warning("[SCENE_SYNC] apply_planning_scene devolvio success=false")
+            pending_signature = self._pending_signature or "<empty>"
+            self._pending_signature = ""
+            self._pending_modes = None
+            self.get_logger().warning(
+                "[SCENE_SYNC] apply_planning_scene devolvio success=false "
+                f"signature={pending_signature}"
+            )
+            return
+        if self._pending_signature:
+            self._last_signature = self._pending_signature
+        if self._pending_modes is not None:
+            self._last_modes = self._pending_modes
+        self._pending_signature = ""
+        self._pending_modes = None
 
 
 def main() -> None:

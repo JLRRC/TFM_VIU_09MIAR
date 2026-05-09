@@ -1,0 +1,148 @@
+{
+  "attach_state": {
+    "attach_topic_published": true,
+    "follow_confirmed": false,
+    "logical_attached": true,
+    "logical_state": "CARRIED",
+    "owner": "ROBOT"
+  },
+  "dist_target_tcp": 0.007306472964381887,
+  "dist_target_tcp_after": 0.007306472964381887,
+  "dist_target_tcp_before": 0.007763440410025161,
+  "dist_tcp_obj": 0.007763440410025161,
+  "dist_tcp_obj_after": null,
+  "dist_tcp_obj_before": 0.007763440410025161,
+  "frame_usado": "base_link",
+  "gripper_state": {
+    "closed_flag": true,
+    "expected_closed": true,
+    "force_estimate": 0.5,
+    "joint_positions": {
+      "rg2_finger_joint1": 0.05303356042414665,
+      "rg2_finger_joint2": 0.05303356042418219
+    },
+    "joint_state_age_sec": 0.0,
+    "max_abs_err": 0.05303356042418219,
+    "measured_target_ok": true,
+    "opening_sum": 0.10606712084832884,
+    "target_mag": 0.0
+  },
+  "ik_solution": null,
+  "joint_goal": null,
+  "note": "{\"attach_published\": true, \"follow_confirmed\": false, \"geometry_ok\": true, \"geometry_source\": \"attach_contact_reference\", \"gripper_closed_measured\": false, \"logical_attached\": true, \"logical_state\": \"CARRIED\", \"object_base\": [0.4355986544822348, -6.151402686148624e-07, 0.024999441999490668], \"object_ref_z\": 0.024999441999490668, \"ok\": true, \"owner\": \"ROBOT\", \"pose_consistency\": {\"fk_live_delta_m\": 0.005678226882498258, \"fk_live_ok\": true, \"fk_trace_delta_m\": 0.006264379471839879, \"joint_state_age_sec\": 0.0, \"joint_state_fresh_ok\": true, \"ok_for_gate\": true, \"panel_fk_age_sec\": 0.16779735998716205, \"panel_fk_base\": [0.44208941999421053, 0.002297166410413637, 0.02254053885223295], \"panel_fk_fresh_ok\": true, \"panel_trace_base\": [0.44242633973152734, 0.0019261057260136507, 0.028784836188707877], \"phase\": \"ATTACH_GATE\", \"phase_end_age_sec\": null, \"phase_end_delta_m\": null, \"phase_jump_ok\": true, \"phase_jump_tol_m\": 1.0, \"source_age_tol_sec\": 300.0, \"source_sync_delta_sec\": 0.14470936602447182, \"source_sync_ok\": true, \"source_sync_tol_sec\": 300.0, \"source_tol_m\": 1.0, \"sources_fresh_ok\": true, \"sources_ok\": true, \"target_base\": [0.4355986544822348, -6.151402686148624e-07, 0.024999441999490668], \"target_live_delta_m\": 0.0077634404100251665, \"tcp_base\": [0.442393247116671, 0.0019630453739711024, 0.028200778488660885], \"tf_stamp_age_sec\": 1.926, \"trace_age_sec\": 0.3125067260116339, \"trace_fresh_ok\": true, \"trace_live_delta_m\": 0.0005861595821390557, \"trace_live_ok\": true}, \"pose_source_ok\": true, \"reason\": \"ok\", \"spawn_confirmed\": true, \"tcp_base\": [0.442393247116671, 0.0019630453739711024, 0.028200778488660885], \"tcp_contact_z\": 0.028200778488660885, \"tcp_obj_dist\": 0.0077634404100251665, \"xy_dist\": 0.007072655207425217, \"xy_tol\": 0.02, \"z_error\": 0.0032013364891702173, \"z_gap\": 0.0032013364891702173, \"z_ref_mode\": \"center\", \"z_tol\": 0.01}",
+  "object_name": "pick_demo",
+  "object_pose_base_after": null,
+  "object_pose_world": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "object_pose_world_after": null,
+  "object_pose_world_before": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "offsets_aplicados": {
+    "attach_xy_tol_m": 0.02,
+    "attach_z_tol_m": 0.01,
+    "tcp_z_offset_m": 0.0
+  },
+  "phase": "ATTACH_GATE",
+  "pose_consistency": {
+    "fk_live_delta_m": 0.005123396260989427,
+    "fk_live_ok": true,
+    "fk_trace_delta_m": 0.005123396260989427,
+    "joint_state_age_sec": 0.0,
+    "joint_state_fresh_ok": true,
+    "ok_for_gate": true,
+    "panel_fk_age_sec": 0.37445854098768905,
+    "panel_fk_base": [
+      0.44205948028260794,
+      0.0023295280581229483,
+      0.02188637057879879
+    ],
+    "panel_fk_fresh_ok": true,
+    "panel_trace_base": [
+      0.44232505959994084,
+      0.0020388238042643742,
+      0.026994613712216967
+    ],
+    "phase": "ATTACH_GATE",
+    "phase_end_age_sec": null,
+    "phase_end_delta_m": null,
+    "phase_jump_ok": true,
+    "phase_jump_tol_m": 1.0,
+    "source_age_tol_sec": 300.0,
+    "source_sync_delta_sec": 0.2096057980088517,
+    "source_sync_ok": true,
+    "source_sync_tol_sec": 300.0,
+    "source_tol_m": 1.0,
+    "sources_fresh_ok": true,
+    "sources_ok": true,
+    "target_base": [
+      0.4355986544822348,
+      -6.151402686148624e-07,
+      0.024999441999490668
+    ],
+    "target_live_delta_m": 0.007306472964381875,
+    "tcp_base": [
+      0.44232505959994084,
+      0.0020388238042643742,
+      0.026994613712216967
+    ],
+    "tf_stamp_age_sec": 1.627,
+    "trace_age_sec": 0.16485274297883734,
+    "trace_fresh_ok": true,
+    "trace_live_delta_m": 0.0,
+    "trace_live_ok": true
+  },
+  "result": "ok",
+  "seq": 6,
+  "target_minus_tcp_after": [
+    -0.006726405117706058,
+    -0.002039438944532989,
+    -0.00199517171272634
+  ],
+  "target_minus_tcp_before": [
+    -0.006794592634436214,
+    -0.001963660514239717,
+    -0.0032013364891702034
+  ],
+  "target_pose_base": [
+    0.4355986544822348,
+    -6.151402686148624e-07,
+    0.024999441999490668
+  ],
+  "target_pose_world": [
+    -0.4144013455177652,
+    -6.151402686148624e-07,
+    0.8749994419994906
+  ],
+  "tcp_obj_dx_base": null,
+  "tcp_obj_dy_base": null,
+  "tcp_obj_dz_base": null,
+  "tcp_obj_xy_dist_base": null,
+  "tcp_pose_base_after": [
+    0.44232505959994084,
+    0.0020388238042643742,
+    0.026994613712216967
+  ],
+  "tcp_pose_base_before": [
+    0.442393247116671,
+    0.0019630453739711024,
+    0.028200778488660885
+  ],
+  "tcp_pose_world_after": [
+    -0.40767494040005914,
+    0.0020388238042643742,
+    0.876994613712217
+  ],
+  "tcp_pose_world_before": [
+    -0.407606752883329,
+    0.0019630453739711024,
+    0.8782007784886608
+  ],
+  "timestamp_enter": "2026-04-20T15:56:16.647+02:00",
+  "timestamp_exit": "2026-04-20T15:56:17.690+02:00"
+}

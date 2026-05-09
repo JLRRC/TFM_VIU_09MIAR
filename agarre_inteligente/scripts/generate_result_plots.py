@@ -14,9 +14,9 @@ def main() -> int:
         "--experiments-root",
         "experiments",
         "--summary",
-        "reports/tables/summary_results.csv",
+        "report/tables/summary_results.csv",
         "--out-dir",
-        "reports/figures",
+        "report/figures",
     ]
     return subprocess.call(cmd)
 

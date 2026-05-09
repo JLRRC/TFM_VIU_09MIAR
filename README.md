@@ -1,186 +1,332 @@
-# Workspace TFM
+# TFM — Pick & Place UR5 + RG2 (ROS 2 Jazzy / Gazebo Harmonic / MoveIt 2)
 
-Este workspace contiene la version consolidada del TFM de agarre inteligente. La raiz se ha simplificado para dejar solo los elementos operativos y de entrega imprescindibles:
+[![colcon CI](https://github.com/JLRRC/TFM_VIU_09MIAR/actions/workflows/colcon.yml/badge.svg)](https://github.com/JLRRC/TFM_VIU_09MIAR/actions/workflows/colcon.yml)
 
-- `agarre_inteligente/`: bloque experimental de vision y aprendizaje profundo.
-- `agarre_ros2_ws/`: bloque ROS 2, Gazebo, MoveIt y panel de control.
-- `reports/`: repositorio unico de artefactos, tablas, ilustraciones, validaciones y evidencias del TFM.
-- `lanzar_panelv2.sh`: script raiz para arrancar el panel V2.
-- `actualizar_reports.sh`: script raiz para actualizar el contenido consolidado de `reports/`.
+Workspace principal del TFM de percepción e inferencia de agarre para UR5+RG2 con ROS 2, Gazebo y MoveIt 2.
 
-## 0. Clonado y puesta en marcha rapida
+## ✅ Estado actual: TFM aprobado · post-defensa cleanup (2026-05-09)
 
-Prerequisitos minimos:
+TFM aprobado el 2026-05-08 con tag `T35-3-cycles-verde-20260508`. Sprint
+post-defensa de mantenimiento offline en curso para dejar el código en
+estado productivo limpio:
 
-- Linux con ROS 2 Jazzy disponible en `/opt/ros/jazzy`
-- Python 3 con soporte para `venv`
-- `git`
+- Refactor T15 estructural: 3 funciones >200 LOC bajadas a <120 LOC con
+  10 sub-helpers (`PlanToPoseServer.{__init__, _execute_fjt_direct, _execute_moveit_direct}`).
+- Fix bug latente `seed_positions` antes de definirse (forzaba multi-waypoint
+  always-on incluso en fases cortas).
+- IK timeout default 2.0→5.0s (TRAC-IK seed-dependent post-restart).
+- Limpieza 18 unused imports, sincronización 5 baselines tras audit-v4.1.
+- Docs nuevos: `agarre_ros2_ws/docs/MIXINS.md` con MRO de los 9 mixins de UR5MoveItBridge.
 
-Clonado:
+**Tests offline: 2.381 PASSED · 0 FAILED.**
 
-```bash
-git clone https://github.com/JLRRC/TFM_VIU_09MIAR.git
-cd TFM_VIU_09MIAR
+Ver [CHANGELOG.md](CHANGELOG.md) sección [2026-05-09] para detalle.
+
+## 🏆 Hito principal: TFM PUBLICABLE 100/100 (2026-05-08)
+
+**T35 × 3 cycles consecutivos verde en LIVE** — bug bloqueante `BUG_CONTROLLER_FEEDBACK_HANG` cerrado vía bypass arquitectónico (FJT directo). Legacy `run_pick_demo` borrado físicamente (-8.040 LOC). 25 commits del día — score 89→100.
+
+Tag canónico: `T35-3-cycles-verde-20260508` (alias `tfm-publicable-100-de-100-20260508`, `tfm-cierre-academico-20260508`).
+
+```
+Cycle 1: SUCCEEDED  duration=232.4s  fases=7/7  reason=ok
+Cycle 2: SUCCEEDED  duration=204.2s  fases=7/7  reason=ok
+Cycle 3: SUCCEEDED  duration=206.8s  fases=7/7  reason=ok
 ```
 
-Preparacion del entorno de vision:
+Docs académicos para defensa:
+- [T35 results live](agarre_ros2_ws/docs/T35_RESULTS_20260508.md)
+- [Arquitectura post-legacy](agarre_ros2_ws/docs/architecture_post_legacy.md)
+- [Guión defensa](agarre_ros2_ws/docs/GUION_DEFENSA_20260508.md)
+- [BUG_CONTROLLER_FEEDBACK_HANG (cerrado)](agarre_ros2_ws/docs/BUG_CONTROLLER_FEEDBACK_HANG.md)
 
+Reproducir el T35 × 3 verde:
 ```bash
-cd agarre_inteligente
-./bootstrap.sh
-cd ..
+git checkout T35-3-cycles-verde-20260508
+cd agarre_ros2_ws && colcon build --packages-select ur5_tools ur5_bringup --symlink-install
+source install/setup.bash
+PANEL_COLD_BOOT=1 PANEL_FORCE_OFFSCREEN=1 PANEL_START_STACK=1 PANEL_LAUNCH_MOVEIT=1 \
+MOVEIT_MODE=move_group PANEL_AUTO_BRIDGE=0 PANEL_AUTO_RELEASE_DROP_OBJECTS=1 \
+PANEL_PICK_DEMO_USE_ORCHESTRATOR=1 ./scripts/start_panel_v2.sh --bg
+until grep -q "STATE READY" log/ros2_launch.log; do sleep 5; done
+for i in 1 2 3; do
+  ros2 action send_goal /pick_place ur5_panel_interfaces/action/PickPlace \
+    "{object_name: 'pick_demo', drop_xyz_world: {x: -1.30, y: 0.0, z: 1.10}, object_pose_world_hint: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}"
+done
 ```
 
-Build del workspace ROS 2:
+Ver `CHANGELOG.md` para tabla completa de los 25 commits del día y la solución H9+H10+H11 al bug.
+
+---
+
+## Estado intermedio anterior (2026-05-07): OBJETIVO PINZAS
+
+**Las pinzas RG2 agarran físicamente el objeto en simulación Gazebo.**
+
+Tag de cierre: `objetivo-cumplido-pinzas-agarran-objeto-20260507` (commit `a984234`).
+
+Evidencia del log live:
+```
+[ATTACH_BACKEND] demo_transport_follow_tick
+  object=pick_demo  mode=world_locked
+  desired=(-0.722, 0.345, 1.789)   ← objeto en world
+  tcp=(-0.731, 0.351, 1.804)        ← TCP en world
+```
+- TCP↔objeto a ~1.8 cm (pinzas envolviendo).
+- Z=1.79 m: robot levantó el objeto 95 cm desde la mesa.
+- 90+ s consecutivos transportando.
+
+---
+
+## Mapa rapido
+
+- `agarre_inteligente/`: bloque de vision, entrenamiento, evaluacion y resultados por experimento.
+- `agarre_ros2_ws/`: workspace ROS 2 del panel, simulacion, planificacion e integracion del bloque TFM.
+- `report/`: artefactos curados de memoria, metricas validadas, evidencias y exportaciones, incluyendo el PDF final actualmente tomado como referencia.
+
+## Flujos principales
+
+Arranque canónico, oficial y válido del panel completo:
 
 ```bash
-cd agarre_ros2_ws
-source /opt/ros/jazzy/setup.bash
-colcon build --symlink-install
-cd ..
+./lanzar_panelc2.sh
 ```
 
-Arranque recomendado:
+El launcher detecta el estado del stack automáticamente antes de actuar:
+
+| Situación detectada | Comportamiento |
+|---|---|
+| `/system_state=READY` ya publicado | Abre el panel directamente sin tocar Gazebo ni MoveIt (~6 s) |
+| Stack no detectado | Cold boot completo: limpia, lanza Gazebo + MoveIt2 + controllers, abre panel |
+| Nodos críticos vivos pero sin READY | Con `PANEL_ALLOW_DEGRADED_STACK=1`: abre panel con warning |
+
+Variables de control disponibles:
 
 ```bash
-./lanzar_panelv2.sh
+# Siempre arrancar desde cero (mata todo y relanza el stack completo)
+PANEL_FORCE_COLD_BOOT=1 ./lanzar_panelc2.sh
+
+# Solo abrir el panel si el stack ya está READY; salir si no lo está
+PANEL_FAST_ONLY=1 ./lanzar_panelc2.sh
+
+# Abrir el panel aunque /system_state no sea READY (stack degradado)
+PANEL_ALLOW_DEGRADED_STACK=1 ./lanzar_panelc2.sh
+
+# En cold boot: abortar si READY no llega antes del timeout (comportamiento estricto)
+LAUNCH_STRICT_READY=1 ./lanzar_panelc2.sh
 ```
 
-Arranque sin display grafico visible:
+`./lanzar_panelv2.sh` implementa el cold boot completo; `./lanzar_panelc2.sh` lo invoca cuando el stack no está corriendo.
+La repetición manual final de las pruebas operativas debe ejecutarse con `./lanzar_panelc2.sh`.
+
+Parar el stack ROS 2:
 
 ```bash
-export PANEL_FORCE_OFFSCREEN=1
-./lanzar_panelv2.sh
+./agarre_ros2_ws/scripts/stop_panel_v2.sh
 ```
 
-## 1. Estructura del workspace
-
-### `agarre_inteligente/`
-
-Contiene el bloque academico-experimental del TFM:
-
-- configuraciones de experimentos (`config/`)
-- codigo fuente de modelos, entrenamiento y evaluacion (`src/`)
-- scripts de preparacion de dataset, resumen, figuras y tablas (`scripts/`)
-- datos procesados y dataset (`data/`)
-- experimentos entrenados y checkpoints (`experiments/`)
-- documentacion tecnica y de trazabilidad (`docs/`)
-- entorno Python reproducible (`venv/`)
-
-Este subproyecto es la fuente de verdad para las metricas, tablas y figuras del TFM. Los artefactos finales ya no se guardan aqui, sino en la carpeta raiz `reports/`.
-
-### `agarre_ros2_ws/`
-
-Contiene el bloque robotico-operativo del TFM:
-
-- paquetes ROS 2 (`src/`)
-- scripts de arranque, validacion, diagnosis y utilidades (`scripts/`)
-- herramientas auxiliares (`tools/`)
-- modelos y mundos de simulacion (`models/`, `worlds/`)
-- configuraciones de pruebas y desarrollo (`pytest.ini`, `ruff.toml`, `requirements-dev.txt`)
-
-Este subproyecto proporciona el stack de simulacion y control del UR5 con RG2, junto con el panel Qt de operacion y el modulo de integracion con el bloque TFM.
-
-### `reports/`
-
-Es la carpeta unica de salida y consolidacion del TFM. Reune:
-
-- tablas finales (`reports/tables/`)
-- figuras generales (`reports/figures/`)
-- ilustraciones finales del capitulo 5 (`reports/tfm_figuras_cap5_1/`)
-- evidencia ROS 2 / Gazebo (`reports/tfm_ros_gazebo_results/`)
-- auditoria visual (`reports/tfm_visual_revision/`)
-- auditoria del panel (`reports/panel_audit/`)
-- episodios y logs del panel (`reports/panel_logs/`)
-- benchmark y auditoria Cornell (`reports/bench/`, `reports/cornell_audit/`)
-- documentos de validacion y trazabilidad del workspace (`reports/docs/workspace/`, `reports/validation/`)
-- archivo historico apartado (`reports/archive/`)
-
-El inventario maestro de lo que debe existir en esta carpeta esta en `reports/INVENTARIO_ARTEFACTOS_TFM.md`.
-
-## 2. Scripts raiz permitidos
-
-### `lanzar_panelv2.sh`
-
-Lanza el panel V2 del workspace ROS 2 usando el entorno virtual disponible. Detecta automaticamente alguno de estos entornos, por este orden:
-
-- `agarre_inteligente/.venv-tfm`
-- `agarre_inteligente/venv`
-- `agarre_inteligente/.venv`
-
-Uso normal:
+Limpieza de emergencia (daemon DDS colgado, procesos zombi, SHM contaminada):
 
 ```bash
-./lanzar_panelv2.sh
+./limpia_stack.sh
 ```
 
-Uso sin entorno grafico visible:
+Matar PIDs concretos conocidos y luego limpiar el resto:
 
 ```bash
-export PANEL_FORCE_OFFSCREEN=1
-./lanzar_panelv2.sh
+./limpia_stack.sh 103569 103652
 ```
 
-### `actualizar_reports.sh`
+El script es idempotente y siempre devuelve `exit 0`. Nunca llama a comandos ROS 2 sin `timeout`; usa `--no-daemon` en todas las consultas al grafo. Útil cuando `ros2 node list` queda bloqueado o el daemon DDS no responde entre reinicios del stack.
 
-Regenera y consolida el contenido de `reports/` desde el bloque experimental y desde cualquier salida temporal que haya aparecido en los subproyectos.
-
-Acciones principales:
-
-- regenera `summary_results.csv`, figuras y tablas del bloque experimental
-- sincroniza ilustraciones y artefactos historicos
-- consolida cualquier `reports/` que reaparezca dentro de subproyectos
-- elimina carpetas `reports/` fuera de la raiz
-- reconstruye el inventario `reports/INVENTARIO_ARTEFACTOS_TFM.md`
-
-Uso:
+Relanzar entrenamientos base del capitulo 5:
 
 ```bash
-./actualizar_reports.sh
+./recrear_experimentos_cap5_gpu.sh
 ```
 
-## 3. Flujo de trabajo recomendado
-
-### Para trabajar con el panel
+Regenerar artefactos curados del documento:
 
 ```bash
-./lanzar_panelv2.sh
+./recrear_artefactos_tfm.sh
 ```
 
-### Para refrescar el material entregable del TFM
+Regenerar la tabla de latencia de inferencia:
 
 ```bash
-./actualizar_reports.sh
+./recrear_tabla_5_3_latencia.sh
 ```
 
-### Para revisar el inventario de entrega
+## Fuente de verdad por area
 
-Consultar:
+- Vision y resultados experimentales: `agarre_inteligente/`
+- Integracion ROS 2 y panel: `agarre_ros2_ws/`
+- Figuras, tablas y metricas que respaldan la memoria: `report/`
 
-- `reports/INVENTARIO_ARTEFACTOS_TFM.md`
-- `reports/docs/workspace/AUDITORIA_MOVEIT_GAZEBO_QT.md`
-- `reports/docs/workspace/VALIDACION_WORKSPACE_2026_03_16.md`
-- `reports/docs/workspace/ENTREGA_WORKSPACE_2026_03_16.md`
+En vision conviven dos familias ligeras:
 
-## 4. Criterio de organizacion aplicado
+- `EXP1` y `EXP2`: referencia de resultados de la memoria; son los experimentos realmente usados en tablas, figuras y comparativas.
+- `EXP1.1` y `EXP1.2`: experimentos adicionales que materializan en codigo el diseño objetivo descrito en `4.6.2` del TFM.
 
-El workspace se ha reorganizado con estos objetivos:
+Notas de rigor:
 
-- una sola carpeta `reports/` como destino canonico de resultados
-- raiz minimizada para facilitar subida a git y entrega
-- separacion clara entre codigo fuente y artefactos finales
-- trazabilidad documental sin duplicar resultados en varias ubicaciones
-- posibilidad de reconstruir y actualizar `reports/` desde un unico punto de entrada
+- La recreacion oficial del TFM se mantiene sobre `EXP1..EXP4`.
+- El PDF de referencia del TFM en este workspace es `report/TFM_Lozano_Rodriguez-Jesus.pdf`.
+- Todos los experimentos disponibles pueden cargarse y usarse desde el panel de inferencia.
 
-## 5. Estado esperado tras la reorganizacion
+## Convenciones utiles
 
-En la raiz del workspace deben quedar, como elementos visibles principales:
+- El codigo editable vive sobre todo en `agarre_inteligente/` y `agarre_ros2_ws/src/`.
+- Solo existen `README` en la raiz y en los bloques principales del proyecto; cada uno explica su zona.
 
-- `agarre_inteligente/`
-- `agarre_ros2_ws/`
-- `reports/`
-- `lanzar_panelv2.sh`
-- `actualizar_reports.sh`
-- `README.md`
+## Lint y pre-commit (FASE 1, opcional)
 
-Los artefactos auxiliares o historicos fuera de esta estructura se archivan dentro de `reports/archive/`.
+Configuración preparada en `pyproject.toml` y `.pre-commit-config.yaml`. Para activarla:
+
+```bash
+pip install --user ruff pre-commit
+pre-commit install                  # registra el hook git
+pre-commit run --all-files          # primera pasada (no bloqueante)
+ruff check agarre_ros2_ws/src       # ejecución manual del linter
+```
+
+El selector de reglas en `pyproject.toml` está deliberadamente acotado a errores graves (sintaxis, mutable defaults, undefined names) para no bloquear el refactor en curso. Se ampliará en FASE 4.
+
+## Siguiente lectura
+
+- `agarre_inteligente/README.md`
+- `agarre_ros2_ws/README.md`
+- `report/README.md`
+
+## Nota final sobre el split Cornell
+
+- El TFM y algunos artefactos historicos documentan el split final como `3542/1569`.
+- En el workspace actual, el estado operativo verificable y el dataset efectivo son `3541/1569`.
+- La causa es una anotacion corrupta en `agarre_inteligente/data/raw/cornell/01/pcd0165cpos.txt`, donde aparece un rectangulo con vertices `NaN NaN`.
+- El generador de CSV puede volver a materializar `3542` filas en `train.csv`, pero una de ellas queda no finita y el dataset efectivo la descarta al cargar.
+- Mientras no aparezca una version valida de esa anotacion dentro del propio workspace o de una copia externa fiable, la referencia tecnica canonica del repo para ejecucion y validacion debe considerarse `3541/1569`; `3542/1569` debe leerse como cifra historica del documento.
+
+## Nota final sobre desajustes metodológicos no aplicados
+
+- La formulacion metodologica del TFM describe la evaluacion Cornell con rectangulos orientados y criterio de acierto por imagen.
+- El codigo historico con el que se generaron los resultados oficiales de `EXP1..EXP4` no aplicaba esa formulacion completa: `Evaluator` usa `iou_axis_aligned_boxes` y el entrenamiento oficial usa `SmoothL1Loss`.
+- `ENTREGA.V2` añade en paralelo la variante alineada con la formulacion del documento: `iou_oriented_boxes`, `cornell_success_oriented`, `EvaluatorOriented` y `GraspLoss`.
+- Por tanto, el workspace actual ya permite ejecutar una evaluacion metodologicamente consistente con el TFM cuando se usa la via nueva documentada en `agarre_inteligente/METHODOLOGY_ALIGNMENT.md` y en `agarre_inteligente/config/exp_methodology_v2.yaml`.
+- Los resultados oficiales ya publicados en `report/metrics/validated/` no se reescriben: siguen reflejando el pipeline historico de `EXP1..EXP4` y deben interpretarse como evidencia oficial congelada del TFM.
+
+## Nota de trazabilidad — módulo de panel Qt
+
+El componente de interfaz gráfica del sistema de agarre es el módulo
+`ur5_qt_panel.panel_v2`, ubicado en
+`agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_v2.py`.
+Este módulo está registrado como entry point en `setup.py`
+(`panel_v2 = ur5_qt_panel.panel_v2:main`) y es invocado por
+`ur5_stack.launch.py` y por `scripts/start_panel_v2.sh`.
+
+En versiones preliminares de la memoria del TFM se utilizó la
+denominación `main_panel.py` para referirse conceptualmente a este
+componente. En el workspace actual si existe un wrapper real en
+`agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/main_panel.py`, registrado
+ademas como entry point alternativo en `setup.py`
+(`main_panel = ur5_qt_panel.main_panel:main`). Toda la logica operativa
+sigue residiendo en `panel_v2.py`; la diferencia entre ambos nombres es
+de nomenclatura y empaquetado, no de comportamiento experimental.
+
+## ENTREGA.V2 — nota de cierre
+
+Rama creada sobre `ENTREGA` para dejar el proyecto conforme al TFM presentado,
+con el panel completamente operativo para todos los experimentos EXP1..EXP4
+y EXP1.1/EXP1.2. Cambios respecto a `ENTREGA`:
+
+- **fix(model):** loader en `tfm_grasping/model.py` corregido para cargar
+  EXP1.1/EXP1.2 (`SimpleGrasp`, kernel 7×7) sin error de arquitectura.
+  Salida clampeada a rango normalizado para evitar divergencia en inferencia.
+- **fix(exp11-12):** EXP1.1 y EXP1.2 reentrenados desde el directorio correcto.
+  El retrain anterior usaba `data_root: "."` desde `agarre_inteligente/`, lo que
+  causaba doble prefijo en las rutas → todas las imágenes cargaban en negro →
+  colapso de BatchNorm (`running_var ≈ 8e-6`) → salidas del orden de 167.000 en
+  modo eval → `val_success = 0.0%` para los 10 epochs. Tras el fix
+  (`data_root: ".."`) y retrain: EXP1.1 val_success 0.27–0.47, EXP1.2 0.39–0.46.
+- **docs:** `agarre_ros2_ws/README.md` y `start_panel_v2.sh` alineados con
+  `lanzar_panelc2.sh` como entrypoint canónico.
+- **protocolo:** `agarre_inteligente/EXPERIMENTS_V2_PROTOCOL.md` define dónde
+  van las salidas de trabajo futuro (nunca en `report/`).
+- **alineación metodológica** (posterior al TFM, no invalida resultados oficiales):
+  implementación de IoU Cornell con rectángulos orientados (`iou_oriented_boxes`,
+  algoritmo Sutherland-Hodgman), criterio de éxito por imagen con IoU orientada
+  (`EvaluatorOriented`), función de pérdida con simetría de 180° para el ángulo
+  (`GraspLoss`). Todas las funciones y clases oficiales de EXP1..EXP4 se
+  conservan intactas; las nuevas se añaden en paralelo. Véase
+  `agarre_inteligente/METHODOLOGY_ALIGNMENT.md`.
+
+Integridad de `report/` verificada: MD5 `d68e1d99da013bf3c00deb79f01b4fe3`
+(contenido trackeado por git idéntico al de `ENTREGA@dacace8`, evidencia oficial del TFM intacta).
+
+## Refactor estructural (rama `ENTREGA.V3`, 2026-04-27)
+
+Sesión de refactor profesional sobre los god-files del proyecto, con red de
+seguridad (603 tests automatizados) y trazabilidad completa (30+ commits
+semánticos, tag de rollback `pre-refactor-2026-04-27`).
+
+### Métricas de impacto
+
+| Archivo | Antes | Después | Δ |
+|---|---|---|---|
+| `ur5_moveit_bridge.py` | 5.654 L | 1.706 L | **−69.8%** |
+| `gripper_attach_backend.py` | 2.152 L | 950 L | **−56%** |
+| `panel_utils.py` | 2.328 L | 1.010 L | **−57%** |
+| `panel_pick_demo.py` | 12.249 L | 11.144 L | −9% |
+| `panel_v2.py` | 312 wrappers rotos | 320 fixes (audit AST) | red restaurada |
+
+**Total**: ~9.000 LoC reorganizadas en 22 módulos nuevos. **603 tests pasan**
+tras cada commit.
+
+### Arquitectura mixin de los nodos críticos
+
+```mermaid
+classDiagram
+  class UR5MoveItBridge
+  UR5MoveItBridge --|> MoveItPyPlannerMixin
+  UR5MoveItBridge --|> MoveItCommanderMixin
+  UR5MoveItBridge --|> GeometryMixin
+  UR5MoveItBridge --|> TrajectoryPrepMixin
+  UR5MoveItBridge --|> ExecutorMixin
+  UR5MoveItBridge --|> JointStateHelpersMixin
+  UR5MoveItBridge --|> ControllerManagementMixin
+  UR5MoveItBridge --|> GoalValidationMixin
+  UR5MoveItBridge --|> Node
+
+  class GripperAttachBackend
+  GripperAttachBackend --|> AnchorMixin
+  GripperAttachBackend --|> DemoTransportMixin
+  GripperAttachBackend --|> GzCliMixin
+  GripperAttachBackend --|> PoseLookupMixin
+  GripperAttachBackend --|> PoseSubscriberMixin
+  GripperAttachBackend --|> SetPoseMixin
+  GripperAttachBackend --|> Node
+```
+
+### Documentación complementaria
+
+- `agarre_ros2_ws/docs/architecture.md` — snapshot vivo de la arquitectura
+  (paquetes, nodos, frames TF, mixins, pipeline pick demo, convenciones de
+  logging, testing).
+- `agarre_ros2_ws/src/ur5_bringup/config/runtime_defaults.yaml` — 81 tunables
+  centralizados (timeouts, tolerancias, scales).
+- Tag de rollback total: `git checkout pre-refactor-2026-04-27`.
+
+### CI
+
+`.github/workflows/colcon.yml` ejecuta `colcon build && colcon test` para los
+paquetes no-Qt (`ur5_tools`, `ur5_bringup`, `tfm_grasping`,
+`ur5_panel_interfaces`, `ur5_description`, `ur5_moveit_config`) en cada push
+y PR a `ENTREGA.V3` / `main`. Ubuntu 22.04 + ROS 2 Jazzy. `ur5_qt_panel` se
+excluye porque sus tests cargan PyQt5 con display.
+
+### Evidence logger
+
+`ros2 run ur5_tools evidence_logger` graba JSON Lines + CSV por sesión en
+`report/runs/<timestamp>/`. Suscribe a `/desired_grasp/result`,
+`/system_state`, `/system_diag` y `/gripper/<obj>/state` para producir
+métricas auditables por ciclo de pick (defensa académica).
+Verificable con: `git ls-files report/ | sort | xargs -I{} sh -c 'cat "$1"' _ {} | md5sum`

@@ -1,0 +1,37 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/config/panel_tfm_runtime.yaml
+# Contenido: Tunables runtime del flujo TFM (F2 bucket E).
+
+# -- Science / output --
+repro_mode: ""
+raw_output: ""
+
+# -- Edad máxima de frames --
+infer_frame_max_age_sec: 4.0
+grasp_max_age_sec: 60.0
+
+# -- MoveIt active-request gating --
+moveit_active_request_grace_sec: 90.0
+moveit_active_request_hb_sec: 2.5
+
+# -- Preprocess --
+infer_use_roi: auto
+
+# -- Execute / grasp mode --
+execute_pretable: true
+grasp_cartesian: false
+
+# -- Canonical --
+canonical_use_pick_object: true
+canonical_use_grasp_yaw: true
+canonical_grasp_xy_max_delta_m: 0.080
+canonical_snap_selected_xy: true
+
+# -- Remote ready (TFM infer / execute) --
+remote_infer_ready_wait_sec: 20.0
+remote_infer_ready_poll_sec: 0.25
+remote_execute_ready_wait_sec: 90.0
+remote_execute_ready_poll_sec: 1.0
+
+# -- Pick demo remote ready --
+pick_demo_remote_ready_wait_sec: 90.0
+pick_demo_remote_ready_poll_sec: 0.5

@@ -3,14 +3,15 @@
 # Contenido: Codigo de herramientas, bridges y servicios auxiliares del stack UR5.
 # Uso breve: Se usa en build con colcon y como nodos/servicios ROS 2 del sistema.
 # URL: /home/laboratorio/TFM/agarre_ros2_ws/src/ur5_tools/ur5_tools/system_state_manager.py
-# Summary: Publishes a global system state for the UR5 stack.
-"""Publish global system readiness state for the UR5 stack."""
+# Resumen: Publica un estado global del sistema para el stack UR5.
+"""Publica el estado global de disponibilidad del sistema para el stack UR5."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
 import json
+import os
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -19,7 +20,7 @@ from geometry_msgs.msg import TransformStamped
 import rclpy
 from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
-from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from rclpy.qos import qos_profile_sensor_data
 from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import Image
@@ -27,6 +28,13 @@ from std_msgs.msg import String
 from tf2_msgs.msg import TFMessage
 from tf2_ros import Buffer, TransformListener
 
+from .gripper_geometry import (
+    RG2_PINCH_CENTER_FRAME,
+    RG2_TCP_FRAME,
+    TOOL0_FRAME,
+    evaluate_runtime_geometry,
+    load_gripper_geometry,
+)
 from .param_utils import read_float_param, read_str_list_param, read_str_param
 
 
@@ -36,6 +44,7 @@ class SystemState(str, Enum):
     WAITING_BRIDGE = "WAITING_BRIDGE"
     WAITING_CONTROLLERS = "WAITING_CONTROLLERS"
     WAITING_TF = "WAITING_TF"
+    WAITING_GEOMETRY = "WAITING_GEOMETRY"
     WAITING_CAMERA = "WAITING_CAMERA"
     WAITING_MOVEIT = "WAITING_MOVEIT"
     READY = "READY"
@@ -55,6 +64,8 @@ class DependencySnapshot:
     camera_age: float
     tf_ok: bool
     tf_reason: str
+    geometry_ok: bool
+    geometry_reason: str
     controllers_ready: bool
     controllers_reason: str
     missing_controllers: List[str]
@@ -99,11 +110,13 @@ class SystemStateMachine:
     def _critical_missing(snapshot: DependencySnapshot) -> bool:
         tf_in_grace = str(snapshot.tf_reason).startswith("grace:")
         tf_critical = snapshot.controllers_ready and (not snapshot.tf_ok) and (not tf_in_grace)
+        geometry_critical = snapshot.tf_ok and (not snapshot.geometry_ok)
         return not (
             snapshot.clock_ok
             and snapshot.pose_ok
             and snapshot.camera_ok
             and (not tf_critical)
+            and (not geometry_critical)
         )
 
     @staticmethod
@@ -118,6 +131,8 @@ class SystemStateMachine:
             return f"pose/info age={snapshot.pose_age:.2f}s"
         if snapshot.controllers_ready and (not snapshot.tf_ok):
             return f"tf={snapshot.tf_reason}"
+        if snapshot.tf_ok and (not snapshot.geometry_ok):
+            return f"geometry={snapshot.geometry_reason}"
         if not snapshot.camera_ok:
             if snapshot.camera_age == float("inf"):
                 return "camera sin frames válidos"
@@ -142,6 +157,8 @@ class SystemStateMachine:
             return SystemState.WAITING_CONTROLLERS, reason
         if not snapshot.tf_ok:
             return SystemState.WAITING_TF, f"tf={snapshot.tf_reason}"
+        if not snapshot.geometry_ok:
+            return SystemState.WAITING_GEOMETRY, f"geometry={snapshot.geometry_reason}"
         if not snapshot.camera_ok:
             if snapshot.camera_age == float("inf"):
                 return SystemState.WAITING_CAMERA, "camera sin frames válidos"
@@ -158,16 +175,30 @@ class StateDecision:
     fatal_reason: Optional[str] = None
 
 
-class SystemStateManager(Node):
-    """Track system readiness and publish /system_state + /system_diag."""
+class SystemStateManager(LifecycleNode):
+    """Sigue el estado global del sistema y publica /system_state + /system_diag.
+
+    F13 (2026-05-01): migrado a ``LifecycleNode``. Recursos:
+      - ``on_configure``: lee parámetros, crea publishers, TF
+        buffer/listener, ListControllers client, carga geometría.
+      - ``on_activate``: crea subscriptions (clock/pose/camera) y timer.
+      - ``on_deactivate``: cancela timer y subscriptions.
+      - ``on_cleanup``: libera publishers y reset de estado.
+
+    El parámetro ``auto_activate`` (default True) preserva el
+    comportamiento de los launch existentes haciendo que ``main()``
+    dispare ``configure → activate`` automáticamente.
+    """
 
     def __init__(self) -> None:
         super().__init__("system_state_manager")
+        # F13 lifecycle: auto-activate por defecto preserva backward-compat.
+        self.declare_parameter("auto_activate", True)
         self.declare_parameter("world_name", "ur5_mesa_objetos")
         self.declare_parameter("model_name", "ur5_rg2")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("world_frame", "world")
-        self.declare_parameter("ee_frame", "tool0")
+        self.declare_parameter("ee_frame", "rg2_pinch_center")
         self.declare_parameter("pose_topic", "")
         self.declare_parameter("camera_topic", "/camera_overhead/image")
         self.declare_parameter("camera_required", True)
@@ -194,16 +225,36 @@ class SystemStateManager(Node):
         self.declare_parameter("camera_timeout_sec", 1.5)
         self.declare_parameter("tf_timeout_sec", 0.2)
         self.declare_parameter("tf_drop_grace_sec", 4.0)
+        self.declare_parameter("geometry_required", True)
+        self.declare_parameter("geometry_tool_frame", TOOL0_FRAME)
+        self.declare_parameter("geometry_offset_tol_m", 0.002)
+        self.declare_parameter("geometry_pair_tol_m", 0.001)
         self.declare_parameter("controller_check_sec", 1.0)
         self.declare_parameter("controller_future_timeout_sec", 2.0)
         self.declare_parameter("state_publish_hz", 2.0)
         self.declare_parameter("startup_timeout_sec", 0.0)
 
+        # Recursos creados en on_configure / on_activate.
+        self._tf_buffer: Optional[Buffer] = None
+        self._tf_listener: Optional[TransformListener] = None
+        self._state_pub = None
+        self._diag_pub = None
+        self._clock_sub = None
+        self._pose_sub = None
+        self._camera_sub = None
+        self._controller_client = None
+        self._tick_timer = None
+
+    # ------------------------------------------------------------------
+    # Lifecycle transitions (F13)
+    # ------------------------------------------------------------------
+
+    def on_configure(self, _state) -> TransitionCallbackReturn:
         self._world_name = read_str_param(self, "world_name", "ur5_mesa_objetos")
         self._model_name = read_str_param(self, "model_name", "ur5_rg2")
         self._base_frame = read_str_param(self, "base_frame", "base_link")
         self._world_frame = read_str_param(self, "world_frame", "world")
-        self._ee_frame = read_str_param(self, "ee_frame", "tool0")
+        self._ee_frame = read_str_param(self, "ee_frame", "rg2_pinch_center")
         pose_topic = read_str_param(self, "pose_topic", "")
         self._pose_topic = pose_topic or f"/world/{self._world_name}/pose/info"
         self._camera_topic = read_str_param(
@@ -239,6 +290,24 @@ class SystemStateManager(Node):
             "tf_drop_grace_sec",
             4.0,
             min_value=0.0,
+        )
+        self._geometry_required = bool(self.get_parameter("geometry_required").value)
+        self._geometry_tool_frame = read_str_param(
+            self,
+            "geometry_tool_frame",
+            TOOL0_FRAME,
+        )
+        self._geometry_offset_tol = read_float_param(
+            self,
+            "geometry_offset_tol_m",
+            0.002,
+            min_value=0.0001,
+        )
+        self._geometry_pair_tol = read_float_param(
+            self,
+            "geometry_pair_tol_m",
+            0.001,
+            min_value=0.0001,
         )
         self._controller_check_sec = read_float_param(
             self,
@@ -279,10 +348,19 @@ class SystemStateManager(Node):
         self._reason = "boot"
         self._fatal_latched = False
         self._tf_missing_since = 0.0
+        self._geometry_ok_state = not self._geometry_required
+        self._geometry_reason = (
+            "geometry disabled" if not self._geometry_required else "geometry pending"
+        )
         self._fsm = SystemStateMachine(
             required_controllers=self._required_controllers,
             moveit_required=self._moveit_required,
         )
+        try:
+            self._gripper_geometry = load_gripper_geometry(os.environ.get("WS_DIR"))
+        except Exception as exc:
+            raise RuntimeError(f"canonical gripper geometry unavailable: {exc}") from exc
+        self._geometry_snapshot = self._empty_geometry_snapshot(reason=self._geometry_reason)
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -290,45 +368,109 @@ class SystemStateManager(Node):
         self._state_pub = self.create_publisher(String, "/system_state", 10)
         self._diag_pub = self.create_publisher(String, "/system_diag", 10)
 
-        self.create_subscription(
+        self._controller_client = self.create_client(
+            ListControllers,
+            f"{self._controller_manager}/list_controllers",
+        )
+        if not self._camera_topic and self._camera_required:
+            self._fatal("camera_topic vacío; cámaras obligatorias")
+            return TransitionCallbackReturn.FAILURE
+        if not self._camera_topic:
+            self.get_logger().warn(
+                "camera_topic vacío; cámaras deshabilitadas por configuración"
+            )
+        self.get_logger().info(
+            f"[LIFECYCLE] SystemStateManager configured: pose={self._pose_topic} "
+            f"camera={self._camera_topic} ee={self._ee_frame} "
+            f"controllers={len(self._required_controllers)} moveit={self._moveit_required}"
+        )
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, _state) -> TransitionCallbackReturn:
+        self._clock_sub = self.create_subscription(
             Clock,
             "/clock",
             self._on_clock,
             qos_profile_sensor_data,
         )
-        self.create_subscription(
+        self._pose_sub = self.create_subscription(
             TFMessage,
             self._pose_topic,
             self._on_pose_info,
             qos_profile_sensor_data,
         )
         if self._camera_topic:
-            self.create_subscription(
+            self._camera_sub = self.create_subscription(
                 Image,
                 self._camera_topic,
                 self._on_camera_image,
                 qos_profile_sensor_data,
             )
-        else:
-            if self._camera_required:
-                self._fatal("camera_topic vacío; cámaras obligatorias")
-                return
-            self.get_logger().warn(
-                "camera_topic vacío; cámaras deshabilitadas por configuración"
-            )
-
-        self._controller_client = self.create_client(
-            ListControllers,
-            f"{self._controller_manager}/list_controllers",
-        )
-
         period = 1.0 / self._state_hz
-        self.create_timer(period, self._tick)
+        self._tick_timer = self.create_timer(period, self._tick)
         self.get_logger().info(
-            f"SystemStateManager listo: pose={self._pose_topic} camera={self._camera_topic} "
-            f"ee={self._ee_frame} controllers={len(self._required_controllers)} "
-            f"moveit={self._moveit_required}"
+            "[LIFECYCLE] SystemStateManager activated; ticking at "
+            f"{self._state_hz:.1f} Hz"
         )
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_deactivate(self, _state) -> TransitionCallbackReturn:
+        for attr in ("_tick_timer",):
+            t = getattr(self, attr, None)
+            if t is not None:
+                try:
+                    t.cancel()
+                    self.destroy_timer(t)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        for attr in ("_clock_sub", "_pose_sub", "_camera_sub"):
+            s = getattr(self, attr, None)
+            if s is not None:
+                try:
+                    self.destroy_subscription(s)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        self.get_logger().info("[LIFECYCLE] SystemStateManager deactivated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, _state) -> TransitionCallbackReturn:
+        # Por si on_deactivate no se ejecutó
+        for attr in ("_tick_timer",):
+            t = getattr(self, attr, None)
+            if t is not None:
+                try:
+                    self.destroy_timer(t)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        for attr in ("_clock_sub", "_pose_sub", "_camera_sub"):
+            s = getattr(self, attr, None)
+            if s is not None:
+                try:
+                    self.destroy_subscription(s)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        for attr in ("_state_pub", "_diag_pub", "_controller_client"):
+            v = getattr(self, attr, None)
+            if v is not None:
+                try:
+                    if attr == "_controller_client":
+                        self.destroy_client(v)
+                    else:
+                        self.destroy_publisher(v)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        self._tf_buffer = None
+        self._tf_listener = None
+        self.get_logger().info("[LIFECYCLE] SystemStateManager cleaned up")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, _state) -> TransitionCallbackReturn:
+        return self.on_cleanup(_state)
 
     @staticmethod
     def _now() -> float:
@@ -461,6 +603,10 @@ class SystemStateManager(Node):
 
     def _update_controllers(self) -> None:
         now = self._now()
+        if self._controller_future is not None and self._controller_future.done():
+            # La respuesta ya está lista y la consumirá _consume_controllers() en este tick.
+            # No lances una petición nueva todavía o perderás el resultado completado.
+            return
         if (now - self._last_controller_check) < self._controller_check_sec:
             return
         self._last_controller_check = now
@@ -568,6 +714,76 @@ class SystemStateManager(Node):
         self._moveit_last_ok = False
         return False
 
+    def _empty_geometry_snapshot(
+        self,
+        *,
+        reason: str,
+        actual_xyz: Optional[Dict[str, Tuple[float, float, float]]] = None,
+        ok: bool = False,
+    ) -> Dict[str, object]:
+        expected_xyz = {
+            RG2_TCP_FRAME: list(self._gripper_geometry.xyz_for_frame(RG2_TCP_FRAME)),
+            RG2_PINCH_CENTER_FRAME: list(
+                self._gripper_geometry.xyz_for_frame(RG2_PINCH_CENTER_FRAME)
+            ),
+        }
+        snapshot: Dict[str, object] = {
+            "tool_frame": self._geometry_tool_frame,
+            "source_path": self._gripper_geometry.tcp.source_path,
+            "urdf_source": self._gripper_geometry.tcp.source_path,
+            "expected_xyz": expected_xyz,
+            "actual_xyz": {},
+            "frame_error_m": {},
+            "offset_tol_m": float(self._geometry_offset_tol),
+            "pair_tol_m": float(self._geometry_pair_tol),
+            "pair_error_m": None,
+            "ok": bool(ok),
+            "reason": str(reason or ""),
+        }
+        for frame_name, xyz in (actual_xyz or {}).items():
+            snapshot["actual_xyz"][frame_name] = [
+                float(xyz[0]),
+                float(xyz[1]),
+                float(xyz[2]),
+            ]
+        return snapshot
+
+    def _geometry_ok(self) -> Tuple[bool, str, Dict[str, object]]:
+        if not self._geometry_required:
+            snapshot = self._empty_geometry_snapshot(reason="disabled", ok=True)
+            return True, "disabled", snapshot
+        timeout = Duration(seconds=self._tf_timeout)
+
+        def _lookup_xyz(tool_frame: str, frame_name: str) -> Tuple[float, float, float]:
+            try:
+                if not self._tf_buffer.can_transform(
+                    tool_frame,
+                    frame_name,
+                    rclpy.time.Time(),
+                    timeout=timeout,
+                ):
+                    raise LookupError(f"{tool_frame}->{frame_name} missing")
+                tf = self._tf_buffer.lookup_transform(
+                    tool_frame,
+                    frame_name,
+                    rclpy.time.Time(),
+                    timeout=timeout,
+                )
+            except LookupError:
+                raise
+            except Exception as exc:
+                raise RuntimeError(f"{tool_frame}->{frame_name} tf_error") from exc
+            tr = tf.transform.translation
+            return (float(tr.x), float(tr.y), float(tr.z))
+
+        return evaluate_runtime_geometry(
+            _lookup_xyz,
+            geometry=self._gripper_geometry,
+            tool_frame=self._geometry_tool_frame,
+            offset_tol_m=self._geometry_offset_tol,
+            pair_tol_m=self._geometry_pair_tol,
+        )
+
     def _set_state(self, state: SystemState, reason: str) -> None:
         if state.value == self._state and reason == self._reason:
             return
@@ -583,19 +799,22 @@ class SystemStateManager(Node):
             return
         self._fatal_latched = True
         self._set_state(SystemState.ERROR_FATAL, reason)
-        self._publish_state()
-        self.get_logger().error(f"ERROR_FATAL: {reason}")
         try:
-            self.destroy_node()
+            self._publish_state()
         except Exception:
             pass
+        self.get_logger().error(f"ERROR_FATAL: {reason}")
+        # F13 LifecycleNode: deactivate libera timer/subs y deja el nodo
+        # vivo en INACTIVE para diagnóstico externo. No hacemos
+        # destroy_node aquí; el supervisor decide shutdown.
         try:
-            rclpy.try_shutdown()
+            self.trigger_deactivate()
         except Exception:
             pass
 
     def _publish_state(self) -> None:
         self._state_pub.publish(String(data=self._state))
+        geometry_diag = dict(self._geometry_snapshot or {})
         diag = {
             "reason": self._reason,
             "state": self._state,
@@ -605,6 +824,16 @@ class SystemStateManager(Node):
             "controllers_ready": self._controllers_ready,
             "controllers_reason": self._controllers_reason,
             "moveit_ready": self._moveit_ready,
+            "geometry_ok": self._geometry_ok_state,
+            "geometry_reason": self._geometry_reason,
+            "geometry_tool_frame": geometry_diag.get("tool_frame"),
+            "geometry_urdf_source": geometry_diag.get("urdf_source")
+            or geometry_diag.get("source_path"),
+            "geometry_expected_xyz": geometry_diag.get("expected_xyz"),
+            "geometry_actual_xyz": geometry_diag.get("actual_xyz"),
+            "geometry_frame_error_m": geometry_diag.get("frame_error_m"),
+            "geometry_pair_error_m": geometry_diag.get("pair_error_m"),
+            "geometry_snapshot": geometry_diag,
             "pose_model_seen": self._pose_model_seen,
             "pose_entities_seen": self._pose_entities_seen,
             "controllers": self._controllers_state,
@@ -646,6 +875,14 @@ class SystemStateManager(Node):
         pose_ok, pose_age = self._pose_ok()
         camera_ok, camera_age = self._camera_ok()
         tf_ok, tf_reason = self._tf_ok()
+        geometry_ok = False
+        geometry_reason = "waiting_tf"
+        geometry_snapshot = self._empty_geometry_snapshot(reason=geometry_reason, ok=False)
+        if tf_ok:
+            geometry_ok, geometry_reason, geometry_snapshot = self._geometry_ok()
+        self._geometry_ok_state = geometry_ok
+        self._geometry_reason = geometry_reason
+        self._geometry_snapshot = geometry_snapshot
         now = self._now()
         if tf_ok:
             self._tf_missing_since = 0.0
@@ -674,6 +911,8 @@ class SystemStateManager(Node):
             camera_age=camera_age,
             tf_ok=tf_ok,
             tf_reason=tf_reason,
+            geometry_ok=geometry_ok,
+            geometry_reason=geometry_reason,
             controllers_ready=self._controllers_ready,
             controllers_reason=self._controllers_reason,
             missing_controllers=missing,
@@ -689,6 +928,13 @@ class SystemStateManager(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = SystemStateManager()
+    # F13 lifecycle: auto-activate por defecto preserva backward-compat.
+    if bool(node.get_parameter("auto_activate").value):
+        try:
+            node.trigger_configure()
+            node.trigger_activate()
+        except Exception as exc:
+            node.get_logger().error(f"[LIFECYCLE] auto_activate failed: {exc}")
     try:
         rclpy.spin(node)
     except ExternalShutdownException:

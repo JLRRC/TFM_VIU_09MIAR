@@ -1,0 +1,54 @@
+# EXP1.2_SIMPLEGRASP_RGBD
+# Modelo SimpleGrasp alineado con la arquitectura del TFM
+
+experiment:
+  name: "EXP1.2_SIMPLEGRASP_RGBD"
+  description: "EXP1.2 - SimpleGrasp con RGB-D y augmentation moderado"
+  seeds: [0, 1, 2]
+  split_protocol: "object-wise"
+  train_size_expected: 3541
+  val_size_expected: 1569
+
+model:
+  name: "SimpleGrasp"
+  architecture: "simple_grasp"
+  input_channels: 4
+  output_params: ["cx", "cy", "w", "h", "angle_deg"]
+
+data:
+  modality: "rgbd"
+  data_root: ".."
+  train_csv: "data/processed/cornell/splits/object_wise/train.csv"
+  val_csv: "data/processed/cornell/splits/object_wise/val.csv"
+  image_size: 224
+  augmentation: true
+  augmentation_level: "moderate"
+
+training:
+  epochs: 10
+  batch_size: 32
+  optimizer:
+    name: "adam"
+    lr: 0.001
+    weight_decay: 0.0
+  scheduler:
+    name: "none"
+  criterion: "smooth_l1"
+  device: "cuda"
+
+metrics:
+  protocol: "cornell"
+  iou_threshold: 0.25
+  angle_threshold_deg: 30.0
+  monitor: "val_success"
+
+checkpointing:
+  save_best: true
+  save_last: true
+
+outputs:
+  experiments_root: "experiments"
+  reports_root: "report"
+
+benchmark:
+  device: "cpu"

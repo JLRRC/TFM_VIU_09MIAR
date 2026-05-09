@@ -39,7 +39,7 @@
                         </ode>
                     </contact>
                 </surface>
-            </collision>
+            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
             <inertial>
                 <pose>-7.83914e-07 0.00442178 0.184343 0 0 0</pose>
                 <mass>4.210389694173812</mass>
@@ -77,7 +77,7 @@
                         </ode>
                     </friction>
                 </surface>
-            </collision>
+            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
             <inertial>
                 <pose>-3.81853e-06 0.00927291 -0.0018563 0 0 0</pose>
                 <mass>2.6078628081050645</mass>
@@ -115,7 +115,7 @@
                         </ode>
                     </friction>
                 </surface>
-            </collision>
+            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
             <inertial>
                 <pose>9.68139e-10 -0.00107158 0.2125 0 0 0</pose>
                 <mass>9.034556202946057</mass>
@@ -153,7 +153,7 @@
                         </ode>
                     </friction>
                 </surface>
-            </collision>
+            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
             <inertial>
                 <pose>-7.83914e-07 0.00442178 0.184343 0 0 0</pose>
                 <mass>4.210389694173812</mass>
@@ -191,7 +191,7 @@
                         </ode>
                     </friction>
                 </surface>
-            </collision>
+            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
             <inertial>
                 <pose>2.12195e-06 0.0886236 -0.00357675 0 0 0</pose>
                 <mass>0.8652783044597422</mass>
@@ -229,7 +229,7 @@
                         </ode>
                     </friction>
                 </surface>
-            </collision>
+            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
             <inertial>
                 <pose>-2.12306e-06 -0.00357678 0.0901045 0 0 0</pose>
                 <mass>0.8652786866955592</mass>
@@ -267,7 +267,7 @@
                         </ode>
                     </friction>
                 </surface>
-            </collision>
+            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
             <inertial>
                 <pose>8.12548e-09 0.0630914 0.000189932 0 0 0</pose>
                 <mass>0.23285976783205536</mass>
@@ -297,8 +297,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>30</damping>
-                    <friction>4</friction>
+                    <damping>1.0</damping>
+                    <friction>0.1</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -317,8 +317,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>45</damping>
-                    <friction>6</friction>
+                    <damping>1.0</damping>
+                    <friction>0.1</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -337,8 +337,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>35</damping>
-                    <friction>5</friction>
+                    <damping>1.0</damping>
+                    <friction>0.1</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -357,8 +357,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>25</damping>
-                    <friction>3.5</friction>
+                    <damping>0.8</damping>
+                    <friction>0.05</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -377,8 +377,8 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>20</damping>
-                    <friction>2.5</friction>
+                    <damping>0.8</damping>
+                    <friction>0.05</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -397,80 +397,74 @@
                 <dynamics>
                     <spring_reference>0</spring_reference>
                     <spring_stiffness>0</spring_stiffness>
-                    <damping>15</damping>
-                    <friction>1.75</friction>
+                    <damping>0.6</damping>
+                    <friction>0.05</friction>
                 </dynamics>
             </axis>
         </joint>
-        <!-- Arm-Hand Fixed Joint -->
-        <joint name="ur5_hand_joint" type="fixed">
-            <pose relative_to="wrist_3_link">0 0.0823 0 1.570796325 0 1.570796325</pose>
-            <parent>wrist_3_link</parent>
-            <child>rg2_hand</child>
+        <!-- Simplified RG2 gripper: prismatic box fingers, coherent with URDF/TF/ros2_control. -->
+        <!-- URDF↔SDF parity fix (2026-05-06): rg2_base_link mounts at tool0 (origin 0,0,0),
+             matching ur5.urdf.xacro rg2_mount_joint. The previous -0.1927m compensation
+             was a workaround for an incorrect 0.275m translation in end_effector_frame_fixed_joint
+             (also fixed below). With both fixes, SDF and URDF describe the same geometry. -->
+        <joint name="rg2_mount_joint" type="fixed">
+            <pose relative_to="tool0">0 0 0 0 0 0</pose>
+            <parent>tool0</parent>
+            <child>rg2_base_link</child>
         </joint>
-        <!-- Hand Links -->
-        <link name="rg2_hand">
+        <link name="rg2_base_link">
             <gravity>false</gravity>
-            <pose relative_to="ur5_hand_joint">0 0 0 0 0 0</pose>
-            <visual name="rg2_hand_visual">
-                <pose>0 0 0 0 0 0</pose>
+            <pose relative_to="rg2_mount_joint">0 0 0 0 0 0</pose>
+            <visual name="rg2_base_link_visual">
+                <pose>0 0 0.010 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/visual/rg2/hand.dae</uri>
-                    </mesh>
+                    <box><size>0.060 0.080 0.020</size></box>
                 </geometry>
+                <material>
+                    <ambient>0.4 0.4 0.4 1</ambient>
+                    <diffuse>0.4 0.4 0.4 1</diffuse>
+                </material>
             </visual>
-            <collision name="rg2_hand_collision">
-                <pose>0 0 0 0 0 0</pose>
+            <collision name="rg2_base_link_collision">
+                <pose>0 0 0.010 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/collision/rg2/hand.stl</uri>
-                    </mesh>
+                    <box><size>0.060 0.080 0.020</size></box>
                 </geometry>
                 <surface>
-                    <friction>
-                        <ode>
-                            <mu>1.2</mu>
-                            <mu2>1.2</mu2>
-                        </ode>
-                    </friction>
+                    <friction><ode><mu>1.2</mu><mu2>1.2</mu2></ode></friction>
                 </surface>
-            </collision>
+            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
             <inertial>
-                <pose>0.057581 -0.000169308 -3.3334e-05 0 0 0</pose>
-                <mass>0.29881464108881906</mass>
+                <pose>0 0 0.010 0 0 0</pose>
+                <mass>0.30</mass>
                 <inertia>
-                    <ixx>0.00010934311942148434</ixx>
-                    <iyy>0.0003327568173229071</iyy>
-                    <izz>0.00037338963627732164</izz>
-                    <ixy>2.4297126288189813e-07</ixy>
-                    <ixz>5.3958894994201004e-08</ixz>
-                    <iyz>2.4899876853227836e-07</iyz>
+                    <ixx>0.00050</ixx><iyy>0.00040</iyy><izz>0.00060</izz>
+                    <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
                 </inertia>
             </inertial>
         </link>
-        <link name="rg2_leftfinger">
+        <!-- Finger links: boxes 12×10×175 mm, joint origin at ±20 mm in Y from rg2_base_link. -->
+        <link name="rg2_finger_link1">
             <gravity>false</gravity>
             <pose relative_to="rg2_finger_joint1">0 0 0 0 0 0</pose>
-            <visual name="rg2_leftfinger_visual">
+            <visual name="rg2_finger_link1_visual">
+                <pose>0 0 0.0875 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/visual/rg2/finger.dae</uri>
-                    </mesh>
+                    <box><size>0.012 0.010 0.175</size></box>
                 </geometry>
+                <material>
+                    <ambient>0.25 0.25 0.25 1</ambient>
+                    <diffuse>0.25 0.25 0.25 1</diffuse>
+                </material>
             </visual>
-            <collision name="rg2_leftfinger_collision">
+            <collision name="rg2_finger_link1_collision">
+                <pose>0 0 0.0875 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/collision/rg2/finger.stl</uri>
-                    </mesh>
+                    <box><size>0.012 0.010 0.175</size></box>
                 </geometry>
                 <surface>
                     <friction>
-                        <ode>
-                            <mu>2.15</mu>
-                            <mu2>2.15</mu2>
-                        </ode>
+                        <ode><mu>2.15</mu><mu2>2.15</mu2></ode>
                     </friction>
                     <bounce>
                         <restitution_coefficient>0.0</restitution_coefficient>
@@ -478,51 +472,42 @@
                     </bounce>
                     <contact>
                         <ode>
-                            <kp>200000</kp>
-                            <kd>30.0</kd>
-                            <max_vel>0.1</max_vel>
-                            <min_depth>0.001</min_depth>
+                            <kp>200000</kp><kd>30.0</kd>
+                            <max_vel>0.1</max_vel><min_depth>0.001</min_depth>
                         </ode>
                     </contact>
                 </surface>
-            </collision>
+            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
             <inertial>
-                <pose>-0.0176873 -0.00819142 -4.15573e-05 0 0 0</pose>
-                <mass>0.24059267945559043</mass>
+                <pose>0 0 0.0875 0 0 0</pose>
+                <mass>0.05</mass>
                 <inertia>
-                    <ixx>3.3970932890017096e-05</ixx>
-                    <iyy>0.00029230476124314346</iyy>
-                    <izz>0.00030917405435097734</izz>
-                    <ixy>-4.8854610840491595e-05</ixy>
-                    <ixz>-1.1765879805737544e-08</ixz>
-                    <iyz>1.6350676533062336e-08</iyz>
+                    <ixx>1.3e-4</ixx><iyy>1.3e-4</iyy><izz>1.0e-6</izz>
+                    <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
                 </inertia>
             </inertial>
         </link>
-        <link name="rg2_rightfinger">
+        <link name="rg2_finger_link2">
             <gravity>false</gravity>
             <pose relative_to="rg2_finger_joint2">0 0 0 0 0 0</pose>
-            <visual name="rg2_rightfinger_visual">
-                <pose>0 0 0 3.141592653589793 0 0</pose>
+            <visual name="rg2_finger_link2_visual">
+                <pose>0 0 0.0875 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/visual/rg2/finger.dae</uri>
-                    </mesh>
+                    <box><size>0.012 0.010 0.175</size></box>
                 </geometry>
+                <material>
+                    <ambient>0.25 0.25 0.25 1</ambient>
+                    <diffuse>0.25 0.25 0.25 1</diffuse>
+                </material>
             </visual>
-            <collision name="rg2_rightfinger_collision">
-                <pose>0 0 0 3.141592653589793 0 0</pose>
+            <collision name="rg2_finger_link2_collision">
+                <pose>0 0 0.0875 0 0 0</pose>
                 <geometry>
-                    <mesh>
-                        <uri>meshes/collision/rg2/finger.stl</uri>
-                    </mesh>
+                    <box><size>0.012 0.010 0.175</size></box>
                 </geometry>
                 <surface>
                     <friction>
-                        <ode>
-                            <mu>2.15</mu>
-                            <mu2>2.15</mu2>
-                        </ode>
+                        <ode><mu>2.15</mu><mu2>2.15</mu2></ode>
                     </friction>
                     <bounce>
                         <restitution_coefficient>0.0</restitution_coefficient>
@@ -530,65 +515,55 @@
                     </bounce>
                     <contact>
                         <ode>
-                            <kp>200000</kp>
-                            <kd>30.0</kd>
-                            <max_vel>0.1</max_vel>
-                            <min_depth>0.001</min_depth>
+                            <kp>200000</kp><kd>30.0</kd>
+                            <max_vel>0.1</max_vel><min_depth>0.001</min_depth>
                         </ode>
                     </contact>
                 </surface>
-            </collision>
+            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
             <inertial>
-                <pose>-0.0176873 -0.00819142 -4.15573e-05 3.141592653589793 0 0</pose>
-                <mass>0.24059267945559043</mass>
+                <pose>0 0 0.0875 0 0 0</pose>
+                <mass>0.05</mass>
                 <inertia>
-                    <ixx>3.3970932890017096e-05</ixx>
-                    <iyy>0.00029230476124314346</iyy>
-                    <izz>0.00030917405435097734</izz>
-                    <ixy>-4.8854610840491595e-05</ixy>
-                    <ixz>-1.1765879805737544e-08</ixz>
-                    <iyz>1.6350676533062336e-08</iyz>
+                    <ixx>1.3e-4</ixx><iyy>1.3e-4</iyy><izz>1.0e-6</izz>
+                    <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
                 </inertia>
             </inertial>
         </link>
-        <!-- Finger Joints -->
-        <joint name="rg2_finger_joint1" type="revolute">
-            <pose relative_to="rg2_hand">0.105 0.017 0 0 0 0</pose>
-            <parent>rg2_hand</parent>
-            <child>rg2_leftfinger</child>
+        <!-- Finger Joints: prismatic, symmetric, axis Y/-Y, limit 0..0.0425 m -->
+        <joint name="rg2_finger_joint1" type="prismatic">
+            <pose relative_to="rg2_base_link">0 0.020 0 0 0 0</pose>
+            <parent>rg2_base_link</parent>
+            <child>rg2_finger_link1</child>
             <axis>
-                <xyz>0 0 1</xyz>
+                <xyz>0 1 0</xyz>
                 <limit>
-                    <effort>10.6</effort>
+                    <effort>20</effort>
                     <lower>0.0</lower>
-                    <upper>1.18</upper>
-                    <velocity>1.57</velocity>
+                    <upper>0.0425</upper>
+                    <velocity>0.2</velocity>
                 </limit>
                 <dynamics>
-                    <spring_reference>0</spring_reference>
-                    <spring_stiffness>0</spring_stiffness>
-                    <damping>1</damping>
-                    <friction>0.005</friction>
+                    <damping>1.0</damping>
+                    <friction>0.01</friction>
                 </dynamics>
             </axis>
         </joint>
-        <joint name="rg2_finger_joint2" type="revolute">
-            <pose relative_to="rg2_hand">0.105 -0.017 0 0 0 0</pose>
-            <parent>rg2_hand</parent>
-            <child>rg2_rightfinger</child>
+        <joint name="rg2_finger_joint2" type="prismatic">
+            <pose relative_to="rg2_base_link">0 -0.020 0 0 0 0</pose>
+            <parent>rg2_base_link</parent>
+            <child>rg2_finger_link2</child>
             <axis>
-                <xyz>0 0 -1</xyz>
+                <xyz>0 -1 0</xyz>
                 <limit>
-                    <effort>10.6</effort>
+                    <effort>20</effort>
                     <lower>0.0</lower>
-                    <upper>1.18</upper>
-                    <velocity>1.57</velocity>
+                    <upper>0.0425</upper>
+                    <velocity>0.2</velocity>
                 </limit>
                 <dynamics>
-                    <spring_reference>0</spring_reference>
-                    <spring_stiffness>0</spring_stiffness>
-                    <damping>1</damping>
-                    <friction>0.005</friction>
+                    <damping>1.0</damping>
+                    <friction>0.01</friction>
                 </dynamics>
             </axis>
         </joint>
@@ -598,10 +573,155 @@
             <pose relative_to="end_effector_frame_fixed_joint">0 0 0 0 0 0</pose>
         </link>
         <joint name="end_effector_frame_fixed_joint" type="fixed">
-            <pose relative_to="wrist_3_link">0 0.275 0 -1.570796325 0 0</pose>
+            <!-- URDF↔SDF parity fix (2026-05-06): tool0 sits at wrist_3_link origin
+                 with the standard ROS-Industrial UR rotation, matching ur_macro.xacro
+                 (wrist_3 → flange → tool0 are coincident in translation, only rotated).
+                 The previous 0.275m Y-offset was incorrect and required a -0.1927m
+                 compensation in rg2_mount_joint.
+                 NOTA (2026-05-06 v2): la rotación rpy=-π/2 se mantiene porque el TF de
+                 tool0 lo publica el RSP desde URDF (la rotación SDF afecta sólo a la
+                 simulación física en Gazebo, no a los TF que el panel/MoveIt consumen).
+                 Cambiarla a 0 0 0 NO afectó las métricas en validación live. -->
+            <pose relative_to="wrist_3_link">0 0 0 -1.570796325 0 0</pose>
             <parent>wrist_3_link</parent>
             <child>tool0</child>
         </joint>
+        <link name="pick_demo_anchor">
+            <gravity>false</gravity>
+            <pose relative_to="pick_demo_anchor_joint">0 0 0 0 0 0</pose>
+        </link>
+        <joint name="pick_demo_anchor_joint" type="fixed">
+            <!-- Align the detachable-joint origin with the demo grasp center.
+                 tool0 -> rg2_pinch_center is +0.175 m (URDF rg2_pinch_center_joint).
+                 The tcp_z_offset=0.05 m was removed in commit 9b58910 (_DIRECTO_GRASP_Z=0.0),
+                 so the anchor must be at +0.175 m to match rg2_pinch_center exactly. -->
+            <pose relative_to="tool0">0 0 0.175 0 0 0</pose>
+            <parent>tool0</parent>
+            <child>pick_demo_anchor</child>
+        </joint>
+
+        <!-- Wrist camera: mounted on rg2_base_link looking along tool0 +Z toward the object.
+             Offset (0, 0.04, 0.01): lateral 4 cm in Y, 1 cm forward in Z. -->
+        <link name="camera_wrist_link">
+            <gravity>false</gravity>
+            <pose relative_to="camera_wrist_joint">0 0 0 0 0 0</pose>
+            <sensor name="camera_wrist_rgb" type="camera">
+                <always_on>true</always_on>
+                <update_rate>15</update_rate>
+                <topic>/camera_wrist/image</topic>
+                <camera>
+                    <horizontal_fov>1.05</horizontal_fov>
+                    <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+                    <clip><near>0.02</near><far>1.5</far></clip>
+                </camera>
+            </sensor>
+        </link>
+        <joint name="camera_wrist_joint" type="fixed">
+            <pose relative_to="rg2_base_link">0 0.04 0.01 0 0 0</pose>
+            <parent>rg2_base_link</parent>
+            <child>camera_wrist_link</child>
+        </joint>
+
+        <!-- Tool-side detachable joints for physically carrying grasped objects. -->
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_base_link</parent_link>
+            <child_model>box_red</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/box_red/attach</attach_topic>
+            <detach_topic>/gripper_anchor/box_red/detach</detach_topic>
+            <output_topic>/gripper_anchor/box_red/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_base_link</parent_link>
+            <child_model>box_blue</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/box_blue/attach</attach_topic>
+            <detach_topic>/gripper_anchor/box_blue/detach</detach_topic>
+            <output_topic>/gripper_anchor/box_blue/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_base_link</parent_link>
+            <child_model>box_green</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/box_green/attach</attach_topic>
+            <detach_topic>/gripper_anchor/box_green/detach</detach_topic>
+            <output_topic>/gripper_anchor/box_green/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_base_link</parent_link>
+            <child_model>box_lightblue</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/box_lightblue/attach</attach_topic>
+            <detach_topic>/gripper_anchor/box_lightblue/detach</detach_topic>
+            <output_topic>/gripper_anchor/box_lightblue/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_base_link</parent_link>
+            <child_model>box_yellow</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/box_yellow/attach</attach_topic>
+            <detach_topic>/gripper_anchor/box_yellow/detach</detach_topic>
+            <output_topic>/gripper_anchor/box_yellow/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_base_link</parent_link>
+            <child_model>cross_cyan</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/cross_cyan/attach</attach_topic>
+            <detach_topic>/gripper_anchor/cross_cyan/detach</detach_topic>
+            <output_topic>/gripper_anchor/cross_cyan/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_base_link</parent_link>
+            <child_model>cyl_gray</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/cyl_gray/attach</attach_topic>
+            <detach_topic>/gripper_anchor/cyl_gray/detach</detach_topic>
+            <output_topic>/gripper_anchor/cyl_gray/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_base_link</parent_link>
+            <child_model>cyl_green</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/cyl_green/attach</attach_topic>
+            <detach_topic>/gripper_anchor/cyl_green/detach</detach_topic>
+            <output_topic>/gripper_anchor/cyl_green/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_base_link</parent_link>
+            <child_model>cyl_orange</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/cyl_orange/attach</attach_topic>
+            <detach_topic>/gripper_anchor/cyl_orange/detach</detach_topic>
+            <output_topic>/gripper_anchor/cyl_orange/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>rg2_base_link</parent_link>
+            <child_model>cyl_purple</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/cyl_purple/attach</attach_topic>
+            <detach_topic>/gripper_anchor/cyl_purple/detach</detach_topic>
+            <output_topic>/gripper_anchor/cyl_purple/state</output_topic>
+        </plugin>
+        <plugin filename="gz-sim-detachable-joint-system"
+                name="gz::sim::systems::DetachableJoint">
+            <parent_link>pick_demo_anchor</parent_link>
+            <child_model>pick_demo</child_model>
+            <child_link>link</child_link>
+            <attach_topic>/gripper_anchor/pick_demo/attach</attach_topic>
+            <detach_topic>/gripper_anchor/pick_demo/detach</detach_topic>
+            <output_topic>/gripper_anchor/pick_demo/state</output_topic>
+        </plugin>
 
         <plugin
             filename="gz-sim-pose-publisher-system"
@@ -624,43 +744,71 @@
                 <plugin>gz_ros2_control/GazeboSimSystem</plugin>
             </hardware>
             <joint name="shoulder_pan_joint">
-                <command_interface name="position"/>
-                <state_interface name="position"/>
+                <command_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </command_interface>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="shoulder_lift_joint">
-                <command_interface name="position"/>
-                <state_interface name="position"/>
+                <command_interface name="position">
+                    <param name="initial_value">-1.5707963267948966</param>
+                </command_interface>
+                <state_interface name="position">
+                    <param name="initial_value">-1.5707963267948966</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="elbow_joint">
-                <command_interface name="position"/>
-                <state_interface name="position"/>
+                <command_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </command_interface>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="wrist_1_joint">
-                <command_interface name="position"/>
-                <state_interface name="position"/>
+                <command_interface name="position">
+                    <param name="initial_value">-1.5707963267948966</param>
+                </command_interface>
+                <state_interface name="position">
+                    <param name="initial_value">-1.5707963267948966</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="wrist_2_joint">
-                <command_interface name="position"/>
-                <state_interface name="position"/>
+                <command_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </command_interface>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="wrist_3_joint">
-                <command_interface name="position"/>
-                <state_interface name="position"/>
+                <command_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </command_interface>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="rg2_finger_joint1">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
             <joint name="rg2_finger_joint2">
                 <command_interface name="position"/>
-                <state_interface name="position"/>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
                 <state_interface name="velocity"/>
             </joint>
         </ros2_control>

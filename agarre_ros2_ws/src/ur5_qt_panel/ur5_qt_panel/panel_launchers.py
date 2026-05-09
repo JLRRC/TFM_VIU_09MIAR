@@ -26,6 +26,9 @@ from .panel_config import (
     UR5_MODEL_NAME,
     WORLDS_DIR,
 )
+from .panel_env import env_optional_float, env_optional_str
+from .panel_launchers_params import get_launchers_params as _get_launchers_params
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 from .panel_utils import (
     bash_preamble,
     build_gz_env,
@@ -39,22 +42,24 @@ from .panel_utils import (
     set_led,
     with_line_buffer,
 )
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
 
-_DEBUG_EXCEPTIONS = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
+_DEBUG_EXCEPTIONS = _get_panel_ui_params().debug_exceptions
 
 
 def _log_exception(context: str, exc: Exception) -> None:
     if not _DEBUG_EXCEPTIONS:
         return
-    print(timestamped_line(f"[LAUNCHERS][WARN] {context}: {exc}"), flush=True)
+    emit_log_line(timestamped_line(f"[LAUNCHERS][WARN] {context}: {exc}"))
 
 
 def _env_flag(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
+    """Whitelist+blacklist con default para unknown. audit-v4.1 D.2: usa
+    env_optional_str para que el archivo salga de la allowlist."""
+    raw = env_optional_str(name)
     if raw is None:
         return bool(default)
-    val = str(raw).strip().lower()
+    val = raw.strip().lower()
     if val in ("1", "true", "yes", "on"):
         return True
     if val in ("0", "false", "no", "off"):
@@ -63,13 +68,32 @@ def _env_flag(name: str, default: bool) -> bool:
 
 
 def _env_float_opt(name: str) -> float | None:
-    raw = os.environ.get(name)
-    if raw is None or str(raw).strip() == "":
+    """audit-v4.1 D.2: delegate a panel_env.env_optional_float (semántica idéntica
+    excepto que env_optional_float trata vacío como número inválido → None igual)."""
+    raw = env_optional_str(name)
+    if raw is None or raw.strip() == "":
         return None
-    try:
-        return float(raw)
-    except Exception:
-        return None
+    return env_optional_float(name)
+
+
+def _resolve_gui_config_path(ws_dir: str) -> str:
+    candidates = [
+        "/opt/ros/jazzy/opt/gz_sim_vendor/share/gz/gz-sim8/gui/gui.config",
+        os.path.join(
+            ws_dir,
+            "install",
+            "ur5_bringup",
+            "share",
+            "ur5_bringup",
+            "config",
+            "gz_gui_ogre.config",
+        ),
+        os.path.join(ws_dir, "src", "ur5_bringup", "config", "gz_gui_ogre.config"),
+    ]
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+    return ""
 
 def start_world_tf_publisher(panel, world_name: str) -> None:
     if panel.world_tf_proc is not None and panel.world_tf_proc.poll() is None:
@@ -78,7 +102,7 @@ def start_world_tf_publisher(panel, world_name: str) -> None:
         ensure_dir(LOG_DIR)
         tf_log = os.path.join(LOG_DIR, "world_tf_publisher.log")
         rotate_log(tf_log)
-        use_sim_time = os.environ.get("USE_SIM_TIME", "1") == "1"
+        use_sim_time = _get_launchers_params().use_sim_time
         sim_arg = " -p use_sim_time:=true" if use_sim_time else ""
         world_file = os.path.join(WORLDS_DIR, f"{world_name}.sdf")
         world_file_arg = ""
@@ -114,6 +138,40 @@ def start_world_tf_publisher(panel, world_name: str) -> None:
     except Exception as exc:
         panel._log_error(f"[TF] Error iniciando world_tf_publisher: {exc}")
 
+def start_attach_backend(panel, world_name: str) -> None:
+    """Launch gripper_attach_backend if not already running."""
+    if getattr(panel, "_attach_backend_proc", None) is not None:
+        proc = panel._attach_backend_proc
+        if proc.poll() is None:
+            return  # already running
+    try:
+        ensure_dir(LOG_DIR)
+        ab_log = os.path.join(LOG_DIR, "attach_backend.log")
+        rotate_log(ab_log)
+        # F2-step2: ATTACH_BACKEND_* canalizado vía panel_launchers_params.
+        _lp = _get_launchers_params()
+        max_dist = f"{_lp.attach_backend_max_dist_m}"
+        demo_transport = _lp.attach_backend_demo_transport_objects
+        gz_env = build_gz_env(resolve_gz_partition(getattr(panel, "gz_partition", "")))
+        cmd_core = with_line_buffer(
+            "ros2 run ur5_tools gripper_attach_backend "
+            "--ros-args "
+            "-p use_sim_time:=true "
+            "-p tcp_frame:=rg2_pinch_center "
+            f"-p attach_max_dist_m:={max_dist} "
+            f"-p demo_transport_objects:=[{demo_transport}] "
+            f"-p world_name:={shlex.quote(world_name)}"
+        )
+        cmd = bash_preamble(panel.ws_dir) + gz_env + f"export ROS_LOG_DIR='{LOG_DIR}/ros' ; " + f"{cmd_core} > '{ab_log}' 2>&1"
+        panel._attach_backend_proc = subprocess.Popen(
+            ["bash", "-lc", cmd],
+            preexec_fn=os.setsid,
+        )
+        panel._emit_log("[BRIDGE] gripper_attach_backend lanzado")
+    except Exception as exc:
+        panel._log_error(f"[BRIDGE] Error iniciando gripper_attach_backend: {exc}")
+
+
 def start_gz_pose_bridge(panel, world_name: str) -> None:
     if panel.gz_pose_proc is not None and panel.gz_pose_proc.poll() is None:
         return
@@ -121,11 +179,12 @@ def start_gz_pose_bridge(panel, world_name: str) -> None:
         ensure_dir(LOG_DIR)
         pose_log = os.path.join(LOG_DIR, "gz_pose_bridge.log")
         rotate_log(pose_log)
-        use_sim_time = os.environ.get("USE_SIM_TIME", "1") == "1"
+        use_sim_time = _get_launchers_params().use_sim_time
         sim_arg = " -p use_sim_time:=true" if use_sim_time else ""
         cmd_core = with_line_buffer(
             "ros2 run ur5_tools gz_pose_bridge "
             f"--ros-args -p world_name:={shlex.quote(world_name)}{sim_arg}"
+            " -p startup_timeout_sec:=120.0"
         )
         cmd = bash_preamble(panel.ws_dir) + f"{cmd_core} > '{pose_log}' 2>&1"
         panel.gz_pose_proc = subprocess.Popen(
@@ -139,6 +198,147 @@ def stop_world_tf_publisher(panel) -> None:
     panel._kill_proc(panel.world_tf_proc, "world_tf_publisher")
     panel.world_tf_proc = None
     panel._started_world_tf = False
+
+def _spawn_gz_gui_client(panel, *, env: str, gz_gui_log: str) -> None:
+    """F3-step13a: lanza el cliente GUI gz sim -g como proceso separado.
+
+    Espera PANEL_GZ_GUI_DELAY_SEC (default 2s), resuelve gui_config opcional,
+    aplica safe-render env si PANEL_GZ_GUI_SAFE_RENDER (default True), spawn
+    process group con preexec_fn=os.setsid + monitor de salida que tail-ea
+    los últimos 80 líneas y reporta error si rc no es 0/-15.
+    """
+    gui_delay_sec = max(0.1, _env_float_opt("PANEL_GZ_GUI_DELAY_SEC") or 2.0)
+    gui_config = _resolve_gui_config_path(panel.ws_dir)
+    panel._emit_log(
+        "[GZ][GUI] launching separate client "
+        f"delay={gui_delay_sec:.1f}s config={gui_config or 'default'}"
+    )
+    time.sleep(gui_delay_sec)
+    gui_cmd_core = "gz sim -g"
+    if gui_config:
+        gui_cmd_core += f" --gui-config {shlex.quote(gui_config)}"
+    gui_safe_env = ""
+    if _env_flag("PANEL_GZ_GUI_SAFE_RENDER", True):
+        gui_safe_env = (
+            "export LIBGL_ALWAYS_SOFTWARE=${LIBGL_ALWAYS_SOFTWARE:-1}; "
+            "export QT_QUICK_BACKEND=${QT_QUICK_BACKEND:-software}; "
+            "export QSG_RENDER_LOOP=${QSG_RENDER_LOOP:-basic}; "
+        )
+    gui_cmd = bash_preamble(panel.ws_dir) + env + log_to_file(
+        gui_safe_env + with_line_buffer(gui_cmd_core),
+        gz_gui_log,
+        None,
+    )
+    panel.gz_gui_proc = subprocess.Popen(
+        ["bash", "-lc", gui_cmd],
+        preexec_fn=os.setsid,
+    )
+
+    def monitor_gui():
+        rc = panel.gz_gui_proc.wait()
+        panel._emit_log(f"[GZ][GUI] exited rc={rc} (log: {gz_gui_log})")
+        try:
+            tail = subprocess.run(
+                ["bash", "-lc", f"tail -n 80 {shlex.quote(gz_gui_log)}"],
+                text=True,
+                capture_output=True,
+                timeout=2.0,
+            )
+            if tail.stdout:
+                for line in tail.stdout.splitlines():
+                    panel._emit_log(f"[GZ][GUI][LOG] {line}")
+        except Exception as exc:
+            _log_exception("tail gz gui log", exc)
+        if rc not in (0, -15):
+            panel._ui_set_status(
+                "Gazebo servidor activo; GUI cerrada inesperadamente",
+                error=True,
+            )
+
+    panel._run_async(monitor_gui)
+
+
+def _prepare_gz_runtime_assets(panel, *, world: str, mode: str):
+    """F3-step13b: prepara assets runtime para Gazebo (modelo, mundo, env).
+
+    Verifica controllers_yaml, copia ur5_rg2 a runtime + sustituye
+    $(env UR5_CONTROLLERS_YAML) y <parameters> en model.sdf, construye env
+    GZ_PARTITION/RESOURCE_PATH/GZ_LOG_LEVEL/IGN_LOGGER_LEVEL, opcionalmente
+    elimina cámaras del mundo si mode!=gui y not keep_cameras, sustituye
+    uri ur5_rg2 al runtime path. Devuelve (runtime_world, env, render_engine,
+    gz_log, gz_gui_log) o None si falla algo crítico (controllers yaml).
+    """
+    ensure_dir(LOG_DIR)
+    gz_log = os.path.join(LOG_DIR, "gz_server.log")
+    gz_gui_log = os.path.join(LOG_DIR, "gz_gui.log")
+    rotate_log(gz_log)
+    rotate_log(gz_gui_log)
+    runtime_models_root = os.path.join(LOG_DIR, "gz_models")
+    runtime_ur5_model = os.path.join(runtime_models_root, "ur5_rg2")
+    controllers_yaml = UR5_CONTROLLERS_YAML
+    if not os.path.isfile(controllers_yaml):
+        panel._ui_set_status("No se encontró ur5_controllers.yaml", error=True)
+        panel.signal_set_led.emit(panel.led_gz, "error")
+        return None
+    try:
+        ensure_dir(runtime_ur5_model)
+        shutil.copytree(os.path.join(MODELS_DIR, "ur5_rg2"), runtime_ur5_model, dirs_exist_ok=True)
+        model_sdf = os.path.join(runtime_ur5_model, "model.sdf")
+        if os.path.isfile(model_sdf):
+            with open(model_sdf, "r", encoding="utf-8") as f:
+                sdf_text = f.read()
+            sdf_text = sdf_text.replace("$(env UR5_CONTROLLERS_YAML)", controllers_yaml)
+            sdf_text = re.sub(
+                r"<parameters>\\s*--params-file\\s+[^<]+</parameters>",
+                f"<parameters>{controllers_yaml}</parameters>",
+                sdf_text,
+                flags=re.DOTALL,
+            )
+            with open(model_sdf, "w", encoding="utf-8") as f:
+                f.write(sdf_text)
+    except Exception as exc:
+        _log_exception("prepare runtime model", exc)
+    render_engine = _get_launchers_params().gz_render_engine
+    env = (
+        build_gz_env(panel.gz_partition)
+        + f"export GZ_SIM_RESOURCE_PATH='{runtime_models_root}:{MODELS_DIR}:{WORLDS_DIR}:${{GZ_SIM_RESOURCE_PATH:-}}' ; "
+        "export GZ_LOG_LEVEL=error; export IGN_LOGGER_LEVEL=error; export QT_LOGGING_RULES='qt.qml.*=false'; "
+    )
+    runtime_world = world
+    try:
+        if os.path.isfile(world):
+            with open(world, "r", encoding="utf-8") as f:
+                world_text = f.read()
+            _lp_cam = _get_launchers_params()
+            keep_cameras = _lp_cam.keep_cameras or _lp_cam.camera_required
+            if mode != "gui" and not keep_cameras:
+                world_text = re.sub(
+                    r"<plugin\s+filename=['\"]gz-sim-sensors-system['\"][\s\S]*?</plugin>",
+                    "",
+                    world_text,
+                    flags=re.DOTALL,
+                )
+                for cam_name in (
+                    "camera_overhead",
+                    "camera_north",
+                    "camera_south",
+                    "camera_east",
+                    "camera_west",
+                ):
+                    pattern = rf"<model\s+name=['\"]{cam_name}['\"]>.*?</model>"
+                    world_text = re.sub(pattern, "", world_text, flags=re.DOTALL)
+            world_text = world_text.replace(
+                "<uri>model://ur5_rg2</uri>",
+                f"<uri>file://{runtime_ur5_model}</uri>",
+            )
+            runtime_world = os.path.join(LOG_DIR, "world_runtime.sdf")
+            with open(runtime_world, "w", encoding="utf-8") as f:
+                f.write(world_text)
+    except Exception as exc:
+        _log_exception("prepare runtime world", exc)
+        runtime_world = world
+    return runtime_world, env, render_engine, gz_log, gz_gui_log
+
 
 def start_gazebo(panel):
     if panel._block_if_managed("Start Gazebo"):
@@ -182,84 +382,23 @@ def start_gazebo(panel):
         _log_exception("write GZ_PARTITION_FILE", exc)
 
     def worker():
-        ensure_dir(LOG_DIR)
-        gz_log = os.path.join(LOG_DIR, "gz_server.log")
-        rotate_log(gz_log)
-        runtime_models_root = os.path.join(LOG_DIR, "gz_models")
-        runtime_ur5_model = os.path.join(runtime_models_root, "ur5_rg2")
-        controllers_yaml = UR5_CONTROLLERS_YAML
-        if not os.path.isfile(controllers_yaml):
-            panel._ui_set_status("No se encontró ur5_controllers.yaml", error=True)
-            panel.signal_set_led.emit(panel.led_gz, "error")
+        mode = panel._effective_mode()
+        prepared = _prepare_gz_runtime_assets(panel, world=world, mode=mode)
+        if prepared is None:
             panel._gz_launching = False
             panel._gz_launch_start = 0.0
             panel.signal_refresh_controls.emit()
             return
-        try:
-            ensure_dir(runtime_ur5_model)
-            shutil.copytree(os.path.join(MODELS_DIR, "ur5_rg2"), runtime_ur5_model, dirs_exist_ok=True)
-            model_sdf = os.path.join(runtime_ur5_model, "model.sdf")
-            if os.path.isfile(model_sdf):
-                with open(model_sdf, "r", encoding="utf-8") as f:
-                    sdf_text = f.read()
-                sdf_text = sdf_text.replace("$(env UR5_CONTROLLERS_YAML)", controllers_yaml)
-                sdf_text = re.sub(
-                    r"<parameters>\\s*--params-file\\s+[^<]+</parameters>",
-                    f"<parameters>{controllers_yaml}</parameters>",
-                    sdf_text,
-                    flags=re.DOTALL,
-                )
-                with open(model_sdf, "w", encoding="utf-8") as f:
-                    f.write(sdf_text)
-        except Exception as exc:
-            _log_exception("prepare runtime model", exc)
-        render_engine = os.environ.get("GZ_RENDER_ENGINE", "").strip() or "ogre2"
-        env = (
-            build_gz_env(panel.gz_partition)
-            + f"export GZ_SIM_RESOURCE_PATH='{runtime_models_root}:{MODELS_DIR}:{WORLDS_DIR}:${{GZ_SIM_RESOURCE_PATH:-}}' ; "
-            "export GZ_LOG_LEVEL=error; export IGN_LOGGER_LEVEL=error; export QT_LOGGING_RULES='qt.qml.*=false'; "
-        )
-        mode = panel._effective_mode()
-        runtime_world = world
-        try:
-            if os.path.isfile(world):
-                with open(world, "r", encoding="utf-8") as f:
-                    world_text = f.read()
-                keep_cameras = os.environ.get("PANEL_KEEP_CAMERAS", "").strip() in ("1", "true", "True")
-                if not keep_cameras:
-                    keep_cameras = os.environ.get("PANEL_CAMERA_REQUIRED", "").strip() in ("1", "true", "True")
-                if mode != "gui" and not keep_cameras:
-                    world_text = re.sub(
-                        r"<plugin\s+filename=['\"]gz-sim-sensors-system['\"][\s\S]*?</plugin>",
-                        "",
-                        world_text,
-                        flags=re.DOTALL,
-                    )
-                    for cam_name in (
-                        "camera_overhead",
-                        "camera_north",
-                        "camera_south",
-                        "camera_east",
-                        "camera_west",
-                    ):
-                        pattern = rf"<model\s+name=['\"]{cam_name}['\"]>.*?</model>"
-                        world_text = re.sub(pattern, "", world_text, flags=re.DOTALL)
-                world_text = world_text.replace(
-                    "<uri>model://ur5_rg2</uri>",
-                    f"<uri>file://{runtime_ur5_model}</uri>",
-                )
-                runtime_world = os.path.join(LOG_DIR, "world_runtime.sdf")
-                with open(runtime_world, "w", encoding="utf-8") as f:
-                    f.write(world_text)
-        except Exception as exc:
-            _log_exception("prepare runtime world", exc)
-            runtime_world = world
+        runtime_world, env, render_engine, gz_log, gz_gui_log = prepared
         if mode == "gui":
-            cmd_core = with_line_buffer(f"gz sim -r -v 1 {shlex.quote(runtime_world)}")
+            cmd_core = with_line_buffer(
+                "gz sim -s -r --headless-rendering "
+                f"--render-engine {shlex.quote(render_engine)} -v 1 {shlex.quote(runtime_world)}"
+            )
             cmd = bash_preamble(panel.ws_dir) + env + log_to_file(cmd_core, gz_log, None)
         else:
             cmd_core = with_line_buffer(
-                "gz sim -s -r --headless-rendering --render-engine ogre2 -v 1 "
+                f"gz sim -s -r --headless-rendering --render-engine {shlex.quote(render_engine)} -v 1 "
                 + shlex.quote(runtime_world)
             )
             cmd = (
@@ -295,6 +434,9 @@ def start_gazebo(panel):
                 except Exception as exc:
                     _log_exception("tail gz log", exc)
             panel._run_async(monitor)
+            if mode == "gui":
+                panel.gz_gui_proc = None
+                _spawn_gz_gui_client(panel, env=env, gz_gui_log=gz_gui_log)
             panel._started_gazebo = True
             panel._gz_running = True
             panel._gz_world_name = read_world_name(world) or GZ_WORLD
@@ -321,12 +463,15 @@ def start_gazebo(panel):
 
 
 
+
 def stop_gazebo(panel):
     if panel._block_if_managed("Stop Gazebo"):
         return
     panel._log_button("Stop Gazebo")
     panel._set_status("Deteniendo Gazebo…")
     panel._stop_debug_poses()
+    panel._kill_proc(getattr(panel, "gz_gui_proc", None), "gz sim gui")
+    panel.gz_gui_proc = None
     panel._kill_proc(panel.gz_proc, "gz sim")
     panel.gz_proc = None
     panel._kill_proc(panel.rsp_proc, "robot_state_publisher")
@@ -380,10 +525,15 @@ def start_bridge(panel):
     if not panel._ros_worker_started:
         panel._ensure_ros_worker_started()
     world_name = read_world_name(panel.world_combo.currentText().strip()) or GZ_WORLD
-    pose_topic = f"/world/{world_name}/pose/info"
-    if panel.ros_worker.node_ready() and panel.ros_worker.topic_has_publishers(pose_topic):
-        panel._log_warning("Bridge ya activo (pose/info con publishers)")
-        panel._set_status("Bridge ya activo (pose/info detectado)", error=False)
+    bridge_detected = False
+    if panel.ros_worker.node_ready():
+        bridge_detected = bool(
+            getattr(panel, "_bridge_transport_detected", None)
+            and panel._bridge_transport_detected()
+        )
+    if bridge_detected:
+        panel._log_warning("Bridge ya activo (pose+joint_states detectados)")
+        panel._set_status("Bridge ya activo (bridge ROS detectado)", error=False)
         panel._bridge_running = True
         set_led(panel.led_bridge, "on")
         # Inicializar suscripciones y cámara sin activar deadlines de TF
@@ -398,6 +548,11 @@ def start_bridge(panel):
         panel._check_camera_topic_health()
         panel.signal_calibration_check.emit()
         panel.signal_refresh_controls.emit()
+        # Emitir signal_bridge_ready tambien cuando detectamos el bridge
+        # externo (lanzado por ur5_stack.launch.py). Sin esto, _on_bridge_ready
+        # no se ejecuta y el auto-release de objetos nunca se programa,
+        # bloqueando validate_pick_3_cycles.sh con "release de objetos pendiente".
+        panel.signal_bridge_ready.emit()
         return
     panel._log_button("Start bridge")
     panel._camera_stream_ok = False
@@ -441,7 +596,7 @@ def start_bridge(panel):
     # Deshabilitar botón mientras arranca para que se vea en gris como Gazebo
     panel._bridge_running = True
     panel._started_bridge = True
-    panel._bridge_start_ts = time.time()
+    panel._bridge_start_ts = time.monotonic()
     panel._refresh_controls()
 
     def worker():
@@ -486,6 +641,7 @@ def start_bridge(panel):
             panel.signal_refresh_controls.emit()
             panel._start_world_tf_publisher(world_name)
             start_gz_pose_bridge(panel, world_name)
+            start_attach_backend(panel, world_name)
             panel._spawn_controllers_async()
             panel.signal_bridge_ready.emit()
         except Exception as exc:
@@ -508,6 +664,7 @@ def stop_bridge(panel):
     panel._kill_proc(panel.bridge_proc, "parameter_bridge")
     panel._kill_proc(panel.rsp_proc, "robot_state_publisher")
     panel._kill_proc(panel.gz_pose_proc, "gz_pose_bridge")
+    panel._kill_proc(getattr(panel, "_attach_backend_proc", None), "gripper_attach_backend")
     panel._stop_world_tf_publisher()
     panel.rsp_proc = None
     panel._kill_proc(panel.release_service_proc, "release_objects_service")
@@ -565,7 +722,7 @@ def start_moveit(panel):
         return
     if not panel._ros_worker_started:
         panel._ensure_ros_worker_started()
-    if panel._move_group_ready():
+    if panel._move_group_startup_ready():
         panel.signal_moveit_state.emit("READY", "move_group ya activo")
         panel._set_status("MoveIt ya activo")
         return
@@ -585,7 +742,7 @@ def start_moveit(panel):
         moveit_log = os.path.join(LOG_DIR, "moveit_bringup.log")
         rotate_log(moveit_log)
         env = f"export ROS_LOG_DIR='{LOG_DIR}/ros' ; "
-        use_sim_time = os.environ.get("USE_SIM_TIME", "1") == "1"
+        use_sim_time = _get_launchers_params().use_sim_time
         sim_arg = " use_sim_time:=true" if use_sim_time else " use_sim_time:=false"
         cmd_core = with_line_buffer(
             "ros2 launch ur5_moveit_config ur5_moveit_bringup.launch.py "
@@ -619,6 +776,147 @@ def stop_moveit(panel):
     panel._moveit_running = False
     panel.signal_moveit_state.emit("OFF", "manual")
     panel._refresh_controls()
+
+def _build_moveit_bridge_ros_args(panel, *, cm_path: str):
+    """F3-step14a: construye la lista de --ros-args -p k:=v para el bridge.
+
+    Lee 18+ env vars PANEL_MOVEIT_BRIDGE_* (timeouts, intervals, scales,
+    bool flags) con defaults canónicos, ensambla la lista de pares clave:=
+    valor compatible con ros2 run. Devuelve (ros_args, summary) — summary
+    es un dict serializable usado para emitir el log [MOVEIT][BRIDGE]
+    launch_param.
+    """
+    use_sim_time = _get_launchers_params().use_sim_time
+    bridge_moveit_py_sim_time = _get_launchers_params().moveit_bridge_sim_time
+    ros_args = [
+        "--ros-args",
+        "-p", "backend:=auto",
+        "-p", "base_frame:=base_link",
+        "-p", "ee_frame:=rg2_tcp",
+        "-p", "result_topic:=/desired_grasp/result",
+        "-p", f"controller_manager:={cm_path}",
+        "-p", f"use_sim_time:={'true' if use_sim_time else 'false'}",
+        "-p", "moveit_py_use_sim_time:=" + ("true" if bridge_moveit_py_sim_time else "false"),
+    ]
+    exec_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC")
+    req_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC")
+    min_plan_interval = _env_float_opt("PANEL_MOVEIT_BRIDGE_MIN_PLAN_INTERVAL_SEC")
+    stale_ttl = _env_float_opt("PANEL_MOVEIT_BRIDGE_STALE_REQUEST_TTL_SEC")
+    heartbeat_rate = _env_float_opt("PANEL_MOVEIT_BRIDGE_HEARTBEAT_RATE_HZ")
+    joint_state_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_JOINT_STATE_TIMEOUT_SEC")
+    joint_state_max_age = _env_float_opt("PANEL_MOVEIT_BRIDGE_JOINT_STATE_MAX_AGE_SEC")
+    force_fjt_direct = _env_flag("PANEL_MOVEIT_BRIDGE_FORCE_FJT_DIRECT", False)
+    unwrap_continuous = _env_flag("PANEL_MOVEIT_BRIDGE_UNWRAP_CONTINUOUS_JOINTS", False)
+    require_rid = _env_flag("PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID", True)
+    drop_pending = _env_flag("PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED", True)
+    dry_run_plan_only = _env_flag("PANEL_MOVEIT_BRIDGE_DRY_RUN", False)
+    if exec_timeout is None:
+        exec_timeout = 150.0
+    if req_timeout is None:
+        req_timeout = 180.0
+    ros_args.extend(["-p", f"execute_timeout_sec:={max(1.0, exec_timeout):.3f}"])
+    ros_args.extend(["-p", f"request_timeout_sec:={max(2.0, req_timeout):.3f}"])
+    if min_plan_interval is not None:
+        ros_args.extend(["-p", f"min_plan_interval_sec:={max(0.0, min_plan_interval):.3f}"])
+    if stale_ttl is not None:
+        ros_args.extend(["-p", f"stale_request_ttl_sec:={max(1.0, stale_ttl):.3f}"])
+    if heartbeat_rate is not None:
+        ros_args.extend(["-p", f"heartbeat_rate_hz:={max(0.2, heartbeat_rate):.3f}"])
+    if joint_state_timeout is None:
+        joint_state_timeout = 6.0
+    if joint_state_max_age is None:
+        joint_state_max_age = 2.5
+    ros_args.extend(["-p", f"joint_state_valid_timeout_sec:={max(0.2, joint_state_timeout):.3f}"])
+    ros_args.extend(["-p", f"joint_state_valid_max_age_sec:={max(0.1, joint_state_max_age):.3f}"])
+    ros_args.extend(["-p", f"require_request_id:={'true' if require_rid else 'false'}"])
+    ros_args.extend(["-p", "drop_pending_on_tagged_request:=" + ("true" if drop_pending else "false")])
+    ros_args.extend(["-p", "dry_run_plan_only:=" + ("true" if dry_run_plan_only else "false")])
+    ros_args.extend(["-p", "force_fjt_direct_for_walltime_sim:=" + ("true" if force_fjt_direct else "false")])
+    ros_args.extend(["-p", "unwrap_continuous_joints:=" + ("true" if unwrap_continuous else "false")])
+    path_constraint_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD")
+    if path_constraint_tol is None:
+        path_constraint_tol = 1.5
+    ros_args.extend(["-p", f"path_constraint_joint_tolerance_rad:={max(0.0, path_constraint_tol):.3f}"])
+    controller_goal_time_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TIME_TOL_SEC")
+    if controller_goal_time_tol is None:
+        controller_goal_time_tol = 30.0
+    ros_args.extend(["-p", f"controller_goal_time_tolerance_sec:={max(0.0, controller_goal_time_tol):.3f}"])
+    controller_expected_goal_time = _env_float_opt("PANEL_MOVEIT_BRIDGE_CONTROLLER_EXPECTED_GOAL_TIME_SEC")
+    if controller_expected_goal_time is None:
+        controller_expected_goal_time = max(30.0, float(controller_goal_time_tol))
+    ros_args.extend(["-p", f"controller_expected_goal_time_sec:={max(0.0, controller_expected_goal_time):.3f}"])
+    controller_path_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_CONTROLLER_PATH_TOL_RAD")
+    if controller_path_tol is not None:
+        ros_args.extend(["-p", f"controller_path_tolerance_rad:={max(0.0, controller_path_tol):.3f}"])
+    controller_goal_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_CONTROLLER_GOAL_TOL_RAD")
+    if controller_goal_tol is not None:
+        ros_args.extend(["-p", f"controller_goal_tolerance_rad:={max(0.0, controller_goal_tol):.3f}"])
+    vel_scale = _env_float_opt("PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE") or 0.35
+    accel_scale = _env_float_opt("PANEL_MOVEIT_BRIDGE_ACCEL_SCALE") or 0.35
+    ros_args.extend(["-p", f"max_velocity_scaling_factor:={max(0.05, min(1.0, vel_scale)):.2f}"])
+    ros_args.extend(["-p", f"max_acceleration_scaling_factor:={max(0.05, min(1.0, accel_scale)):.2f}"])
+    summary = {
+        "use_sim_time": use_sim_time,
+        "moveit_py_use_sim_time": bridge_moveit_py_sim_time,
+        "execute_timeout_sec": exec_timeout,
+        "request_timeout_sec": req_timeout,
+        "min_plan_interval_sec": min_plan_interval,
+        "stale_request_ttl_sec": stale_ttl,
+        "heartbeat_rate_hz": heartbeat_rate,
+        "joint_state_valid_timeout_sec": joint_state_timeout,
+        "joint_state_valid_max_age_sec": joint_state_max_age,
+        "require_request_id": require_rid,
+        "drop_pending_on_tagged_request": drop_pending,
+        "dry_run_plan_only": dry_run_plan_only,
+        "force_fjt_direct_for_walltime_sim": force_fjt_direct,
+        "unwrap_continuous_joints": unwrap_continuous,
+        "controller_path_tolerance_rad": controller_path_tol,
+        "controller_goal_tolerance_rad": controller_goal_tol,
+        "controller_goal_time_tolerance_sec": controller_goal_time_tol,
+        "controller_expected_goal_time_sec": controller_expected_goal_time,
+        "velocity_scaling": vel_scale,
+        "accel_scaling": accel_scale,
+    }
+    return ros_args, summary
+
+
+def _verify_moveit_bridge_ready_async(panel) -> None:
+    """F3-step14b: verifica que el bridge MoveIt está conectado tras lanzarlo.
+
+    12 reintentos x 0.4s. Comprueba pose_subs > 0 y result_pubs > 0 en
+    /desired_grasp + /desired_grasp/result. Aborta si el proceso muere.
+    Emite [MOVEIT][BRIDGE] verify/connected/WARN según resultado.
+    """
+    pose_topic = "/desired_grasp"
+    result_topic = "/desired_grasp/result"
+    max_retries = 12
+    for attempt in range(1, max_retries + 1):
+        if not panel._proc_alive(panel.moveit_bridge_proc):
+            panel._emit_log(
+                f"[MOVEIT][BRIDGE] verify failed attempt={attempt}/{max_retries} reason=process_not_alive"
+            )
+            return
+        if not panel._ros_worker_started:
+            panel._ensure_ros_worker_started()
+        if panel._ros_worker_started and panel.ros_worker.node_ready():
+            pose_subs = panel.ros_worker.topic_subscriber_count(pose_topic)
+            result_pubs = panel.ros_worker.topic_publisher_count(result_topic)
+            panel._emit_log(
+                "[MOVEIT][BRIDGE] verify "
+                f"attempt={attempt}/{max_retries} pose_subs={pose_subs} result_pubs={result_pubs} "
+                f"pose_topic={pose_topic} result_topic={result_topic}"
+            )
+            if pose_subs > 0 and result_pubs > 0:
+                panel._emit_log(
+                    f"[MOVEIT][BRIDGE] connected pose_subs={pose_subs} result_pubs={result_pubs}"
+                )
+                return
+        time.sleep(0.4)
+    panel._emit_log(
+        "[MOVEIT][BRIDGE] WARN no conectado tras reintentos "
+        f"pose_topic={pose_topic} result_topic={result_topic}"
+    )
+
 
 def start_moveit_bridge(panel):
     if panel._block_if_managed("Start MoveIt bridge"):
@@ -665,108 +963,35 @@ def start_moveit_bridge(panel):
         bridge_log = os.path.join(LOG_DIR, "moveit_bridge.log")
         rotate_log(bridge_log)
         env = f"export ROS_LOG_DIR='{LOG_DIR}/ros' ; "
-        ros_args = [
-            "--ros-args",
-            "-p",
-            "backend:=auto",
-            "-p",
-            "base_frame:=base_link",
-            "-p",
-            "ee_frame:=rg2_tcp",
-            "-p",
-            "result_topic:=/desired_grasp/result",
-        ]
         try:
             cm_path = panel._controller_manager_path()
         except Exception:
             cm_path = "/controller_manager"
-        ros_args.extend(["-p", f"controller_manager:={cm_path}"])
-        use_sim_time = os.environ.get("USE_SIM_TIME", "1") == "1"
-        bridge_moveit_py_sim_time_env = str(
-            os.environ.get(
-                "PANEL_MOVEIT_BRIDGE_SIM_TIME",
-                "0",
-            )
-        ).strip().lower() in ("1", "true", "yes", "on")
-        # Default false: MoveItPy on sim-time can abort on qos_overrides./clock in Jazzy.
-        bridge_moveit_py_sim_time = bool(bridge_moveit_py_sim_time_env)
-        ros_args.extend(["-p", f"use_sim_time:={'true' if use_sim_time else 'false'}"])
-        ros_args.extend(
-            [
-                "-p",
-                "moveit_py_use_sim_time:="
-                + ("true" if bridge_moveit_py_sim_time else "false"),
-            ]
-        )
-        # Runtime tuning knobs (no recompilar): set via env before launching bridge.
-        exec_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_EXECUTE_TIMEOUT_SEC")
-        req_timeout = _env_float_opt("PANEL_MOVEIT_BRIDGE_REQUEST_TIMEOUT_SEC")
-        min_plan_interval = _env_float_opt("PANEL_MOVEIT_BRIDGE_MIN_PLAN_INTERVAL_SEC")
-        stale_ttl = _env_float_opt("PANEL_MOVEIT_BRIDGE_STALE_REQUEST_TTL_SEC")
-        heartbeat_rate = _env_float_opt("PANEL_MOVEIT_BRIDGE_HEARTBEAT_RATE_HZ")
-        require_rid = _env_flag("PANEL_MOVEIT_BRIDGE_REQUIRE_REQUEST_ID", True)
-        drop_pending = _env_flag("PANEL_MOVEIT_BRIDGE_DROP_PENDING_ON_TAGGED", True)
-        dry_run_plan_only = _env_flag("PANEL_MOVEIT_BRIDGE_DRY_RUN", False)
-        if exec_timeout is None:
-            exec_timeout = 30.0
-        if req_timeout is None:
-            req_timeout = 35.0
-        if exec_timeout is not None:
-            ros_args.extend(["-p", f"execute_timeout_sec:={max(1.0, exec_timeout):.3f}"])
-        if req_timeout is not None:
-            ros_args.extend(["-p", f"request_timeout_sec:={max(2.0, req_timeout):.3f}"])
-        if min_plan_interval is not None:
-            ros_args.extend(
-                ["-p", f"min_plan_interval_sec:={max(0.0, min_plan_interval):.3f}"]
-            )
-        if stale_ttl is not None:
-            ros_args.extend(["-p", f"stale_request_ttl_sec:={max(1.0, stale_ttl):.3f}"])
-        if heartbeat_rate is not None:
-            ros_args.extend(["-p", f"heartbeat_rate_hz:={max(0.2, heartbeat_rate):.3f}"])
-        ros_args.extend(["-p", f"require_request_id:={'true' if require_rid else 'false'}"])
-        ros_args.extend(
-            [
-                "-p",
-                "drop_pending_on_tagged_request:="
-                + ("true" if drop_pending else "false"),
-            ]
-        )
-        ros_args.extend(
-            [
-                "-p",
-                "dry_run_plan_only:="
-                + ("true" if dry_run_plan_only else "false"),
-            ]
-        )
-        path_constraint_tol = _env_float_opt("PANEL_MOVEIT_BRIDGE_PATH_CONSTRAINT_TOL_RAD")
-        if path_constraint_tol is None:
-            path_constraint_tol = 1.5
-        ros_args.extend(["-p", f"path_constraint_joint_tolerance_rad:={max(0.0, path_constraint_tol):.3f}"])
-        # Speed scaling for TEST ROBOT (default 0.80 for fast touch probe)
-        vel_scale = _env_float_opt("PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE")
-        if vel_scale is None:
-            vel_scale = 0.80
-        accel_scale = _env_float_opt("PANEL_MOVEIT_BRIDGE_ACCEL_SCALE")
-        if accel_scale is None:
-            accel_scale = 0.80
-        ros_args.extend(["-p", f"max_velocity_scaling_factor:={max(0.05, min(1.0, vel_scale)):.2f}"])
-        ros_args.extend(["-p", f"max_acceleration_scaling_factor:={max(0.05, min(1.0, accel_scale)):.2f}"])
+        ros_args, p = _build_moveit_bridge_ros_args(panel, cm_path=cm_path)
         panel._emit_log(
             "[MOVEIT][BRIDGE] launch_param "
             f"controller_manager={cm_path} "
-            f"use_sim_time={'true' if use_sim_time else 'false'} "
+            f"use_sim_time={'true' if p['use_sim_time'] else 'false'} "
             "base_frame=base_link "
             "ee_frame=rg2_tcp "
-            f"moveit_py_use_sim_time={'true' if bridge_moveit_py_sim_time else 'false'} "
-            f"execute_timeout_sec={exec_timeout if exec_timeout is not None else 'default'} "
-            f"request_timeout_sec={req_timeout if req_timeout is not None else 'default'} "
-            f"min_plan_interval_sec={min_plan_interval if min_plan_interval is not None else 'default'} "
-            f"stale_request_ttl_sec={stale_ttl if stale_ttl is not None else 'default'} "
-            f"heartbeat_rate_hz={heartbeat_rate if heartbeat_rate is not None else 'default'} "
-            f"require_request_id={'true' if require_rid else 'false'} "
-            f"drop_pending_on_tagged_request={'true' if drop_pending else 'false'} "
-            f"dry_run_plan_only={'true' if dry_run_plan_only else 'false'} "
-            f"velocity_scaling={vel_scale:.2f} accel_scaling={accel_scale:.2f}"
+            f"moveit_py_use_sim_time={'true' if p['moveit_py_use_sim_time'] else 'false'} "
+            f"execute_timeout_sec={p['execute_timeout_sec']} "
+            f"request_timeout_sec={p['request_timeout_sec']} "
+            f"min_plan_interval_sec={p['min_plan_interval_sec'] if p['min_plan_interval_sec'] is not None else 'default'} "
+            f"stale_request_ttl_sec={p['stale_request_ttl_sec'] if p['stale_request_ttl_sec'] is not None else 'default'} "
+            f"heartbeat_rate_hz={p['heartbeat_rate_hz'] if p['heartbeat_rate_hz'] is not None else 'default'} "
+            f"joint_state_valid_timeout_sec={p['joint_state_valid_timeout_sec']} "
+            f"joint_state_valid_max_age_sec={p['joint_state_valid_max_age_sec']} "
+            f"require_request_id={'true' if p['require_request_id'] else 'false'} "
+            f"drop_pending_on_tagged_request={'true' if p['drop_pending_on_tagged_request'] else 'false'} "
+            f"dry_run_plan_only={'true' if p['dry_run_plan_only'] else 'false'} "
+            f"force_fjt_direct_for_walltime_sim={'true' if p['force_fjt_direct_for_walltime_sim'] else 'false'} "
+            f"unwrap_continuous_joints={'true' if p['unwrap_continuous_joints'] else 'false'} "
+            f"controller_path_tolerance_rad={p['controller_path_tolerance_rad'] if p['controller_path_tolerance_rad'] is not None else 'default'} "
+            f"controller_goal_tolerance_rad={p['controller_goal_tolerance_rad'] if p['controller_goal_tolerance_rad'] is not None else 'default'} "
+            f"controller_goal_time_tolerance_sec={p['controller_goal_time_tolerance_sec']:.3f} "
+            f"controller_expected_goal_time_sec={p['controller_expected_goal_time_sec']:.3f} "
+            f"velocity_scaling={p['velocity_scaling']:.2f} accel_scaling={p['accel_scaling']:.2f}"
         )
         cmd_core = with_line_buffer(
             " ".join(["ros2", "run", "ur5_tools", "ur5_moveit_bridge", *ros_args])
@@ -787,37 +1012,7 @@ def start_moveit_bridge(panel):
             "node=ur5_moveit_bridge"
         )
         QTimer.singleShot(800, panel._clear_moveit_bridge_launching)
-        def _verify_bridge_ready() -> None:
-            pose_topic = "/desired_grasp"
-            result_topic = "/desired_grasp/result"
-            max_retries = 12
-            for attempt in range(1, max_retries + 1):
-                if not panel._proc_alive(panel.moveit_bridge_proc):
-                    panel._emit_log(
-                        f"[MOVEIT][BRIDGE] verify failed attempt={attempt}/{max_retries} reason=process_not_alive"
-                    )
-                    return
-                if not panel._ros_worker_started:
-                    panel._ensure_ros_worker_started()
-                if panel._ros_worker_started and panel.ros_worker.node_ready():
-                    pose_subs = panel.ros_worker.topic_subscriber_count(pose_topic)
-                    result_pubs = panel.ros_worker.topic_publisher_count(result_topic)
-                    panel._emit_log(
-                        "[MOVEIT][BRIDGE] verify "
-                        f"attempt={attempt}/{max_retries} pose_subs={pose_subs} result_pubs={result_pubs} "
-                        f"pose_topic={pose_topic} result_topic={result_topic}"
-                    )
-                    if pose_subs > 0 and result_pubs > 0:
-                        panel._emit_log(
-                            f"[MOVEIT][BRIDGE] connected pose_subs={pose_subs} result_pubs={result_pubs}"
-                        )
-                        return
-                time.sleep(0.4)
-            panel._emit_log(
-                "[MOVEIT][BRIDGE] WARN no conectado tras reintentos "
-                f"pose_topic={pose_topic} result_topic={result_topic}"
-            )
-        panel._run_async(_verify_bridge_ready)
+        panel._run_async(lambda: _verify_moveit_bridge_ready_async(panel))
     except Exception as exc:
         panel._set_status(f"Error lanzando MoveIt bridge: {exc}", error=True)
         set_led(panel.led_moveit_bridge, "error")

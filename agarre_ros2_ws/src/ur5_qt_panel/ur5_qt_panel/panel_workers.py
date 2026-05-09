@@ -113,3 +113,21 @@ class _CmdWorker(QObject):
             self._runner.finished.emit(self._tag, -1)
         finally:
             self.finished.emit()
+
+
+class _FnThread(QThread):
+    """Minimal QThread wrapper for running a callable in a background thread."""
+
+    error = pyqtSignal(str)
+
+    def __init__(self, fn, name: str = ""):
+        super().__init__()
+        self._fn = fn
+        self._name = name
+
+    def run(self) -> None:
+        try:
+            self._fn()
+        except Exception as exc:
+            prefix = f"{self._name}: " if self._name else ""
+            self.error.emit(f"{prefix}{exc}")

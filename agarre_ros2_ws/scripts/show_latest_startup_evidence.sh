@@ -5,7 +5,7 @@
 set -euo pipefail
 
 WS_DIR="/home/laboratorio/TFM/agarre_ros2_ws"
-BASE_DIR="$WS_DIR/reports/evidence_startup_ready"
+BASE_DIR="$WS_DIR/report/evidence_startup_ready"
 LATEST_LINK="$BASE_DIR/latest"
 
 if [[ ! -e "$LATEST_LINK" ]]; then

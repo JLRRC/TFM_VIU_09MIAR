@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!-- Ruta/archivo: agarre_ros2_ws/src/tfm_orchestrator/package.xml -->
+<!-- Contenido: Pick & place orchestrator (F5/F6) — nodo ROS 2 que aloja
+     PickPlace.action y orquesta el flujo via state machine pura. -->
+<package format="3">
+  <name>tfm_orchestrator</name>
+  <version>0.1.0</version>
+  <description>Pick &amp; place orchestrator node — consumes PickPlace.action and drives the state machine outside the Qt panel process.</description>
+  <maintainer email="jesus.lozano.rodriguez@gmail.com">laboratorio</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>ur5_panel_interfaces</exec_depend>
+
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>pytest</test_depend>
+  <!-- F7: launch_testing del pick_orchestrator_lifecycle -->
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
+  <test_depend>lifecycle_msgs</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -30,6 +30,47 @@ joint_trajectory_controller:
     state_interfaces:
       - position
       - velocity
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: false
+    # F1.11 audit-v4 (2026-05-08): cambiado false → true. El controller
+    # interpola desde el desired state (último comando) en lugar del
+    # measured state. Evita discrepancias de tracking que impiden
+    # convergencia al goal en sim. Test directo FJT funciona OK; el
+    # problema era el feedback loop con trajectory desde MoveIt.
+    interpolate_from_desired_state: true
+    set_last_command_interface_value_as_state_on_activation: true
+    # 2026-05-07: tolerancias subidas para Gazebo Sim (sim_per_wall ≈ 0.58
+    # produce drift severo entre trajectory_duration planeada y real).
+    # F1.11 audit-v4 (2026-05-08): stopped_velocity_tolerance 0.10 → 0.5.
+    # FJT abortaba con goal_time_tolerance porque robot llegaba a posición
+    # pero oscilaba en velocidad > 0.10 rad/s, nunca declaraba "stopped".
+    # 0.5 rad/s ≈ 28°/s es lenient pero detecta convergencia en sim.
+    # - trajectory: 100 (efectivamente infinito) — path_tolerance descartada
+    # - goal: 0.30 (17°) — sim physics jitter al goal
+    # - goal_time: 300.0 — permite sim a 1/5 de wall sin abortar
+    # - stopped_velocity_tolerance: 0.50 — F1.11 lenient para sim
+    constraints:
+      stopped_velocity_tolerance: 0.50
+      goal_time: 300.0
+      shoulder_pan_joint:
+        trajectory: 100.0
+        goal: 0.30
+      shoulder_lift_joint:
+        trajectory: 100.0
+        goal: 0.30
+      elbow_joint:
+        trajectory: 100.0
+        goal: 0.30
+      wrist_1_joint:
+        trajectory: 100.0
+        goal: 0.30
+      wrist_2_joint:
+        trajectory: 100.0
+        goal: 0.30
+      wrist_3_joint:
+        trajectory: 100.0
+        goal: 0.30
+
 
 gripper_controller:
   ros__parameters:

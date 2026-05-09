@@ -27,17 +27,26 @@ setup(
     entry_points={
         "console_scripts": [
             "controller_bootstrap = ur5_tools.controller_bootstrap:main",
+            "evidence_logger = ur5_tools.evidence_logger:main",
             "gz_pose_bridge = ur5_tools.gz_pose_bridge:main",
             "gz_ros_control_guard = ur5_tools.gz_ros_control_guard:main",
             "gripper_attach_backend = ur5_tools.gripper_attach_backend:main",
             "planning_scene_sync = ur5_tools.planning_scene_sync:main",
-            "ur5_moveit_bridge = ur5_tools.ur5_moveit_bridge:main",
+            # 2026-05-09: ur5_moveit_bridge entry borrada (path MoveIt-classic eliminado).
+            "plan_to_pose_server = ur5_tools.plan_to_pose_server:main",
             "release_objects_service = ur5_tools.release_objects_service:main",
             "system_state_manager = ur5_tools.system_state_manager:main",
             "world_tf_publisher = ur5_tools.world_tf_publisher:main",
             "tf_probe = ur5_tools.tf_probe:main",
             "clock_probe = ur5_tools.clock_probe:main",
             "jt_smoke_test = ur5_tools.jt_smoke_test:main",
+            "tf_geometry_service = ur5_tools.tf_geometry_service:main",
+            "object_pose_resolver_service = ur5_tools.object_pose_resolver_service:main",
+            # F8-step1 (2026-05-08): CLI sobre cycle_timing_analyzer.
+            "cycle_timing = ur5_tools.cli_cycle_timing:main",
+            # F8 audit-v4 (2026-05-08): aggregator multi-cycle + percentiles.
+            "cycle_timing_aggregator = "
+            "ur5_tools.cycle_timing_aggregator:main",
         ],
     },
 )

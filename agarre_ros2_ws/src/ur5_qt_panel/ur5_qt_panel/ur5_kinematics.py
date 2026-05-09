@@ -56,22 +56,29 @@ def ik_ur5(
     max_iter: int = 200,
     pos_weight: float = 1.0,
     rot_weight: float = 0.5,
+    joint_weight: float = 0.0,
 ) -> Tuple[np.ndarray, float, bool]:
     """Numeric IK for UR5. Returns (q, err_norm, success)."""
     target_pos = np.asarray(target_pos, dtype=float).reshape(3)
     if target_rot.shape != (3, 3):
         raise ValueError("target_rot debe ser 3x3.")
+    q0 = np.asarray(list(q0), dtype=float)
+    if q0.size != 6:
+        raise ValueError("q0 debe tener 6 articulaciones.")
+
+    def _wrap_to_pi(values: np.ndarray) -> np.ndarray:
+        return (values + math.pi) % (2.0 * math.pi) - math.pi
 
     def _err(q: np.ndarray) -> np.ndarray:
         pos, rot = fk_ur5(q)
         dp = (pos - target_pos) * pos_weight
         r_err = rot.T @ target_rot
         rotvec = Rotation.from_matrix(r_err).as_rotvec() * rot_weight
+        if joint_weight > 0.0:
+            dq = _wrap_to_pi(q - q0) * joint_weight
+            return np.concatenate([dp, rotvec, dq])
         return np.concatenate([dp, rotvec])
 
-    q0 = np.asarray(list(q0), dtype=float)
-    if q0.size != 6:
-        raise ValueError("q0 debe tener 6 articulaciones.")
     bounds = (-2.0 * math.pi) * np.ones(6), (2.0 * math.pi) * np.ones(6)
     res = least_squares(_err, q0, bounds=bounds, max_nfev=max_iter)
     err_norm = float(np.linalg.norm(res.fun))
@@ -88,4 +95,3 @@ def rot_x(theta: float) -> np.ndarray:
     ct = math.cos(theta)
     st = math.sin(theta)
     return np.array([[1.0, 0.0, 0.0], [0.0, ct, -st], [0.0, st, ct]], dtype=float)
-

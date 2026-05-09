@@ -28,9 +28,9 @@ def _fmt(mean: float, std: float) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--summary", default="reports/tables/summary_results.csv")
-    ap.add_argument("--latency", default="reports/bench/latency_results.csv")
-    ap.add_argument("--out-dir", default="reports/tables")
+    ap.add_argument("--summary", default="report/tables/summary_results.csv")
+    ap.add_argument("--latency", default="report/bench/latency_results.csv")
+    ap.add_argument("--out-dir", default="report/tables")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)

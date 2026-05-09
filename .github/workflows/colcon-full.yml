@@ -1,0 +1,97 @@
+# Ruta/archivo: .github/workflows/colcon-full.yml
+# Contenido: Build + test colcon completo (requiere ROS 2 Jazzy + deps).
+# Uso breve: trigger manual (workflow_dispatch) o push a main/ENTREGA.V3.
+#
+# Notas:
+#   * Este workflow usa el container ros:jazzy-ros-base, que NO incluye
+#     moveit_py, ros_gz_*, ur_description ni otras deps de MoveIt 2 +
+#     Gazebo. El step rosdep intenta instalar lo que pueda con --skip-keys
+#     pero con frecuencia falla: puede dejarse rojo hasta migrar a una
+#     imagen con ros:jazzy-desktop o instalar manualmente las deps.
+#   * Para CI verde rápido del subset offline de ur5_qt_panel ver el
+#     workflow colcon.yml (job offline-tests).
+
+name: colcon-full
+
+on:
+  push:
+    branches:
+      - main
+      - ENTREGA.V3
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    container:
+      image: ros:jazzy-ros-base
+      options: --user root
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install rosdep deps
+        shell: bash
+        working-directory: agarre_ros2_ws
+        run: |
+          set -euo pipefail
+          apt-get update
+          rosdep update --rosdistro=jazzy || true
+          rosdep install --from-paths src --ignore-src \
+            --rosdistro=jazzy -y \
+            --skip-keys "PyQt5 python3-pyqt5 python3-pyqt5.qtwebengine xvfb gazebo_ros gz_ros2_control" \
+            || true
+
+      - name: Install mypy (gating for test_mypy_strict_baseline)
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get install -y python3-pip
+          pip3 install --break-system-packages mypy==1.11.2 || pip3 install mypy==1.11.2
+
+      - name: colcon build (ur5_tools + ur5_bringup + tfm_grasping + tfm_orchestrator + interfaces)
+        shell: bash
+        working-directory: agarre_ros2_ws
+        run: |
+          set -euo pipefail
+          source /opt/ros/jazzy/setup.bash
+          colcon build --symlink-install \
+            --packages-select \
+              ur5_panel_interfaces \
+              ur5_description \
+              ur5_moveit_config \
+              ur5_bringup \
+              ur5_tools \
+              tfm_grasping \
+              tfm_orchestrator
+
+      - name: colcon test (incluye tfm_orchestrator → test_mypy_strict_baseline gating)
+        shell: bash
+        working-directory: agarre_ros2_ws
+        run: |
+          set -euo pipefail
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          # audit-v4.1 FASE E (2026-05-08): tfm_orchestrator añadido para que
+          # test_f7_mypy_strict_baseline rompa el CI si un módulo del baseline
+          # deja de pasar `mypy --strict --follow-imports=silent`.
+          colcon test \
+            --packages-select \
+              ur5_tools \
+              ur5_bringup \
+              tfm_grasping \
+              tfm_orchestrator \
+            --pytest-args -q
+          colcon test-result --verbose
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: agarre_ros2_ws/build/*/pytest.xml
+          retention-days: 14

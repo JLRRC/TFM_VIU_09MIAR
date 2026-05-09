@@ -1,0 +1,66 @@
+# Ruta/archivo: .pre-commit-config.yaml
+# Contenido: Hooks pre-commit para TFM (ruff + checks básicos).
+# Uso breve:
+#   pip install pre-commit ruff
+#   pre-commit install
+#   pre-commit run --all-files   # primera ejecución manual
+#
+# Nota FASE 1 (2026-05-02): hooks en modo check-only para no bloquear
+# commits del refactor en curso. El selector ruff de pyproject.toml está
+# acotado a errores graves (sintaxis, undefined names, mutable defaults).
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (lint, check-only)
+        args: [--no-fix]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '^(BORRAR|historico|auditoria|report)/'
+      - id: end-of-file-fixer
+        exclude: '^(BORRAR|historico|auditoria|report)/'
+      - id: check-yaml
+        exclude: '^(BORRAR|historico|auditoria|report|agarre_inteligente)/'
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: check-toml
+
+  # F4 audit-v4 (2026-05-08): quality meta-tests gate (rápido, ~1s).
+  # Bloquea commit si:
+  #   * print() en archivo no listado en LEGACY_PRINT_FILES.
+  #   * archivo .py crece más de +50 LOC sobre baseline LEGACY_OVERSIZE.
+  #   * función nueva > 200 LOC.
+  #   * import circular.
+  #   * env var sin documentar en *_params.py.
+  #   * env reads scattered > baseline (T31).
+  - repo: local
+    hooks:
+      - id: quality-metrics
+        name: F4 quality meta-tests (LOC, prints, env reads)
+        entry: pytest agarre_ros2_ws/src/ur5_qt_panel/test/test_quality_metrics.py -q --no-header
+        language: system
+        pass_filenames: false
+        files: \.py$
+        always_run: false
+
+      - id: mypy-strict-baseline
+        name: F7 mypy strict baseline (23 módulos puros)
+        entry: pytest agarre_ros2_ws/src/tfm_orchestrator/test/test_mypy_strict_baseline.py -q --no-header
+        language: system
+        pass_filenames: false
+        files: \.(py|ini)$
+        always_run: false
+
+      - id: bridge-regression-guard
+        name: F1.5 T28 bridge retry regression guard (AST)
+        entry: pytest agarre_ros2_ws/src/ur5_tools/test/test_bridge_path_tolerance_regression.py -q --no-header
+        language: system
+        pass_filenames: false
+        files: 'agarre_ros2_ws/src/ur5_tools/ur5_tools/plan_to_pose_server\.py'
+        always_run: false

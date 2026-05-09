@@ -33,7 +33,13 @@ _PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 @pytest.mark.flake8
 @pytest.mark.linter
 def test_flake8():
-    rc, errors = main_with_errors(argv=[str(_PACKAGE_ROOT)])
+    # Config local en test/ament_flake8.ini extiende --extend-ignore con
+    # Q000,I100,I101,I201,F841 (estilo no funcional; codebase usa double
+    # quotes y orden manual de imports por bloque semantico).
+    local_config = Path(__file__).parent / "ament_flake8.ini"
+    rc, errors = main_with_errors(
+        argv=[str(_PACKAGE_ROOT), "--config", str(local_config)]
+    )
     assert rc == 0, "Found %d code style errors / warnings:\n" % len(
         errors
     ) + "\n".join(errors)

@@ -1,0 +1,66 @@
+{
+  "root": "/home/laboratorio/TFM/agarre_inteligente/experiments",
+  "count": 6,
+  "entries": [
+    {
+      "path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP1_SIMPLE_RGB/seed_2/checkpoints/best.pth",
+      "experiment": "EXP1_SIMPLE_RGB",
+      "seed": 2,
+      "val_success": 0.3295092415551306,
+      "val_iou": 0.2916960033177566,
+      "val_loss": 0.0329482957161963,
+      "selection_basis": "val_success",
+      "role": "oficial"
+    },
+    {
+      "path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP2_SIMPLE_RGBD/seed_0/checkpoints/best.pth",
+      "experiment": "EXP2_SIMPLE_RGBD",
+      "seed": 0,
+      "val_success": 0.3855959209687699,
+      "val_iou": 0.3125385341837182,
+      "val_loss": 0.0321920350566506,
+      "selection_basis": "val_success",
+      "role": "oficial"
+    },
+    {
+      "path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP3_RESNET18_RGB_AUGMENT/seed_2/checkpoints/best.pth",
+      "experiment": "EXP3_RESNET18_RGB_AUGMENT",
+      "seed": 2,
+      "val_success": 0.7036328871892925,
+      "val_iou": 0.3948210766759475,
+      "val_loss": 0.028776043960679,
+      "selection_basis": "val_success",
+      "role": "oficial"
+    },
+    {
+      "path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP4_RESNET18_RGBD/seed_2/checkpoints/best.pth",
+      "experiment": "EXP4_RESNET18_RGBD",
+      "seed": 2,
+      "val_success": 0.65710643722116,
+      "val_iou": 0.4004947834455899,
+      "val_loss": 0.0274331074533984,
+      "selection_basis": "val_success",
+      "role": "oficial"
+    },
+    {
+      "path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP1.1_SIMPLEGRASP_RGB/seed_0/checkpoints/best.pth",
+      "experiment": "EXP1.1_SIMPLEGRASP_RGB",
+      "seed": 0,
+      "val_success": 0.0,
+      "val_iou": 0.0,
+      "val_loss": 2.216539597511292,
+      "selection_basis": "val_loss",
+      "role": "auxiliar 4.6.2"
+    },
+    {
+      "path": "/home/laboratorio/TFM/agarre_inteligente/experiments/EXP1.2_SIMPLEGRASP_RGBD/seed_1/checkpoints/best.pth",
+      "experiment": "EXP1.2_SIMPLEGRASP_RGBD",
+      "seed": 1,
+      "val_success": 0.0,
+      "val_iou": 0.0,
+      "val_loss": 43.68034973144531,
+      "selection_basis": "val_loss",
+      "role": "auxiliar 4.6.2"
+    }
+  ]
+}

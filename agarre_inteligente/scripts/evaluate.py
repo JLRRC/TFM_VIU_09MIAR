@@ -19,20 +19,8 @@ from torch.utils.data import DataLoader
 from src.data.grasp_dataset import GraspDataset
 from src.data.transforms import get_val_transforms
 from src.evaluation.evaluator import Evaluator
-from src.models.resnet_variants import ResNetGrasp
-from src.models.simple_cnn import SimpleCNN
+from src.models.factory import build_model
 from src.utils.config_loader import load_config
-
-
-def build_model(model_cfg: dict):
-    if model_cfg["name"] == "SimpleGraspCNN":
-        return SimpleCNN(input_channels=int(model_cfg["input_channels"]), dropout=float(model_cfg.get("dropout", 0.2)))
-    return ResNetGrasp(
-        input_channels=int(model_cfg["input_channels"]),
-        pretrained=False,
-        freeze_backbone=bool(model_cfg.get("freeze_backbone", False)),
-        dropout=float(model_cfg.get("dropout", 0.2)),
-    )
 
 
 def main() -> int:

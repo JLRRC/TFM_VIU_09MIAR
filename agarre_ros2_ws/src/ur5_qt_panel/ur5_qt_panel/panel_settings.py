@@ -10,38 +10,50 @@ import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from .logging_utils import emit_log_line
 
-def _env_float(name: str, default: float) -> float:
+
+# F2-step5 (2026-05-08): helpers env centralizados en panel_env.
+# Reexportamos para mantener compat con consumidores actuales.
+from .panel_env import (
+    env_bool_permissive as _env_bool,
+    env_float as _env_float,
+    env_int as _env_int,
+    env_optional_bool_permissive as _env_optional_bool,
+    env_optional_str as _env_optional_str,
+    env_str as _env_str,
+)
+
+
+# audit-v4.1 FASE D.2 (2026-05-08): _env_bool y _env_optional_bool con
+# semántica permisiva (truthy = no es {0,false,vacío}) consolidados en
+# panel_env.env_bool_permissive / env_optional_bool_permissive. Aquí
+# se reimportan con los nombres locales para preservar todos los call
+# sites internos sin tocar lógica.
+
+
+def _warn_ignored_legacy_gripper_tcp_z_offset(raw_value: object = None, *, source: str) -> None:
+    raw = raw_value
+    if raw is None:
+        raw = _env_optional_str("PANEL_GRIPPER_TCP_Z_OFFSET")
+    if raw is None or not str(raw).strip():
+        return
     try:
-        return float(os.environ.get(name, str(default)))
+        value = float(str(raw))
     except Exception:
-        return default
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, str(default)))
-    except Exception:
-        return default
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip() not in ("0", "false", "False", "")
-
-def _env_str(name: str, default: str) -> str:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return str(raw)
-
-def _env_optional_bool(name: str) -> Optional[bool]:
-    raw = os.environ.get(name)
-    if raw is None:
-        return None
-    return raw.strip().lower() not in ("0", "false", "no", "off", "")
+        emit_log_line(
+            "[PANEL][WARN] PANEL_GRIPPER_TCP_Z_OFFSET inválida en "
+            f"{source}; se ignora y se mantiene la geometría del URDF canónico.",
+            stream=sys.stderr,
+        )
+        return
+    emit_log_line(
+        "[PANEL][WARN] PANEL_GRIPPER_TCP_Z_OFFSET/gripper_tcp_z_offset es legacy. "
+        f"Valor ignorado ({value:.6f}) en {source}. "
+        "La fuente de verdad geométrica es el URDF canónico y el frame operativo "
+        "debe ser rg2_pinch_center.",
+        stream=sys.stderr,
+    )
 
 def _load_yaml_overrides(path: str) -> Dict[str, object]:
     if not path:
@@ -50,15 +62,15 @@ def _load_yaml_overrides(path: str) -> Dict[str, object]:
     if not os.path.isfile(path):
         return {}
     try:
-        import yaml  # type: ignore
+        import yaml
     except Exception:
-        print(f"[PANEL][WARN] PyYAML no disponible; ignorando {path}", file=sys.stderr, flush=True)
+        emit_log_line(f"[PANEL][WARN] PyYAML no disponible; ignorando {path}", stream=sys.stderr)
         return {}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     except Exception as exc:
-        print(f"[PANEL][WARN] Error leyendo YAML {path}: {exc}", file=sys.stderr, flush=True)
+        emit_log_line(f"[PANEL][WARN] Error leyendo YAML {path}: {exc}", stream=sys.stderr)
         return {}
     if isinstance(data, dict) and "panel_settings" in data:
         data = data.get("panel_settings") or {}
@@ -99,14 +111,16 @@ class PanelSettings:
     save_pose_info_positions: bool = False
     ur5_base_x: float = -0.85
     ur5_base_y: float = 0.0
-    ur5_base_z: float = 0.0
+    # Must match the UR5 spawn pose in the Gazebo world to keep world<->base
+    # fallbacks coherent when TF is temporarily unavailable.
+    ur5_base_z: float = 0.850
     ur5_reach_radius: float = 0.85
     gz_world: str = "ur5_mesa_objetos"
     gripper_attach_prefix: str = "/gripper"
     gz_partition_file: str = ""
     infer_script: str = ""
     infer_ckpt: str = ""
-    infer_roi_size: int = 0
+    infer_roi_size: int = 96
     infer_retry_err_px: float = 60.0
     fastrtps_profiles: str = ""
     ur5_controllers_yaml: str = ""
@@ -158,7 +172,8 @@ class PanelSettings:
     debug_poses_period_sec: float = 3.0
     pick_log_min_interval_sec: float = 2.0
     gripper_cmd_topic: str = "/gripper_controller/commands"
-    gripper_open_rad: float = 1.0
+    # Gripper prismático: apertura máxima 0.0425 m por dedo (límite del joint en URDF/SDF).
+    gripper_open_rad: float = 0.0425
     gripper_closed_rad: float = 0.0
     gripper_joint2_sign: float = 1.0
     panel_managed: bool = False
@@ -207,7 +222,6 @@ class PanelSettings:
     pick_demo_grasp_z_offset: float = 0.02
     pick_demo_transport_z_offset: float = 0.28
     pick_demo_drop_z_offset: float = 0.05
-    gripper_tcp_z_offset: float = 0.0
     auto_calib_from_camera: bool = True
     reach_overlay_z: float = 0.850
     reach_overlay_points: int = 72
@@ -217,7 +231,8 @@ class PanelSettings:
 
     @classmethod
     def from_env(cls) -> "PanelSettings":
-        ws_dir = os.path.expanduser(os.environ.get("WS_DIR", "~/TFM/agarre_ros2_ws"))
+        # F2-step2: lecturas directas reemplazadas por helpers _env_* tipados.
+        ws_dir = os.path.expanduser(_env_str("WS_DIR", "~/TFM/agarre_ros2_ws"))
         os.environ.setdefault("WS_DIR", ws_dir)
         os.environ.setdefault("GZ_SIM_SYSTEM_PLUGIN_PATH", "/opt/ros/jazzy/lib")
 
@@ -227,11 +242,21 @@ class PanelSettings:
         log_dir = os.path.join(ws_dir, "log")
         bags_dir = os.path.join(ws_dir, "bags")
         fig_dir = os.path.join(ws_dir, "experiments", "figures_memoria")
-        vision_dir = os.path.expanduser(os.environ.get("VISION_DIR", "~/TFM/agarre_inteligente"))
+        vision_dir = os.path.expanduser(_env_str("VISION_DIR", "~/TFM/agarre_inteligente"))
         vision_exp_dir = os.path.join(vision_dir, "experiments")
         vision_plots_dir = os.path.join(vision_exp_dir, "plots")
-        vision_summary = os.path.join(vision_exp_dir, "summary_base.csv")
+        tfm_root_dir = os.path.dirname(ws_dir)
+        vision_summary = os.path.join(
+            tfm_root_dir,
+            "report",
+            "metrics",
+            "validated",
+            "chapter5_experiment_summary_validated.csv",
+        )
         vision_fig_dir = os.path.join(vision_exp_dir, "figures_memoria")
+        _warn_ignored_legacy_gripper_tcp_z_offset(
+            source="env:PANEL_GRIPPER_TCP_Z_OFFSET"
+        )
 
         settings = cls(
             ws_dir=ws_dir,
@@ -256,18 +281,8 @@ class PanelSettings:
             object_pos_path=os.path.join(scripts_dir, "object_positions.json"),
             save_pose_info_positions=_env_bool("PANEL_SAVE_POSE_INFO_POSITIONS", False),
             infer_script=os.path.join(vision_dir, "scripts", "predict.py"),
-            infer_ckpt=_env_str(
-                "INFER_CKPT",
-                os.path.join(
-                    vision_dir,
-                    "experiments",
-                    "EXP1_SIMPLE_RGB",
-                    "seed_0",
-                    "checkpoints",
-                    "best.pth",
-                ),
-            ),
-            infer_roi_size=max(0, int(os.environ.get("INFER_ROI_SIZE", "0"))),
+            infer_ckpt=_env_str("INFER_CKPT", ""),
+            infer_roi_size=max(0, _env_int("INFER_ROI_SIZE", 96)),
             infer_retry_err_px=_env_float("INFER_RETRY_ERR_PX", 60.0),
             fastrtps_profiles=os.path.join(scripts_dir, "fastdds_no_shm.xml"),
             ur5_controllers_yaml=os.path.join(
@@ -287,9 +302,12 @@ class PanelSettings:
             auto_start_bridge_max_retries=_env_int("PANEL_AUTO_BRIDGE_MAX_RETRIES", 30),
             default_world_candidates=[os.path.join(worlds_dir, "ur5_mesa_objetos.sdf")],
             debug_frame_log=_env_bool("PANEL_DEBUG_FRAMES", False),
-            base_frame=os.environ.get("PANEL_BASE_FRAME"),
-            world_frame=os.environ.get("PANEL_WORLD_FRAME"),
-            arm_traj_topic_default=os.environ.get(
+            # F2-step2: PANEL_BASE_FRAME / PANEL_WORLD_FRAME son Optional[str]:
+            # ``None`` significa "no override", el panel deduce el frame.
+            # F2-step3: vía _env_optional_str (helper centralizado).
+            base_frame=_env_optional_str("PANEL_BASE_FRAME"),
+            world_frame=_env_optional_str("PANEL_WORLD_FRAME"),
+            arm_traj_topic_default=_env_str(
                 "ARM_TRAJ_TOPIC", "/joint_trajectory_controller/joint_trajectory"
             ),
             ur5_joint_names=[
@@ -306,7 +324,7 @@ class PanelSettings:
             ],
             ur5_home_env=os.path.join(scripts_dir, "ur5_home_pose.env"),
             ur5_home_default=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            ur5_model_name=os.environ.get("UR5_MODEL_NAME", "ur5_rg2"),
+            ur5_model_name=_env_str("UR5_MODEL_NAME", "ur5_rg2"),
             depth_pctl_refresh_frames=max(1, _env_int("PANEL_DEPTH_PCTL_REFRESH_FRAMES", 15)),
             depth_pctl_stride=max(1, _env_int("PANEL_DEPTH_PCTL_STRIDE", 4)),
             depth_fast=_env_bool("PANEL_DEPTH_FAST", False),
@@ -336,7 +354,7 @@ class PanelSettings:
             debug_poses_period_sec=_env_float("PANEL_DEBUG_POSES_PERIOD_SEC", 3.0),
             pick_log_min_interval_sec=_env_float("PANEL_PICK_LOG_MIN_INTERVAL_SEC", 2.0),
             gripper_cmd_topic=_env_str("PANEL_GRIPPER_CMD_TOPIC", "/gripper_controller/commands"),
-            gripper_open_rad=_env_float("PANEL_GRIPPER_OPEN_RAD", 1.0),
+            gripper_open_rad=_env_float("PANEL_GRIPPER_OPEN_RAD", 0.0425),
             gripper_closed_rad=_env_float("PANEL_GRIPPER_CLOSED_RAD", 0.0),
             gripper_joint2_sign=_env_float("PANEL_GRIPPER_JOINT2_SIGN", 1.0),
             panel_managed=_env_bool("PANEL_MANAGED", False),
@@ -385,7 +403,6 @@ class PanelSettings:
             pick_demo_grasp_z_offset=_env_float("PANEL_PICK_DEMO_GRASP_Z", 0.02),
             pick_demo_transport_z_offset=_env_float("PANEL_PICK_DEMO_TRANSPORT_Z", 0.28),
             pick_demo_drop_z_offset=_env_float("PANEL_PICK_DEMO_DROP_Z", 0.05),
-            gripper_tcp_z_offset=_env_float("PANEL_GRIPPER_TCP_Z_OFFSET", 0.0),
             auto_calib_from_camera=_env_bool("PANEL_CALIB_AUTO", True),
             reach_overlay_z=_env_float("PANEL_REACH_OVERLAY_Z", 0.850),
             reach_overlay_points=_env_int("PANEL_REACH_OVERLAY_POINTS", 72),
@@ -393,13 +410,20 @@ class PanelSettings:
             pickable_pre_grasp_z=_env_float("PANEL_PICKABLE_PRE_GRASP_Z", 0.12),
             pickable_min_clearance=_env_float("PANEL_PICKABLE_MIN_CLEARANCE", 0.05),
         )
-        overrides = _load_yaml_overrides(os.environ.get("PANEL_SETTINGS_YAML", ""))
+        yaml_path = _env_str("PANEL_SETTINGS_YAML", "")
+        overrides = _load_yaml_overrides(yaml_path)
         if not overrides:
             return settings
         data = settings.__dict__.copy()
         for key, value in overrides.items():
             if key not in data:
-                print(f"[PANEL][WARN] Clave desconocida en YAML: {key}", file=sys.stderr, flush=True)
+                if key == "gripper_tcp_z_offset":
+                    _warn_ignored_legacy_gripper_tcp_z_offset(
+                        value,
+                        source=f"yaml:{os.path.expandvars(os.path.expanduser(yaml_path or '<inline>'))}",
+                    )
+                    continue
+                emit_log_line(f"[PANEL][WARN] Clave desconocida en YAML: {key}", stream=sys.stderr)
                 continue
             data[key] = value
         return cls(**data)

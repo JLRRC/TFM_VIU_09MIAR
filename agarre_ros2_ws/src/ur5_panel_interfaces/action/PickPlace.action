@@ -1,0 +1,26 @@
+# Action de pick & place de alto nivel.
+# Goal: objeto a recoger + punto de drop (en world) + pose hint del objeto.
+# Result: success + reason + duracion total.
+# Feedback: fase actual del pipeline + progreso normalizado [0,1] +
+#   indice de fase para correlar con el evidence_logger.
+
+# Goal
+string object_name
+geometry_msgs/Point drop_xyz_world
+# F5-step2: pose actual del objeto en world (hint del cliente).
+# Convencion "no hint": position (0,0,0) Y orientation identity (qw=1,
+# qx=qy=qz=0). En ese caso el orchestrator usa placeholder o resuelve
+# via ComputeApproachPose (F5-step3 pendiente).
+geometry_msgs/Pose object_pose_world_hint
+---
+# Result
+bool success
+string reason
+float64 duration_sec
+int32 cycles_completed
+---
+# Feedback
+string current_phase
+float32 progress
+int32 phase_index
+string detail

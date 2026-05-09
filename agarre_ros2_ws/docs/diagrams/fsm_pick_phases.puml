@@ -1,0 +1,94 @@
+@startuml fsm_pick_phases
+!theme plain
+
+title FSM 9 fases — pick_orchestrator_lifecycle_node (PickPlace.action)
+
+skinparam state {
+  BackgroundColor<<happy>> #C8E6C9
+  BackgroundColor<<critical>> #FFCDD2
+  BackgroundColor<<gate>> #FFF9C4
+}
+
+[*] --> INITIAL_SNAPSHOT : Goal accept
+
+state INITIAL_SNAPSHOT <<gate>> {
+  [*] --> capturing
+  capturing : tf2 base_link↔tcp_tf
+  capturing : JointState cache
+  capturing : object_pose_world resolve
+}
+INITIAL_SNAPSHOT --> HOME_INITIAL : success
+
+state HOME_INITIAL <<happy>> {
+  [*] --> sending_fjt
+  sending_fjt : FJT directo (no MoveIt)
+  sending_fjt : path_tol=10 rad goal_tol=0.10
+}
+HOME_INITIAL --> SELECT_OBJECT : success
+HOME_INITIAL --> [*] : fail (HomeError)
+
+state SELECT_OBJECT <<gate>> {
+  [*] --> validate_hint
+  validate_hint : check object_pose_world_hint
+  validate_hint : fallback compute_approach_pose
+}
+SELECT_OBJECT --> APPROACH : success
+
+state APPROACH <<happy>> {
+  [*] --> plan_to_pose
+  plan_to_pose : world→base_link
+  plan_to_pose : compute_top_down_grasp_quat (F1.8)
+  plan_to_pose : Z + clearance 0.10
+  plan_to_pose : action /orchestrator/plan_to_pose
+}
+APPROACH --> GRASP_DOWN : success
+APPROACH --> [*] : fail (ApproachError)
+
+state GRASP_DOWN <<happy>> {
+  [*] --> cartesian_descent
+  cartesian_descent : segmented IK
+  cartesian_descent : Z step 0.005m
+  cartesian_descent : keep_xy_tol 0.005m
+  cartesian_descent : strict gates
+}
+GRASP_DOWN --> GRASP : success
+GRASP_DOWN --> [*] : fail (GraspDownError)
+
+state GRASP <<critical>> {
+  [*] --> closing_gripper
+  closing_gripper : srv /gripper/close
+  closing_gripper : confirm closed (8s, delta 60mm)
+  closing_gripper : srv /orchestrator/attach
+  closing_gripper : attach_distance gate (0.050m)
+}
+GRASP --> LIFT : success
+GRASP --> [*] : fail (GraspError)
+
+state LIFT <<happy>> {
+  [*] --> lifting
+  lifting : plan_to_pose con clearance Z
+  lifting : retry on transient
+}
+LIFT --> TRANSPORT : success
+LIFT --> [*] : fail (LiftError)
+
+state TRANSPORT <<critical>> {
+  [*] --> moving_to_drop
+  moving_to_drop : multi-waypoint trajectory (H11)
+  moving_to_drop : retry+back-off (B-iter9)
+  moving_to_drop : runtime stall detector
+}
+TRANSPORT --> RELEASE : success
+TRANSPORT --> [*] : fail (TransportError)
+
+state RELEASE <<critical>> {
+  [*] --> opening
+  opening : srv /orchestrator/detach
+  opening : srv /gripper/open
+  opening : srv /release_objects
+  opening : confirm open
+}
+RELEASE --> [*] : success
+RELEASE --> [*] : fail (ReleaseError)
+
+@enduml

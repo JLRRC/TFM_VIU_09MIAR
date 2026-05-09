@@ -1,7 +1,29 @@
 BORRAR/
-agarre_inteligente/reports/
-agarre_ros2_ws/reports/
-reports/archive/BORRAR/
+historico/
+auditoria/
+
+# Caches y artefactos locales del workspace
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+**/.ipynb_checkpoints/
+**/.venv/
+**/.venv*/
+**/venv/
+
+# Logs y trazas locales
+agarre_inteligente/data/raw
+agarre_ros2_ws/build
+agarre_ros2_ws/install
+agarre_ros2_ws/log
+TRACE_PANEL_V2.log
 *.log
 .DS_Store
+.claude
+.pytest_cache/
 
+# Temporales dentro de report
+report/bench/latency_results_*.csv
+report/logs/training/*.pid

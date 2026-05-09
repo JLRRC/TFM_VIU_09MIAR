@@ -1,4 +1,10 @@
-"""Evaluacion Cornell-style y export de resultados por split."""
+"""Evaluacion Cornell-style y export de resultados por split.
+
+Clases
+------
+Evaluator         — evaluador oficial de EXP1..EXP4 (IoU axis-aligned). No modificar.
+EvaluatorOriented — variante metodológicamente alineada (IoU orientada, posterior TFM).
+"""
 
 from __future__ import annotations
 
@@ -165,3 +171,129 @@ class Evaluator:
                     }
                 )
         pd.DataFrame(rows).to_csv(out, index=False)
+
+
+# ---------------------------------------------------------------------------
+# EvaluatorOriented — alineación metodológica posterior al TFM
+# ---------------------------------------------------------------------------
+# Esta clase replica la lógica de Evaluator pero usa iou_oriented_boxes en
+# lugar de iou_axis_aligned_boxes, y cornell_success_oriented en lugar de
+# cornell_success. El criterio de éxito por imagen (np.any sobre todos los GT
+# de la imagen) se mantiene idéntico al de Evaluator.
+# No se usa para EXP1..EXP4 (sus métricas oficiales usaron Evaluator).
+
+
+class EvaluatorOriented:
+    """Evaluador Cornell con IoU de rectángulos orientados.
+
+    Parámetros
+    ----------
+    model, dataloader, device : igual que Evaluator.
+    csv_path : ruta al CSV del split de validación. Necesario para agrupar
+               todos los GT por imagen y aplicar el criterio por imagen.
+    iou_thr  : umbral de IoU (Cornell estándar: 0.25).
+    angle_thr: umbral de error angular en grados (Cornell estándar: 30.0).
+    """
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        dataloader,
+        device: str = "cpu",
+        csv_path: str | Path | None = None,
+        iou_thr: float = 0.25,
+        angle_thr: float = 30.0,
+    ):
+        self.model = model
+        self.dataloader = dataloader
+        self.device = device
+        self.iou_thr = float(iou_thr)
+        self.angle_thr = float(angle_thr)
+
+        self.gt_by_image: dict[str, np.ndarray] = {}
+        if csv_path is not None:
+            p = Path(csv_path)
+            if p.exists():
+                df = pd.read_csv(p)
+                for img_path, group in df.groupby("image_path"):
+                    self.gt_by_image[img_path] = group[
+                        ["cx", "cy", "w", "h", "angle_deg"]
+                    ].values.astype(np.float64)
+
+    @torch.no_grad()
+    def evaluate(self, criterion) -> "EvalResult":
+        from src.training.metrics import (
+            iou_oriented_boxes,
+            cornell_success_oriented,
+            angle_error_deg,
+        )
+
+        self.model.eval()
+        all_ious: list[float] = []
+        all_angles: list[float] = []
+        all_successes: list[float] = []
+        losses: list[float] = []
+
+        for batch in self.dataloader:
+            x, y, names = batch
+            x = x.to(self.device)
+            y = y.to(self.device)
+            pred = self.model(x)
+            loss = criterion(pred, y)
+            if torch.isfinite(loss):
+                losses.append(float(loss.item()))
+
+            pred_np = pred.detach().cpu().numpy().copy()
+            pred_np = np.nan_to_num(pred_np, nan=0.0, posinf=1.0, neginf=-1.0)
+            h = float(x.shape[2])
+            w = float(x.shape[3])
+            pred_np[:, 0] *= w
+            pred_np[:, 1] *= h
+            pred_np[:, 2] = np.abs(pred_np[:, 2] * w)
+            pred_np[:, 3] = np.abs(pred_np[:, 3] * h)
+            pred_np[:, 4] *= 90.0
+
+            for i, img_path in enumerate(names):
+                pred_single = pred_np[i : i + 1]
+
+                if self.gt_by_image and img_path in self.gt_by_image:
+                    gt_all = self.gt_by_image[img_path].copy()
+                    orig_w, orig_h = 640.0, 480.0
+                    scale_x = w / orig_w
+                    scale_y = h / orig_h
+                    gt_all[:, 0] *= scale_x
+                    gt_all[:, 1] *= scale_y
+                    gt_all[:, 2] *= scale_x
+                    gt_all[:, 3] *= scale_y
+
+                    ious = iou_oriented_boxes(pred_single, gt_all)
+                    angles = angle_error_deg(pred_single[:, 4], gt_all[:, 4])
+                    successes = cornell_success_oriented(
+                        pred_single, gt_all, self.iou_thr, self.angle_thr
+                    )
+                    all_ious.append(float(np.max(ious)))
+                    all_angles.append(float(np.min(angles)))
+                    all_successes.append(float(np.any(successes)))
+                else:
+                    gt_np = y[i : i + 1].detach().cpu().numpy().copy()
+                    gt_np = np.nan_to_num(gt_np, nan=0.0, posinf=1.0, neginf=-1.0)
+                    gt_np[:, 0] *= w
+                    gt_np[:, 1] *= h
+                    gt_np[:, 2] = np.abs(gt_np[:, 2] * w)
+                    gt_np[:, 3] = np.abs(gt_np[:, 3] * h)
+                    gt_np[:, 4] *= 90.0
+                    ious = iou_oriented_boxes(pred_single, gt_np)
+                    angles = angle_error_deg(pred_single[:, 4], gt_np[:, 4])
+                    successes = cornell_success_oriented(
+                        pred_single, gt_np, self.iou_thr, self.angle_thr
+                    )
+                    all_ious.append(float(ious[0]))
+                    all_angles.append(float(angles[0]))
+                    all_successes.append(float(successes[0]))
+
+        return EvalResult(
+            val_success=float(np.mean(all_successes)) if all_successes else float("nan"),
+            val_iou=float(np.mean(all_ious)) if all_ious else float("nan"),
+            val_angle_deg=float(np.mean(all_angles)) if all_angles else float("nan"),
+            val_loss=float(np.mean(losses)) if losses else float("nan"),
+        )

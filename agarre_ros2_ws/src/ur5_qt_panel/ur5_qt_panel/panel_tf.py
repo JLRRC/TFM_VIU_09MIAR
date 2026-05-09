@@ -5,14 +5,14 @@
 """TF helper utilities for the panel."""
 from __future__ import annotations
 
-import os
 import threading
 import time
 from typing import Optional, Set, Tuple
 
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 
-from .logging_utils import timestamped_line
+from .logging_utils import emit_log_line, timestamped_line
+from .panel_ui_params import get_panel_ui_params as _get_panel_ui_params
 
 from .panel_config import ROS_AVAILABLE, USE_SIM_TIME
 
@@ -104,14 +104,14 @@ class TfHelper:
         self._frames_seen_tf: Set[str] = set()
         self._frames_seen_tf_static: Set[str] = set()
         self._tf_listener_logged = False
-        self._debug_exceptions = os.environ.get("PANEL_DEBUG_EXCEPTIONS", "").strip() in ("1", "true", "True")
+        self._debug_exceptions = _get_panel_ui_params().debug_exceptions
         if ROS_AVAILABLE and Buffer is not None:
             self._start()
 
     def _log_exception(self, context: str, exc: Exception) -> None:
         if not self._debug_exceptions:
             return
-        print(timestamped_line(f"[TF][WARN] {context}: {exc}"), flush=True)
+        emit_log_line(timestamped_line(f"[TF][WARN] {context}: {exc}"))
 
     def _start(self):
         with self._lock:
@@ -122,6 +122,13 @@ class TfHelper:
                     rclpy.init(args=None)
             except Exception:
                 pass
+            # Si rclpy sigue sin estar inicializado (el init falló silenciosamente),
+            # no intentar crear el nodo — evita NotInitializedException en cascada.
+            if not rclpy.ok():
+                emit_log_line(timestamped_line(
+                    "[TF][WARN] _start: rclpy no inicializado, TfHelper inactivo"
+                ))
+                return
             use_sim_time = bool(USE_SIM_TIME)
             overrides = None
             if Parameter is not None:
@@ -295,11 +302,10 @@ class TfHelper:
 
     def _log_tf_listener_active(self) -> None:
         stats = self.tf_listener_stats()
-        print(
+        emit_log_line(
             timestamped_line(
                 f"[TRACE] TF listener active (tf_msgs={stats[0]} tf_static={stats[1]})"
             ),
-            flush=True,
         )
 
     def transform_pose(self, pose, target_frame: str, timeout_sec: float = 0.8):
@@ -416,7 +422,12 @@ def get_tf_helper() -> Optional[TfHelper]:
     if not ROS_AVAILABLE or Buffer is None:
         return None
     if _TF_HELPER is None:
-        _TF_HELPER = TfHelper()
+        try:
+            _TF_HELPER = TfHelper()
+        except Exception as exc:
+            emit_log_line(timestamped_line(
+                f"[TF][WARN] get_tf_helper: creación fallida ({exc})"
+            ))
     return _TF_HELPER
 
 
