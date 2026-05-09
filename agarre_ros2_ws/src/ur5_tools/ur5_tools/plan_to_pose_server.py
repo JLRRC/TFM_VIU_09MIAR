@@ -117,7 +117,12 @@ class PlanToPoseServer(Node):
         )
         self.declare_parameter("fjt_direct_compute_ik_service", "/compute_ik")
         self.declare_parameter("fjt_direct_duration_sec", 6.0)
-        self.declare_parameter("fjt_direct_ik_timeout_sec", 2.0)
+        # F1.24 H14b (2026-05-09): IK timeout 2.0→5.0s. T35 × 5 stress reveló
+        # que post-relaunch /compute_ik puede tardar 2-4s en converger
+        # (TRAC-IK seed-dependent), causando err_val=-21 (TIMED_OUT) y
+        # fallback al path MoveIt que dispara el bug original. 5s da margen
+        # suficiente sin penalizar el caso normal.
+        self.declare_parameter("fjt_direct_ik_timeout_sec", 5.0)
         self.declare_parameter("fjt_direct_result_timeout_sec", 30.0)
         # H14: 0.3 rad ≈ 17° — absorbe tracking errors transitorios sin
         # permitir desviaciones peligrosas. 0.0 = no enviar.
