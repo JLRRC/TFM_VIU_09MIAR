@@ -71,6 +71,9 @@ LEGACY_PRINT_FILES: Set[str] = {
     # F8-step1 (2026-05-08): cli_cycle_timing es CLI tool — prints a stdout
     # son su contrato (consumido por scripts shell).
     "ur5_tools/ur5_tools/cli_cycle_timing.py",
+    # F8 audit-v4 (2026-05-08): cycle_timing_aggregator también es CLI tool
+    # — prints a stdout son contrato (tabla markdown / JSON output).
+    "ur5_tools/ur5_tools/cycle_timing_aggregator.py",
 }
 
 # Líneas con `print(` que son comentarios o docstrings — los ignoramos
@@ -141,9 +144,10 @@ LEGACY_OVERSIZE_FILES_LOC: Dict[str, int] = {
     "ur5_tools/ur5_tools/ur5_moveit_bridge.py":        1838,  # F3-step21a/b: +75 LOC docstrings + helpers
     # F3-step6a..f (2026-05-03): _execute_joint_trajectory_action 1.343→1.027 LOC
     # (-316 LOC, -23.5%) extracción de 6 helpers. File creció 1394→1551 por
-    # dataclass _FjtPollingThresholds + 5 metodos helper. Trade-off aceptado:
-    # función monstruo trozeada a costa de +157 LOC totales del archivo.
-    "ur5_tools/ur5_tools/moveit_bridge/executor.py":   1551,
+    # dataclass _FjtPollingThresholds + 5 metodos helper.
+    # audit-v4.1/A (2026-05-08, commit 13ac4f5): F5-iter4 extrajo 3 helpers FJT
+    # a fjt_lifecycle_mixin.py — executor.py 1.663→1.491 LOC (bajo el umbral
+    # 1500 global). Removido de la baseline LEGACY_OVERSIZE_FILES_LOC.
 }
 # Margen de crecimiento permitido para legacy oversize (drift cap).
 LEGACY_FILE_GROWTH_MARGIN_LOC = 50
@@ -731,7 +735,7 @@ def test_env_vars_have_documentation() -> None:
 #   1. Asegura que las scattered NO suben (regresión).
 #   2. Detecta cuando bajan → forzar update del baseline en el mismo commit
 #      (documenta progreso F2).
-ENV_READS_BASELINE_SCATTERED = 66  # F5-legacy-removed (2026-05-08): 82→66 tras borrar run_pick_demo.
+ENV_READS_BASELINE_SCATTERED = 41  # audit-v4.1/D.2 round-2 (2026-05-08, commit c8ec647): 66→41 tras migrar 7 archivos backend a bridge_env_*.
 ENV_READS_DRIFT_MARGIN = 0  # no se permite incremento.
 
 # Archivos que SON el destino legítimo de env reads (no contar como scatter).
