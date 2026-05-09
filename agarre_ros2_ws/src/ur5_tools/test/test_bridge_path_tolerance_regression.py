@@ -35,14 +35,28 @@ def _load_src() -> str:
     return PLAN_TO_POSE_SRC.read_text(encoding="utf-8")
 
 
-def _execute_moveit_direct_body() -> ast.FunctionDef:
-    """Devuelve el AST del método `_execute_moveit_direct`."""
+def _execute_moveit_direct_body() -> ast.Module:
+    """Devuelve un AST.Module con `_execute_moveit_direct` + todos los helpers
+    `_moveit_*` (refactor T15 2026-05-09 los extrajo a sub-métodos).
+
+    Esto permite que los tests T28 sigan verificando que la BEHAVIOR del fix
+    bug bridge está presente, independientemente de dónde viva exactamente
+    cada bloque (orquestador vs helpers).
+    """
     tree = ast.parse(_load_src(), filename=str(PLAN_TO_POSE_SRC))
+    relevant: list = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == "_execute_moveit_direct":
-            return node
-    pytest.fail("`_execute_moveit_direct` no encontrado en plan_to_pose_server.py — "
-                "fix bug bridge ausente o método renombrado.")
+        if isinstance(node, ast.FunctionDef) and (
+            node.name == "_execute_moveit_direct"
+            or node.name.startswith("_moveit_")
+        ):
+            relevant.append(node)
+    assert relevant, (
+        "`_execute_moveit_direct` ni helpers `_moveit_*` encontrados en "
+        "plan_to_pose_server.py — fix bug bridge ausente."
+    )
+    # Empaqueta en un Module sintético para `ast.unparse` y `ast.walk` consistentes.
+    return ast.Module(body=relevant, type_ignores=[])
 
 
 def test_t28_retry_block_present() -> None:

@@ -535,143 +535,32 @@ class PlanToPoseServer(Node):
              sobre ee_frame del request.
           2. wait_for_server / send_goal / wait result (event-based).
           3. Decodifica MoveItErrorCodes.val a (success, reason).
+
+        Refactor T15 (2026-05-09): split en 4 sub-helpers
+        (_moveit_try_fjt_bypass, _moveit_send_first_attempt,
+        _moveit_post_timeout_tf_check, _moveit_retry_after_failure,
+        _moveit_final_tf_recovery). Función orquestadora <100 LOC.
         """
-        from rclpy.action import ActionClient as _ActionClient
-        from moveit_msgs.action import MoveGroup
         from .plan_to_pose_logic import normalize_quat
-        from .plan_to_pose_moveit_direct import (
-            build_move_group_goal,
-            parse_move_group_result,
-        )
+        from .plan_to_pose_moveit_direct import parse_move_group_result
 
-        # F1.24 / H9 LIVE: intento prioritario FJT directo (bypass MoveIt).
-        if self._bypass_moveit_for_short_paths:
-            self.get_logger().info(
-                "[PLAN_TO_POSE][FJT_DIRECT] intento prioritario "
-                "(bypass_moveit_for_short_paths=true)"
-            )
-            fjt_result = self._execute_fjt_direct(goal, start_mono)
-            if fjt_result is not None and fjt_result.success:
-                return fjt_result
-            # None = pre-condiciones no cumplidas (joint_state ausente, IK fail,
-            # controller no ready) — fall through al path MoveIt original.
-            if fjt_result is not None and not fjt_result.success:
-                # FJT respondió pero falló (path tolerance, etc) — devolver el fail.
-                return fjt_result
-            self.get_logger().info(
-                "[PLAN_TO_POSE][FJT_DIRECT] fallback al path MoveIt"
-            )
+        # 0. FJT directo bypass.
+        bypass = self._moveit_try_fjt_bypass(goal, start_mono)
+        if bypass is not None:
+            return bypass
 
-        if self._moveit_action_client is None:
-            self._moveit_action_client = _ActionClient(
-                self, MoveGroup, self._moveit_action_name,
-                callback_group=self._cb_group,
-            )
+        # 1. Build + send first attempt (lazy action client + tuning).
+        sent = self._moveit_send_first_attempt(goal, start_mono)
+        if isinstance(sent, PlanToPoseResult):
+            return sent  # falla pre-result (server unavailable / send timeout / rejected)
+        gh, mg_goal, first_attempt_timeout, effective_ee_frame = sent
 
-        # Wait for server (timeout corto para no bloquear pick si MoveIt no listo).
-        if not self._moveit_action_client.wait_for_server(timeout_sec=3.0):
-            return PlanToPoseResult(
-                success=False,
-                reason=f"moveit_action_server_unavailable:{self._moveit_action_name}",
-                final_xyz=goal.target_xyz,
-                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
-                duration_sec=time.monotonic() - start_mono,
-                attempts=0,
-            )
-
-        # B-iter14: si moveit_tip_link_override está set, usarlo para las
-        # constraints (debe ser tip_link del SRDF del group). El ee_frame
-        # del goal sigue siendo semántico (no se cambia el target — pero
-        # las constraints apuntan al link correcto del kinematic chain).
-        effective_ee_frame = (
-            self._moveit_tip_link_override
-            if self._moveit_tip_link_override
-            else goal.ee_frame
-        )
-        # F1.18 audit-v4 (2026-05-08): heurística per-fase delegada a
-        # classify_phase_by_target_z (función pura, testeable offline).
-        # TRANSPORT (drop pose, target Z < 0.05 base_link) usa scaling=0.5 +
-        # first_attempt_timeout=240s; resto de fases (APPROACH/GRASP_DOWN/LIFT)
-        # mantienen scaling=0.25 + first_attempt_timeout=120s.
-        from ur5_tools.plan_to_pose_moveit_direct import classify_phase_by_target_z
-        phase_tuning = classify_phase_by_target_z(goal.target_xyz)
-        is_transport_phase = phase_tuning.phase_label == "TRANSPORT"
-        mg_goal = build_move_group_goal(
-            goal.target_xyz,
-            goal.target_quat_xyzw,
-            ee_frame=effective_ee_frame,
-            base_frame=self._bridge_base_frame,
-            group_name=self._moveit_group_name,
-            planner_id=self._moveit_planner_id,
-            planning_time_sec=self._moveit_planning_time,
-            position_tol_m=self._moveit_position_tol,
-            orientation_tol_rad=self._moveit_orientation_tol,
-            velocity_scaling_factor=phase_tuning.velocity_scaling,
-            acceleration_scaling_factor=phase_tuning.acceleration_scaling,
-        )
-
-        self.get_logger().info(
-            "[PLAN_TO_POSE][MOVEIT_DIRECT] sending goal "
-            f"target=({goal.target_xyz[0]:.3f},{goal.target_xyz[1]:.3f},{goal.target_xyz[2]:.3f}) "
-            f"ee_frame={goal.ee_frame} group={self._moveit_group_name}"
-        )
-
-        send_future = self._moveit_action_client.send_goal_async(mg_goal)
-        send_event = threading.Event()
-        send_future.add_done_callback(lambda _f: send_event.set())
-        send_event.wait(timeout=3.0)
-        if not send_future.done():
-            return PlanToPoseResult(
-                success=False,
-                reason="moveit_goal_send_timeout",
-                final_xyz=goal.target_xyz,
-                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
-                duration_sec=time.monotonic() - start_mono,
-                attempts=1,
-            )
-
-        gh = send_future.result()
-        if gh is None or not getattr(gh, "accepted", False):
-            return PlanToPoseResult(
-                success=False,
-                reason="moveit_goal_rejected",
-                final_xyz=goal.target_xyz,
-                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
-                duration_sec=time.monotonic() - start_mono,
-                attempts=1,
-            )
-
-        # F1.7 audit-v4 (2026-05-08): first-attempt timeout corto para detectar
-        # hang del bridge (race condition controller_manager). Si MoveIt no
-        # devuelve resultado en _MOVEIT_FIRST_ATTEMPT_TIMEOUT_SEC, asumimos
-        # que el controller no conectó y disparamos el retry con el timeout
-        # completo. Sin esto, el primer attempt bloquea hasta
-        # _moveit_result_timeout completo (400s) y el retry NUNCA fira porque
-        # el reason resultante es "moveit_result_timeout" no "CONTROL_FAILED".
-        # F1.12 audit-v4 (2026-05-08): primero subido 60→120s, pero rompió
-        # APPROACH por outer orchestrator timeout (500s). Revertido a 60s.
-        # El retry sleep es la palanca correcta — no first_attempt.
-        # F1.17 audit-v4 (2026-05-08): outer timeout subido a 700s (F1.12),
-        # cabe 120 + 20 + 120 = 260s por retry_with_backoff, ×2 = 520s + 3s
-        # backoff = 523s < 700s. Subiendo 60→120s para tolerar OMPL más
-        # lento en targets alejados (cycle 3 box_green a 0.75m falló por
-        # OMPL flaky con 60s).
-        # F1.18 audit-v4 (2026-05-08): timeout per-fase delegado a
-        # classify_phase_by_target_z. TRANSPORT 240s, resto 120s. Outer 700s
-        # acomoda un retry de TRANSPORT (240+20+240=500s) o ×2 cycles cortos.
-        first_attempt_timeout = min(
-            phase_tuning.first_attempt_timeout_sec,
-            float(max(1.0, self._moveit_result_timeout)),
-        )
-
+        # 2. Esperar primer resultado (con first_attempt_timeout).
         result_future = gh.get_result_async()
         result_event = threading.Event()
         result_future.add_done_callback(lambda _f: result_event.set())
         result_event.wait(timeout=first_attempt_timeout)
         if not result_future.done():
-            # F1.7 audit-v4: primer attempt hang → tratar como CONTROL_FAILED
-            # para disparar retry. Cancelar la goal pendiente para liberar
-            # el server.
             self.get_logger().warning(
                 f"[PLAN_TO_POSE][MOVEIT_DIRECT] first attempt hang "
                 f"timeout={first_attempt_timeout:.1f}s — cancelando goal y "
@@ -686,59 +575,19 @@ class PlanToPoseServer(Node):
                 pass
             ok = False
             reason = f"FIRST_ATTEMPT_TIMEOUT:{first_attempt_timeout:.1f}s"
-            wrapper = None  # type: ignore[assignment]
-
-            # F1.22 LIVE (2026-05-08): BUG_CONTROLLER_FEEDBACK_HANG mitigation.
-            # Tras FIRST_ATTEMPT_TIMEOUT, verificar si el robot ya alcanzó el
-            # target (TF lookup). Si está dentro de moveit_position_tol *
-            # tf_check_factor, considerar success — el controller ejecutó la
-            # trayectoria pero el feedback "Goal reached" no llegó al move_group.
-            try:
-                tf_target_pos = self._lookup_ee_position_in_base(
-                    ee_frame=effective_ee_frame,
-                    base_frame=self._bridge_base_frame,
-                    timeout_sec=1.0,
-                )
-            except Exception as exc:
-                tf_target_pos = None
-                self.get_logger().warning(
-                    f"[PLAN_TO_POSE][MOVEIT_DIRECT] TF lookup post-timeout fail: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-            if tf_target_pos is not None:
-                tf_check_tol = max(0.05, self._moveit_position_tol * 5.0)
-                dx = float(tf_target_pos[0]) - float(goal.target_xyz[0])
-                dy = float(tf_target_pos[1]) - float(goal.target_xyz[1])
-                dz = float(tf_target_pos[2]) - float(goal.target_xyz[2])
-                dist = (dx * dx + dy * dy + dz * dz) ** 0.5
-                self.get_logger().info(
-                    f"[PLAN_TO_POSE][MOVEIT_DIRECT] post-timeout TF check "
-                    f"actual=({tf_target_pos[0]:.3f},{tf_target_pos[1]:.3f},"
-                    f"{tf_target_pos[2]:.3f}) target=({goal.target_xyz[0]:.3f},"
-                    f"{goal.target_xyz[1]:.3f},{goal.target_xyz[2]:.3f}) "
-                    f"dist={dist:.4f}m tol={tf_check_tol:.4f}m"
-                )
-                if dist <= tf_check_tol:
-                    self.get_logger().info(
-                        f"[PLAN_TO_POSE][MOVEIT_DIRECT] feedback_hang_recovered "
-                        f"(robot at target post-timeout, dist={dist:.4f}m"
-                        f"<={tf_check_tol:.4f}m) — returning success "
-                        f"reason=feedback_hang_recovered_via_tf"
-                    )
-                    return PlanToPoseResult(
-                        success=True,
-                        reason=(
-                            f"feedback_hang_recovered_via_tf"
-                            f"|orig={reason}|dist={dist:.4f}m"
-                        ),
-                        final_xyz=goal.target_xyz,
-                        final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
-                        duration_sec=time.monotonic() - start_mono,
-                        attempts=1,
-                    )
+            # F1.22 LIVE: TF check post-timeout — si robot llegó, recoverar.
+            recovered = self._moveit_post_timeout_tf_check(
+                goal=goal,
+                start_mono=start_mono,
+                effective_ee_frame=effective_ee_frame,
+                reason=reason,
+            )
+            if recovered is not None:
+                return recovered
         else:
             wrapper = result_future.result()
             ok, reason = parse_move_group_result(wrapper)
+
         if ok:
             self.get_logger().info(
                 f"[PLAN_TO_POSE][MOVEIT_DIRECT] success reason={reason}"
@@ -752,128 +601,33 @@ class PlanToPoseServer(Node):
                 attempts=1,
             )
 
-        # 2026-05-07 fix bug bridge: si CONTROL_FAILED (race condition de
-        # MoveIt simple_controller_manager con joint_trajectory_controller
-        # action server), reintentar UNA vez tras esperar 8s. El error
-        # "Action client not connected to action server" se da en el primer
-        # goal cuando MoveIt aún no terminó de detectar el controller.
+        # 3. Retry path (CONTROL_FAILED / TIMED_OUT / FIRST_ATTEMPT_TIMEOUT).
         if (
             "CONTROL_FAILED" in reason
             or "TIMED_OUT" in reason
             or "FIRST_ATTEMPT_TIMEOUT" in reason
         ):
-            # F1.23 LIVE (2026-05-08): tras FIRST_ATTEMPT_TIMEOUT, hacer
-            # restart del joint_trajectory_controller ANTES del retry.
-            # Hipótesis: el controller queda en estado "ghost-busy" tras
-            # un cancel mal procesado por simple_controller_manager. El
-            # restart fuerza una transición de estado limpia.
-            if "FIRST_ATTEMPT_TIMEOUT" in reason:
-                self.get_logger().warning(
-                    "[PLAN_TO_POSE][MOVEIT_DIRECT] reset joint_trajectory_controller "
-                    "antes del retry (BUG_CONTROLLER_FEEDBACK_HANG mitigation)"
-                )
-                self._restart_joint_trajectory_controller(timeout_sec=3.0)
-            # F1.12 audit-v4 (2026-05-08): retry sleep 8 → 20s. 8s era OK
-            # para el race condition de startup pero post-GRASP attach el
-            # controller_manager pausa más tiempo antes de aceptar un nuevo
-            # trajectory. 20s da margen adecuado.
-            self.get_logger().warning(
-                f"[PLAN_TO_POSE][MOVEIT_DIRECT] failed reason={reason} — "
-                "intentando retry tras 20s (race condition controller_manager)"
+            retry = self._moveit_retry_after_failure(
+                mg_goal=mg_goal,
+                goal=goal,
+                start_mono=start_mono,
+                first_attempt_timeout=first_attempt_timeout,
+                reason=reason,
             )
-            time.sleep(20.0)
-            send_future_retry = self._moveit_action_client.send_goal_async(mg_goal)
-            retry_send_event = threading.Event()
-            send_future_retry.add_done_callback(lambda _f: retry_send_event.set())
-            retry_send_event.wait(timeout=3.0)
-            if send_future_retry.done():
-                gh_retry = send_future_retry.result()
-                if gh_retry is not None and getattr(gh_retry, "accepted", False):
-                    result_future_retry = gh_retry.get_result_async()
-                    retry_result_event = threading.Event()
-                    result_future_retry.add_done_callback(
-                        lambda _f: retry_result_event.set()
-                    )
-                    # F1.23 LIVE (2026-05-08): retry timeout cap a
-                    # first_attempt_timeout para detectar feedback hang
-                    # rápidamente y devolver via TF check si robot llegó.
-                    retry_timeout_effective = float(
-                        min(first_attempt_timeout,
-                            max(1.0, self._moveit_result_timeout))
-                    )
-                    retry_result_event.wait(timeout=retry_timeout_effective)
-                    if result_future_retry.done():
-                        wrapper_retry = result_future_retry.result()
-                        ok_retry, reason_retry = parse_move_group_result(wrapper_retry)
-                        if ok_retry:
-                            self.get_logger().info(
-                                f"[PLAN_TO_POSE][MOVEIT_DIRECT] retry success "
-                                f"reason={reason_retry}"
-                            )
-                            return PlanToPoseResult(
-                                success=True,
-                                reason=f"{reason_retry}|retry_after_{reason}",
-                                final_xyz=goal.target_xyz,
-                                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
-                                duration_sec=time.monotonic() - start_mono,
-                                attempts=2,
-                            )
-                        reason = f"{reason_retry}|retry_failed"
-                    else:
-                        # F1.23 LIVE (2026-05-08): retry también colgó por
-                        # feedback hang. Cancel + TF check final.
-                        try:
-                            cancel_r = gh_retry.cancel_goal_async()
-                            evt_cr = threading.Event()
-                            cancel_r.add_done_callback(lambda _f: evt_cr.set())
-                            evt_cr.wait(timeout=2.0)
-                        except Exception:
-                            pass
-                        reason = f"{reason}|retry_first_attempt_hang"
-            else:
-                reason = f"{reason}|retry_send_timeout"
+            if retry is not None and retry.success:
+                return retry
+            if retry is not None:
+                reason = retry.reason
 
-            # F1.23 LIVE (2026-05-08): tras todos los intentos fallidos,
-            # último TF check — si el robot sí llegó al target durante
-            # alguno de los attempts (y solo el feedback se perdió),
-            # devolver success.
-            try:
-                final_tf = self._lookup_ee_position_in_base(
-                    ee_frame=effective_ee_frame,
-                    base_frame=self._bridge_base_frame,
-                    timeout_sec=1.5,
-                )
-            except Exception:
-                final_tf = None
-            if final_tf is not None:
-                final_tol = max(0.05, self._moveit_position_tol * 5.0)
-                fdx = float(final_tf[0]) - float(goal.target_xyz[0])
-                fdy = float(final_tf[1]) - float(goal.target_xyz[1])
-                fdz = float(final_tf[2]) - float(goal.target_xyz[2])
-                fdist = (fdx * fdx + fdy * fdy + fdz * fdz) ** 0.5
-                self.get_logger().info(
-                    f"[PLAN_TO_POSE][MOVEIT_DIRECT] final TF check "
-                    f"actual=({final_tf[0]:.3f},{final_tf[1]:.3f},"
-                    f"{final_tf[2]:.3f}) target=({goal.target_xyz[0]:.3f},"
-                    f"{goal.target_xyz[1]:.3f},{goal.target_xyz[2]:.3f}) "
-                    f"dist={fdist:.4f}m tol={final_tol:.4f}m"
-                )
-                if fdist <= final_tol:
-                    self.get_logger().info(
-                        "[PLAN_TO_POSE][MOVEIT_DIRECT] feedback_hang_recovered_final "
-                        "(robot at target post-retry, feedback lost) — success"
-                    )
-                    return PlanToPoseResult(
-                        success=True,
-                        reason=(
-                            f"feedback_hang_recovered_final"
-                            f"|orig={reason}|dist={fdist:.4f}m"
-                        ),
-                        final_xyz=goal.target_xyz,
-                        final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
-                        duration_sec=time.monotonic() - start_mono,
-                        attempts=2,
-                    )
+            # 4. Final TF recovery — si el robot sí llegó pese a todos los aborts.
+            recovered_final = self._moveit_final_tf_recovery(
+                goal=goal,
+                start_mono=start_mono,
+                effective_ee_frame=effective_ee_frame,
+                reason=reason,
+            )
+            if recovered_final is not None:
+                return recovered_final
 
         self.get_logger().warning(
             f"[PLAN_TO_POSE][MOVEIT_DIRECT] failed reason={reason}"
@@ -885,6 +639,326 @@ class PlanToPoseServer(Node):
             final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
             duration_sec=time.monotonic() - start_mono,
             attempts=1,
+        )
+
+    def _moveit_try_fjt_bypass(
+        self, goal: PlanToPoseGoal, start_mono: float
+    ) -> Optional["PlanToPoseResult"]:
+        """F1.24 / H9 LIVE: intento prioritario FJT directo.
+        Returns:
+            PlanToPoseResult si FJT directo respondió (success o fail terminal).
+            None si pre-condiciones no cumplidas → caller debe seguir con MoveIt.
+        """
+        if not self._bypass_moveit_for_short_paths:
+            return None
+        self.get_logger().info(
+            "[PLAN_TO_POSE][FJT_DIRECT] intento prioritario "
+            "(bypass_moveit_for_short_paths=true)"
+        )
+        fjt_result = self._execute_fjt_direct(goal, start_mono)
+        if fjt_result is not None:
+            # Sí ejecutó (success o fail terminal — no fallback).
+            return fjt_result
+        # None = pre-condiciones no cumplidas → fall through al path MoveIt.
+        self.get_logger().info(
+            "[PLAN_TO_POSE][FJT_DIRECT] fallback al path MoveIt"
+        )
+        return None
+
+    def _moveit_send_first_attempt(
+        self, goal: PlanToPoseGoal, start_mono: float
+    ):
+        """Lazy ActionClient + wait_for_server + build_move_group_goal + send +
+        wait_send. Returns:
+            (gh, mg_goal, first_attempt_timeout, effective_ee_frame) en éxito.
+            PlanToPoseResult en cualquier fallo previo al primer result wait.
+        """
+        from rclpy.action import ActionClient as _ActionClient
+        from moveit_msgs.action import MoveGroup
+        from .plan_to_pose_logic import normalize_quat
+        from .plan_to_pose_moveit_direct import (
+            build_move_group_goal,
+            classify_phase_by_target_z,
+        )
+
+        if self._moveit_action_client is None:
+            self._moveit_action_client = _ActionClient(
+                self, MoveGroup, self._moveit_action_name,
+                callback_group=self._cb_group,
+            )
+        if not self._moveit_action_client.wait_for_server(timeout_sec=3.0):
+            return PlanToPoseResult(
+                success=False,
+                reason=f"moveit_action_server_unavailable:{self._moveit_action_name}",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=0,
+            )
+        effective_ee_frame = (
+            self._moveit_tip_link_override
+            if self._moveit_tip_link_override
+            else goal.ee_frame
+        )
+        # F1.18 audit-v4: heurística per-fase (TRANSPORT scaling=0.5 + timeout=240s,
+        # resto scaling=0.25 + timeout=120s).
+        phase_tuning = classify_phase_by_target_z(goal.target_xyz)
+        mg_goal = build_move_group_goal(
+            goal.target_xyz,
+            goal.target_quat_xyzw,
+            ee_frame=effective_ee_frame,
+            base_frame=self._bridge_base_frame,
+            group_name=self._moveit_group_name,
+            planner_id=self._moveit_planner_id,
+            planning_time_sec=self._moveit_planning_time,
+            position_tol_m=self._moveit_position_tol,
+            orientation_tol_rad=self._moveit_orientation_tol,
+            velocity_scaling_factor=phase_tuning.velocity_scaling,
+            acceleration_scaling_factor=phase_tuning.acceleration_scaling,
+        )
+        self.get_logger().info(
+            "[PLAN_TO_POSE][MOVEIT_DIRECT] sending goal "
+            f"target=({goal.target_xyz[0]:.3f},{goal.target_xyz[1]:.3f},"
+            f"{goal.target_xyz[2]:.3f}) "
+            f"ee_frame={goal.ee_frame} group={self._moveit_group_name}"
+        )
+        send_future = self._moveit_action_client.send_goal_async(mg_goal)
+        send_event = threading.Event()
+        send_future.add_done_callback(lambda _f: send_event.set())
+        send_event.wait(timeout=3.0)
+        if not send_future.done():
+            return PlanToPoseResult(
+                success=False,
+                reason="moveit_goal_send_timeout",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=1,
+            )
+        gh = send_future.result()
+        if gh is None or not getattr(gh, "accepted", False):
+            return PlanToPoseResult(
+                success=False,
+                reason="moveit_goal_rejected",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=1,
+            )
+        first_attempt_timeout = min(
+            phase_tuning.first_attempt_timeout_sec,
+            float(max(1.0, self._moveit_result_timeout)),
+        )
+        return gh, mg_goal, first_attempt_timeout, effective_ee_frame
+
+    def _moveit_post_timeout_tf_check(
+        self,
+        *,
+        goal: PlanToPoseGoal,
+        start_mono: float,
+        effective_ee_frame: str,
+        reason: str,
+    ) -> Optional["PlanToPoseResult"]:
+        """F1.22 LIVE: tras FIRST_ATTEMPT_TIMEOUT, verifica si el robot ya alcanzó
+        el target via TF lookup. Si sí, devuelve PlanToPoseResult success
+        ``feedback_hang_recovered_via_tf``. None si no recovery."""
+        from .plan_to_pose_logic import normalize_quat
+
+        try:
+            tf_target_pos = self._lookup_ee_position_in_base(
+                ee_frame=effective_ee_frame,
+                base_frame=self._bridge_base_frame,
+                timeout_sec=1.0,
+            )
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[PLAN_TO_POSE][MOVEIT_DIRECT] TF lookup post-timeout fail: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            return None
+        if tf_target_pos is None:
+            return None
+        tf_check_tol = max(0.05, self._moveit_position_tol * 5.0)
+        dx = float(tf_target_pos[0]) - float(goal.target_xyz[0])
+        dy = float(tf_target_pos[1]) - float(goal.target_xyz[1])
+        dz = float(tf_target_pos[2]) - float(goal.target_xyz[2])
+        dist = (dx * dx + dy * dy + dz * dz) ** 0.5
+        self.get_logger().info(
+            f"[PLAN_TO_POSE][MOVEIT_DIRECT] post-timeout TF check "
+            f"actual=({tf_target_pos[0]:.3f},{tf_target_pos[1]:.3f},"
+            f"{tf_target_pos[2]:.3f}) target=({goal.target_xyz[0]:.3f},"
+            f"{goal.target_xyz[1]:.3f},{goal.target_xyz[2]:.3f}) "
+            f"dist={dist:.4f}m tol={tf_check_tol:.4f}m"
+        )
+        if dist > tf_check_tol:
+            return None
+        self.get_logger().info(
+            f"[PLAN_TO_POSE][MOVEIT_DIRECT] feedback_hang_recovered "
+            f"(robot at target post-timeout, dist={dist:.4f}m"
+            f"<={tf_check_tol:.4f}m) — returning success"
+        )
+        return PlanToPoseResult(
+            success=True,
+            reason=(
+                f"feedback_hang_recovered_via_tf"
+                f"|orig={reason}|dist={dist:.4f}m"
+            ),
+            final_xyz=goal.target_xyz,
+            final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+            duration_sec=time.monotonic() - start_mono,
+            attempts=1,
+        )
+
+    def _moveit_retry_after_failure(
+        self,
+        *,
+        mg_goal,
+        goal: PlanToPoseGoal,
+        start_mono: float,
+        first_attempt_timeout: float,
+        reason: str,
+    ) -> Optional["PlanToPoseResult"]:
+        """F1.23 LIVE: controller restart + retry MoveIt goal tras 20s sleep.
+        Returns:
+            PlanToPoseResult(success=True) si retry funcionó.
+            PlanToPoseResult(success=False, reason=...) si retry falló pero
+            quedó info útil (caller hará final TF check).
+            None si nada que reportar.
+        """
+        from .plan_to_pose_logic import normalize_quat
+        from .plan_to_pose_moveit_direct import parse_move_group_result
+
+        if "FIRST_ATTEMPT_TIMEOUT" in reason:
+            self.get_logger().warning(
+                "[PLAN_TO_POSE][MOVEIT_DIRECT] reset joint_trajectory_controller "
+                "antes del retry (BUG_CONTROLLER_FEEDBACK_HANG mitigation)"
+            )
+            self._restart_joint_trajectory_controller(timeout_sec=3.0)
+        self.get_logger().warning(
+            f"[PLAN_TO_POSE][MOVEIT_DIRECT] failed reason={reason} — "
+            "intentando retry tras 20s (race condition controller_manager)"
+        )
+        time.sleep(20.0)
+        send_future_retry = self._moveit_action_client.send_goal_async(mg_goal)
+        retry_send_event = threading.Event()
+        send_future_retry.add_done_callback(lambda _f: retry_send_event.set())
+        retry_send_event.wait(timeout=3.0)
+        if not send_future_retry.done():
+            return PlanToPoseResult(
+                success=False,
+                reason=f"{reason}|retry_send_timeout",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=2,
+            )
+        gh_retry = send_future_retry.result()
+        if gh_retry is None or not getattr(gh_retry, "accepted", False):
+            return PlanToPoseResult(
+                success=False,
+                reason=f"{reason}|retry_rejected",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=2,
+            )
+        result_future_retry = gh_retry.get_result_async()
+        retry_result_event = threading.Event()
+        result_future_retry.add_done_callback(lambda _f: retry_result_event.set())
+        retry_timeout_effective = float(
+            min(first_attempt_timeout, max(1.0, self._moveit_result_timeout))
+        )
+        retry_result_event.wait(timeout=retry_timeout_effective)
+        if not result_future_retry.done():
+            try:
+                cancel_r = gh_retry.cancel_goal_async()
+                evt_cr = threading.Event()
+                cancel_r.add_done_callback(lambda _f: evt_cr.set())
+                evt_cr.wait(timeout=2.0)
+            except Exception:
+                pass
+            return PlanToPoseResult(
+                success=False,
+                reason=f"{reason}|retry_first_attempt_hang",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=2,
+            )
+        wrapper_retry = result_future_retry.result()
+        ok_retry, reason_retry = parse_move_group_result(wrapper_retry)
+        if ok_retry:
+            self.get_logger().info(
+                f"[PLAN_TO_POSE][MOVEIT_DIRECT] retry success reason={reason_retry}"
+            )
+            return PlanToPoseResult(
+                success=True,
+                reason=f"{reason_retry}|retry_after_{reason}",
+                final_xyz=goal.target_xyz,
+                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+                duration_sec=time.monotonic() - start_mono,
+                attempts=2,
+            )
+        return PlanToPoseResult(
+            success=False,
+            reason=f"{reason_retry}|retry_failed",
+            final_xyz=goal.target_xyz,
+            final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+            duration_sec=time.monotonic() - start_mono,
+            attempts=2,
+        )
+
+    def _moveit_final_tf_recovery(
+        self,
+        *,
+        goal: PlanToPoseGoal,
+        start_mono: float,
+        effective_ee_frame: str,
+        reason: str,
+    ) -> Optional["PlanToPoseResult"]:
+        """F1.23 LIVE: tras todos los intentos fallidos, último TF check.
+        Si el robot llegó al target durante alguno de los attempts, devolver
+        success ``feedback_hang_recovered_final``. None si no recovery."""
+        from .plan_to_pose_logic import normalize_quat
+
+        try:
+            final_tf = self._lookup_ee_position_in_base(
+                ee_frame=effective_ee_frame,
+                base_frame=self._bridge_base_frame,
+                timeout_sec=1.5,
+            )
+        except Exception:
+            return None
+        if final_tf is None:
+            return None
+        final_tol = max(0.05, self._moveit_position_tol * 5.0)
+        fdx = float(final_tf[0]) - float(goal.target_xyz[0])
+        fdy = float(final_tf[1]) - float(goal.target_xyz[1])
+        fdz = float(final_tf[2]) - float(goal.target_xyz[2])
+        fdist = (fdx * fdx + fdy * fdy + fdz * fdz) ** 0.5
+        self.get_logger().info(
+            f"[PLAN_TO_POSE][MOVEIT_DIRECT] final TF check "
+            f"actual=({final_tf[0]:.3f},{final_tf[1]:.3f},"
+            f"{final_tf[2]:.3f}) target=({goal.target_xyz[0]:.3f},"
+            f"{goal.target_xyz[1]:.3f},{goal.target_xyz[2]:.3f}) "
+            f"dist={fdist:.4f}m tol={final_tol:.4f}m"
+        )
+        if fdist > final_tol:
+            return None
+        self.get_logger().info(
+            "[PLAN_TO_POSE][MOVEIT_DIRECT] feedback_hang_recovered_final "
+            "(robot at target post-retry, feedback lost) — success"
+        )
+        return PlanToPoseResult(
+            success=True,
+            reason=(
+                f"feedback_hang_recovered_final"
+                f"|orig={reason}|dist={fdist:.4f}m"
+            ),
+            final_xyz=goal.target_xyz,
+            final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
+            duration_sec=time.monotonic() - start_mono,
+            attempts=2,
         )
 
     def _on_joint_state(self, msg) -> None:

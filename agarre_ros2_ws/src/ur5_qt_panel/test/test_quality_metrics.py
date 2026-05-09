@@ -254,12 +254,13 @@ LEGACY_OVERSIZE_FUNCTIONS_LOC: Dict[str, int] = {
     "ur5_tools/ur5_tools/moveit_bridge/executor.py::ExecutorMixin._execute_joint_trajectory_action": 1343,
     # F1.7 audit-v4 (2026-05-08): _execute_moveit_direct creció 183 → 201 LOC
     # al añadir first-attempt-timeout + cancel-on-hang (Bug B fix).
-    # Refactor estructural en F3-step6 cuando se parte el método en validate/
-    # send/poll/handle helpers (ver audit v4 §F3-step6).
     # F1.22 + F1.23 LIVE (2026-05-08): TF check post-FIRST_ATTEMPT_TIMEOUT
-    # + controller restart + final TF check post-retry. Trade-off aceptado:
-    # mitigación BUG_CONTROLLER_FEEDBACK_HANG documentada.
-    "ur5_tools/ur5_tools/plan_to_pose_server.py::PlanToPoseServer._execute_moveit_direct": 343,
+    # + controller restart + final TF check post-retry → 343 LOC.
+    # F1.24-refactor T15 (2026-05-09): split en 4 sub-helpers
+    # (_moveit_try_fjt_bypass, _moveit_send_first_attempt,
+    # _moveit_post_timeout_tf_check, _moveit_retry_after_failure,
+    # _moveit_final_tf_recovery). Función orquestadora 364→118 LOC.
+    # Removido de la baseline (T15 cumplido).
     # F1.24 H9+H10+H11 LIVE (2026-05-08): bypass MoveIt vía FJT directo. La
     # función ejecuta el camino canónico que cierra BUG_CONTROLLER_FEEDBACK_HANG
     # y deja T35 × 3 cycles consecutivos verde.
