@@ -210,7 +210,10 @@ class PanelSettings:
     camera_max_size: int = 960
     camera_use_bgr: bool = True
     camera_copy_frame: bool = True
-    camera_display_interval_ms: int = 80
+    # iter4 audit (2026-05-11): 80ms (12.5 Hz) saturaba GUI thread.
+    # 200ms (5 Hz) es suficiente para visualización humana y reduce
+    # ~60% el coste del refresh_display. Override con PANEL_CAMERA_DISPLAY_MS.
+    camera_display_interval_ms: int = 200
     camera_fast_scale: bool = True
     overlay_calib: bool = True
     overlay_selection: bool = True
@@ -402,7 +405,7 @@ class PanelSettings:
             camera_max_size=max(0, _env_int("PANEL_CAMERA_MAX_SIZE", 960)),
             camera_use_bgr=_env_bool("PANEL_CAMERA_USE_BGR", True),
             camera_copy_frame=_env_bool("PANEL_CAMERA_COPY_FRAME", True),
-            camera_display_interval_ms=max(10, _env_int("PANEL_CAMERA_DISPLAY_MS", 80)),
+            camera_display_interval_ms=max(10, _env_int("PANEL_CAMERA_DISPLAY_MS", 200)),
             camera_fast_scale=_env_bool("PANEL_CAMERA_FAST_SCALE", True),
             overlay_calib=_env_bool("PANEL_OVERLAY_CALIB", True),
             overlay_selection=_env_bool("PANEL_OVERLAY_SELECTION", True),
