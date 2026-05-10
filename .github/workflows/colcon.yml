@@ -184,3 +184,34 @@ jobs:
             test/test_panel_ros_snapshot.py \
             test/test_pick_object_snapshot.py \
             test/test_no_environ_drift.py
+
+      # ---------------------------------------------------------------
+      # Audit 2026-05-10 (Actions 7, 8, 9, 10): tests nuevos del plan
+      # 100/100. Bloquean regresión arquitectónica B1, B2 y huérfanos
+      # de runtime_defaults.yaml + lifecycle contract de los 8 nodos.
+      # ---------------------------------------------------------------
+      - name: pytest moveit_config integrity (Action 7)
+        working-directory: agarre_ros2_ws/src/ur5_moveit_config
+        run: |
+          pytest -q test/test_config_integrity.py
+
+      - name: pytest architectural regression (Action 8)
+        working-directory: agarre_ros2_ws/src/ur5_bringup
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q \
+            test/test_launch_no_dup_defs.py \
+            test/test_runtime_defaults_consumed.py
+
+      - name: pytest URDF frame uniqueness (Action 8)
+        working-directory: agarre_ros2_ws/src/ur5_description
+        run: |
+          pytest -q test/test_urdf_frame_uniqueness.py
+
+      - name: pytest lifecycle contract offline x8 (Action 9)
+        working-directory: agarre_ros2_ws/src/ur5_tools
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_lifecycle_contract_offline.py
