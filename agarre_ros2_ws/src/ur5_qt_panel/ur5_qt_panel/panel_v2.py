@@ -5,6 +5,24 @@
 """
 Panel V2 minimal: barra de control con los botones mostrados, sin logs ni dependencias del panel existente.
 Ejecutar con: python -m ur5_qt_panel.panel_v2
+
+F6 audit (2026-05-10) — plan de migración a backend nodes:
+  Existen ahora ``panel_launch_control_node`` y ``panel_backend_node``
+  en ``ur5_tools`` (creados en F6.1+F6.2). El plan F6.3 final es:
+
+    1. Reemplazar las llamadas ``panel_launchers.subprocess_*`` por
+       clientes Trigger a ``/panel_launch_control/{start,stop,restart}_stack``.
+    2. Reemplazar el ActionClient ``/pick_place`` y los Subscribers
+       ``/system_state`` / ``/pick/run_id`` que viven en RosWorker
+       por suscripción a los topics latched del backend:
+       ``/panel_backend/feedback``, ``/panel_backend/result``,
+       ``/panel_backend/state``.
+    3. Reducir ``RosWorker`` de 99 métodos a wrappers triviales.
+
+  Beneficio: panel_v2 + RosWorker ≤ 500 LOC, separación UI/dominio
+  clara, smoke testeable sin event loop Qt completo.
+
+  Mientras tanto NO añadir lógica nueva al panel — usar los nodos.
 """
 from __future__ import annotations
 

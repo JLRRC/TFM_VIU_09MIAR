@@ -60,6 +60,9 @@ setup(
             "object_pose_resolver_service = ur5_tools.object_pose_resolver_service:main",
             "cycle_timing = ur5_tools.cli_cycle_timing:main",
             "cycle_timing_aggregator = ur5_tools.cycle_timing_aggregator:main",
+            # F6 audit (2026-05-10): nodos backend del panel UI.
+            "panel_launch_control_node = ur5_tools.panel_launch_control_node:main",
+            "panel_backend_node = ur5_tools.panel_backend_node:main",
         ],
     },
 )
