@@ -715,10 +715,7 @@ class ControlPanelV2(
         self.signal_run_ui.connect(self._run_ui_callable)
         self.signal_run_ui_delayed.connect(self._run_ui_delayed)
         self._watchdog_timer = QTimer(self)
-        # iter4 audit (2026-05-11): 400ms (2.5 Hz) era muy agresivo para
-        # detectar timeouts críticos. 800ms reduce presión sobre GUI thread
-        # sin perder cobertura significativa.
-        self._watchdog_timer.setInterval(800)
+        self._watchdog_timer.setInterval(400)
         self._watchdog_timer.timeout.connect(self._check_critical_timeouts)
         self._watchdog_timer.start()
         self._moveit_node: Optional[Node] = None
