@@ -32,3 +32,4 @@ TRACE_PANEL_V2.log
 # Temporales dentro de report
 report/bench/latency_results_*.csv
 report/logs/training/*.pid
+report/BaseDeConocimiento/.tmp_base_conocimiento_*/
