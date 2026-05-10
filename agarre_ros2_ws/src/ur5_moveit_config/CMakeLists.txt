@@ -12,6 +12,11 @@ find_package(moveit_ros_planning REQUIRED)
 find_package(moveit_ros_visualization REQUIRED)
 find_package(moveit_msgs REQUIRED)
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_config_integrity test/test_config_integrity.py)
+endif()
+
 ament_package()
 
 install(DIRECTORY config launch
