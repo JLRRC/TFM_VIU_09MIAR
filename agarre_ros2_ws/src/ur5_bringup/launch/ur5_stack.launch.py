@@ -88,20 +88,6 @@ def _env_float(name: str, default: float) -> float:
     return value
 
 
-def _env_flag(name: str, default: bool) -> bool:
-    raw = str(os.environ.get(name, "1" if default else "0") or "").strip().lower()
-    return raw in ("1", "true", "yes", "on")
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = str(os.environ.get(name, str(default)) or "").strip()
-    try:
-        value = float(raw)
-    except Exception:
-        value = float(default)
-    return value
-
-
 def _panel_qt_platform() -> str:
     explicit = os.environ.get("PANEL_QT_PLATFORM") or os.environ.get("QT_QPA_PLATFORM")
     if explicit:
