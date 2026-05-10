@@ -145,59 +145,24 @@ def _print_pose_snapshot(panel):
     line = f"[DEBUG POSES] {tcp_txt} | {basket_txt} | {table_txt} | {obj_txt}"
     panel._emit_log(line)
 
-def _drop_detach_supported(panel, *args, **kwargs):
-    return _gz._drop_detach_supported(panel, *args, **kwargs)
-
-def _release_objects(panel, *args, **kwargs):
-    _gz._release_objects(panel, *args, **kwargs)
-
-def _schedule_release_retry(panel, *args, **kwargs):
-    _gz._schedule_release_retry(panel, *args, **kwargs)
-
-def _attach_drop_objects(panel, *args, **kwargs):
-    _gz._attach_drop_objects(panel, *args, **kwargs)
-
-def _maybe_nudge_drop_objects(panel, *args, **kwargs):
-    _gz._maybe_nudge_drop_objects(panel, *args, **kwargs)
-
-def _resolve_set_pose_service(panel, *args, **kwargs):
-    return _gz._resolve_set_pose_service(panel, *args, **kwargs)
-
-def _resolve_gz_cli(panel, *args, **kwargs):
-    return _gz._resolve_gz_cli(panel, *args, **kwargs)
-
-def _resolve_world_sdf_path(panel, *args, **kwargs):
-    return _gz._resolve_world_sdf_path(panel, *args, **kwargs)
-
-def _load_pick_demo_recover_sdf(panel, *args, **kwargs):
-    return _gz._load_pick_demo_recover_sdf(panel, *args, **kwargs)
-
-def _run_gz_service_cli(panel, *args, **kwargs):
-    return _gz._run_gz_service_cli(panel, *args, **kwargs)
-
-def _recover_pick_demo_to_table_gz(panel, *args, **kwargs):
-    return _gz._recover_pick_demo_to_table_gz(panel, *args, **kwargs)
-
-def _maybe_hold_drop_objects(panel, *args, **kwargs):
-    _gz._maybe_hold_drop_objects(panel, *args, **kwargs)
-
-def _maybe_recover_pick_demo(panel, *args, **kwargs):
-    _gz._maybe_recover_pick_demo(panel, *args, **kwargs)
-
-def _recover_pick_demo_to_table(panel, *args, **kwargs):
-    _gz._recover_pick_demo_to_table(panel, *args, **kwargs)
-
-def _hold_drop_objects(panel, *args, **kwargs):
-    _gz._hold_drop_objects(panel, *args, **kwargs)
-
-def _hold_drop_objects_gz(panel, *args, **kwargs):
-    _gz._hold_drop_objects_gz(panel, *args, **kwargs)
-
-def _drop_hold_tick(panel, *args, **kwargs):
-    _gz._drop_hold_tick(panel, *args, **kwargs)
-
-def _nudge_drop_objects(panel, *args, **kwargs):
-    _gz._nudge_drop_objects(panel, *args, **kwargs)
+_drop_detach_supported = _gz._drop_detach_supported
+_release_objects = _gz._release_objects
+_schedule_release_retry = _gz._schedule_release_retry
+_attach_drop_objects = _gz._attach_drop_objects
+_maybe_nudge_drop_objects = _gz._maybe_nudge_drop_objects
+_resolve_set_pose_service = _gz._resolve_set_pose_service
+_resolve_gz_cli = _gz._resolve_gz_cli
+_resolve_world_sdf_path = _gz._resolve_world_sdf_path
+_load_pick_demo_recover_sdf = _gz._load_pick_demo_recover_sdf
+_run_gz_service_cli = _gz._run_gz_service_cli
+_recover_pick_demo_to_table_gz = _gz._recover_pick_demo_to_table_gz
+_maybe_hold_drop_objects = _gz._maybe_hold_drop_objects
+_maybe_recover_pick_demo = _gz._maybe_recover_pick_demo
+_recover_pick_demo_to_table = _gz._recover_pick_demo_to_table
+_hold_drop_objects = _gz._hold_drop_objects
+_hold_drop_objects_gz = _gz._hold_drop_objects_gz
+_drop_hold_tick = _gz._drop_hold_tick
+_nudge_drop_objects = _gz._nudge_drop_objects
 
 
 def _start_release_service(panel):
@@ -527,327 +492,34 @@ def _apply_status(panel,
     panel._update_system_stats()
     panel._refresh_controls()
 
-def _moveit_topics_ready(panel) -> bool:
-    return moveit_topics_ready(panel)
+# F7 (auditoría 2026-05-10): MoveIt readiness helpers extraídos a
+# módulo cohesivo. Re-export para mantener API de los mixins.
+from .panel_moveit_readiness_helpers import (  # noqa: E402,I100
+    _follow_joint_traj_ready,
+    _list_action_names,
+    _list_topic_names,
+    _move_group_ready,
+    _move_group_startup_ready,
+    _moveit_action_ready,
+    _moveit_bridge_detected,
+    _moveit_ready,
+    _moveit_status_ready,
+    _moveit_topics_ready,
+    _topic_has_any_publishers,
+    _update_moveit_status_label,
+    _world_frame_config_first,
+    _world_frame_last_first,
+)
 
-def _moveit_status_ready(panel) -> bool:
-    return moveit_status_ready(panel)
-
-def _moveit_action_ready(panel) -> bool:
-    return moveit_action_ready(panel)
-
-def _list_topic_names(panel) -> List[str]:
-    if not panel.ros_worker or not panel.ros_worker.node_ready():
-        return []
-    try:
-        return panel.ros_worker.list_topic_names()
-    except Exception:
-        return []
-
-def _list_action_names(panel) -> List[str]:
-    if not panel.ros_worker or not panel.ros_worker.node_ready():
-        return []
-    try:
-        return panel.ros_worker.list_action_names()
-    except Exception:
-        return []
-
-def _topic_has_any_publishers(panel, topics: List[str]) -> bool:
-    if not panel.ros_worker or not panel.ros_worker.node_ready():
-        return False
-    for topic in topics:
-        if panel.ros_worker.topic_has_publishers(topic):
-            return True
-    return False
-
-def _world_frame_last_first(panel, fallback: Optional[str] = None) -> str:
-    frame = (
-        fallback
-        or WORLD_FRAME
-        or panel._last_selection_frame
-        or "world"
-    )
-    frame_norm = str(frame or "").split("|", 1)[0].strip() or "world"
-    base_frame = str(panel._business_base_frame() or "base_link").strip() or "base_link"
-    if frame_norm in {base_frame, "base", "tool0", "rg2_tcp", "rg2_pinch_center"}:
-        # Guardrail: las poses de pose/info llegan en world, no en base_link.
-        # Si este valor se contamina, los cálculos geométricos se desalinean.
-        frame_norm = str(WORLD_FRAME or "world").strip() or "world"
-        panel._emit_log_throttled(
-            "FRAME:world_frame_guard",
-            f"[FRAME] world_frame inválido ({frame}); usando {frame_norm}",
-            min_interval=2.0,
-        )
-    return frame_norm
-
-def _world_frame_config_first(panel) -> str:
-    return panel._world_frame_last_first(WORLD_FRAME or "world")
-
-def _follow_joint_traj_ready(panel) -> bool:
-    if not ROS_AVAILABLE or ActionClient is None or FollowJointTrajectory is None:
-        return False
-    _ros_params = _get_panel_ros_params()
-    strict_action = _ros_params.strict_traj_action
-    expected_action = _ros_params.expected_traj_action.strip()
-    action_names = set(panel._list_action_names())
-    action_topics = set(panel._list_topic_names())
-
-    def _action_graph_ready(action_name: str) -> bool:
-        if not action_name:
-            return False
-        status_topic = f"{action_name}/_action/status"
-        feedback_topic = f"{action_name}/_action/feedback"
-        goal_topic = f"{action_name}/_action/send_goal"
-        if status_topic in action_topics or feedback_topic in action_topics or goal_topic in action_topics:
-            return True
-        if not panel.ros_worker or not panel.ros_worker.node_ready():
-            return False
-        return bool(
-            panel.ros_worker.topic_has_publishers(status_topic)
-            or panel.ros_worker.topic_has_publishers(feedback_topic)
-            or panel.ros_worker.topic_has_subscribers(goal_topic)
-        )
-
-    if strict_action and expected_action:
-        if expected_action not in action_names:
-            if not _action_graph_ready(expected_action):
-                return False
-        action_name = expected_action
-    else:
-        action_name = ""
-
-    # Fallback de robustez: si el action server esperado ya existe en el grafo
-    # ROS pero el nodo local de MoveIt aun no esta inicializado, aceptar READY.
-    if panel._moveit_node is None:
-        if strict_action and expected_action:
-            return expected_action in action_names or _action_graph_ready(expected_action)
-        return bool(action_names)
-
-    traj_topic = panel._select_traj_topic()
-    if not action_name:
-        action_name = panel._resolve_traj_action_name(traj_topic, allow_fallback=True)
-    if not action_name:
-        return False
-    if panel._traj_action_client is None or panel._traj_action_name != action_name:
-        panel._traj_action_client = panel._get_action_client(
-            action_name,
-            FollowJointTrajectory,
-            log_ctx="follow_traj",
-        )
-    client = panel._traj_action_client
-    if client is None:
-        return False
-    return panel._wait_action_server(
-        client,
-        timeout_sec=0.2,
-        log_ctx="follow_traj",
-        action_name=action_name,
-    )
-
-def _moveit_bridge_detected(panel) -> bool:
-    if panel._proc_alive(panel.moveit_bridge_proc):
-        panel._moveit_bridge_detected_cache = True
-        panel._moveit_bridge_detected_ts = time.monotonic()
-        return True
-    if not panel._ros_worker_started or not panel.ros_worker.node_ready():
-        return False
-    now = time.monotonic()
-    if (
-        STATUS_TOPIC_CACHE_SEC > 0.0
-        and (now - panel._moveit_bridge_detected_ts) < STATUS_TOPIC_CACHE_SEC
-    ):
-        return panel._moveit_bridge_detected_cache
-    pose_ready = (
-        panel.ros_worker.topic_has_subscribers(MOVEIT_POSE_TOPIC)
-        or panel.ros_worker.topic_has_subscribers("/grasp_pose")
-    )
-    result_ready = panel.ros_worker.topic_has_publishers("/desired_grasp/result")
-    detected = pose_ready and result_ready
-    panel._moveit_bridge_detected_cache = bool(detected)
-    panel._moveit_bridge_detected_ts = now
-    return detected
-
-def _move_group_startup_ready(panel) -> bool:
-    status_ready = panel._moveit_status_ready()
-    action_ready = panel._moveit_action_ready()
-    ready = status_ready or action_ready
-    ros_node_ready = bool(panel.ros_worker and panel.ros_worker.node_ready())
-    panel._emit_log_throttled(
-        "MOVEIT:startup_gate",
-        "[MOVEIT2][STARTUP_GATE] "
-        f"ready={str(bool(ready)).lower()} "
-        f"status={str(bool(status_ready)).lower()} "
-        f"action={str(bool(action_ready)).lower()} "
-        f"moveit_proc={str(bool(panel._proc_alive(panel.moveit_proc))).lower()} "
-        f"ros_worker_started={str(bool(panel._ros_worker_started)).lower()} "
-        f"ros_node_ready={str(bool(ros_node_ready)).lower()} "
-        f"moveit_state={panel._moveit_state.value}",
-        min_interval=1.0,
-    )
-    return ready
-
-def _move_group_ready(panel) -> bool:
-    return panel._move_group_startup_ready() and panel._follow_joint_traj_ready()
-
-def _moveit_ready(panel) -> bool:
-    if panel._moveit_bridge_detected():
-        return True
-    return panel._move_group_startup_ready()
-
-def _update_moveit_status_label(panel) -> None:
-    if panel.lbl_moveit_status is not None:
-        state_label = panel._moveit_state.value
-        panel.lbl_moveit_status.setText("MoveIt")
-        reason = panel._moveit_state_reason or state_label
-        panel.lbl_moveit_status.setToolTip(f"{state_label}: {reason}")
-    if panel.lbl_moveit_bridge_status is not None:
-        bridge_label = "ON" if panel._moveit_bridge_running else "OFF"
-        panel.lbl_moveit_bridge_status.setText("MoveIt bridge")
-
-def _update_system_stats(panel):
-    """Actualizar labels de CPU/RAM/Load, tolerando ausencia de psutil."""
-    cpu_txt = "CPU  --"
-    ram_txt = "RAM  --"
-    load_txt = "Load  --"
-    cpu_alert = False
-    ram_alert = False
-    load_alert = False
-    stale_count = 0
-    cores = max(1, os.cpu_count() or 1)
-    try:
-        if psutil:
-            cpu = psutil.cpu_percent(interval=None)
-            vm = psutil.virtual_memory()
-            used_gb = vm.used / (1024 ** 3)
-            total_gb = vm.total / (1024 ** 3)
-            ram_txt = f"RAM  {used_gb:.1f}/{total_gb:.1f} GB ({vm.percent:.0f}%)"
-            cpu_txt = f"CPU  {cpu:.0f}%"
-            cpu_alert = cpu >= 85
-            ram_alert = vm.percent >= 90
-        else:
-            # Fallback simple usando loadavg
-            load1, load5, load15 = os.getloadavg()
-            cores = max(1, os.cpu_count() or 1)
-            cpu_txt = f"CPU  {load1 / cores * 100:.0f}%"
-    except Exception as exc:
-        _log_exception("update_system_stats cpu/ram", exc)
-    try:
-        load1, load5, load15 = os.getloadavg()
-        load_txt = f"Load  {load1:.2f} {load5:.2f} {load15:.2f}"
-        if not psutil:
-            cores = max(1, os.cpu_count() or 1)
-        load_alert = load1 >= max(4.0, cores * 1.5)
-    except Exception as exc:
-        _log_exception("update_system_stats loadavg", exc)
-    try:
-        stale_count, _stale_hint = panel._detect_stale_processes()
-    except Exception as exc:
-        _log_exception("update_system_stats stale procs", exc)
-        stale_count = 0
-    health_alert = stale_count > 0
-    health_txt = "Proc.Zombis activos" if health_alert else "Todo OK"
-    panel._set_stat_label(panel.sys_cpu_lbl, cpu_txt, cpu_alert)
-    panel._set_stat_label(panel.sys_ram_lbl, ram_txt, ram_alert)
-    panel._set_stat_label(panel.sys_load_lbl, load_txt, load_alert)
-    panel._set_stat_label(panel.sys_health_lbl, health_txt, health_alert)
-
-def _set_stat_label(panel, label: QLabel, text: str, alert: bool):
-    color = "#dc2626" if alert else "#0f172a"
-    label.setStyleSheet(f"font-size:11px; color:{color};")
-    label.setText(text)
-
-def _known_process_pids(panel) -> Set[int]:
-    pids = {os.getpid()}
-    if psutil:
-        try:
-            for parent in psutil.Process(os.getpid()).parents():
-                pids.add(parent.pid)
-        except Exception as exc:
-            _log_exception("list parent processes", exc)
-    for proc in (
-        panel.gz_proc,
-        panel.gz_gui_proc,
-        panel.bridge_proc,
-        panel.bag_proc,
-        panel.moveit_proc,
-        panel.moveit_bridge_proc,
-        panel.release_service_proc,
-        panel.rsp_proc,
-    ):
-        if proc is None:
-            continue
-        try:
-            if proc.pid:
-                pids.add(proc.pid)
-        except Exception as exc:
-            _log_exception("read proc pid", exc)
-            continue
-    return pids
-
-def _list_stale_processes(panel) -> List[Tuple[int, str, str]]:
-    """Listar procesos del proyecto que no pertenecen al panel actual."""
-    if not psutil:
-        return []
-    ws_dir = os.path.realpath(panel.ws_dir)
-    grace_sec = max(0.0, STALE_PROCESS_GRACE_SEC)
-    cutoff = panel._panel_start_ts - grace_sec
-    ignore_pids = panel._known_process_pids()
-    patterns = (
-        "ur5_qt_panel",
-        "ur5_tools",
-        "ur5_moveit_bridge",
-        "release_objects_service",
-        "ur5_moveit_config",
-        "gz-transport-topic",
-        "ros_gz_bridge",
-        "parameter_bridge",
-        "gz sim",
-        "gzserver",
-        "gzclient",
-        "ign gazebo",
-        "robot_state_publisher",
-        "controller_manager",
-        "spawner",
-        "move_group",
-    )
-    stale = []
-    for proc in psutil.process_iter(["pid", "cmdline", "name", "status"]):
-        try:
-            pid = proc.info["pid"]
-            if pid in ignore_pids:
-                continue
-            try:
-                if proc.create_time() >= cutoff:
-                    continue
-            except Exception as exc:
-                _log_exception("read proc create_time", exc)
-            cmdline = proc.info.get("cmdline") or []
-            cmd = " ".join(cmdline) if cmdline else (proc.info.get("name") or "")
-            cmd = cmd.strip()
-            if not cmd:
-                continue
-            cmd_lower = cmd.lower()
-            if ws_dir in cmd:
-                stale.append((pid, cmd, proc.info.get("status") or ""))
-                continue
-            if any(pat in cmd_lower for pat in patterns):
-                stale.append((pid, cmd, proc.info.get("status") or ""))
-                continue
-            if proc.info.get("status") == psutil.STATUS_ZOMBIE and "ros2" in cmd_lower:
-                stale.append((pid, cmd, proc.info.get("status") or ""))
-        except Exception as exc:
-            _log_exception("scan stale process", exc)
-            continue
-    return stale
-
-def _detect_stale_processes(panel) -> Tuple[int, str]:
-    """Detecta procesos del proyecto que no pertenecen al panel actual."""
-    stale = panel._list_stale_processes()
-    if not stale:
-        return 0, ""
-    sample_cmd = stale[0][1]
-    hint = sample_cmd.split()[0] if sample_cmd else ""
-    return len(stale), hint
+# F7 (auditoría 2026-05-10): system stats + stale processes helpers
+# extraídos a módulo cohesivo.
+from .panel_system_stats_helpers import (  # noqa: E402,I100
+    _detect_stale_processes,
+    _known_process_pids,
+    _list_stale_processes,
+    _set_stat_label,
+    _update_system_stats,
+)
 
 def _refresh_controls(panel):
     if panel._closing:
