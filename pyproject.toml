@@ -20,8 +20,16 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-# Conjunto deliberadamente acotado para FASE 1: sólo reglas que NO requieren
-# refactorizar código existente. Se ampliará en FASE 4 (meta-tests calidad).
+# Audit 2026-05-10 (Action 24): selección expandida conservadora.
+# - Reglas críticas (E9/F63/F7/F82) — siempre.
+# - Bug-prone (B006/B008) — siempre.
+# - Modernización (UP) — sólo donde no rompe.
+# - Mejoras ruff-específicas (RUF) — aplicar en sweep posterior.
+# Excluidas explícitamente hasta FASE 3 (split de monolitos):
+#   F401 (unused imports)        — re-exports legacy en mixins
+#   F811 (redefinition)          — overloads de mixins
+#   E501 (line too long)         — pendiente formatter (FASE 4)
+#   E402 (module-level import)   — uso intencional en panel_v2 con noqa
 select = [
     "E9",   # syntax errors
     "F63",  # invalid bool comparison
@@ -29,20 +37,52 @@ select = [
     "F82",  # undefined name in __all__
     "B006", # mutable default argument
     "B008", # function call in default argument (limitado)
+    "UP032", # f-string conversions
+    "UP034", # extraneous parens
+    "RUF100", # noqa annotations consumidas
 ]
-# Reglas explícitamente excluidas hasta FASE 3 (split de monolitos):
-#   F401 (unused imports)        — re-exports legacy en mixins
-#   F811 (redefinition)          — overloads de mixins
-#   E501 (line too long)         — pendiente formatter (FASE 4)
-#   E402 (module-level import)   — uso intencional en panel_v2 con noqa
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 "**/test_*.py" = ["E501", "B"]
 "**/__init__.py" = ["F401"]
+# Launch files: import order específico de ROS 2 (sys.path manip antes
+# de imports de launch_helpers) que viola E402 intencionalmente.
+"**/launch/*.py" = ["E402"]
 
 [tool.ruff.format]
 # Sólo definido para futura activación. NO se usa todavía en CI.
 quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
+
+# ----------------------------------------------------------------------
+# Audit Action 24 (2026-05-10): coverage canónica vía .coveragerc.
+# Mantengo la config principal en .coveragerc (compat con coverage.py
+# stand-alone). Aquí solo el alias para colcon test.
+# ----------------------------------------------------------------------
+[tool.coverage.run]
+branch = true
+source = [
+    "agarre_ros2_ws/src/tfm_orchestrator",
+    "agarre_ros2_ws/src/tfm_grasping",
+    "agarre_ros2_ws/src/ur5_tools",
+]
+omit = [
+    "*/test/*",
+    "*/build/*",
+    "*/install/*",
+    "*/log/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
