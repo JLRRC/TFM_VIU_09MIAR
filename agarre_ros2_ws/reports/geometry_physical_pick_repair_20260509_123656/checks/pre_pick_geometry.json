@@ -1,0 +1,168 @@
+{
+  "iso_wall_ts": "2026-05-09T23:48:00",
+  "monotonic_ts": 270052.552063319,
+  "object_name": "pick_demo",
+  "tfs": {
+    "world__base_link": {
+      "frame_id": "world",
+      "child_frame_id": "base_link",
+      "stamp_sec": 116,
+      "stamp_nanosec": 500000000,
+      "translation": {
+        "x": -0.85,
+        "y": 0.0,
+        "z": 0.85
+      },
+      "rotation_quat": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      }
+    },
+    "base_link__tool0": {
+      "frame_id": "base_link",
+      "child_frame_id": "tool0",
+      "stamp_sec": 116,
+      "stamp_nanosec": 520000000,
+      "translation": {
+        "x": 1.6565768933274425e-14,
+        "y": 0.19145000016762084,
+        "z": 1.0010589999607329
+      },
+      "rotation_quat": {
+        "x": -0.7071067812590626,
+        "y": 1.1905080764067276e-14,
+        "z": 1.1836088554459545e-14,
+        "w": 0.7071067811140325
+      }
+    },
+    "tool0__rg2_pinch_center": {
+      "frame_id": "tool0",
+      "child_frame_id": "rg2_pinch_center",
+      "stamp_sec": 0,
+      "stamp_nanosec": 0,
+      "translation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.175
+      },
+      "rotation_quat": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      }
+    },
+    "tool0__rg2_tcp": {
+      "frame_id": "tool0",
+      "child_frame_id": "rg2_tcp",
+      "stamp_sec": 0,
+      "stamp_nanosec": 0,
+      "translation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.175
+      },
+      "rotation_quat": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      }
+    },
+    "tool0__rg2_finger_link1": {
+      "frame_id": "tool0",
+      "child_frame_id": "rg2_finger_link1",
+      "stamp_sec": 116,
+      "stamp_nanosec": 520000000,
+      "translation": {
+        "x": 0.0,
+        "y": 0.02,
+        "z": 0.0
+      },
+      "rotation_quat": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      }
+    },
+    "tool0__rg2_finger_link2": {
+      "frame_id": "tool0",
+      "child_frame_id": "rg2_finger_link2",
+      "stamp_sec": 116,
+      "stamp_nanosec": 520000000,
+      "translation": {
+        "x": 0.0,
+        "y": -0.02,
+        "z": 0.0
+      },
+      "rotation_quat": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      }
+    },
+    "tool0__pick_demo_anchor": {
+      "error": "tf_lookup_failed: tool0\u2192pick_demo_anchor: \"pick_demo_anchor\" passed to lookupTransform argument source_frame does not exist. "
+    },
+    "base_link__rg2_pinch_center": {
+      "frame_id": "base_link",
+      "child_frame_id": "rg2_pinch_center",
+      "stamp_sec": 116,
+      "stamp_nanosec": 520000000,
+      "translation": {
+        "x": 1.6642711406570646e-14,
+        "y": 0.36645000016762075,
+        "z": 1.0010589999248398
+      },
+      "rotation_quat": {
+        "x": -0.7071067812590626,
+        "y": 1.1905080764067276e-14,
+        "z": 1.1836088554459545e-14,
+        "w": 0.7071067811140325
+      }
+    },
+    "base_link__pick_demo": {
+      "error": "tf_lookup_failed: base_link\u2192pick_demo: \"pick_demo\" passed to lookupTransform argument source_frame does not exist. "
+    }
+  },
+  "object_world": {
+    "frame_id": "world",
+    "child_frame_id": "pick_demo",
+    "stamp_sec": 116,
+    "stamp_nanosec": 515000000,
+    "translation": {
+      "x": -0.4135541556115178,
+      "y": 2.3767783082236403e-05,
+      "z": 0.874999846613681
+    },
+    "rotation_quat": {
+      "x": 5.855946755696862e-07,
+      "y": -7.880893128115941e-06,
+      "z": -0.0006926441536577046,
+      "w": 0.9999997600907837
+    }
+  },
+  "object_base_link": {
+    "x": 0.43644584438848216,
+    "y": 2.3767783082236403e-05,
+    "z": 0.024999846613681043
+  },
+  "tcp_object_xy_error_m": 0.569871177428275,
+  "tcp_object_z_error_m": 0.9760591533111588,
+  "tcp_object_dist3d_m": 1.1302409608689576,
+  "target_grasp_base_link": {
+    "x": 0.43644584438848216,
+    "y": 2.3767783082236403e-05,
+    "z": 0.024999846613681043,
+    "comment": "z=object_center; ajustar +0.025 para top, -0.025 para bottom seg\u00fan convenci\u00f3n TCP-down"
+  },
+  "warnings": [
+    "tf_lookup_failed: tool0\u2192pick_demo_anchor: \"pick_demo_anchor\" passed to lookupTransform argument source_frame does not exist. ",
+    "tf_lookup_failed: base_link\u2192pick_demo: \"pick_demo\" passed to lookupTransform argument source_frame does not exist. "
+  ],
+  "clock_ros_sec": 116.528
+}

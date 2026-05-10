@@ -1,0 +1,16 @@
+365:[pick_orchestrator_lifecycle-16] [INFO] [1778363285.681069259] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop entering phase=INITIAL_SNAPSHOT
+368:[pick_orchestrator_lifecycle-16] [INFO] [1778363285.728827138] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=INITIAL_SNAPSHOT ok=True reason=initial_snapshot:snapshot_ok|freshness:ok:tcp_tf=0.024s joint_state=0.000s <=0.200s
+369:[pick_orchestrator_lifecycle-16] [INFO] [1778363285.729172506] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop entering phase=HOME_INITIAL
+376:[pick_orchestrator_lifecycle-16] [INFO] [1778363301.942358772] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=HOME_INITIAL ok=True reason=home_initial:fjt:SUCCESSFUL
+377:[pick_orchestrator_lifecycle-16] [INFO] [1778363301.945749623] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop entering phase=SELECT_OBJECT
+379:[pick_orchestrator_lifecycle-16] [INFO] [1778363301.950816285] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=SELECT_OBJECT ok=True reason=select_object:internal_ok:object=pick_demo
+380:[pick_orchestrator_lifecycle-16] [INFO] [1778363301.952959304] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop entering phase=APPROACH
+391:[pick_orchestrator_lifecycle-16] [INFO] [1778363343.507472213] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=APPROACH ok=True reason=approach:fjt_direct:SUCCESSFUL
+392:[pick_orchestrator_lifecycle-16] [INFO] [1778363343.511839109] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop entering phase=GRASP_DOWN
+403:[pick_orchestrator_lifecycle-16] [INFO] [1778363357.097760638] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=GRASP_DOWN ok=True reason=grasp_down:fjt_direct:SUCCESSFUL
+404:[pick_orchestrator_lifecycle-16] [INFO] [1778363357.102330083] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop entering phase=GRASP
+414:[pick_orchestrator_lifecycle-16] [INFO] [1778363358.098519131] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=GRASP ok=True reason=grasp_attach:attach_dispatched|attach_distance:ok:0.0200m<=0.2500m
+415:[pick_orchestrator_lifecycle-16] [INFO] [1778363358.099848074] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop entering phase=LIFT
+457:[pick_orchestrator_lifecycle-16] [INFO] [1778363376.695152307] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=LIFT ok=True reason=lift:fjt_direct:SUCCESSFUL
+458:[pick_orchestrator_lifecycle-16] [INFO] [1778363376.695467625] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop entering phase=TRANSPORT
+514:[pick_orchestrator_lifecycle-16] [INFO] [1778363397.320182467] [pick_orchestrator_lifecycle]: [ORCHESTRATOR_LC] phase_loop _execute_phase returned phase=TRANSPORT ok=False reason=transport:moveit_goal_send_timeout|attempts=2

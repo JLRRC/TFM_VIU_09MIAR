@@ -1,0 +1,15 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-7.4.4, pluggy-1.4.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/laboratorio/TFM/agarre_ros2_ws
+configfile: pytest.ini
+plugins: ament-flake8-0.17.5, ament-copyright-0.17.5, ament-lint-0.17.5, ament-xmllint-0.17.5, ament-pep257-0.17.5, launch-testing-3.4.10, launch-testing-ros-0.26.11, colcon-core-0.20.1, typeguard-4.1.5, cov-4.1.0
+collecting ... collected 5 items
+
+src/ur5_tools/test/test_urdf_sdf_parity.py::test_rg2_mount_joint_translation_is_zero_in_both_models PASSED [ 20%]
+src/ur5_tools/test/test_urdf_sdf_parity.py::test_end_effector_frame_fixed_joint_translation_is_zero_in_sdf PASSED [ 40%]
+src/ur5_tools/test/test_urdf_sdf_parity.py::test_pinch_center_offset_matches_between_urdf_and_anchor_sdf PASSED [ 60%]
+src/ur5_tools/test/test_urdf_sdf_parity.py::test_finger_joint_offsets_match_between_urdf_and_sdf PASSED [ 80%]
+src/ur5_tools/test/test_urdf_sdf_parity.py::test_runtime_gz_models_copy_does_not_reintroduce_bug PASSED [100%]
+
+============================== 5 passed in 0.02s ===============================

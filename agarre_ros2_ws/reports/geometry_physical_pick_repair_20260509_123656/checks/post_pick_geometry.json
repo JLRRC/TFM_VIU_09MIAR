@@ -1,0 +1,168 @@
+{
+  "iso_wall_ts": "2026-05-09T23:52:26",
+  "monotonic_ts": 270318.845824609,
+  "object_name": "pick_demo",
+  "tfs": {
+    "world__base_link": {
+      "frame_id": "world",
+      "child_frame_id": "base_link",
+      "stamp_sec": 254,
+      "stamp_nanosec": 200000000,
+      "translation": {
+        "x": -0.85,
+        "y": 0.0,
+        "z": 0.85
+      },
+      "rotation_quat": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      }
+    },
+    "base_link__tool0": {
+      "frame_id": "base_link",
+      "child_frame_id": "tool0",
+      "stamp_sec": 254,
+      "stamp_nanosec": 256000000,
+      "translation": {
+        "x": 0.399999998066357,
+        "y": -1.443235459655251e-08,
+        "z": 0.5749999522666712
+      },
+      "rotation_quat": {
+        "x": 0.9999999999999988,
+        "y": -1.9508618644844357e-12,
+        "z": 3.232719323926023e-08,
+        "w": -3.7149433072399645e-08
+      }
+    },
+    "tool0__rg2_pinch_center": {
+      "frame_id": "tool0",
+      "child_frame_id": "rg2_pinch_center",
+      "stamp_sec": 0,
+      "stamp_nanosec": 0,
+      "translation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.175
+      },
+      "rotation_quat": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      }
+    },
+    "tool0__rg2_tcp": {
+      "frame_id": "tool0",
+      "child_frame_id": "rg2_tcp",
+      "stamp_sec": 0,
+      "stamp_nanosec": 0,
+      "translation": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.175
+      },
+      "rotation_quat": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      }
+    },
+    "tool0__rg2_finger_link1": {
+      "frame_id": "tool0",
+      "child_frame_id": "rg2_finger_link1",
+      "stamp_sec": 254,
+      "stamp_nanosec": 256000000,
+      "translation": {
+        "x": 0.0,
+        "y": 0.02,
+        "z": 0.0
+      },
+      "rotation_quat": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      }
+    },
+    "tool0__rg2_finger_link2": {
+      "frame_id": "tool0",
+      "child_frame_id": "rg2_finger_link2",
+      "stamp_sec": 254,
+      "stamp_nanosec": 256000000,
+      "translation": {
+        "x": 0.0,
+        "y": -0.02,
+        "z": 0.0
+      },
+      "rotation_quat": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "w": 1.0
+      }
+    },
+    "tool0__pick_demo_anchor": {
+      "error": "tf_lookup_failed: tool0\u2192pick_demo_anchor: \"pick_demo_anchor\" passed to lookupTransform argument source_frame does not exist. "
+    },
+    "base_link__rg2_pinch_center": {
+      "frame_id": "base_link",
+      "child_frame_id": "rg2_pinch_center",
+      "stamp_sec": 254,
+      "stamp_nanosec": 256000000,
+      "translation": {
+        "x": 0.4000000093808746,
+        "y": -1.4300529931038943e-09,
+        "z": 0.39999995226667207
+      },
+      "rotation_quat": {
+        "x": 0.9999999999999988,
+        "y": -1.9508618644844357e-12,
+        "z": 3.232719323926023e-08,
+        "w": -3.7149433072399645e-08
+      }
+    },
+    "base_link__pick_demo": {
+      "error": "tf_lookup_failed: base_link\u2192pick_demo: \"pick_demo\" passed to lookupTransform argument source_frame does not exist. "
+    }
+  },
+  "object_world": {
+    "frame_id": "world",
+    "child_frame_id": "pick_demo",
+    "stamp_sec": 254,
+    "stamp_nanosec": 273000000,
+    "translation": {
+      "x": -0.4500015706935775,
+      "y": 3.8225338560715006e-07,
+      "z": 1.234999622499474
+    },
+    "rotation_quat": {
+      "x": 7.165194145209606e-07,
+      "y": -5.8115830968133575e-06,
+      "z": -0.0006926506914404079,
+      "w": 0.9999997601003371
+    }
+  },
+  "object_base_link": {
+    "x": 0.3999984293064225,
+    "y": 3.8225338560715006e-07,
+    "z": 0.38499962249947395
+  },
+  "tcp_object_xy_error_m": 1.6259914683889587e-06,
+  "tcp_object_z_error_m": 0.015000329767198117,
+  "tcp_object_dist3d_m": 0.015000329855324455,
+  "target_grasp_base_link": {
+    "x": 0.3999984293064225,
+    "y": 3.8225338560715006e-07,
+    "z": 0.38499962249947395,
+    "comment": "z=object_center; ajustar +0.025 para top, -0.025 para bottom seg\u00fan convenci\u00f3n TCP-down"
+  },
+  "warnings": [
+    "tf_lookup_failed: tool0\u2192pick_demo_anchor: \"pick_demo_anchor\" passed to lookupTransform argument source_frame does not exist. ",
+    "tf_lookup_failed: base_link\u2192pick_demo: \"pick_demo\" passed to lookupTransform argument source_frame does not exist. "
+  ],
+  "clock_ros_sec": 254.284
+}

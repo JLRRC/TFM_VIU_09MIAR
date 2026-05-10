@@ -1,0 +1,17 @@
+/controller_bootstrap
+/controller_manager
+/gripper_attach_backend
+/gripper_controller
+/gz_pose_bridge
+/gz_ros_control
+/joint_state_broadcaster
+/joint_trajectory_controller
+/object_pose_resolver_service
+/pick_orchestrator_lifecycle
+/plan_to_pose_server
+/release_objects_service
+/robot_state_publisher
+/ros_gz_bridge_main
+/system_state_manager
+/tf_geometry_service
+/world_tf_publisher

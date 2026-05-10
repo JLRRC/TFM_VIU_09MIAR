@@ -1,0 +1,3 @@
+response:
+ur5_panel_interfaces.srv.ResolveObjectPoseWorld_Response(pose_world=geometry_msgs.msg.Pose(position=geometry_msgs.msg.Point(x=-0.4500015706935775, y=3.8225338560715006e-07, z=1.234999622499474), orientation=geometry_msgs.msg.Quaternion(x=7.165194145209606e-07, y=-5.8115830968133575e-06, z=-0.0006926506914404079, w=0.9999997601003371)), success=True, detail='frame_id=world age=0.017s')
+

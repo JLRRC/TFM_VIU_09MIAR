@@ -1,0 +1,310 @@
+{
+  "object": "pick_demo",
+  "verdict": "FAIL",
+  "elapsed_sec": 111.65077697503148,
+  "feedback_count": 332,
+  "phases_seen": [],
+  "feedback_log": [
+    {
+      "ts": 270072.261266452,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.313092449,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.361055897,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.414751824,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.460822622,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.511686924,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.579106546,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.619124437,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.661151948,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.711474723,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.767647706,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.811119279,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.861363865,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.911197232,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270072.961256809,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.010827538,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.060924085,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.111351149,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.164614079,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.215089483,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.261043302,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.31081064,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.364621726,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.445012757,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.462106284,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.512844977,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.561769619,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.61106172,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.661357726,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.711454302,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.760987141,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.81070152,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.861022615,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.910979162,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270073.961169868,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270074.013264744,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270074.060800784,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270074.114401401,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270074.16412934,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270074.211413231,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270074.264606841,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270074.317564492,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270074.361341673,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270074.424469888,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270074.431848428,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270115.990589794,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270129.581149867,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270130.578606418,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270149.17416027,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    },
+    {
+      "ts": 270169.799146071,
+      "phase": "",
+      "sub_progress": 0.0,
+      "message": ""
+    }
+  ],
+  "result_success": false
+}

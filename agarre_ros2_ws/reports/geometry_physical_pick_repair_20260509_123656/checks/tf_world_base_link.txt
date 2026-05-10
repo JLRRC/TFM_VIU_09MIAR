@@ -1,0 +1,15 @@
+[INFO] [1778362634.549785919] [tf2_echo]: Waiting for transform world ->  base_link: Invalid frame ID "world" passed to canTransform argument target_frame - frame does not exist
+At time 73.200000000
+- Translation: [-0.850, 0.000, 0.850]
+- Rotation: in Quaternion (xyzw) [0.000, 0.000, 0.000, 1.000]
+- Rotation: in RPY (radian) [0.000, -0.000, 0.000]
+- Rotation: in RPY (degree) [0.000, -0.000, 0.000]
+- Matrix:
+  1.000  0.000  0.000 -0.850
+  0.000  1.000  0.000  0.000
+  0.000  0.000  1.000  0.850
+  0.000  0.000  0.000  1.000
+At time 73.800000000
+- Translation: [-0.850, 0.000, 0.850]
+- Rotation: in Quaternion (xyzw) [0.000, 0.000, 0.000, 1.000]
+- Rotation: in RPY (radian) [0.000, -0.000, 0.000]
