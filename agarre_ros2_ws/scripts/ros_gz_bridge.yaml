@@ -1,488 +1,391 @@
-# Ruta/archivo: agarre_ros2_ws/scripts/bridge_cameras.yaml
-# Contenido: Mapping base ros_gz_bridge: cámeras, objetos y control Gazebo↔ROS 2.
-# Uso breve: patch_bridge_yaml() copia y sustituye el world_name en runtime.
+# Ruta/archivo: agarre_ros2_ws/scripts/ros_gz_bridge.yaml
+# AUTO-GENERADO por scripts/bridges/compose.py — NO EDITAR a mano.
+# Editar los fragmentos en scripts/bridges/*.yaml y volver a ejecutar:
 #
-# AUDITORÍA DE BRIDGES (FASE 8, 2026-04-26) — 78 bridges totales
-# ─────────────────────────────────────────────────────────────────
-# Categoría              Cantidad   Estado        Motivo
-# ─────────────────────────────────────────────────────────────────
-# /clock                 1          NECESARIO     sim_time para todos los nodos
-# /world/.../pose/info   2          NECESARIO     gz_pose_bridge + panel PoseArray
-# Cámara RGB             6          NECESARIO     panel multi-vista + TFM overhead
-# Cámara depth           4          ACEPTABLE     inferencia de agarre (overhead+debug)
-# Cámara muñeca          1          RESERVADO     futura integración wrist-cam
-# drop_anchor ×10 obj    30         NECESARIO     release_objects_service (drop)
-# gripper_anchor ×10+1   33         NECESARIO     gripper_attach_backend (attach)
-# ─────────────────────────────────────────────────────────────────
-# Conclusión: todos los bridges están justificados. Los de cámara son lazy
-# (ros_gz_bridge no transmite si no hay suscriptor activo). El coste real
-# dominante es /clock + /pose/info (siempre activos, ~1 kHz cada uno).
-# No se eliminan bridges — remover uno rompe la suscripción del panel si
-# el topic existe en el SDF pero no en el YAML.
-
+#     python3 scripts/bridges/compose.py
+#
+# patch_bridge_yaml() en launch_helpers.py copia este archivo al
+# log/ de runtime sustituyendo el world_name dinámicamente.
 - ros_topic_name: /clock
   gz_topic_name: /world/ur5_mesa_objetos/clock
   ros_type_name: rosgraph_msgs/msg/Clock
   gz_type_name: gz.msgs.Clock
   direction: GZ_TO_ROS
-
 - ros_topic_name: /world/ur5_mesa_objetos/pose/info_raw
   gz_topic_name: /world/ur5_mesa_objetos/pose/info
   ros_type_name: tf2_msgs/msg/TFMessage
   gz_type_name: gz.msgs.Pose_V
   direction: GZ_TO_ROS
-
 - ros_topic_name: /world/ur5_mesa_objetos/pose/info_array
   gz_topic_name: /world/ur5_mesa_objetos/pose/info
   ros_type_name: geometry_msgs/msg/PoseArray
   gz_type_name: gz.msgs.Pose_V
   direction: GZ_TO_ROS
-
 - ros_topic_name: /camera_overhead/image
   gz_topic_name: /camera_overhead/image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
-
 - ros_topic_name: /camera_north/image
   gz_topic_name: /camera_north/image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
-
 - ros_topic_name: /camera_south/image
   gz_topic_name: /camera_south/image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
-
 - ros_topic_name: /camera_east/image
   gz_topic_name: /camera_east/image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
-
 - ros_topic_name: /camera_west/image
   gz_topic_name: /camera_west/image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
-
 - ros_topic_name: /camera_debug_top/image
   gz_topic_name: /camera_debug_top/image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
-
-
-# depth_image
 - ros_topic_name: /camera_overhead/depth_image
   gz_topic_name: /camera_overhead/depth_image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
-
 - ros_topic_name: /camera_north/depth_image
   gz_topic_name: /camera_north/depth_image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
-
 - ros_topic_name: /camera_east/depth_image
   gz_topic_name: /camera_east/depth_image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
-
 - ros_topic_name: /camera_debug_top/depth_image
   gz_topic_name: /camera_debug_top/depth_image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
-
 - ros_topic_name: /camera_wrist/image
   gz_topic_name: /camera_wrist/image
   ros_type_name: sensor_msgs/msg/Image
   gz_type_name: gz.msgs.Image
   direction: GZ_TO_ROS
-
-
-# Control por ros2_control: no se bridgean comandos de trayectoria.
-
-# Detachable joints (drop_anchor attach/detach)
 - ros_topic_name: /drop_anchor/box_red/attach
   gz_topic_name: /drop_anchor/box_red/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/box_red/detach
   gz_topic_name: /drop_anchor/box_red/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/box_red/state
   gz_topic_name: /drop_anchor/box_red/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /drop_anchor/box_blue/attach
   gz_topic_name: /drop_anchor/box_blue/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/box_blue/detach
   gz_topic_name: /drop_anchor/box_blue/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/box_blue/state
   gz_topic_name: /drop_anchor/box_blue/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /drop_anchor/box_green/attach
   gz_topic_name: /drop_anchor/box_green/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/box_green/detach
   gz_topic_name: /drop_anchor/box_green/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/box_green/state
   gz_topic_name: /drop_anchor/box_green/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /drop_anchor/box_lightblue/attach
   gz_topic_name: /drop_anchor/box_lightblue/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/box_lightblue/detach
   gz_topic_name: /drop_anchor/box_lightblue/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/box_lightblue/state
   gz_topic_name: /drop_anchor/box_lightblue/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /drop_anchor/box_yellow/attach
   gz_topic_name: /drop_anchor/box_yellow/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/box_yellow/detach
   gz_topic_name: /drop_anchor/box_yellow/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/box_yellow/state
   gz_topic_name: /drop_anchor/box_yellow/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /drop_anchor/cross_cyan/attach
   gz_topic_name: /drop_anchor/cross_cyan/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/cross_cyan/detach
   gz_topic_name: /drop_anchor/cross_cyan/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/cross_cyan/state
   gz_topic_name: /drop_anchor/cross_cyan/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /drop_anchor/cyl_gray/attach
   gz_topic_name: /drop_anchor/cyl_gray/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/cyl_gray/detach
   gz_topic_name: /drop_anchor/cyl_gray/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/cyl_gray/state
   gz_topic_name: /drop_anchor/cyl_gray/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /drop_anchor/cyl_green/attach
   gz_topic_name: /drop_anchor/cyl_green/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/cyl_green/detach
   gz_topic_name: /drop_anchor/cyl_green/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/cyl_green/state
   gz_topic_name: /drop_anchor/cyl_green/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /drop_anchor/cyl_orange/attach
   gz_topic_name: /drop_anchor/cyl_orange/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/cyl_orange/detach
   gz_topic_name: /drop_anchor/cyl_orange/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/cyl_orange/state
   gz_topic_name: /drop_anchor/cyl_orange/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /drop_anchor/cyl_purple/attach
   gz_topic_name: /drop_anchor/cyl_purple/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/cyl_purple/detach
   gz_topic_name: /drop_anchor/cyl_purple/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /drop_anchor/cyl_purple/state
   gz_topic_name: /drop_anchor/cyl_purple/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
-# Detachable joints (gripper_anchor attach/detach/state)
 - ros_topic_name: /gripper_anchor/box_red/attach
   gz_topic_name: /gripper_anchor/box_red/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/box_red/detach
   gz_topic_name: /gripper_anchor/box_red/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/box_red/state
   gz_topic_name: /gripper_anchor/box_red/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /gripper_anchor/box_blue/attach
   gz_topic_name: /gripper_anchor/box_blue/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/box_blue/detach
   gz_topic_name: /gripper_anchor/box_blue/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/box_blue/state
   gz_topic_name: /gripper_anchor/box_blue/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /gripper_anchor/box_green/attach
   gz_topic_name: /gripper_anchor/box_green/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/box_green/detach
   gz_topic_name: /gripper_anchor/box_green/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/box_green/state
   gz_topic_name: /gripper_anchor/box_green/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /gripper_anchor/box_lightblue/attach
   gz_topic_name: /gripper_anchor/box_lightblue/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/box_lightblue/detach
   gz_topic_name: /gripper_anchor/box_lightblue/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/box_lightblue/state
   gz_topic_name: /gripper_anchor/box_lightblue/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /gripper_anchor/box_yellow/attach
   gz_topic_name: /gripper_anchor/box_yellow/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/box_yellow/detach
   gz_topic_name: /gripper_anchor/box_yellow/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/box_yellow/state
   gz_topic_name: /gripper_anchor/box_yellow/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /gripper_anchor/cross_cyan/attach
   gz_topic_name: /gripper_anchor/cross_cyan/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/cross_cyan/detach
   gz_topic_name: /gripper_anchor/cross_cyan/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/cross_cyan/state
   gz_topic_name: /gripper_anchor/cross_cyan/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /gripper_anchor/cyl_gray/attach
   gz_topic_name: /gripper_anchor/cyl_gray/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/cyl_gray/detach
   gz_topic_name: /gripper_anchor/cyl_gray/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/cyl_gray/state
   gz_topic_name: /gripper_anchor/cyl_gray/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /gripper_anchor/cyl_green/attach
   gz_topic_name: /gripper_anchor/cyl_green/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/cyl_green/detach
   gz_topic_name: /gripper_anchor/cyl_green/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/cyl_green/state
   gz_topic_name: /gripper_anchor/cyl_green/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /gripper_anchor/cyl_orange/attach
   gz_topic_name: /gripper_anchor/cyl_orange/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/cyl_orange/detach
   gz_topic_name: /gripper_anchor/cyl_orange/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/cyl_orange/state
   gz_topic_name: /gripper_anchor/cyl_orange/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /gripper_anchor/cyl_purple/attach
   gz_topic_name: /gripper_anchor/cyl_purple/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/cyl_purple/detach
   gz_topic_name: /gripper_anchor/cyl_purple/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/cyl_purple/state
   gz_topic_name: /gripper_anchor/cyl_purple/state
   ros_type_name: std_msgs/msg/Bool
   gz_type_name: gz.msgs.Boolean
   direction: GZ_TO_ROS
-
 - ros_topic_name: /gripper_anchor/pick_demo/attach
   gz_topic_name: /gripper_anchor/pick_demo/attach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/pick_demo/detach
   gz_topic_name: /gripper_anchor/pick_demo/detach
   ros_type_name: std_msgs/msg/Empty
   gz_type_name: gz.msgs.Empty
   direction: ROS_TO_GZ
-
 - ros_topic_name: /gripper_anchor/pick_demo/state
   gz_topic_name: /gripper_anchor/pick_demo/state
   ros_type_name: std_msgs/msg/Bool

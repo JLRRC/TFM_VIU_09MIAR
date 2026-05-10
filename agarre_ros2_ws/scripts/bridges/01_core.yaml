@@ -1,0 +1,19 @@
+# Ruta/archivo: agarre_ros2_ws/scripts/bridges/01_core.yaml
+# Fragmento ros_gz_bridge: /clock + /world/.../pose/info
+# F9 audit (2026-05-10): split del monolítico ros_gz_bridge.yaml.
+# El compose script concat estos fragmentos en runtime.
+- ros_topic_name: /clock
+  gz_topic_name: /world/ur5_mesa_objetos/clock
+  ros_type_name: rosgraph_msgs/msg/Clock
+  gz_type_name: gz.msgs.Clock
+  direction: GZ_TO_ROS
+- ros_topic_name: /world/ur5_mesa_objetos/pose/info_raw
+  gz_topic_name: /world/ur5_mesa_objetos/pose/info
+  ros_type_name: tf2_msgs/msg/TFMessage
+  gz_type_name: gz.msgs.Pose_V
+  direction: GZ_TO_ROS
+- ros_topic_name: /world/ur5_mesa_objetos/pose/info_array
+  gz_topic_name: /world/ur5_mesa_objetos/pose/info
+  ros_type_name: geometry_msgs/msg/PoseArray
+  gz_type_name: gz.msgs.Pose_V
+  direction: GZ_TO_ROS
