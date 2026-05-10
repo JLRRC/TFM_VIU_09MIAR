@@ -162,7 +162,17 @@ def _apply_home_joint2_offset(panel, retries: int = 2):
             panel._log(f"[AUTO] Ajuste joint2=-20% desde HOME -> {target[1]:.3f} rad")
             ok, info = panel._publish_joint_trajectory(target, 3.0)
             if ok:
-                time.sleep(3.15)
+                # F3 audit (2026-05-10): sustituye time.sleep(3.15) fijo por
+                # convergencia real con timeout. El sleep ocultaba goals
+                # lentos/fallidos; la convergencia ofrece feedback temprano.
+                converged, reason = panel._wait_for_joint_convergence(
+                    target, timeout_sec=4.0, tolerance_rad=0.05,
+                    label="AUTO_JOINT2_OFFSET",
+                )
+                if not converged:
+                    panel._log_warning(
+                        f"[AUTO] joint2 no convergió: {reason}"
+                    )
                 panel._auto_joint2_move_done = True
                 panel._ui_set_status("AUTO: joint2 ajustado (-20% HOME)")
             else:
