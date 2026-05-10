@@ -64,3 +64,45 @@ repos:
         pass_filenames: false
         files: 'agarre_ros2_ws/src/ur5_tools/ur5_tools/plan_to_pose_server\.py'
         always_run: false
+
+      # Audit 2026-05-10 (Action 23): hooks de regresión arquitectónica
+      # del plan 100/100 (Acciones 7, 8, 9).
+      - id: launch-no-dup-defs
+        name: Action 8 — no duplicate top-level defs en launch (B1 guard)
+        entry: pytest agarre_ros2_ws/src/ur5_bringup/test/test_launch_no_dup_defs.py -q --no-header
+        language: system
+        pass_filenames: false
+        files: 'agarre_ros2_ws/src/.+/launch/.+\.py$'
+        always_run: false
+
+      - id: urdf-frame-uniqueness
+        name: Action 8 — URDF sin frames hermanos parent+origin idénticos (B2 guard)
+        entry: pytest agarre_ros2_ws/src/ur5_description/test/test_urdf_frame_uniqueness.py -q --no-header
+        language: system
+        pass_filenames: false
+        files: 'agarre_ros2_ws/src/ur5_description/urdf/.+\.xacro$'
+        always_run: false
+
+      - id: runtime-defaults-consumed
+        name: Action 8 — runtime_defaults.yaml sin keys huérfanas
+        entry: pytest agarre_ros2_ws/src/ur5_bringup/test/test_runtime_defaults_consumed.py -q --no-header
+        language: system
+        pass_filenames: false
+        files: 'agarre_ros2_ws/src/ur5_bringup/config/runtime_defaults\.yaml$|\.py$|\.yaml$'
+        always_run: false
+
+      - id: lifecycle-contract
+        name: Action 9 — contract offline de los 8 LifecycleNodes
+        entry: pytest agarre_ros2_ws/src/ur5_tools/test/test_lifecycle_contract_offline.py -q --no-header
+        language: system
+        pass_filenames: false
+        files: '(gripper_attach_backend|gz_pose_bridge|object_pose_resolver_service|release_objects_service|system_state_manager|tf_geometry_service|world_tf_publisher|pick_orchestrator_lifecycle_node)\.py$'
+        always_run: false
+
+      - id: moveit-config-integrity
+        name: Action 7 — moveit_config YAMLs + SRDFs estructura válida
+        entry: pytest agarre_ros2_ws/src/ur5_moveit_config/test/test_config_integrity.py -q --no-header
+        language: system
+        pass_filenames: false
+        files: 'agarre_ros2_ws/src/ur5_moveit_config/config/.+\.(yaml|srdf)$'
+        always_run: false
