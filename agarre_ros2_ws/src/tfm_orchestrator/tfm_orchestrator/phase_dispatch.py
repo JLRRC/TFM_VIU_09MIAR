@@ -28,6 +28,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from ur5_tools.geometry_constants import BASE_LINK_IN_WORLD
+
 from .pick_fsm import PickContext, PickPhase, is_no_hint, normalize_pose_hint
 from .service_clients import (
     ActionCallResult,
@@ -189,18 +191,15 @@ def build_plan_to_pose_goal_for_approach(
     from geometry_msgs.msg import Pose, Point, Quaternion
     from ur5_panel_interfaces.action import PlanToPose
 
-    # Offset estático world→base_link del UR5 según URDF.
-    _BASE_LINK_IN_WORLD = (-0.85, 0.0, 0.850)
-
     goal = PlanToPose.Goal()
     if not is_no_hint(ctx.object_pose_world_hint):
         norm = normalize_pose_hint(ctx.object_pose_world_hint)
         # norm garantizado != None aquí (is_no_hint cubre None y mal-formados).
         x, y, z, qx, qy, qz, qw = norm  # type: ignore[misc]
         # World → base_link: restar el origen del base_link en world.
-        x_base = x - _BASE_LINK_IN_WORLD[0]
-        y_base = y - _BASE_LINK_IN_WORLD[1]
-        z_base = z - _BASE_LINK_IN_WORLD[2]
+        x_base = x - BASE_LINK_IN_WORLD[0]
+        y_base = y - BASE_LINK_IN_WORLD[1]
+        z_base = z - BASE_LINK_IN_WORLD[2]
         # F1.8 (2026-05-08): el TCP debe apuntar hacia abajo (top-down grasp)
         # con yaw alineado al objeto. Antes pasábamos obj_quat directo →
         # OMPL FAILURE por orientación inalcanzable (ver bug doc F1.8).
@@ -236,17 +235,15 @@ def build_plan_to_pose_goal_for_grasp_down(ctx: PickContext) -> Any:
     from geometry_msgs.msg import Pose, Point, Quaternion
     from ur5_panel_interfaces.action import PlanToPose
 
-    # Offset estático world→base_link del UR5 (urdf:47).
-    _BASE_LINK_IN_WORLD = (-0.85, 0.0, 0.850)
     _GRASP_DOWN_Z_M = 0.020  # 2 cm sobre el centro del objeto.
 
     goal = PlanToPose.Goal()
     if not is_no_hint(ctx.object_pose_world_hint):
         norm = normalize_pose_hint(ctx.object_pose_world_hint)
         x, y, z, qx, qy, qz, qw = norm  # type: ignore[misc]
-        x_base = x - _BASE_LINK_IN_WORLD[0]
-        y_base = y - _BASE_LINK_IN_WORLD[1]
-        z_base = z - _BASE_LINK_IN_WORLD[2]
+        x_base = x - BASE_LINK_IN_WORLD[0]
+        y_base = y - BASE_LINK_IN_WORLD[1]
+        z_base = z - BASE_LINK_IN_WORLD[2]
         # F1.8 (2026-05-08): TCP top-down con yaw del objeto (mismo fix que
         # APPROACH). Sin esto, GRASP_DOWN cartesian descent partía con orient
         # inalcanzable y fallaba con OMPL FAILURE.
@@ -281,17 +278,15 @@ def build_plan_to_pose_goal_for_lift(ctx: PickContext) -> Any:
     from geometry_msgs.msg import Pose, Point, Quaternion
     from ur5_panel_interfaces.action import PlanToPose
 
-    # Offset estático world→base_link del UR5 (urdf:47).
-    _BASE_LINK_IN_WORLD = (-0.85, 0.0, 0.850)
     _LIFT_Z_M = 0.30  # 30 cm sobre la mesa: claro de obstáculos para transport.
 
     goal = PlanToPose.Goal()
     if not is_no_hint(ctx.object_pose_world_hint):
         norm = normalize_pose_hint(ctx.object_pose_world_hint)
         x, y, z, qx, qy, qz, qw = norm  # type: ignore[misc]
-        x_base = x - _BASE_LINK_IN_WORLD[0]
-        y_base = y - _BASE_LINK_IN_WORLD[1]
-        z_base = z - _BASE_LINK_IN_WORLD[2]
+        x_base = x - BASE_LINK_IN_WORLD[0]
+        y_base = y - BASE_LINK_IN_WORLD[1]
+        z_base = z - BASE_LINK_IN_WORLD[2]
         # F1.15: TCP-down quat coherente con APPROACH/GRASP_DOWN.
         tcp_qx, tcp_qy, tcp_qz, tcp_qw = compute_top_down_grasp_quat((qx, qy, qz, qw))
         goal.target_pose_base = Pose(
@@ -326,9 +321,6 @@ def build_plan_to_pose_goal_for_transport(ctx: PickContext) -> Any:
     from geometry_msgs.msg import Pose, Point, Quaternion
     from ur5_panel_interfaces.action import PlanToPose
 
-    # Offset estático world→base_link del UR5 (urdf:47).
-    _BASE_LINK_IN_WORLD = (-0.85, 0.0, 0.850)
-
     # F1.14: usar TCP-down quat. Si hay object_pose_world_hint, derivar
     # yaw del objeto (consistencia con APPROACH/GRASP_DOWN). Si no, usar
     # yaw=0 (180° around X canónico = TCP point down con X axis aligned).
@@ -342,9 +334,9 @@ def build_plan_to_pose_goal_for_transport(ctx: PickContext) -> Any:
     goal = PlanToPose.Goal()
     goal.target_pose_base = Pose(
         position=Point(
-            x=float(ctx.drop_xyz_world[0]) - _BASE_LINK_IN_WORLD[0],
-            y=float(ctx.drop_xyz_world[1]) - _BASE_LINK_IN_WORLD[1],
-            z=float(ctx.drop_xyz_world[2]) - _BASE_LINK_IN_WORLD[2],
+            x=float(ctx.drop_xyz_world[0]) - BASE_LINK_IN_WORLD[0],
+            y=float(ctx.drop_xyz_world[1]) - BASE_LINK_IN_WORLD[1],
+            z=float(ctx.drop_xyz_world[2]) - BASE_LINK_IN_WORLD[2],
         ),
         orientation=Quaternion(x=tcp_qx, y=tcp_qy, z=tcp_qz, w=tcp_qw),
     )

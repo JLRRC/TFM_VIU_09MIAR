@@ -7,6 +7,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from ur5_tools.geometry_constants import BASE_LINK_IN_WORLD
+
 from .panel_config import GRIPPER_CLOSED_RAD, GRIPPER_OPEN_RAD, POSE_INFO_MAX_AGE_SEC
 from .directo_geometry import pick_demo_target_semantics
 from .panel_utils import get_tf_helper, world_to_base
@@ -285,8 +287,7 @@ def build_runtime_audit_snapshot(panel: Any) -> RuntimeAuditSnapshot:
     target_vs_object = _delta(target_world, object_gazebo_world or object_panel_world)
     tool0_vs_tcp = _delta(tool0_world, tf_tcp_world)
     rg2_base_vs_tcp = _delta(rg2_base_world, tf_tcp_world)
-    base_link_expected = (-0.85, 0.0, 0.85)
-    base_link_vs_expected = _delta(base_link_world, base_link_expected)
+    base_link_vs_expected = _delta(base_link_world, BASE_LINK_IN_WORLD)
 
     tf_helper = get_tf_helper()
     tf_stats = tf_helper.tf_listener_stats() if tf_helper is not None else (0, 0)

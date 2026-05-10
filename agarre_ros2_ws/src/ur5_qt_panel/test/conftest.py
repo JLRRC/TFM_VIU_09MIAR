@@ -22,6 +22,23 @@ def _inject_ur5_tools_stub() -> None:
     stub = types.ModuleType("ur5_tools")
     sys.modules["ur5_tools"] = stub
 
+    # F2 (auditoría 2026-05-10): stub de geometry_constants para tests
+    # mixtos qt_panel + ur5_tools en la misma sesión pytest.
+    gc_mod = types.ModuleType("ur5_tools.geometry_constants")
+    gc_mod.BASE_LINK_IN_WORLD = (-0.85, 0.0, 0.850)
+    gc_mod.world_to_base = lambda p: (
+        p[0] - gc_mod.BASE_LINK_IN_WORLD[0],
+        p[1] - gc_mod.BASE_LINK_IN_WORLD[1],
+        p[2] - gc_mod.BASE_LINK_IN_WORLD[2],
+    )
+    gc_mod.base_to_world = lambda p: (
+        p[0] + gc_mod.BASE_LINK_IN_WORLD[0],
+        p[1] + gc_mod.BASE_LINK_IN_WORLD[1],
+        p[2] + gc_mod.BASE_LINK_IN_WORLD[2],
+    )
+    stub.geometry_constants = gc_mod
+    sys.modules["ur5_tools.geometry_constants"] = gc_mod
+
     gg = types.ModuleType("ur5_tools.gripper_geometry")
     gg.RG2_PINCH_CENTER_FRAME = "rg2_pinch_center"
     gg.RG2_TCP_FRAME = "rg2_tcp"
