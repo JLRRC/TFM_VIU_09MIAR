@@ -89,15 +89,9 @@
     <origin xyz="${rg2_contact_tcp_xyz}" rpy="0 0 0"/>
   </joint>
 
-  <!-- B2 (audit 2026-05-10): rg2_pinch_center es un ALIAS explícito de rg2_tcp.
-       Históricamente eran dos frames coincidentes con mismo origin y mismo
-       parent (tool0), lo que provocaba ambigüedad semántica en el código.
-       Ahora rg2_pinch_center cuelga de rg2_tcp con transform identidad
-       (xyz=0 rpy=0), dejando inequívoco que ambos representan EL MISMO
-       punto físico (centro de cierre de la pinza RG2).
-       NO eliminamos el link/joint para preservar compatibilidad con código
-       que aún referencia rg2_pinch_center. La unificación de referencias
-       en código es deuda técnica documentada (B2 — sweep posterior). -->
+    <!-- Operational pinch-center: contact midpoint between the two RG2 fingers.
+      Keep it coincident with the semantic TCP so DIRECTO, MoveIt and attach all
+      reason about the same visible closure center. -->
   <link name="rg2_pinch_center">
     <inertial>
       <mass value="0.01"/>
@@ -107,9 +101,9 @@
   </link>
 
   <joint name="rg2_pinch_center_joint" type="fixed">
-    <parent link="rg2_tcp"/>
+    <parent link="tool0"/>
     <child link="rg2_pinch_center"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <origin xyz="${rg2_contact_tcp_xyz}" rpy="0 0 0"/>
   </joint>
 
   <!-- Finger links: box 12x10x175 mm; joint origin at ±20 mm Y from rg2_base_link. -->
