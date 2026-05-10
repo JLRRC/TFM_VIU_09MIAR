@@ -286,35 +286,26 @@ def _load_cornell_metrics(vision_dir: str):
 from .calibration_service import CalibrationService
 
 
+from .panel_v2_fk_helpers import (  # noqa: E402
+    canonical_tool0_to_semantic_frame as _pure_canonical_offset,
+    fk_model_to_base_link as _pure_fk_model_to_base_link,
+    fk_tool0_to_ee_base_link as _pure_fk_tool0_to_ee_base_link,
+)
+
+
 def _canonical_tool0_to_semantic_frame(
     frame_name: str,
 ) -> tuple[float, float, float] | None:
-    frame = str(frame_name or "").strip()
-    if frame not in {"rg2_pinch_center", "rg2_tcp"}:
-        return None
-    return tool0_offset_for_frame(frame)
+    """Wrapper sobre helper puro (F12 audit 2026-05-10)."""
+    return _pure_canonical_offset(frame_name, tool0_offset_for_frame)
 
 
 def _fk_model_to_base_link(
     pos_model: tuple[float, float, float] | list[float] | np.ndarray,
     rot_model: np.ndarray,
 ) -> tuple[tuple[float, float, float], np.ndarray]:
-    """Convert UR5 FK output from base_link_inertia into runtime base_link."""
-    rz_pi = np.array(
-        [
-            [-1.0, 0.0, 0.0],
-            [0.0, -1.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ],
-        dtype=float,
-    )
-    base_pos = (
-        -float(pos_model[0]),
-        -float(pos_model[1]),
-        float(pos_model[2]),
-    )
-    base_rot = rz_pi @ np.asarray(rot_model, dtype=float)
-    return base_pos, base_rot
+    """Wrapper sobre helper puro (F12 audit 2026-05-10)."""
+    return _pure_fk_model_to_base_link(pos_model, rot_model)
 
 
 def _fk_tool0_to_ee_base_link(
@@ -322,34 +313,24 @@ def _fk_tool0_to_ee_base_link(
     rot_model: np.ndarray,
     ee_frame: str,
 ) -> tuple[tuple[float, float, float], np.ndarray]:
-    base_pos, base_rot = _fk_model_to_base_link(pos_model, rot_model)
-    frame_name = str(ee_frame or "").strip()
-    if not frame_name or frame_name == "tool0":
-        return base_pos, base_rot
-
-    local_offset = None
-    tf_tool0_ee, _tf_reason = tf_get_transform("tool0", frame_name, timeout=0.05, logger=None)
-    if tf_tool0_ee is not None:
+    """Wrapper sobre helper puro con TF lookup inyectado (F12 audit 2026-05-10)."""
+    def _tf_lookup(parent: str, child: str):
+        tf_tool0_ee, _tf_reason = tf_get_transform(
+            parent, child, timeout=0.05, logger=None
+        )
+        if tf_tool0_ee is None:
+            return None
         translation = tf_tool0_ee.transform.translation
-        local_offset = (
+        return (
             float(translation.x),
             float(translation.y),
             float(translation.z),
         )
-    else:
-        local_offset = _canonical_tool0_to_semantic_frame(frame_name)
 
-    if local_offset is None:
-        return base_pos, base_rot
-
-    offset_base = tuple((np.asarray(base_rot, dtype=float) @ np.asarray(local_offset, dtype=float)).tolist())
-    return (
-        (
-            float(base_pos[0]) + float(offset_base[0]),
-            float(base_pos[1]) + float(offset_base[1]),
-            float(base_pos[2]) + float(offset_base[2]),
-        ),
-        base_rot,
+    return _pure_fk_tool0_to_ee_base_link(
+        pos_model, rot_model, ee_frame,
+        tf_lookup=_tf_lookup,
+        canonical_offset=_canonical_tool0_to_semantic_frame,
     )
 
 
