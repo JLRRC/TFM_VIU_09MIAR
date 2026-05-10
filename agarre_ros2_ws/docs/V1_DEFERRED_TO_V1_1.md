@@ -1,9 +1,114 @@
 # v1.0 → v1.1 deferred items
 
-**Fecha**: 2026-05-08 (creación), 2026-05-10 (auditoría F0-F10 + iter 1-3 actualizado)
-**Contexto**: cierre del audit-v4 + auditoría profesional F0-F10 (2026-05-10).
+**Fecha**: 2026-05-08 (creación), 2026-05-11 (live validation: panel UI saturación CPU)
+**Contexto**: cierre del audit-v4 + auditoría profesional F0-F10 (2026-05-10) +
+diagnóstico live 2026-05-11 sobre saturación del panel UI.
 Items que fueron ejecutados parcialmente o se difieren explícitamente a
 v1.1 con plan documentado.
+
+---
+
+## Live audit (2026-05-11): Panel UI satura GUI thread → "panel no responde"
+
+**Estado**: deferred v1.1 (requiere refactor F6.3 del plan original).
+
+**Síntomas observados (validación live tras F0-F10)**:
+
+  * Linux/Qt muestra repetidamente el diálogo "panel_v2 no responde"
+    al interactuar con el panel.
+  * El usuario pulsa "Agarre Objeto (MoveIT)" o "Agarre Objeto (Directo)"
+    y el panel se queda colgado varios segundos.
+  * Botones varios responden con latencia perceptible.
+
+**Datos medidos (no asumidos)** — `top -H -b -n1 -p $(pgrep panel_v2)`:
+
+```
+Panel total CPU:        107%  (más de 1 núcleo completo)
+
+Threads del proceso:
+  _RosWor+ TID=A       63%  ← culpable principal
+  _RosWor+ TID=B        8%
+  _RosWor+ TID=C        8%
+  _RosWor+ TID=D        6%
+  panel_v2 (GUI)       12%  ← GUI thread sano
+  dds.udp+             10%
+
+  total ROS workers:   85%
+  total panel GUI:     12%
+```
+
+**Causa raíz (verificada por inspección de /proc + ros2 topic hz)**:
+
+  * `MultiThreadedExecutor` configurado con 3 threads
+    (`PANEL_ROS_EXECUTOR_THREADS=3` en `start_panel_v2.sh:122`).
+  * 12 subscriptores del panel, los más calientes:
+      `/clock`        →  790 Hz   (Gazebo Sim → ros_gz_bridge)
+      `/joint_states` →   97 Hz
+      `/pose/info`    →   50 Hz × 74 entidades = 3700 iter/s
+      `/tf`           →   22 Hz
+      `/camera`       →   24 Hz × ~20 ms cv_bridge+QImage
+  * **~983 mensajes/s** procesados por los 3 threads del executor.
+  * Cada mensaje: DDS deserialize → wake thread → dispatch a callback Python.
+  * 1.874 ctxt switches/s en el thread principal del RosWorker.
+
+  El GUI thread (Qt) está en realidad relativamente libre (12% CPU)
+  pero compite con 3 threads RosWorker saturados por la cola Qt
+  signal/slot que satura el event loop → freezes ocasionales → Linux
+  marca "no responde".
+
+**Intentos de fix descartados (commits revertidos 1d04531..537ba07)**:
+
+  Se probaron 4 commits incrementales (`8faaae1` silenciar logs,
+  `c7e3f3c` timers UI menos agresivos, `0b88a55` throttle callbacks
+  /clock /pose/info, `80cddcc` PANEL_MAX_FPS 60→10). **Ninguno bajó
+  la CPU significativamente** porque atacan el *callback work* pero
+  el coste real está en el *wake + DDS deserialize* que ocurre ANTES
+  del callback. Los 4 commits fueron revertidos por consistencia y
+  para no enmascarar la causa raíz.
+
+**Fix correcto (deferred v1.1) — F6.3 del plan F0-F10**:
+
+  El plan F6.3 ya documentado (commits faa1b76 + 8cf3594) propone:
+
+    1. Separar el panel en 2 nodos:
+        * `panel_ui_node` (Qt only, ≤500 LOC): sólo input/render.
+        * `panel_backend_node` (rclpy SingleThreadedExecutor, ya creado
+          en ur5_tools/panel_backend_node.py): único subscriber a los
+          topics ROS. Re-publica como topics latched JSON para la UI.
+    2. La UI Qt solo se suscribe a 3 topics latched a baja frecuencia
+        (~1-2 Hz): `/panel_backend/{feedback,result,state}`.
+    3. Resultado esperado: GUI thread libre, panel responde inmediato,
+        backend nodo dedicado optimizable independiente.
+
+**Workarounds temporales (NO se aplican por defecto)**:
+
+  Si la lentitud bloquea operación inmediata, el usuario puede probar:
+
+    a) Reducir threads del executor:
+        export PANEL_ROS_EXECUTOR_THREADS=1
+        ./lanzar_panelv2.sh
+
+    b) Bajar frecuencia /clock en Gazebo (tocar SDF — riesgo medio):
+        En src/ur5_gazebo/worlds/ur5_mesa_objetos.sdf añadir al
+        `<physics>` un `<real_time_update_rate>100</real_time_update_rate>`
+        para reducir /clock de 790 Hz a 100 Hz.
+
+**Plan v1.1**:
+  1. Implementar F6.3 wiring real (1-2 semanas estimado).
+  2. Validar live con T35 × 3 ciclos.
+  3. Medir CPU post-refactor (objetivo: <50% panel total).
+
+**Defensa académica**:
+  El TFM es defendible en su estado actual porque:
+    * Pipeline pick funcional via orchestrator (independiente del panel).
+    * Tests offline ≥994 verde (validan lógica sin Qt).
+    * docs/ARCHITECTURE.md documenta esta deuda y su solución.
+    * F6.3 está en el roadmap escrito, con backend_node ya implementado
+      esperando wiring.
+  El panel lento es deuda heredada de la implementación monolítica
+  pre-F6 (panel_v2.py + RosWorker en 1 solo proceso). NO es un bug
+  introducido por la sesión F0-F10 — la auditoría F0-F10 NO modificó
+  ningún subscriber ni el threading model del panel.
 
 ---
 
