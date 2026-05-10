@@ -829,10 +829,10 @@ export PANEL_MOVEIT_MODE="$MOVEIT_MODE"
 #
 # El bug original: tanto stack externo como start_panel_v2.sh tenían
 # bridge=false → ningún bridge corría → goals perdidos.
-LAUNCH_MOVEIT_BRIDGE="true"
-if [[ "${PANEL_START_STACK}" != "1" ]]; then
-  LAUNCH_MOVEIT_BRIDGE="false"
-fi
+# F1.1 audit (2026-05-10): bloque LAUNCH_MOVEIT_BRIDGE eliminado — el
+# argument fue borrado de stack_factories.py (nodo ur5_moveit_bridge
+# ya estaba removido del repo el 2026-05-09). Path canónico es ahora
+# plan_to_pose_server mode=MOVEIT_DIRECT.
 
 runtime_sanity_check
 
@@ -873,7 +873,6 @@ if [[ "${DEBUG_LOGS_TO_STDOUT}" == "1" ]]; then
     launch_plan_to_pose_server:="$LAUNCH_PLAN_TO_POSE_SERVER" \
     launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
-    launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     launch_object_pose_resolver:="$LAUNCH_OBJECT_POSE_RESOLVER" \
     bootstrap_controllers:="$BOOTSTRAP_CONTROLLERS" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -928,7 +927,6 @@ if [[ "${PANEL_WRITE_PID}" == "1" ]]; then
     launch_plan_to_pose_server:="$LAUNCH_PLAN_TO_POSE_SERVER" \
     launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
-    launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     launch_object_pose_resolver:="$LAUNCH_OBJECT_POSE_RESOLVER" \
     bootstrap_controllers:="$BOOTSTRAP_CONTROLLERS" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -967,7 +965,6 @@ if [[ "${PANEL_AUTO_EXIT_ON_PANEL}" == "1" ]]; then
     launch_plan_to_pose_server:="$LAUNCH_PLAN_TO_POSE_SERVER" \
     launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
-    launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     launch_object_pose_resolver:="$LAUNCH_OBJECT_POSE_RESOLVER" \
     bootstrap_controllers:="$BOOTSTRAP_CONTROLLERS" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -1018,7 +1015,6 @@ if [[ "$PANEL_LOG_FILTER" == "1" ]]; then
     launch_plan_to_pose_server:="$LAUNCH_PLAN_TO_POSE_SERVER" \
     launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
-    launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     launch_object_pose_resolver:="$LAUNCH_OBJECT_POSE_RESOLVER" \
     bootstrap_controllers:="$BOOTSTRAP_CONTROLLERS" \
     moveit_mode:="$MOVEIT_MODE" \
@@ -1051,7 +1047,6 @@ else
     launch_plan_to_pose_server:="$LAUNCH_PLAN_TO_POSE_SERVER" \
     launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
-    launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
     launch_object_pose_resolver:="$LAUNCH_OBJECT_POSE_RESOLVER" \
     bootstrap_controllers:="$BOOTSTRAP_CONTROLLERS" \
     moveit_mode:="$MOVEIT_MODE" \
