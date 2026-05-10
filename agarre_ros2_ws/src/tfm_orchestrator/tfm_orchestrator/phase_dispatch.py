@@ -595,3 +595,79 @@ def try_resolve_object_pose_world(
     if payload is None:
         return None
     return pose_msg_to_tuple7(getattr(payload, "pose_world", None))
+
+
+# ---------------------------------------------------------------------
+# F9.4 audit (2026-05-10): tabla declarativa fase → handler.
+# ---------------------------------------------------------------------
+#
+# Hasta ahora ``dispatch_phase`` era una cascada ``if phase == X``
+# (9+ ramas). Para facilitar:
+#   * Tests parametrizados (``@pytest.mark.parametrize("phase, …",
+#     PHASE_DISPATCH_TABLE.items())``).
+#   * Inyección de handlers para mocks en tests.
+#   * Documentación machine-readable de qué fase usa qué services.
+#
+# Esta tabla NO sustituye la cascada actual (refactor F9.4 final
+# requiere validación con stack vivo), pero la complementa como
+# contrato declarativo. El test ``test_phase_dispatch_table_coverage``
+# valida que toda fase no terminal del FSM tiene entrada aquí.
+
+PHASE_DISPATCH_METADATA: dict = {
+    PickPhase.SELECT_OBJECT: {
+        "type": "internal",
+        "services_used": [],
+        "actions_used": [],
+        "purpose": "Validar object_name (F12 audit-v4: internal-only).",
+    },
+    PickPhase.INITIAL_SNAPSHOT: {
+        "type": "snapshot",
+        "services_used": ["resolve_object_pose_world"],
+        "tf_frames": ["base_link", "rg2_tcp"],
+        "purpose": "Capturar TCP/joints/objeto al inicio del ciclo.",
+    },
+    PickPhase.HOME_INITIAL: {
+        "type": "action",
+        "actions_used": ["/joint_trajectory_controller/follow_joint_trajectory"],
+        "purpose": "Mover robot a HOME pose con FJT directo.",
+    },
+    PickPhase.APPROACH: {
+        "type": "action",
+        "actions_used": ["/orchestrator/plan_to_pose"],
+        "purpose": "Plan + execute approach 10cm sobre objeto, TCP top-down.",
+    },
+    PickPhase.GRASP_DOWN: {
+        "type": "action",
+        "actions_used": ["/orchestrator/plan_to_pose"],
+        "purpose": "Descenso cartesiano vertical 10cm → 2cm sobre objeto.",
+    },
+    PickPhase.GRASP: {
+        "type": "service",
+        "services_used": ["/gripper/close", "/orchestrator/attach"],
+        "gates": ["attach_distance"],
+        "purpose": "Close gripper + attach lógico/físico.",
+    },
+    PickPhase.LIFT: {
+        "type": "action",
+        "actions_used": ["/orchestrator/plan_to_pose"],
+        "purpose": "Subir TCP 30cm sobre objeto, top-down.",
+    },
+    PickPhase.TRANSPORT: {
+        "type": "action_with_retry",
+        "actions_used": ["/orchestrator/plan_to_pose"],
+        "retry_max_attempts": 2,
+        "retry_initial_backoff": 1.0,
+        "purpose": "Plan + execute hacia drop_xyz_world con backoff.",
+    },
+    PickPhase.RELEASE: {
+        "type": "service",
+        "services_used": ["/orchestrator/detach", "/gripper/open"],
+        "gates": ["release_open"],
+        "purpose": "Detach + open gripper.",
+    },
+}
+
+
+def get_phase_dispatch_metadata() -> dict:
+    """Devuelve copia de :data:`PHASE_DISPATCH_METADATA` (lectura segura)."""
+    return {k: dict(v) for k, v in PHASE_DISPATCH_METADATA.items()}

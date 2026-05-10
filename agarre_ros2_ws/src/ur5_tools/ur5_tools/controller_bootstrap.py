@@ -4,7 +4,22 @@
 # Uso breve: Se usa en build con colcon y como nodos/servicios ROS 2 del sistema.
 # URL: /home/laboratorio/TFM/agarre_ros2_ws/src/ur5_tools/ur5_tools/controller_bootstrap.py
 # Summary: Load/configure/activate ros2_control controllers once using controller_manager services.
-"""Bootstrap ros2_control controllers without respawning active ones."""
+"""Bootstrap ros2_control controllers without respawning active ones.
+
+F9.1 NOTE (2026-05-10): este nodo es ``Node`` estándar — el resto de
+nodos críticos del stack ya son ``LifecycleNode`` (P-20 audit). El
+plan final propuesto:
+
+  * Crear ``ControllerBootstrapLifecycle(LifecycleNode)`` con:
+      on_configure → declare params + ServiceClient(ListControllers)
+      on_activate  → bootstrap (load + configure + switch)
+      on_deactivate → no-op (controllers cargados son persistentes)
+      on_cleanup  → liberar clients
+  * Re-implementar ``main()`` para usar lifecycle.
+
+  El refactor requiere validación con stack vivo (el bootstrap toca
+  el controller_manager real); no se hace ciegamente.
+"""
 
 from __future__ import annotations
 

@@ -63,6 +63,9 @@ setup(
             # F6 audit (2026-05-10): nodos backend del panel UI.
             "panel_launch_control_node = ur5_tools.panel_launch_control_node:main",
             "panel_backend_node = ur5_tools.panel_backend_node:main",
+            # F9 audit (2026-05-10): microservicio maduro.
+            "controller_health_monitor_node = ur5_tools.controller_health_monitor_node:main",
+            "simulation_reset_service = ur5_tools.simulation_reset_service:main",
         ],
     },
 )
