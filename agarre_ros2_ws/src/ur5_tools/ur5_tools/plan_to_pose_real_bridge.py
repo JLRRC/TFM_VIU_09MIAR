@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import TYPE_CHECKING
+from typing import Any
 
 from geometry_msgs.msg import PoseStamped
 
@@ -24,12 +24,9 @@ from .plan_to_pose_logic import (
     parse_bridge_result,
 )
 
-if TYPE_CHECKING:  # pragma: no cover
-    from .plan_to_pose_server import PlanToPoseServer
-
 
 def execute_real_bridge(
-    node: "PlanToPoseServer", goal: PlanToPoseGoal, start_mono: float
+    node: Any, goal: PlanToPoseGoal, start_mono: float
 ) -> PlanToPoseResult:
     """Publica el goal al bridge MoveIt y espera result correlado por UUID.
 
