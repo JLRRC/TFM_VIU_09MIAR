@@ -12,7 +12,20 @@ package_name = "ur5_tools"
 setup(
     name=package_name,
     version="0.0.0",
-    packages=[package_name],
+    # F11 (auditoría 2026-05-10): subpaquetes namespace por dominio.
+    # Los archivos físicos siguen en ``ur5_tools/`` top-level por
+    # compat — los subpaquetes solo re-exportan. F11 iter 2 (futuro)
+    # moverá los archivos físicamente.
+    packages=[
+        package_name,
+        f"{package_name}.geometry",
+        f"{package_name}.planning",
+        f"{package_name}.gripper",
+        f"{package_name}.state",
+        f"{package_name}.diagnostics",
+        f"{package_name}.bridges",
+        f"{package_name}.utils",
+    ],
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
