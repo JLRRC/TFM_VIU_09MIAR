@@ -170,7 +170,10 @@ OBJECT_COLORS = {
     "cross_cyan": "#22d3ee",
 }
 
-BASKET_DROP = (-1.30, 0.00, 0.82)
+# F2-followup (auditoría 2026-05-10): valor canónico vive en
+# ur5_tools.geometry_constants para que el orchestrator también
+# pueda usarlo sin depender del panel. Re-export por compat.
+from ur5_tools.geometry_constants import BASKET_DROP_WORLD as BASKET_DROP  # noqa: E402,I100
 GZ_WORLD = SETTINGS.gz_world
 GRIPPER_ATTACH_PREFIX = SETTINGS.gripper_attach_prefix
 DROP_ANCHOR_PREFIX = "/drop_anchor"

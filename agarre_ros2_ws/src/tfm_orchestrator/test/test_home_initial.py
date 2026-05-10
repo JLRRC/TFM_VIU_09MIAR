@@ -3,7 +3,13 @@
 # Contenido: B-iter6 (2026-05-03) — tests del helper HOME_INITIAL real.
 """Tests para tfm_orchestrator.home_initial.
 
-100% offline: build/parse de mensajes ROS sin levantar nodes.
+Requieren ``trajectory_msgs`` y ``control_msgs`` en PYTHONPATH (ROS
+Jazzy sourceado) porque ``build_home_joint_trajectory`` y
+``build_follow_joint_trajectory_goal`` construyen instancias reales
+de esos mensajes — no son mockeables sin alterar la semántica.
+
+Si se ejecutan en entorno pure-python (CI offline) se saltan
+elegantemente con un único skipif a nivel de módulo.
 """
 
 from __future__ import annotations
@@ -12,7 +18,25 @@ import math
 
 import pytest
 
-from tfm_orchestrator.home_initial import (
+
+def _ros_msgs_available() -> bool:
+    """True si los msgs ROS necesarios están importables."""
+    try:
+        import trajectory_msgs.msg  # noqa: F401
+        import control_msgs.action  # noqa: F401
+        import control_msgs.msg  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+pytestmark = pytest.mark.skipif(
+    not _ros_msgs_available(),
+    reason="requiere trajectory_msgs+control_msgs (ROS Jazzy sourceado)",
+)
+
+
+from tfm_orchestrator.home_initial import (  # noqa: E402
     UR5_HOME_POSITIONS_RAD,
     UR5_JOINT_NAMES_CANONICAL,
     build_follow_joint_trajectory_goal,

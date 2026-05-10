@@ -26,6 +26,7 @@ def _inject_ur5_tools_stub() -> None:
     # mixtos qt_panel + ur5_tools en la misma sesión pytest.
     gc_mod = types.ModuleType("ur5_tools.geometry_constants")
     gc_mod.BASE_LINK_IN_WORLD = (-0.85, 0.0, 0.850)
+    gc_mod.BASKET_DROP_WORLD = (-1.30, 0.00, 0.82)
     gc_mod.world_to_base = lambda p: (
         p[0] - gc_mod.BASE_LINK_IN_WORLD[0],
         p[1] - gc_mod.BASE_LINK_IN_WORLD[1],

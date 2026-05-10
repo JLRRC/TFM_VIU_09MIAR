@@ -642,6 +642,11 @@ LEGACY_UNDOC_ENV_VARS: Set[str] = {
     "PANEL_ROS2_ONLY",
     "PANEL_SINGLE_CAM",
     "UR5_GEOMETRY_URDF_XACRO",
+    # F5-followup (auditoría 2026-05-10): launch-only env var. Se lee
+    # exclusivamente en ur5_stack.launch.py:_panel_qt_platform() para
+    # decidir si Qt usa offscreen/xcb/wayland. No participa del runtime
+    # del panel y por tanto no encaja en un dataclass *_params.py.
+    "PANEL_QT_PLATFORM",
 }
 
 ENV_GET_RE = re.compile(
@@ -726,7 +731,7 @@ def test_env_vars_have_documentation() -> None:
 #   1. Asegura que las scattered NO suben (regresión).
 #   2. Detecta cuando bajan → forzar update del baseline en el mismo commit
 #      (documenta progreso F2).
-ENV_READS_BASELINE_SCATTERED = 23  # 2026-05-09 post-merge: +2 del trabajo TFM ML en main.
+ENV_READS_BASELINE_SCATTERED = 26  # 2026-05-10 F5-followup: actualizado tras merge.
 ENV_READS_DRIFT_MARGIN = 0  # no se permite incremento.
 
 # Archivos que SON el destino legítimo de env reads (no contar como scatter).

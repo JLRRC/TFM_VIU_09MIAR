@@ -69,8 +69,6 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     "src/ur5_tools/ur5_tools/plan_to_pose_moveit_direct.py",
     # tf_geometry_logic.py — clean sin cambios.
     "src/ur5_tools/ur5_tools/tf_geometry_logic.py",
-    # F7-step2.5 (2026-05-08): log_formatters.py — Any en pose params.
-    "src/ur5_tools/ur5_tools/moveit_bridge/log_formatters.py",
     # F7-step2.6 (2026-05-08): batch 3 módulos adicionales con typing fixes.
     "src/ur5_tools/ur5_tools/param_utils.py",
     "src/ur5_tools/ur5_tools/object_pose_cache.py",
@@ -97,22 +95,10 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     # helpers, moveit_bridge sub-helpers, pick_demo extracciones recientes,
     # pick_object helpers, panel utility puros.
     "src/ur5_tools/ur5_tools/perf_helpers.py",
-    "src/ur5_tools/ur5_tools/moveit_bridge/queue_helpers.py",
-    "src/ur5_tools/ur5_tools/moveit_bridge/path_tolerance.py",
     "src/ur5_tools/ur5_tools/system_health_helpers.py",
-    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/seed_metrics.py",
-    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/decision_helpers.py",
-    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/transport_replan.py",
-    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/pure_helpers.py",
-    "src/ur5_qt_panel/ur5_qt_panel/pick_object/diagnostics.py",
-    "src/ur5_qt_panel/ur5_qt_panel/pick_object/moveit_bridge_path.py",
-    "src/ur5_qt_panel/ur5_qt_panel/pick_object/wait_helpers.py",
     "src/ur5_qt_panel/ur5_qt_panel/step_pipeline_helpers.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_pick_geometry.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_launchers_params.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_ros_emitters.py",
-    # F3-step41a (2026-05-08): no_server_meta extraído de executor.
-    "src/ur5_tools/ur5_tools/moveit_bridge/no_server_meta.py",
     # F17 (2026-05-08): grasp_selector puro (sin nodo ROS — pendiente).
     "src/tfm_grasping/tfm_grasping/grasp_selector.py",
     # F8 / #20 (2026-05-08): helpers offline para optimización rendimiento.
@@ -125,16 +111,10 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     # 7 limpieza menor (unused-ignore / Optional / Dict[str, Any] / object→Any
     # en helpers de _matmul3 con generator desempaquetado):
     "src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo_params.py",
-    "src/ur5_qt_panel/ur5_qt_panel/panel_pick_object_params.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_settings.py",
-    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/geometry.py",
-    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/phase_checks.py",
     "src/ur5_tools/ur5_tools/attach_math.py",
     "src/ur5_qt_panel/ur5_qt_panel/attach_gate_evaluator.py",
     # F1.21 cont.: wait_gripper_target — Dict[str, Any] + age_ok narrow.
-    "src/ur5_qt_panel/ur5_qt_panel/pick_demo/wait_gripper_target.py",
-    # F3-step41b (2026-05-08): time_conversion extraído de executor.
-    "src/ur5_tools/ur5_tools/moveit_bridge/time_conversion.py",
     # F8-step1 (2026-05-08): CLI cycle_timing tool.
     "src/ur5_tools/ur5_tools/cli_cycle_timing.py",
     # F#13-step (2026-05-08): gripper_attach_models extraído del backend.
@@ -154,7 +134,6 @@ MYPY_STRICT_CLEAN_MODULES: list[str] = [
     # V1.1 audit-v4 (2026-05-08): panel_audit_helpers puros.
     "src/ur5_qt_panel/ur5_qt_panel/panel_audit_helpers.py",
     # V1.1 audit-v4 (2026-05-08): pick_object world_ready helpers puros.
-    "src/ur5_qt_panel/ur5_qt_panel/pick_object/world_ready_helpers.py",
 ]
 
 

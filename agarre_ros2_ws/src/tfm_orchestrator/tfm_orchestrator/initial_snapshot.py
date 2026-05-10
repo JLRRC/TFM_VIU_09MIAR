@@ -126,6 +126,42 @@ def _pose_msg_to_tuple7(pose_msg: Any) -> Optional[Tuple7]:
         return None
 
 
+def _resolve_tf_time_and_timeout(timeout_sec: float) -> Tuple[Any, Any]:
+    """Devuelve ``(time_arg, timeout_arg)`` para ``tf2_ros.Buffer.lookup_transform``.
+
+    Si rclpy está disponible (entorno ROS): ``(rclpy.time.Time(), Duration(...))``.
+    Si NO está disponible (entorno tests offline): ``(None, None)`` y el
+    caller invocará el lookup sin esos kwargs. El mock de tests acepta
+    ambos; el buffer real ignora None en time → comportamiento equivalente.
+
+    Bug fix (2026-05-10): hasta esta fecha el import de rclpy estaba
+    DENTRO del mismo try que envolvía la llamada a tf_lookup, así que
+    una ImportError en entorno offline se reportaba como
+    "tf_lookup_exception:ModuleNotFoundError". Ahora aislamos la
+    resolución de los args para que la importabilidad de rclpy NO
+    enmascare un fallo real del lookup.
+    """
+    try:
+        from rclpy.duration import Duration
+        from rclpy.time import Time
+        return Time(), Duration(seconds=float(timeout_sec))
+    except ImportError:
+        return None, None
+
+
+def _invoke_tf_lookup(
+    tf_lookup: Callable[..., Any],
+    base_frame: str,
+    tcp_frame: str,
+    timeout_sec: float,
+) -> Any:
+    """Llama a ``tf_lookup`` con los args correctos según disponibilidad rclpy."""
+    time_arg, timeout_arg = _resolve_tf_time_and_timeout(timeout_sec)
+    if time_arg is None and timeout_arg is None:
+        return tf_lookup(base_frame, tcp_frame)
+    return tf_lookup(base_frame, tcp_frame, time_arg, timeout_arg)
+
+
 def _capture_tcp_with_msg(
     tf_lookup: Callable[..., Any],
     *,
@@ -136,10 +172,7 @@ def _capture_tcp_with_msg(
     """Variante interna que también devuelve el TransformStamped raw para
     poder calcular age desde header.stamp."""
     try:
-        from rclpy.duration import Duration
-        from rclpy.time import Time
-        timeout = Duration(seconds=float(timeout_sec))
-        ts = tf_lookup(base_frame, tcp_frame, Time(), timeout)
+        ts = _invoke_tf_lookup(tf_lookup, base_frame, tcp_frame, timeout_sec)
     except Exception as exc:
         return None, f"tf_lookup_exception:{type(exc).__name__}:{exc}", None
     tup = _transform_to_tuple7(ts)
@@ -168,24 +201,8 @@ def capture_tcp_pose_base(
         (tuple7_or_none, reason_text). tuple7 es la pose; reason vacío si OK
         o descripción del error si None.
     """
-    Duration: Optional[Any] = None
     try:
-        from rclpy.duration import Duration as _Duration  # lazy
-        Duration = _Duration
-    except ImportError:
-        Duration = None
-
-    try:
-        from rclpy.time import Time
-        timeout: Optional[Any] = (
-            Duration(seconds=float(timeout_sec))
-            if Duration is not None
-            else None
-        )
-        if timeout is not None:
-            ts = tf_lookup(base_frame, tcp_frame, Time(), timeout)
-        else:
-            ts = tf_lookup(base_frame, tcp_frame)
+        ts = _invoke_tf_lookup(tf_lookup, base_frame, tcp_frame, timeout_sec)
     except Exception as exc:
         return None, f"tf_lookup_exception:{type(exc).__name__}:{exc}"
 

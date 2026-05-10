@@ -146,16 +146,13 @@ jobs:
 
       - name: Tests offline ur5_qt_panel (smoke + quality_metrics)
         run: |
-          # Excluir 2 tests con baseline drift pre-existente (F3 audit
-          # 2026-05-10): test_env_vars_have_documentation y
-          # test_env_reads_total_count_under_baseline. Se reactivarán
-          # cuando la deuda de env vars no documentadas esté limpia
-          # (PANEL_QT_PLATFORM y conteo total). Tracking: F4/F6.
+          # F5-followup (2026-05-10): se eliminó el --deselect que ocultaba
+          # 2 tests pre-existentes con drift de baseline. Ya están
+          # arreglados (PANEL_QT_PLATFORM documentada en LEGACY_UNDOC_ENV_VARS,
+          # baseline scattered actualizado a 26).
           python3 -m pytest \
             src/ur5_qt_panel/test/test_imports_qt_panel.py \
             src/ur5_qt_panel/test/test_quality_metrics.py \
-            --deselect src/ur5_qt_panel/test/test_quality_metrics.py::test_env_vars_have_documentation \
-            --deselect src/ur5_qt_panel/test/test_quality_metrics.py::test_env_reads_total_count_under_baseline \
             -v --tb=short || exit 1
 
   policy-checks:

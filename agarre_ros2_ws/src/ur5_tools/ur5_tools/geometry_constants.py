@@ -54,4 +54,20 @@ def base_to_world(
     )
 
 
-__all__ = ["BASE_LINK_IN_WORLD", "world_to_base", "base_to_world"]
+#: Pose default de la cesta de drop en frame ``world`` (m).
+#:
+#: Punto de soltado por defecto cuando un goal ``/pick_place`` no
+#: especifica ``drop_xyz_world``. El valor histórico vivía en
+#: ``ur5_qt_panel/panel_config.py`` como ``BASKET_DROP``; F2-followup
+#: (auditoría 2026-05-10) lo mueve a este módulo neutral para que el
+#: orchestrator pueda referenciarlo sin depender del paquete del panel.
+#: ``panel_config.BASKET_DROP`` se mantiene como re-export.
+BASKET_DROP_WORLD: Tuple[float, float, float] = (-1.30, 0.00, 0.82)
+
+
+__all__ = [
+    "BASE_LINK_IN_WORLD",
+    "BASKET_DROP_WORLD",
+    "world_to_base",
+    "base_to_world",
+]
