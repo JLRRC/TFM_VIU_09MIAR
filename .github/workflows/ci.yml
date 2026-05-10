@@ -141,6 +141,7 @@ jobs:
             src/tfm_orchestrator/test/test_phase_progress.py \
             src/tfm_orchestrator/test/test_cartesian_segments.py \
             src/tfm_orchestrator/test/test_phase_timings.py \
+            src/tfm_orchestrator/test/test_run_id.py \
             -v --tb=short --ignore-glob='*launch*' || exit 1
 
       - name: Tests offline ur5_qt_panel (smoke + quality_metrics)

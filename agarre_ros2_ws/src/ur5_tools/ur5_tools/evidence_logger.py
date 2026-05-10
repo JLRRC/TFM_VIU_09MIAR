@@ -101,9 +101,14 @@ class EvidenceLogger(Node):
         self._events_fp = self._events_path.open("a", encoding="utf-8")
         self._summary_fp = self._summary_path.open("a", encoding="utf-8", newline="")
         self._summary_writer = csv.writer(self._summary_fp)
+        # F5 (auditoría 2026-05-10): pick_run_id propagado a todos los
+        # eventos. Header CSV extendido con la nueva columna.
         self._summary_writer.writerow(
-            ["ts_iso", "kind", "object", "success", "reason"]
+            ["ts_iso", "pick_run_id", "kind", "object", "success", "reason"]
         )
+        # ID activo recibido vía /pick/run_id (latched). Vacío hasta que
+        # el orchestrator publique uno (caso normal: primer goal pick).
+        self._current_pick_run_id: str = ""
 
         self._reliable_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
@@ -141,6 +146,25 @@ class EvidenceLogger(Node):
         )
 
     def _setup_subscriptions(self) -> None:
+        # F5: suscripción al PICK_RUN_ID publicado por el orchestrator.
+        # QoS latched (transient_local + reliable) para recibir el ID
+        # actual incluso si nos suscribimos después del publish.
+        latched_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        self._subs.append(
+            self.create_subscription(
+                String,
+                "/pick/run_id",
+                self._on_pick_run_id,
+                latched_qos,
+                callback_group=self._cb_group,
+            )
+        )
+
         result_topic = str(
             self.get_parameter("desired_grasp_result_topic").value
             or "/desired_grasp/result"
@@ -202,6 +226,21 @@ class EvidenceLogger(Node):
     # Callbacks
     # ------------------------------------------------------------------
 
+    def _on_pick_run_id(self, msg: String) -> None:
+        """F5: actualiza el PICK_RUN_ID activo recibido del orchestrator."""
+        new_id = str(msg.data or "").strip()
+        if not new_id:
+            return
+        prev = self._current_pick_run_id
+        self._current_pick_run_id = new_id
+        self._record(
+            kind="pick_run_id_changed",
+            data={"prev": prev, "current": new_id},
+        )
+        self.get_logger().info(
+            f"[EVIDENCE] pick_run_id={new_id} (was {prev or '<none>'})"
+        )
+
     def _on_grasp_result(self, msg: String) -> None:
         text = str(msg.data or "").strip()
         success, reason = self._parse_grasp_result(text)
@@ -212,6 +251,7 @@ class EvidenceLogger(Node):
         self._summary_writer.writerow(
             [
                 _now_iso(),
+                self._current_pick_run_id,
                 "grasp_result",
                 "",
                 str(bool(success)).lower(),
@@ -235,6 +275,7 @@ class EvidenceLogger(Node):
         self._summary_writer.writerow(
             [
                 _now_iso(),
+                self._current_pick_run_id,
                 "gripper_state",
                 name,
                 str(attached).lower(),
@@ -262,9 +303,12 @@ class EvidenceLogger(Node):
         except Exception:
             mono = 0.0
         entry = {
+            # F5: schema versionado. v2 introduce pick_run_id top-level.
+            "schema_version": 2,
             "ts_iso": _now_iso(),
             "ts_mono": mono,
             "ts_sim_ns": sim_ns,
+            "pick_run_id": self._current_pick_run_id,
             "kind": kind,
             "data": data,
         }

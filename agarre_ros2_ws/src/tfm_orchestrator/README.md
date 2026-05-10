@@ -27,6 +27,22 @@ Gazebo.
 * **`phase_dispatch.py`** — capa pura que invoca services/actions
   externos por cada fase (Open/Close/Attach/Detach + PlanToPose).
 
+* **`run_id.py`** — generador y formateador puro del **PICK_RUN_ID**
+  (8 chars hex). Cada goal `/pick_place` arranca con un ID nuevo que
+  el orchestrator publica en `/pick/run_id` (`std_msgs/String`,
+  latched: TRANSIENT_LOCAL+RELIABLE). Cualquier nodo —`evidence_logger`
+  ya lo hace— puede suscribirse y etiquetar sus eventos con el ID
+  activo, permitiendo correlacionar por sesión sin emparejar
+  timestamps.
+
+  Formato canónico de log:
+
+      [PICK_RUN_ID=<id8>][PHASE=<name>][NODE=<short>][STATUS=<S/F/W/I>] msg key=val ...
+
+  Helper: `tfm_orchestrator.run_id.format_log_line(...)`. El
+  orchestrator usa el wrapper `_run_log(phase, status, msg, **kw)`
+  para no recordar el ID en cada call.
+
 ## Arquitectura objetivo
 
 ```

@@ -51,6 +51,7 @@ from .lifecycle_helpers import (
 from .phase_dispatch import PhaseDispatchContext, dispatch_phase, pose_msg_to_tuple7
 from .phase_timings import PhaseTimings
 from .pick_fsm import PickContext, PickPhase
+from .run_id import format_log_line, generate_run_id
 from .service_clients import (
     PhaseServiceMap,
     call_service_with_timeout,
@@ -270,6 +271,33 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             cancel_callback=self._cancel_callback,
             callback_group=self._cb_group,
         )
+        # F5 (auditoría 2026-05-10): PICK_RUN_ID publisher.
+        # `/pick/run_id` es String latched (transient_local + reliable)
+        # — cualquier nodo que se conecte después recibe el ID actual
+        # de la sesión activa. evidence_logger lo consume.
+        try:
+            from rclpy.qos import (
+                DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy,
+            )
+            from std_msgs.msg import String as StringMsg
+            qos_latched = QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                history=HistoryPolicy.KEEP_LAST,
+            )
+            self._run_id_pub = self.create_publisher(
+                StringMsg, "/pick/run_id", qos_latched
+            )
+            self._run_id_msg_cls = StringMsg
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[ORCHESTRATOR_LC] PICK_RUN_ID publisher init failed: "
+                f"{type(exc).__name__}: {exc} (logs sin run_id)"
+            )
+            self._run_id_pub = None
+            self._run_id_msg_cls = None
+        self._current_run_id: Optional[str] = None
         self._accepts_goals = False  # active gating happens in on_activate
         self._current_state = LifecycleState.INACTIVE
         self._resources = OrchestratorLifecycleResources(
@@ -336,6 +364,15 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
                     f"[ORCHESTRATOR_LC] action_server destroy failed: {exc}"
                 )
             self._action_server = None
+        # F5: liberar publisher de PICK_RUN_ID y limpiar ID activo.
+        if getattr(self, "_run_id_pub", None) is not None:
+            try:
+                self.destroy_publisher(self._run_id_pub)
+            except Exception:
+                pass
+            self._run_id_pub = None
+            self._run_id_msg_cls = None
+        self._current_run_id = None
         self._service_map = None
         self._client_cache = {}
         self._accepts_goals = False
@@ -390,8 +427,46 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         self.get_logger().info("[ORCHESTRATOR_LC] cancel requested by client")
         return CancelResponse.ACCEPT
 
+    def _run_log(
+        self, phase: str, status: str, msg: str, **extra: object
+    ) -> None:
+        """Loguea una línea con el formato canónico PICK_RUN_ID.
+
+        F5 (auditoría 2026-05-10). Si no hay run_id activo (caso raro:
+        log fuera de un goal), usa ``00000000`` como sentinela.
+        Mapea el status a get_logger().info/warn/error según convenga.
+        """
+        run_id = self._current_run_id or "00000000"
+        line = format_log_line(run_id, phase, "orch", status, msg, **extra)
+        if status in ("FAILED",):
+            self.get_logger().error(line)
+        elif status in ("WARN",):
+            self.get_logger().warning(line)
+        else:
+            self.get_logger().info(line)
+
+    def _publish_current_run_id(self) -> None:
+        """Publica ``self._current_run_id`` en ``/pick/run_id`` (latched)."""
+        if self._run_id_pub is None or self._run_id_msg_cls is None:
+            return
+        if not self._current_run_id:
+            return
+        try:
+            msg = self._run_id_msg_cls()
+            msg.data = self._current_run_id
+            self._run_id_pub.publish(msg)
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[ORCHESTRATOR_LC] publish /pick/run_id failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
     def _execute_callback(self, goal_handle) -> PickPlace.Result:
         """Avanza el FSM por las fases hasta DONE/FAILED/ABORTED."""
+        # F5: nuevo PICK_RUN_ID por sesión (un goal == una sesión).
+        self._current_run_id = generate_run_id()
+        self._publish_current_run_id()
+
         request = goal_handle.request
         ctx = PickContext(
             object_name=str(request.object_name),
@@ -409,6 +484,11 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         timings = PhaseTimings()
         timings.mark_session_start(clock_now=start_mono)
         result = PickPlace.Result()
+        self._run_log(
+            "SESSION", "STARTED", "pick_place_goal_received",
+            object=ctx.object_name,
+            drop_xyz_world=f"{ctx.drop_xyz_world}",
+        )
 
         next_phases = [
             (PickPhase.INITIAL_SNAPSHOT, "initial_snapshot_stub"),
@@ -512,8 +592,10 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         result.duration_sec = time.monotonic() - start_mono
         result.cycles_completed = 1
         timings.mark_session_end(clock_now=time.monotonic())
-        self.get_logger().info(
-            f"[ORCHESTRATOR_LC] result success=True duration={result.duration_sec:.2f}s"
+        self._run_log(
+            "SESSION", "FINISHED", "pick_place_goal_done",
+            success=True,
+            duration_sec=f"{result.duration_sec:.2f}",
         )
         return result
 
