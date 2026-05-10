@@ -163,6 +163,15 @@ class PlanToPoseServer(Node):
             self._mode = _raw_mode
         else:
             self._mode = "REAL_BRIDGE" if self._use_real_bridge else "STUB"
+        # F7 audit (2026-05-10): STUB y REAL_BRIDGE están deprecados;
+        # MOVEIT_DIRECT es el modo canónico desde B-iter3-bis. Los modos
+        # legacy se mantienen para compatibilidad de tests offline pero
+        # emiten warning en runtime para señalar la deprecación.
+        if self._mode in {"STUB", "REAL_BRIDGE"}:
+            self.get_logger().warning(
+                f"[PLAN_TO_POSE][DEPRECATED] mode={self._mode} es legacy. "
+                "Usa mode=MOVEIT_DIRECT (default desde 2026-05-03)."
+            )
 
         self._moveit_action_name = str(
             self.get_parameter("moveit_action_name").value or "/move_action"
