@@ -261,14 +261,9 @@ class RosWorker(QObject):
                 )
             except Exception:
                 self._moveit_bridge_hb_qos = None
-        # iter4 audit (2026-05-11): default 60 Hz era irreal — el publisher
-        # va a 24 Hz, así que el callback _on_image se ejecutaba 24 veces/s
-        # consumiendo 50-60% del thread RosWorker (cv_bridge + numpy + QImage).
-        # Como el camera_display_timer renderiza a 5 Hz, procesar más que
-        # ~10 Hz es desperdicio. Override con PANEL_MAX_FPS=N si necesitas más.
-        max_fps = env_float("PANEL_MAX_FPS", 10.0)
+        max_fps = env_float("PANEL_MAX_FPS", 60.0)
         if max_fps <= 0:
-            max_fps = 10.0
+            max_fps = 60.0
         self._min_emit_interval = 1.0 / max_fps
         self._force_realtime = force_realtime
 
