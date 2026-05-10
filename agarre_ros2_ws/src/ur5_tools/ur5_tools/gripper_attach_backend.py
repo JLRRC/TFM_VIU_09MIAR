@@ -2,7 +2,22 @@
 # Ruta/archivo: agarre_ros2_ws/src/ur5_tools/ur5_tools/gripper_attach_backend.py
 # Contenido: Codigo de herramientas, bridges y servicios auxiliares del stack UR5.
 # Uso breve: Se usa en build con colcon y como nodos/servicios ROS 2 del sistema.
-"""Backend de attach para topics del gripper con movimiento fisico en Gazebo."""
+"""Backend de attach para topics del gripper con movimiento fisico en Gazebo.
+
+F3.3 NOTE (2026-05-10): el módulo ya está parcialmente extraído en 6
+mixins (``attach_anchor``, ``attach_demo_transport``, ``attach_gz_cli``,
+``attach_pose_lookup``, ``attach_pose_sub``, ``attach_set_pose``). El
+LifecycleNode ``GripperAttachBackend`` aún concentra wiring (params +
+service registration + lifecycle transitions). La separación final
+propuesta por F9:
+
+  * ``gripper_attach_node.py`` (≤500 LOC): solo Lifecycle + service
+    registration + delegación a mixins.
+  * Mixins existentes: sin cambios estructurales.
+
+Mientras tanto NO añadir métodos nuevos a la clase; cualquier helper
+debe vivir en uno de los mixins existentes o en ``attach_math``.
+"""
 
 from __future__ import annotations
 

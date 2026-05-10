@@ -2,7 +2,22 @@
 # Ruta/archivo: agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_ros.py
 # Contenido: Codigo del panel Qt y de la logica ROS 2 asociada al UR5.
 # Uso breve: Se usa en build con colcon y en ejecucion mediante el entry point panel_v2.
-"""Implementacion del worker ROS para el panel."""
+"""Implementacion del worker ROS para el panel.
+
+F3.1 NOTE (2026-05-10): este módulo concentra ``RosWorker`` (~99
+métodos de Qt+rclpy) y es el monolito principal del panel a nivel ROS.
+La separación profesional es trabajo de **F6**:
+
+  * ``panel_ros_subscribers_mixin.py``: callbacks ``_on_*`` y setup de
+    subs (joint_states, /tf, /system_state, camera).
+  * ``panel_ros_clients_mixin.py``: service clients y wait_for_service.
+  * ``panel_ros_emitters_mixin.py``: ``emit_*`` signals hacia la UI Qt.
+  * ``panel_backend_node`` (rclpy.Node, no Qt): mueve la lógica ROS a
+    un nodo independiente con ActionClient ``/pick_place`` que la UI
+    consume vía signals.
+
+Mientras tanto NO añadir lógica nueva — extraer a panel_*.py existente.
+"""
 from __future__ import annotations
 
 import json

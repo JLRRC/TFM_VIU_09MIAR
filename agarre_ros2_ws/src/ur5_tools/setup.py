@@ -45,7 +45,11 @@ setup(
             "gz_ros_control_guard = ur5_tools.gz_ros_control_guard:main",
             "gripper_attach_backend = ur5_tools.gripper_attach_backend:main",
             "planning_scene_sync = ur5_tools.planning_scene_sync:main",
-            "plan_to_pose_server = ur5_tools.plan_to_pose_server:main",
+            # F3.2 audit (2026-05-10): el entry point ahora apunta a
+            # plan_to_pose_runtime para mantener plan_to_pose_server.py
+            # libre de wiring rclpy.init/executor (separación clara
+            # clase ↔ runtime).
+            "plan_to_pose_server = ur5_tools.plan_to_pose_runtime:main",
             "release_objects_service = ur5_tools.release_objects_service:main",
             "system_state_manager = ur5_tools.system_state_manager:main",
             "world_tf_publisher = ur5_tools.world_tf_publisher:main",

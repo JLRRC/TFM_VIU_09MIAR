@@ -28,7 +28,6 @@ from typing import Optional
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
-from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 import threading
@@ -1414,26 +1413,6 @@ class PlanToPoseServer(Node):
             )
 
 
-def main(args: Optional[list] = None) -> None:
-    rclpy.init(args=args)
-    node = PlanToPoseServer()
-    executor = MultiThreadedExecutor()
-    executor.add_node(node)
-    try:
-        executor.spin()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        executor.shutdown()
-        try:
-            node.destroy_node()
-        except Exception:
-            pass
-        try:
-            rclpy.shutdown()
-        except Exception:
-            pass
-
-
-if __name__ == "__main__":
-    main()
+# F3.2 audit (2026-05-10): main() movido a plan_to_pose_runtime para
+# evitar ciclo de imports y mantener server.py centrado en la clase.
+# El entry_point setup.py apunta ahora a plan_to_pose_runtime:main.
