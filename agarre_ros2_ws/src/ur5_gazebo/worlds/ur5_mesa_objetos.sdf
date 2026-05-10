@@ -17,16 +17,15 @@
       <shadows>true</shadows>
     </scene>
 
-    <!-- iter4 audit (2026-05-11): bajado de 1000 Hz → 200 Hz para
-         reducir CPU del panel UI. /clock pasa de 790 Hz → ~200 Hz,
-         eliminando saturación del thread RosWorker. step=0.005s × 200
-         updates/s = 1.0× tiempo real (sin slowdown). Suficiente para
-         pick & place de rígidos a velocidades bajas; si se observa
-         penetración de objetos, revertir a max_step_size=0.001 +
-         real_time_update_rate=1000. -->
+    <!-- iter4-revert (2026-05-11): VUELTA a 1000 Hz + step 0.001s.
+         El cambio a step=0.005 + 200 Hz causó penetración inicial del
+         UR5 con la mesa + pick_demo fuera de sitio (datos del usuario
+         tras smoke live). La reducción de CPU se obtiene ahora SÓLO vía
+         num_threads=2 en los executors de los nodos backend (commit
+         a4aea65) — eso ya basta sin tocar física. -->
     <physics name="ode_physics" type="ignored">
-      <max_step_size>0.005</max_step_size>
-      <real_time_update_rate>200</real_time_update_rate>
+      <max_step_size>0.001</max_step_size>
+      <real_time_update_rate>1000</real_time_update_rate>
       <dart>
         <collision_detector>bullet</collision_detector>
       </dart>
