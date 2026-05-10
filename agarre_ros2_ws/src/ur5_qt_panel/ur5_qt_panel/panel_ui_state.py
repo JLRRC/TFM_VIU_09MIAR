@@ -205,12 +205,12 @@ def _apply_ui_state_pick_buttons(
     camera_gate_ok: bool,
     test_pending: bool,
 ):
-    """F3-step11d: gating de btn_pick_demo + btn_pick_demo2 + btn_pick_object.
+    """F3-step11d: gating de btn_pick_demo + btn_pick_object.
 
     Calcula pick_ok/pick_reason via _moveit_control_status, demo_ready
     (controllers_ok + tf_ready_state + ee_frame_effective + not _pick_demo_
     executed + _selected_object), pick_object_ready (pick_ok + pose_info_ok +
-    tf_ready_state + _selected_object). Aplica setEnabled+tooltip a los 3.
+    tf_ready_state + _selected_object). Aplica setEnabled+tooltip a los 2.
     Devuelve (pick_enabled, pick_reason) para que apply_ui_state los use
     en el cálculo de _pick_block_reason.
     """
@@ -236,13 +236,6 @@ def _apply_ui_state_pick_buttons(
             panel.btn_pick_demo,
             demo_ready,
             demo_tip if demo_ready else demo_block_tip,
-        )
-    if getattr(panel, "btn_pick_demo2", None) is not None:
-        demo2_block_tip = "Directo2: espera controladores/TF"
-        panel._set_btn_state(
-            panel.btn_pick_demo2,
-            demo_ready,
-            "Secuencia fija con Pose Buena" if demo_ready else demo2_block_tip,
         )
     block_tip = "Ejecuta AUTO TUNE para habilitar"
     pick_object_ready = pick_ok and panel._pose_info_ok and panel._tf_ready_state and bool(panel._selected_object)
@@ -275,7 +268,7 @@ def _apply_ui_state_nav_and_finalize(
     """F3-step11e: nav buttons + busy gating + obj/camera_view + status final.
 
     Aplica gating a btn_home/table/basket; si _script_motion_active, fuerza
-    OFF a btn_test_robot/gripper/pick_demo/pick_demo2/pick_object/tfm_*.
+    OFF a btn_test_robot/gripper/pick_demo/pick_object/tfm_*.
     Habilita obj_panel + camera_view. Calcula _pick_block_reason en función
     de ready_basic/motion_enabled/controllers_ok/pick_enabled. Bloquea
     world_combo/mode_combo/btn_world_browse durante gz_active. Llama a
@@ -296,8 +289,6 @@ def _apply_ui_state_nav_and_finalize(
         if not bool(getattr(panel, "_allow_gripper_while_script_motion", False)):
             panel._set_btn_state(panel.btn_gripper, False, busy_tip)
         panel._set_btn_state(panel.btn_pick_demo, False, busy_tip)
-        if getattr(panel, "btn_pick_demo2", None) is not None:
-            panel._set_btn_state(panel.btn_pick_demo2, False, busy_tip)
         panel._set_btn_state(panel.btn_pick_object, False, busy_tip)
         if panel.tfm_module:
             _set_optional(btn_tfm_infer, False, busy_tip)

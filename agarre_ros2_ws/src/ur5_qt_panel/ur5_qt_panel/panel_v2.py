@@ -1110,10 +1110,8 @@ class ControlPanelV2(
         self.ros_worker.tfm_infer_request.connect(self._on_remote_tfm_infer_request)
         self.ros_worker.tfm_execute_request.connect(self._on_remote_tfm_execute_request)
         self.ros_worker.pick_demo_request.connect(self._on_remote_pick_demo_request)
-        self.ros_worker.direct2_request.connect(self._on_remote_direct2_request)
         self.ros_worker.pick_object_request.connect(self._on_remote_pick_object_request)
         self.ros_worker.object_select_request.connect(self._on_remote_object_select_request)
-        self._direct2_controller = Directo2Controller(self)
         self._ros_worker_started = False
         self._ensure_ros_worker_started()
         self._calibration_ready = False

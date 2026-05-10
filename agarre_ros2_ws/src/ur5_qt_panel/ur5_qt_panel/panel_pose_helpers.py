@@ -8,7 +8,7 @@ helper para descubrir frames preferentes en el grafo TF a partir de
 heuristicas (whitelist + caches + parent/child traversal).
 
 Reexportado desde panel_utils para mantener compatibilidad con
-``panel_tf_diagnose``, ``panel_watchdog``, ``panel_direct2``.
+``panel_tf_diagnose`` y ``panel_watchdog``.
 
 Constantes publicas:
 - BASE_FRAME_CANDIDATES, EE_FRAME_PREFERENCE, WORLD_FRAME_CANDIDATES

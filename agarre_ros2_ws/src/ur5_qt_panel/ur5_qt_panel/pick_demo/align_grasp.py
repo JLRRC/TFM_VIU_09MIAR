@@ -323,7 +323,7 @@ def align_demo_grasp_direct(
             f"align_target_source={align_target_source}"
         )
         # ----------------------------------------------------------
-        # [COMPARE] Directo live vs Directo2 preset — en cada intento de align
+        # [COMPARE] Directo live vs preset — en cada intento de align
         # ----------------------------------------------------------
         try:
             _cmp_obj = obj_base  # base_link

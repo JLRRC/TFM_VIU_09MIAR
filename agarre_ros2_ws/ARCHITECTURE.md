@@ -98,14 +98,11 @@ panel_v2.py  (entry point, 2859 líneas — orquestador de UI)
 │   ├── panel_watchdog.py         — watchdog de timeout de pasos
 │   └── panel_process.py         — gestión de subprocesos (Gazebo, etc.)
 │
-├── UTILIDADES PURAS
-│   ├── ur5_kinematics.py         ★ IK/FK DH analítico — sin dependencias ROS
-│   ├── panel_utils.py            — formatters y helpers de presentación
-│   ├── logging_utils.py          — configuración de logging
-│   └── step_pipeline_helpers.py  — helpers para pipeline de pasos
-│
-└── REFERENCIA (solo lectura)
-    └── panel_direct2.py          — implementación DIRECTO2 (golden reference)
+└── UTILIDADES PURAS
+    ├── ur5_kinematics.py         ★ IK/FK DH analítico — sin dependencias ROS
+    ├── panel_utils.py            — formatters y helpers de presentación
+    ├── logging_utils.py          — configuración de logging
+    └── step_pipeline_helpers.py  — helpers para pipeline de pasos
 ```
 
 ★ = módulo sin dependencias ROS/Qt, unit-testable directamente.

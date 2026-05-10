@@ -106,5 +106,4 @@ def list_known_move_group_killers() -> List[str]:
         "scripts/fresh_build.sh",
         "scripts/debug_bridge_isolated.sh",
         "scripts/run_directo_validation.sh",
-        "scripts/run_directo2_validation.sh",
     ]

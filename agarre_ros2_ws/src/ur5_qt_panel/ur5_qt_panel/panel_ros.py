@@ -117,7 +117,6 @@ class RosWorker(QObject):
     tfm_infer_request = pyqtSignal(str)
     tfm_execute_request = pyqtSignal(str)
     pick_demo_request = pyqtSignal(str)
-    direct2_request = pyqtSignal(str)
     pick_object_request = pyqtSignal(str)
     object_select_request = pyqtSignal(str, str)
 
@@ -184,7 +183,6 @@ class RosWorker(QObject):
         self._tfm_execute_sub = None
         self._tfm_execute_srv = None
         self._pick_demo_srv = None
-        self._direct2_srv = None
         self._pick_object_sub = None
         self._pick_object_srv = None
         self._select_object_sub = None
@@ -826,12 +824,6 @@ class RosWorker(QObject):
     def _emit_pick_demo_request(self, source: str) -> None:
         _safe_signal_emit(self.pick_demo_request, source)
 
-    def _emit_direct2_request(self, source: str) -> None:
-        try:
-            self.direct2_request.emit(source)
-        except RuntimeError:
-            pass
-
     def _emit_object_select_request(self, name: str, source: str) -> None:
         _safe_signal_emit(self.object_select_request, name, source)
 
@@ -979,38 +971,6 @@ class RosWorker(QObject):
             pass
         return response
 
-    def _on_direct2_service(self, _request: object, response: object) -> object:
-        request_id = f"direct2-{time.monotonic_ns()}"
-        done = threading.Event()
-        result: Dict[str, object] = {
-            "success": False,
-            "message": "timeout esperando confirmacion del panel",
-        }
-        with self._lock:
-            self._direct2_pending[request_id] = (done, result)
-        self._safe_log(
-            f"[ROS][DIRECT2][SERVICE] request_id={request_id} waiting_ack=true"
-        )
-        self._emit_direct2_request(f"service:{self._direct2_service}#{request_id}")
-        ack_ok = done.wait(timeout=max(0.1, self._direct2_timeout_sec))
-        with self._lock:
-            _pending = self._direct2_pending.pop(request_id, None)
-        if _pending is not None:
-            _done, payload = _pending
-            result = payload
-        self._safe_log(
-            "[ROS][DIRECT2][SERVICE] "
-            f"request_id={request_id} ack={str(bool(ack_ok)).lower()} "
-            f"success={str(bool(result.get('success', False))).lower()} "
-            f"message={str(result.get('message', '') or 'n/a')}"
-        )
-        try:
-            response.success = bool(result.get("success", False))
-            response.message = str(result.get("message", "") or "")
-        except Exception:
-            pass
-        return response
-
     def _on_select_object_topic(self, msg: "String") -> None:
         try:
             name = str(getattr(msg, "data", "") or "").strip()
@@ -1075,25 +1035,6 @@ class RosWorker(QObject):
         payload["message"] = str(message or "")
         self._safe_log(
             f"[ROS][PICK_DEMO][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
-        )
-        done.set()
-
-    def complete_direct2_request(self, request_id: str, success: bool, message: str) -> None:
-        req_id = str(request_id or "").strip()
-        if not req_id:
-            return
-        with self._lock:
-            pending = self._direct2_pending.get(req_id)
-        if pending is None:
-            self._safe_log(
-                f"[ROS][DIRECT2][ACK] request_id={req_id} pending=false success={str(bool(success)).lower()} message={message or 'n/a'}"
-            )
-            return
-        done, payload = pending
-        payload["success"] = bool(success)
-        payload["message"] = str(message or "")
-        self._safe_log(
-            f"[ROS][DIRECT2][ACK] request_id={req_id} pending=true success={str(bool(success)).lower()} message={message or 'n/a'}"
         )
         done.set()
 

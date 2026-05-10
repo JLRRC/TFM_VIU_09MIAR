@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Launch the real panel offscreen and trigger DIRECTO through the real UI path.
 
-Análogo a run_directo2_button_offscreen.py pero para el botón DIRECTO (btn_pick_demo).
+Dispara el botón DIRECTO (btn_pick_demo) sobre la UI real del panel.
 Este helper es observacional/no invasivo: no parchea código de producción.
 Si el stack no está arrancado, hace clic en "Start Gazebo" y "Start bridge" y
 espera a que el sistema esté listo antes de disparar el botón de Agarre Directo.
