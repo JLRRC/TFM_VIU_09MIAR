@@ -52,7 +52,11 @@ jobs:
         run: |
           set -euo pipefail
           apt-get update
-          apt-get install -y xvfb python3-pip
+          apt-get install -y --no-install-recommends \
+            xvfb x11-utils python3-pip \
+            ros-jazzy-gz-ros2-control \
+            ros-jazzy-ros-gz-bridge ros-jazzy-ros-gz-sim \
+            ros-jazzy-moveit-py
           pip3 install --break-system-packages jsonschema PyQt5 || \
             pip3 install jsonschema PyQt5
 
@@ -67,13 +71,13 @@ jobs:
             --skip-keys "PyQt5 python3-pyqt5" \
             || true
 
-      - name: colcon build
+      - name: colcon build (incluye ur5_gazebo)
         shell: bash
         working-directory: agarre_ros2_ws
         run: |
           set -euo pipefail
           source /opt/ros/jazzy/setup.bash
-          colcon build --symlink-install
+          colcon build --symlink-install --event-handlers console_direct+
 
       - name: T35 × ${{ inputs.cycles || '3' }} ciclos (Xvfb + headless)
         shell: bash
@@ -111,3 +115,13 @@ jobs:
             agarre_ros2_ws/log/
             agarre_ros2_ws/auditoria/pick_*_pytest_*.log
           retention-days: 14
+
+      - name: Upload KPI JSON (F7)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-t35-kpi
+          path: |
+            agarre_ros2_ws/log/pick_kpi_*.json
+          retention-days: 30
+          if-no-files-found: ignore
