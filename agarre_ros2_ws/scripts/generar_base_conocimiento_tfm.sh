@@ -400,7 +400,7 @@ H2 "12.2 ur5_mock_controllers.yaml"
 SAFE_CAT "src/ur5_bringup/config/ur5_mock_controllers.yaml"
 
 H2 "12.3 Bridge YAML base"
-SAFE_CAT "scripts/bridge_cameras.yaml" 60
+SAFE_CAT "scripts/ros_gz_bridge.yaml" 60
 
 H2 "12.4 gz_pose_bridge.py"
 SAFE_GREP "gz-pose-bridge-fns" "^def |^class " "src/ur5_tools/ur5_tools/gz_pose_bridge.py"

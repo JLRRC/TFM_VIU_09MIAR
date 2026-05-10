@@ -115,7 +115,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
 
     gz_partition = resolve_gz_partition(log_dir)
 
-    base_yaml = os.path.join(ws_dir, "scripts", "bridge_cameras.yaml")
+    base_yaml = os.path.join(ws_dir, "scripts", "ros_gz_bridge.yaml")
     panel_settings_yaml = os.path.join(
         ws_dir, "src", "ur5_qt_panel", "config", "panel_settings.yaml"
     )
@@ -381,10 +381,7 @@ def generate_launch_description():
             {"use_sim_time": use_sim_time},
             {"controller_manager": LaunchConfiguration("controller_manager")},
             {"wait_for_clock": True},
-            # F1.9 (audit-v4 2026-05-08): subido 12 → 60s. En sim con muchos
-            # plugins (10+ detachable joints), gz sim puede tardar > 12s en
-            # publicar el primer /clock. Logging periódico cada 5s ahora
-            # documenta el progreso.
+            # 60 s necesarios por número de plugins gz (ver docs/CHANGELOG_TUNING.md).
             {"clock_timeout_sec": 60.0},
             {"service_timeout_sec": 8.0},
             {"autostart": True},

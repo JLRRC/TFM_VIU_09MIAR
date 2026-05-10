@@ -22,11 +22,12 @@ class ZombieCheckResult(NamedTuple):
     """Resultado del chequeo de zombies de un proceso."""
 
     process_name: str
-    process_count: int  # No usar 'count' (colisión con tuple.count).
-    healthy: bool  # True si process_count == 0 (no zombies; el primer
-                  # proceso real es el "vivo" — el chequeo se hace
-                  # post-cleanup, así que la expectativa es 0 antes
-                  # de relanzar el stack).
+    # No usar 'count' (colisión con tuple.count).
+    process_count: int
+    # True si process_count == 0 (no zombies; el primer proceso real es el
+    # "vivo" — el chequeo se hace post-cleanup, así que la expectativa es 0
+    # antes de relanzar el stack).
+    healthy: bool
 
 
 def count_processes_with_name(

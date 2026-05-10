@@ -55,8 +55,9 @@ PANEL_MOVEIT_BRIDGE_ACCEL_SCALE: "0.30"
 PANEL_DIRECT_DEBUG_ROOT: /home/laboratorio/TFM/historico
 
 # --- pick_demo: GRASP_DOWN segmented IK descent --------------------------------
+# Para historial de tuning ver docs/CHANGELOG_TUNING.md.
 PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M: "0.005"
-PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN: "0"  # Fix 2026-05-04: cartesian devuelve fraction=0 en este setup
+PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN: "0"
 PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT: "0.035"
 PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL: "0.200"
 PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M: "0.005"
@@ -70,9 +71,7 @@ PANEL_PICK_DEMO_GRASP_DOWN_STRICT_DIST_TOL_M: "0.012"
 PANEL_PICK_DEMO_GRASP_DOWN_MAX_ATTEMPTS: "4"
 PANEL_PICK_DEMO_GRASP_DOWN_UTIL_XY_TOL_M: "0.015"
 
-# --- pick_demo: transport runtime no_progress tuning (Fix 2026-05-04) ----------
-# Con stall=8s y min_progress=8mm el detector cortaba en los últimos ~28mm a
-# la cesta. 15s + 3mm permite que el FollowJointTrajectory termine el goal.
+# --- pick_demo: transport runtime no_progress tuning ---------------------------
 PANEL_PICK_DEMO_TRANSPORT_RUNTIME_STALL_TIMEOUT_SEC: "15.0"
 PANEL_PICK_DEMO_TRANSPORT_RUNTIME_MIN_PROGRESS_M: "0.003"
 
@@ -87,8 +86,6 @@ PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M: "0.020"
 
 # --- pick_demo: Gripper close confirmation -------------------------------------
 PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M: "0.020"
-# Fix 2026-05-04 (bug falso positivo cierre): 3.0s+10mm permitía confirmar
-# "cerrado" con la pinza casi abierta. 8.0s+60mm exige cierre real.
 PANEL_PICK_DEMO_CLOSE_CONFIRM_TIMEOUT_SEC: "8.0"
 PANEL_PICK_DEMO_CLOSE_MIN_DELTA_SUM: "0.060"
 PANEL_PICK_DEMO_GRIPPER_TARGET_TOL_M: "0.12"
@@ -100,11 +97,6 @@ PANEL_PICK_OBJECT_GRASP_TF_STABLE_MIN_OK: "4"
 
 # --- pick_demo: Approach coarse gate -------------------------------------------
 PANEL_PICK_DEMO_APPROACH_COARSE_EXTRA_Z_M: "0.035"
-# Tolerancias subidas 2026-05-06 tras validación live: la FK del panel (DH UR5
-# estándar, D[5]=0.0823) tiene un sesgo determinista de ~13mm respecto al TF
-# publicado por el RSP (URDF/ur_macro). Las anteriores 0.012m fallaban el gate
-# de forma sistemática por ~1mm. 0.020m da margen para el sesgo + ruido sin
-# comprometer el agarre (RG2 abre 0.055m, objeto 0.025m alto).
 PANEL_PICK_DEMO_APPROACH_COARSE_GATE_XY_TOL_M: "0.020"
 PANEL_PICK_DEMO_APPROACH_COARSE_GATE_Z_TOL_M: "0.020"
 

@@ -84,11 +84,8 @@ def generate_launch_description():
         parameters=[
             {"use_sim_time": use_sim_time},
             moveit_config.to_dict(),
-            # 2026-05-07 (rondas 11-26):
-            # 1.2 → CONTROL_FAILED 9s | 4.0 → 71s | 10.0 → 105s | 30.0 → 287s
-            # Subido a 100 + max_velocity_scaling_factor 0.3 (en
-            # plan_to_pose_moveit_direct.py) para que la trayectoria sea más
-            # lenta Y el upper bound más holgado.
+            # Escalas y márgenes ajustados para sim_per_wall ≈ 0.58
+            # (ver docs/CHANGELOG_TUNING.md).
             {"trajectory_execution.allowed_execution_duration_scaling": 100.0},
             {"trajectory_execution.allowed_goal_duration_margin": 120.0},
             {"trajectory_execution.allowed_start_tolerance": 0.15},

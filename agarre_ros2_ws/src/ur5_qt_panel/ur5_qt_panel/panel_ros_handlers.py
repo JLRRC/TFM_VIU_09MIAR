@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 
 def parse_moveit_result_payload(
@@ -210,7 +210,7 @@ def format_qos(
 
 
 def validate_joint_state_payload(
-    payload: Optional[dict],
+    payload: Optional[Dict[str, Any]],
     wall_ts: float,
     now_ts: float,
     timeout_sec: float,

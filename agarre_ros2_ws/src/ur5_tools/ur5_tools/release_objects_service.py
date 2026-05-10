@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import copy
-import math
 import os
 import shutil
 import subprocess
@@ -1071,11 +1070,9 @@ class ReleaseObjectsService(LifecycleNode):
         """Wrapper sobre helper puro (F8 audit 2026-05-10)."""
         return _pure_quat_from_rpy(roll, pitch, yaw)
 
-
     # ------------------------------------------------------------------
     # Lifecycle transitions (F13b — observable, sin re-creación de recursos)
     # ------------------------------------------------------------------
-
     def on_configure(self, _state) -> TransitionCallbackReturn:
         self.get_logger().info("[LIFECYCLE] ReleaseObjectsService configured")
         return TransitionCallbackReturn.SUCCESS

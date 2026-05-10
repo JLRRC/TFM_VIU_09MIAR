@@ -296,7 +296,7 @@ class PanelSettings:
                 "PANEL_JOINT_LIMITS_YAML",
                 os.path.join(ws_dir, "src", "ur5_moveit_config", "config", "joint_limits.yaml"),
             ),
-            bridge_base_yaml=os.path.join(scripts_dir, "bridge_cameras.yaml"),
+            bridge_base_yaml=os.path.join(scripts_dir, "ros_gz_bridge.yaml"),
             auto_start_bridge=_env_bool("PANEL_AUTO_BRIDGE", True),
             auto_start_bridge_delay_ms=_env_int("PANEL_AUTO_BRIDGE_DELAY_MS", 1200),
             auto_start_bridge_max_retries=_env_int("PANEL_AUTO_BRIDGE_MAX_RETRIES", 30),
