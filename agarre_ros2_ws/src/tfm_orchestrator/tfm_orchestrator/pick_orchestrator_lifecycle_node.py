@@ -870,7 +870,7 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
 def main(args: Optional[list] = None) -> None:
     rclpy.init(args=args)
     node = PickOrchestratorLifecycleNode()
-    executor = MultiThreadedExecutor()
+    executor = MultiThreadedExecutor(num_threads=2)  # iter4-bis: limitar threads (antes default = cpu_count = 8)
     executor.add_node(node)
     try:
         executor.spin()
