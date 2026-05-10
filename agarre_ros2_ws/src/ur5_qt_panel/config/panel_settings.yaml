@@ -15,8 +15,10 @@ panel_settings:
   pose_info_log_period: 2.0
   critical_clock_timeout_sec: 5.0
   critical_pose_timeout_sec: 60.0
-  camera_ready_frames: 3
-  camera_init_grace_sec: 4.0
+  # iter4 audit (2026-05-11): defaults bajados para acelerar arranque
+  # cámara. Originales: 3 frames / 4.0s grace / 2.5s max_age.
+  camera_ready_frames: 1
+  camera_init_grace_sec: 1.5
   camera_ready_max_age_sec: 2.5
   tf_init_grace_sec: 3.0
   controller_start_grace_sec: 12.0

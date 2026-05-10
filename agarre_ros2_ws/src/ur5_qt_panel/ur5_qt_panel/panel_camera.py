@@ -616,8 +616,11 @@ class CameraController:
             return
         if not p._bridge_running:
             if p._debug_logs_enabled:
-                p._log("[CAMERA] Bridge aún no activo, reintentando auto-conexión en 1s")
-            QTimer.singleShot(1000, self.auto_connect)
+                p._log("[CAMERA] Bridge aún no activo, reintentando auto-conexión en 250ms")
+            # iter4 audit (2026-05-11): retries 1000ms → 250ms para acelerar
+            # arranque cámara (~70s → ~15-25s). El polling más agresivo es
+            # aceptable porque solo se ejecuta durante el periodo inicial.
+            QTimer.singleShot(250, self.auto_connect)
             return
         if p._camera_subscribed and not self._subscription_stale():
             return
@@ -628,12 +631,12 @@ class CameraController:
         if not p.ros_worker.node_ready():
             p._log_camera_diagnostics("auto-connect esperando nodo ROS")
             if p._debug_logs_enabled:
-                p._log("[CAMERA] Nodo ROS aún no listo, reintentando conexión en 1s")
-            QTimer.singleShot(1000, self.auto_connect)
+                p._log("[CAMERA] Nodo ROS aún no listo, reintentando conexión en 250ms")
+            QTimer.singleShot(250, self.auto_connect)
             return
         if p.camera_topic_combo.count() == 0:
             self.refresh_topics()
-            QTimer.singleShot(1500, self.auto_connect)
+            QTimer.singleShot(400, self.auto_connect)
             return
         if p.camera_topic_combo.currentText().strip().endswith("/depth_image"):
             rgb_idx = p.camera_topic_combo.findText("/camera_overhead/image")
