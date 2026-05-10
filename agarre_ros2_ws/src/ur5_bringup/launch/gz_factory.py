@@ -59,16 +59,22 @@ def build_gz_actions(
     """Construye las actions de Gazebo + bridges para el stack UR5.
 
     Incluye:
-      - ``gz sim`` headless o GUI (según ``headless``).
+      - ``gz sim -s`` (servidor único, mismo proceso en headless o GUI mode).
+      - ``gz sim -g`` (cliente GUI, sólo si ``headless=false``).
       - ``ros_gz_bridge/parameter_bridge`` con el YAML runtime.
       - ``ur5_tools/gz_ros_control_guard`` (guardia controlador).
       - ``ur5_tools/gz_pose_bridge`` (publicación de poses Gazebo).
       - ``RegisterEventHandler`` para shutdown coordinado al exit
         de cualquier proceso crítico.
 
+    F1.2 audit (2026-05-10): consolidado el servidor en una sola
+    ``ExecuteProcess`` ``gz_server`` (antes había ``gz_headless`` y
+    ``gz_gui_server`` con el mismo comando, mutuamente exclusivos por
+    condition) — simplifica el wiring y el shutdown coordinado.
+
     Cada acción está condicionada por su flag de launch.
     """
-    gz_headless = ExecuteProcess(
+    gz_server = ExecuteProcess(
         cmd=[
             "gz",
             "sim",
@@ -77,18 +83,6 @@ def build_gz_actions(
             world_file,
         ],
         output="screen",
-        condition=IfCondition(headless),
-    )
-    gz_gui_server = ExecuteProcess(
-        cmd=[
-            "gz",
-            "sim",
-            "-s",
-            "-r",
-            world_file,
-        ],
-        output="screen",
-        condition=UnlessCondition(headless),
     )
     # F-audit (2026-05-10): forzar `--render-engine` también en el cliente
     # GUI. Algunos sistemas (Mesa + libOgreNextMain.so 2.3.3) segfaultean
@@ -104,22 +98,13 @@ def build_gz_actions(
         condition=UnlessCondition(headless),
     )
     gz_group = GroupAction(
-        actions=[gz_headless, gz_gui_server, gz_gui],
+        actions=[gz_server, gz_gui],
         condition=IfCondition(launch_gazebo),
     )
-    gz_shutdown_headless = RegisterEventHandler(
+    gz_shutdown_server = RegisterEventHandler(
         OnProcessExit(
-            target_action=gz_headless,
-            on_exit=[EmitEvent(event=Shutdown(reason="gz sim exited (headless)"))],
-        ),
-        condition=IfCondition(launch_gazebo),
-    )
-    gz_shutdown_gui = RegisterEventHandler(
-        OnProcessExit(
-            target_action=gz_gui_server,
-            on_exit=[
-                EmitEvent(event=Shutdown(reason="gz sim server exited (gui mode)"))
-            ],
+            target_action=gz_server,
+            on_exit=[EmitEvent(event=Shutdown(reason="gz sim server exited"))],
         ),
         condition=IfCondition(launch_gazebo),
     )
@@ -177,8 +162,7 @@ def build_gz_actions(
 
     return [
         gz_group,
-        gz_shutdown_headless,
-        gz_shutdown_gui,
+        gz_shutdown_server,
         bridge,
         bridge_guard,
         gz_control_guard,

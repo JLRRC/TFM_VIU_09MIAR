@@ -420,7 +420,6 @@ def generate_launch_description():
         launch_release_service=launch_release_service,
         launch_attach_backend=launch_attach_backend,
         launch_scene_sync=launch_scene_sync,
-        launch_moveit_bridge=LaunchConfiguration("launch_moveit_bridge"),
         launch_tf_geometry_service=LaunchConfiguration(
             "launch_tf_geometry_service"
         ),

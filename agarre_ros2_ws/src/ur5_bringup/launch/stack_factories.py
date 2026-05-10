@@ -263,7 +263,6 @@ def build_launch_arguments(
             "attach_backend_max_dist_m",
             default_value=resolve_runtime_fn("ATTACH_BACKEND_MAX_DIST_M", "0.08"),
         ),
-        DeclareLaunchArgument("launch_moveit_bridge", default_value="true"),
         DeclareLaunchArgument("launch_tf_geometry_service", default_value="true"),
         DeclareLaunchArgument("launch_object_pose_resolver", default_value="true"),
         DeclareLaunchArgument("launch_plan_to_pose_server", default_value="true"),

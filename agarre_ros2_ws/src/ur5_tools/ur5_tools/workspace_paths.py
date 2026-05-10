@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Optional
 
 
-# Default histórico (memoria de proyecto). Si la env var WS_DIR no está
-# definida, se usa este path absoluto. Mantenido aquí para que sea la
-# única fuente de verdad.
-_DEFAULT_WS_DIR = "/home/laboratorio/TFM/agarre_ros2_ws"
+# F1.3 audit (2026-05-10): default portable usando $HOME en lugar del
+# path absoluto histórico /home/laboratorio/. Si la env var WS_DIR no
+# está definida, se usa este path basado en el home del usuario.
+_DEFAULT_WS_DIR = "~/TFM/agarre_ros2_ws"
 _DEFAULT_VISION_DIR = "~/TFM/agarre_inteligente"
 
 

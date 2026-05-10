@@ -102,7 +102,7 @@ def test_ur5_stack_under_800_lines():
              "controller_manager", "launch_moveit", "launch_world_tf",
              "launch_system_state", "launch_release_service",
              "launch_attach_backend", "launch_scene_sync",
-             "launch_moveit_bridge", "launch_tf_geometry_service",
+             "launch_tf_geometry_service",
              "demo_transport_objects", "bridge_params", "system_state_yaml",
              "system_state_extras", "attach_extras"),
         ),

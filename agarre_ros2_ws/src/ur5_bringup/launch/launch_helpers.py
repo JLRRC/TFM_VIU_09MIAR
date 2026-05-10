@@ -182,9 +182,20 @@ def load_runtime_defaults(yaml_path: str | None = None) -> dict[str, str]:
     return {str(k): "" if v is None else str(v) for k, v in data.items()}
 
 
+# F1.3 audit (2026-05-10): default portable usando $HOME en vez de
+# /home/laboratorio/TFM/historico. Cualquier override desde el operador
+# vía env var PANEL_DIRECT_DEBUG_ROOT sigue funcionando.
+_DEFAULT_DEBUG_ROOT = os.path.join(
+    os.environ.get("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws")),
+    "..",
+    "historico",
+)
+_DEFAULT_DEBUG_ROOT = os.path.normpath(_DEFAULT_DEBUG_ROOT)
+
+
 PANEL_ENV_DEFAULTS: list[tuple[str, str]] = [
     # Debug / audit root
-    ("PANEL_DIRECT_DEBUG_ROOT", "/home/laboratorio/TFM/historico"),
+    ("PANEL_DIRECT_DEBUG_ROOT", _DEFAULT_DEBUG_ROOT),
     # GRASP_DOWN segmented IK descent
     ("PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M", "0.005"),
     # Fix 2026-05-04: cartesian devuelve fraction=0 en este setup.

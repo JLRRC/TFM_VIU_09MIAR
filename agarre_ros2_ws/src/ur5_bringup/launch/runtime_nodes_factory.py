@@ -216,7 +216,6 @@ def build_runtime_node_actions(
     launch_release_service: LaunchConfiguration,
     launch_attach_backend: LaunchConfiguration,
     launch_scene_sync: LaunchConfiguration,
-    launch_moveit_bridge: LaunchConfiguration,
     launch_tf_geometry_service: LaunchConfiguration,
     launch_object_pose_resolver: LaunchConfiguration,
     launch_plan_to_pose_server: LaunchConfiguration,

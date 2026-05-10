@@ -21,9 +21,13 @@ def test_ws_dir_uses_env_var_when_set() -> None:
 
 
 def test_ws_dir_falls_back_to_default() -> None:
+    """F1.3: default expandido desde ``~/TFM/agarre_ros2_ws`` (portable)."""
+    import os as _os
     env = {k: v for k, v in __import__("os").environ.items() if k != "WS_DIR"}
     with mock.patch.dict("os.environ", env, clear=True):
-        assert get_ws_dir() == "/home/laboratorio/TFM/agarre_ros2_ws"
+        assert get_ws_dir() == _os.path.expanduser("~/TFM/agarre_ros2_ws")
+        # Garantía explícita: nunca empieza por path absoluto hardcoded.
+        assert get_ws_dir() != "/home/laboratorio/TFM/agarre_ros2_ws" or "laboratorio" in _os.path.expanduser("~")
 
 
 def test_ws_dir_caller_default_overrides_built_in() -> None:
