@@ -1,6 +1,28 @@
 # Ruta/archivo: agarre_ros2_ws/src/ur5_moveit_config/config/moveit_controllers.yaml
 # Contenido: Configuracion MoveIt del UR5 para planificacion y ejecucion.
 # Uso breve: MoveIt y ros2 launch lo usan durante el bringup del robot.
+#
+# F4.1 audit (2026-05-10) — P-04 documentación de la decisión:
+#
+# El gripper RG2 (joints `rg2_finger_joint1`, `rg2_finger_joint2`) NO
+# está incluido en este controller manager. Es una **decisión
+# arquitectónica deliberada**, no un olvido:
+#
+#   * El RG2 simplificado del workspace es prismático con limit
+#     [0, 0.0425] m; no necesita planificación de trayectoria.
+#   * El control físico (Gazebo Sim) y lógico (attach) se hace vía
+#     servicios `/gripper/open` y `/gripper/close` expuestos por
+#     el LifecycleNode `gripper_attach_backend` (ur5_tools).
+#   * El pipeline de pick está orquestado por
+#     `pick_orchestrator_lifecycle` (action /pick_place); MoveIt sólo
+#     se encarga del planning del brazo (group "manipulator").
+#   * SRDF declara las colisiones del gripper para que MoveIt valide
+#     trayectorias del brazo sin chocar con los dedos.
+#
+# Si en el futuro se quisiera planificar gripper bajo MoveIt (por
+# ejemplo, para integrar MoveIt Pick & Place), añadir aquí un nuevo
+# controller `gripper_controller` con joints rg2_finger_joint1/2 y
+# crear un planning_group `gripper` en el SRDF.
 moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 moveit_simple_controller_manager:
   controller_names:

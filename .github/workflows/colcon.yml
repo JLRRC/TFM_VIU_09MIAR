@@ -215,3 +215,66 @@ jobs:
           PYTHONPATH: .
         run: |
           pytest -q test/test_lifecycle_contract_offline.py
+
+      # ---------------------------------------------------------------
+      # F4 audit (2026-05-10): tests nuevos del plan F0-F10.
+      # ---------------------------------------------------------------
+      - name: pytest geometry YAML consistency (F2.3)
+        working-directory: agarre_ros2_ws/src/ur5_tools
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q test/test_geometry_yaml_consistency.py
+
+      - name: pytest moveit controllers design contract (F4.1)
+        working-directory: agarre_ros2_ws/src/ur5_moveit_config
+        run: |
+          pytest -q test/test_moveit_controllers_design.py
+
+      - name: pytest panel no runtime subprocess (F4.2)
+        working-directory: agarre_ros2_ws
+        env:
+          PYTHONPATH: src/ur5_qt_panel
+        run: |
+          pytest -q src/ur5_qt_panel/test/test_panel_no_runtime_subprocess.py
+
+      - name: pytest env vars documented (F4.3)
+        working-directory: agarre_ros2_ws
+        env:
+          PYTHONPATH: src/ur5_bringup
+        run: |
+          pytest -q src/ur5_bringup/test/test_env_vars_documented.py
+
+      # ---------------------------------------------------------------
+      # F4.4 audit (2026-05-10): coverage del subset offline subido como
+      # artifact CI (resuelve P-18: cobertura visible en cada PR).
+      # ---------------------------------------------------------------
+      - name: Run coverage on offline subset
+        working-directory: agarre_ros2_ws
+        env:
+          PYTHONPATH: src/ur5_qt_panel:src/ur5_tools:src/ur5_bringup:src/tfm_orchestrator
+        run: |
+          pip install coverage
+          coverage run --source=src/tfm_orchestrator/tfm_orchestrator,src/ur5_tools/ur5_tools,src/ur5_qt_panel/ur5_qt_panel \
+            -m pytest -q \
+              src/tfm_orchestrator/test/test_pick_fsm.py \
+              src/tfm_orchestrator/test/test_pick_gates.py \
+              src/tfm_orchestrator/test/test_phase_timings.py \
+              src/ur5_tools/test/test_geometry_yaml_consistency.py \
+              src/ur5_tools/test/test_workspace_paths.py \
+              src/ur5_qt_panel/test/test_panel_no_runtime_subprocess.py \
+              src/ur5_bringup/test/test_env_vars_documented.py \
+            || true
+          coverage html -d coverage_html || true
+          coverage xml -o coverage.xml || true
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-offline
+          path: |
+            agarre_ros2_ws/coverage_html/
+            agarre_ros2_ws/coverage.xml
+          retention-days: 14
+          if-no-files-found: ignore
