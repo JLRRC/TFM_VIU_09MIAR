@@ -16,9 +16,9 @@ Uso:
     ros2 lifecycle set /pick_orchestrator_lifecycle cleanup
     ros2 lifecycle set /pick_orchestrator_lifecycle shutdown
 
-Diferencias con ``pick_orchestrator_node.py`` (F5/F6):
+Características clave (LifecycleNode canónico desde F9):
 
-* Hereda de ``rclpy.lifecycle.LifecycleNode`` en lugar de ``Node``.
+* Hereda de ``rclpy.lifecycle.LifecycleNode``.
 * Action server `/pick_place` se crea en ``on_configure`` y se
   habilita/deshabilita en activate/deactivate.
 * Goals se rechazan con razón ``node_not_active:<state>`` cuando el
@@ -391,7 +391,7 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         return CancelResponse.ACCEPT
 
     def _execute_callback(self, goal_handle) -> PickPlace.Result:
-        """Misma lógica que pick_orchestrator_node._execute_callback."""
+        """Avanza el FSM por las fases hasta DONE/FAILED/ABORTED."""
         request = goal_handle.request
         ctx = PickContext(
             object_name=str(request.object_name),
@@ -553,8 +553,7 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
     def _dispatch_phase_service(
         self, phase: PickPhase, ctx: PickContext
     ) -> tuple[bool, str]:
-        """F5-step1: delega al módulo puro phase_dispatch para paridad
-        funcional con pick_orchestrator_node.py (Node legacy)."""
+        """Delega al módulo puro phase_dispatch."""
         dctx = PhaseDispatchContext(
             node=self,
             service_map=self._service_map or PhaseServiceMap(),

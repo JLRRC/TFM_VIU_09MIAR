@@ -5,8 +5,9 @@
 
 Clase ``PhaseTimings`` que mantiene timestamps monotónicos start/end
 por cada fase del FSM (PickPhase). Cero dependencia ROS — se puede
-testear en pytest puro y se integra en ``pick_orchestrator_node`` con
-``time.monotonic`` como reloj inyectado.
+testear en pytest puro y se integra en
+``pick_orchestrator_lifecycle_node`` con ``time.monotonic`` como reloj
+inyectado.
 
 Uso típico:
 

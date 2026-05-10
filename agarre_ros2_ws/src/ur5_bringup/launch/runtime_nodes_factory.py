@@ -185,7 +185,7 @@ def _build_orchestrator_service_nodes(
     # ambas transitions automáticas via auto_activate dentro del propio
     # nodo (F9 pattern). Default true para que el dispatcher
     # PANEL_PICK_DEMO_USE_ORCHESTRATOR=1 funcione fuera de la caja.
-    pick_orchestrator_node = Node(
+    pick_orchestrator_lifecycle_node = Node(
         package="tfm_orchestrator",
         executable="pick_orchestrator_lifecycle",
         output="screen",
@@ -196,7 +196,7 @@ def _build_orchestrator_service_nodes(
         ],
         condition=IfCondition(launch_pick_orchestrator_lifecycle) if launch_pick_orchestrator_lifecycle is not None else None,
     )
-    return tf_geometry_service, object_pose_resolver, plan_to_pose_server_node, pick_orchestrator_node
+    return tf_geometry_service, object_pose_resolver, plan_to_pose_server_node, pick_orchestrator_lifecycle_node
 
 
 def build_runtime_node_actions(
@@ -350,7 +350,7 @@ def build_runtime_node_actions(
     # Objeto MoveIt". Ese botón quedó deprecated; el path canónico es
     # orchestrator → /pick_place → plan_to_pose_server → FJT directo.
 
-    tf_geometry_service, object_pose_resolver, plan_to_pose_server_node, pick_orchestrator_node = (
+    tf_geometry_service, object_pose_resolver, plan_to_pose_server_node, pick_orchestrator_lifecycle_node = (
         _build_orchestrator_service_nodes(
             use_sim_time=use_sim_time,
             world_name=world_name,
@@ -376,5 +376,5 @@ def build_runtime_node_actions(
         plan_to_pose_server_node,
     ]
     if launch_pick_orchestrator_lifecycle is not None:
-        actions.append(pick_orchestrator_node)
+        actions.append(pick_orchestrator_lifecycle_node)
     return actions

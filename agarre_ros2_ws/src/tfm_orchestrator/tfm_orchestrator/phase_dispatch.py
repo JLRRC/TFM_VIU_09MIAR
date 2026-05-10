@@ -3,15 +3,11 @@
 # Contenido: F5-step1 — dispatch puro de fases pick_place compartido entre Node y LifecycleNode.
 """Dispatch puro de fases del pick_place orchestrator.
 
-Hasta F5-step1, la lógica de ``_dispatch_phase_service`` vivía duplicada
-entre ``pick_orchestrator_node.py`` (Node legacy F5/F6) y
-``pick_orchestrator_lifecycle_node.py`` (LifecycleNode canónico F9+).
-El segundo sólo cubría ``SELECT_OBJECT`` y devolvía ``_no_op`` para el
-resto, lo que dejaba el path canónico sin paridad funcional con el legacy.
-
-Este módulo extrae el dispatch a una capa pura: recibe ``node`` y un
-contexto explícito (``service_map``, ``client_cache``, timeouts) en lugar
-de leer atributos del nodo directamente. Esto permite:
+Capa pura del dispatch de fases para
+``pick_orchestrator_lifecycle_node.py`` (LifecycleNode canónico desde F9).
+Recibe ``node`` y un contexto explícito (``service_map``,
+``client_cache``, timeouts) en lugar de leer atributos del nodo
+directamente. Esto permite:
 
 * Reuso 1:1 entre ambos orchestrators (un único punto de verdad).
 * Tests unitarios sin levantar ROS — basta inyectar callers mock vía

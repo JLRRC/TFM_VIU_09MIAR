@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Ruta/archivo: agarre_ros2_ws/src/tfm_orchestrator/setup.py
-"""Setuptools entry point for the tfm_orchestrator package (F5/F6)."""
+"""Setuptools entry point for the tfm_orchestrator package."""
 
 from setuptools import setup
 
@@ -23,7 +23,8 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "pick_orchestrator = tfm_orchestrator.pick_orchestrator_node:main",
+            # Canonical orchestrator desde F9: LifecycleNode con
+            # configure/activate/deactivate/cleanup/shutdown.
             "pick_orchestrator_lifecycle = tfm_orchestrator.pick_orchestrator_lifecycle_node:main",
         ],
     },

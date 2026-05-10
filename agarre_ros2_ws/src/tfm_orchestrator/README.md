@@ -1,4 +1,4 @@
-# tfm_orchestrator — F5/F6
+# tfm_orchestrator
 
 Nodo ROS 2 que aloja `PickPlace.action` y orquesta el flujo pick &
 place mediante una **state machine pura** (`pick_fsm.PickContext`)
@@ -19,9 +19,13 @@ Gazebo.
   transiciones permitidas y `PickContext` con el snapshot dict
   mapeable directamente al feedback de la action.
 
-* **`pick_orchestrator_node.py`** — nodo ROS 2 que aloja el action
-  server `/pick_place`. Instancia `PickContext`, lo avanza por las
-  fases y publica feedback al cliente.
+* **`pick_orchestrator_lifecycle_node.py`** — `LifecycleNode` canónico
+  (desde F9) que aloja el action server `/pick_place`. Instancia
+  `PickContext`, lo avanza por las fases y publica feedback al cliente.
+  Ciclo: `configure → activate → deactivate → cleanup → shutdown`.
+
+* **`phase_dispatch.py`** — capa pura que invoca services/actions
+  externos por cada fase (Open/Close/Attach/Detach + PlanToPose).
 
 ## Arquitectura objetivo
 

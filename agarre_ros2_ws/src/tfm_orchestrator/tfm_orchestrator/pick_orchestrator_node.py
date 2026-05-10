@@ -1,32 +1,20 @@
 #!/usr/bin/env python3
 # Ruta/archivo: agarre_ros2_ws/src/tfm_orchestrator/tfm_orchestrator/pick_orchestrator_node.py
 # Contenido: F5/F6 — nodo ROS 2 que aloja PickPlace.action y orquesta el flujo.
-"""Pick orchestrator node (LEGACY F5/F6) — hosts PickPlace.action.
+"""Pick orchestrator node (HUÉRFANO — pendiente de borrado).
 
-.. deprecated:: F11 (2026-05-01)
-    Este nodo se mantiene como compatibilidad F5/F6 con clientes y tests
-    existentes. **El punto de entrada canónico desde F9 es**
-    ``pick_orchestrator_lifecycle`` (LifecycleNode con configure/activate/
-    deactivate/cleanup/shutdown). Migra los clientes nuevos a la versión
-    lifecycle. Ver ``docs/architecture.md`` §3.2 y ``docs/LIFECYCLE.md``.
+.. deprecated:: F11 (2026-05-01) — entry_point eliminado en F1 (2026-05-10).
 
-Este nodo aloja la action ``PickPlace.action``. Cliente externo (panel
-Qt o cualquier otro) envía un goal con ``object_name`` + ``drop_xyz_world``
-y recibe feedback estructurado por fase.
+    Este archivo está HUÉRFANO desde la auditoría F1 del 2026-05-10:
+    el ``console_script`` ``pick_orchestrator`` se eliminó de
+    ``setup.py`` y ningún launch ni test lo invoca. El punto de
+    entrada canónico es ``pick_orchestrator_lifecycle``
+    (``pick_orchestrator_lifecycle_node.py``, LifecycleNode con
+    configure/activate/deactivate/cleanup/shutdown).
 
-El FSM puro (``pick_fsm.PickContext``) vive separado para ser
-testeable sin ROS. El nodo lo instancia, lo avanza por las fases, y
-en cada transición publica feedback al cliente de la action.
-
-Esta primera versión (F5 mínimo viable) implementa **stubs** para
-cada fase: registra el avance, espera 200ms, avanza. La integración
-real con services (Open/Close/SetWidth/Attach/Detach/WorldToBase/
-ComputeApproachPose) se hará en F6.
-
-Uso:
-    ros2 run tfm_orchestrator pick_orchestrator
-    ros2 action send_goal /pick_place ur5_panel_interfaces/action/PickPlace \\
-        "{object_name: box_red, drop_xyz_world: {x: 0.5, y: 0.0, z: 0.05}}"
+    Pendiente: borrar este archivo en un commit separado con
+    ``git rm pick_orchestrator_node.py`` cuando se confirme que ningún
+    workflow externo lo importa.
 """
 
 from __future__ import annotations
