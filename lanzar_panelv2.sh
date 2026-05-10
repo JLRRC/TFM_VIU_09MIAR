@@ -111,7 +111,7 @@ echo "[LAUNCH] Limpiando procesos residuales (cleanup agresivo)..."
 # bloqueen el siguiente arranque. El antiguo cleanup en dos rondas
 # (SIGTERM 3s + SIGKILL) dejaba procesos pegados si SIGTERM no se
 # atendía en 3s.
-STACK_REGEX="gz sim|gz-sim|gz_server|gzserver|gzclient|ign gazebo|ros_gz_bridge|parameter_bridge|gz_pose_bridge|ros2_control_node|controller_manager|controller_bootstrap|spawner|robot_state_publisher|gripper_attach_backend|move_group|moveit_ros_move_group|world_tf_publisher|system_state_manager|ur5_moveit_bridge|release_objects_service|tf_geometry_service|object_pose_resolver|pick_orchestrator|plan_to_pose_server|planning_scene_sync|joint_state_broadcaster|joint_trajectory_controller|gripper_controller|gz_ros_control_guard|evidence_logger|ur5_stack.launch.py|ros2 launch ur5_bringup|start_panel_v2|start_panel_gui|panel_v2.py|ur5_qt_panel|pick_demo_panel|run_directo_button_offscreen"
+STACK_REGEX="gz sim|gz-sim|gz_server|gzserver|gzclient|ign gazebo|ros_gz_bridge|parameter_bridge|gz_pose_bridge|ros2_control_node|controller_manager|controller_bootstrap|spawner|robot_state_publisher|gripper_attach_backend|move_group|moveit_ros_move_group|world_tf_publisher|system_state_manager|ur5_moveit_bridge|release_objects_service|tf_geometry_service|object_pose_resolver|pick_orchestrator|plan_to_pose_server|planning_scene_sync|joint_state_broadcaster|joint_trajectory_controller|gripper_controller|gz_ros_control_guard|evidence_logger|ur5_stack.launch.py|ros2 launch ur5_bringup|start_panel_v2|start_panel_gui|panel_v2.py|ur5_qt_panel|pick_demo_panel|run_directo_button_offscreen|panel_launch_control_node|panel_backend_node|controller_health_monitor_node|simulation_reset_service"
 pkill -KILL -f "$STACK_REGEX" 2>/dev/null || true
 sleep 2
 # Doble pasada por si quedó algo
@@ -168,7 +168,9 @@ export PANEL_LAUNCH_PLAN_TO_POSE_SERVER=0
 export PANEL_LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE=0
 export PANEL_LAUNCH_OBJECT_POSE_RESOLVER=0
 export PANEL_LAUNCH_MOVEIT=0
-export PANEL_LAUNCH_MOVEIT_BRIDGE=0
+# F1.1 audit (2026-05-10): PANEL_LAUNCH_MOVEIT_BRIDGE eliminada — el
+# argument launch_moveit_bridge fue borrado de stack_factories.py
+# (nodo ur5_moveit_bridge ya estaba borrado del repo 2026-05-09).
 # controller_bootstrap también lo lanza el backend; bloquearlo aquí.
 export PANEL_LAUNCH_CONTROLLER_BOOTSTRAP=0
 export PANEL_BOOTSTRAP_CONTROLLERS=0
@@ -210,17 +212,17 @@ else
 fi
 
 # shellcheck disable=SC2086
+# F1.1 audit (2026-05-10): launch_moveit_bridge:=true ELIMINADO. El
+# argument se borró de stack_factories.py porque el nodo ur5_moveit_bridge
+# fue removido del repo el 2026-05-09. El path canónico para
+# GRASP_DOWN ahora es plan_to_pose_server mode=MOVEIT_DIRECT (cliente
+# directo a /move_action), no el bridge al panel.
 ros2 launch ur5_bringup ur5_stack.launch.py \
     $EXTRA_LAUNCH_ARGS \
     launch_panel:=false \
     launch_moveit:=true \
     moveit_mode:=move_group \
-    launch_moveit_bridge:=true \
     >"$STACK_LOG" 2>&1 &
-# launch_moveit_bridge:=true (fix 2026-05-04 bug GRASP_DOWN):
-# El panel publica a /desired_grasp y /desired_grasp_cartesian que sólo
-# son consumidos por ur5_moveit_bridge. Sin el bridge GRASP_DOWN nunca
-# completa el descenso al objeto.
 STACK_PID=$!
 echo "[LAUNCH] Stack PID=$STACK_PID"
 
