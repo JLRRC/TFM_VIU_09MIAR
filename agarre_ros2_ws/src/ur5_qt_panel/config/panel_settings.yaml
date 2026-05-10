@@ -4,7 +4,9 @@
 panel_settings:
   base_frame: base_link
   world_frame: null
-  ur5_base_z: 0.850
+  # F2.2 (2026-05-10): ur5_base_z removido — fuente única de verdad es
+  # ur5_description/config/geometry.yaml (consumido vía
+  # ur5_tools.geometry_constants.BASE_LINK_IN_WORLD).
   camera_topic: /camera_overhead/image
   camera_required: null
   use_sim_time: true

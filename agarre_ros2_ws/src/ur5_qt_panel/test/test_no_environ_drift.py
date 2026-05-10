@@ -46,6 +46,9 @@ BASELINE: Dict[str, int] = {
     # moveit_bridge/* eliminados con MoveIt-classic.
     # moveit_bridge_utils.py reducido a 4 helpers env (mirror panel_env).
     "ur5_tools/moveit_bridge_utils.py": 4,
+    # F2 audit (2026-05-10): workspace_paths centraliza WS_DIR/GZ_*
+    # como single source of truth — 6 reads documentados.
+    "ur5_tools/workspace_paths.py": 6,
     "ur5_tools/release_objects_service.py": 3,
     "ur5_qt_panel/panel_settings.py": 3,
     "ur5_qt_panel/directo_geometry.py": 3,

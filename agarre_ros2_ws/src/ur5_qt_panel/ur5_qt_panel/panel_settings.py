@@ -12,6 +12,26 @@ from typing import Dict, List, Optional
 
 from .logging_utils import emit_log_line
 
+# F2.2 (2026-05-10): los offsets geométricos vienen de la fuente única
+# de verdad ``ur5_tools.geometry_constants`` (mirror del YAML
+# ``ur5_description/config/geometry.yaml``). El default histórico
+# permanece como fallback duro si el import falla en un entorno mínimo
+# (tests offline sin install ROS).
+try:  # pragma: no cover - depende del install ROS
+    from ur5_tools.geometry_constants import (
+        BASE_LINK_IN_WORLD as _BASE_LINK_IN_WORLD,
+        UR5_REACH_RADIUS_MAX_M as _UR5_REACH_RADIUS_MAX_M,
+    )
+    _UR5_BASE_X_DEFAULT = float(_BASE_LINK_IN_WORLD[0])
+    _UR5_BASE_Y_DEFAULT = float(_BASE_LINK_IN_WORLD[1])
+    _UR5_BASE_Z_DEFAULT = float(_BASE_LINK_IN_WORLD[2])
+    _UR5_REACH_DEFAULT = float(_UR5_REACH_RADIUS_MAX_M)
+except Exception:  # pragma: no cover
+    _UR5_BASE_X_DEFAULT = -0.85
+    _UR5_BASE_Y_DEFAULT = 0.0
+    _UR5_BASE_Z_DEFAULT = 0.850
+    _UR5_REACH_DEFAULT = 0.85
+
 
 # F2-step5 (2026-05-08): helpers env centralizados en panel_env.
 # Reexportamos para mantener compat con consumidores actuales.
@@ -109,12 +129,16 @@ class PanelSettings:
     selection_snap_dist: float = 0.0
     object_pos_path: str = ""
     save_pose_info_positions: bool = False
-    ur5_base_x: float = -0.85
-    ur5_base_y: float = 0.0
+    # F2.2 (2026-05-10): defaults importados de geometry_constants
+    # (fuente única de verdad). Sigue siendo overrideable por env var o
+    # YAML sin perder compat. Los valores _DEFAULT vienen del top de
+    # módulo; ver imports al principio del archivo.
+    ur5_base_x: float = _UR5_BASE_X_DEFAULT
+    ur5_base_y: float = _UR5_BASE_Y_DEFAULT
     # Must match the UR5 spawn pose in the Gazebo world to keep world<->base
     # fallbacks coherent when TF is temporarily unavailable.
-    ur5_base_z: float = 0.850
-    ur5_reach_radius: float = 0.85
+    ur5_base_z: float = _UR5_BASE_Z_DEFAULT
+    ur5_reach_radius: float = _UR5_REACH_DEFAULT
     gz_world: str = "ur5_mesa_objetos"
     gripper_attach_prefix: str = "/gripper"
     gz_partition_file: str = ""

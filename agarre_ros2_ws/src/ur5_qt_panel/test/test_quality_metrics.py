@@ -731,7 +731,7 @@ def test_env_vars_have_documentation() -> None:
 #   1. Asegura que las scattered NO suben (regresión).
 #   2. Detecta cuando bajan → forzar update del baseline en el mismo commit
 #      (documenta progreso F2).
-ENV_READS_BASELINE_SCATTERED = 26  # 2026-05-10 F5-followup: actualizado tras merge.
+ENV_READS_BASELINE_SCATTERED = 22  # F2 audit (2026-05-10): bajada tras consolidar workspace_paths como SoT.
 ENV_READS_DRIFT_MARGIN = 0  # no se permite incremento.
 
 # Archivos que SON el destino legítimo de env reads (no contar como scatter).
@@ -803,6 +803,9 @@ INTERFACE_IDL_SHA256: Dict[str, str] = {
     "srv/Close.srv":                  "c6513eddb488591c09025d19676c8eba731a54a20b07450257142d87455e11d1",
     "srv/ComputeApproachPose.srv":    "ffcd64aa0909f923bb70504c8a463070768694b99e9f115fcede9b0e5f1650ac",
     "srv/Detach.srv":                 "19234a211e0624103fd2a5b5c715f210ff334327889aad0e69d760e15c3e7f62",
+    # F2 audit (2026-05-10): InferGrasp.srv (tfm_grasping/grasp_inference)
+    # añadido al baseline. Cualquier cambio en el IDL debe regenerar este hash.
+    "srv/InferGrasp.srv":             "a117c85862a1e62efb5464a44febb366f9cca9ec323f9d3de9f58074f6837ab1",
     "srv/Open.srv":                   "abe79298978b674dc48dbf94169bb3d8dcbf4c7d4c309f326219efc4300a6434",
     "srv/ResolveObjectPoseWorld.srv": "50fc276c79cc4fa74b1a76428c67e5f0155456d7a57abc5e830addbc4319e888",
     "srv/SelectObject.srv":           "fec5f91a17660e04d9ea07ac5d392705353243dfe208234d109d63e3799d0186",

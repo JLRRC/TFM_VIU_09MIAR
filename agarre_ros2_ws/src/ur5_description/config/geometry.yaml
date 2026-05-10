@@ -1,0 +1,86 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_description/config/geometry.yaml
+# Contenido: Fuente declarativa de constantes geométricas del robot UR5+RG2.
+# Uso breve: Single source of truth para offsets, frames y home positions.
+#
+# F2 audit (2026-05-10): los valores aquí son la fuente de verdad
+# externa al URDF. Los consumidores Python deben importar desde
+# ``ur5_tools.geometry_constants`` (que mirror-ea estos valores y
+# expone helpers world↔base). Los launches deben pasar este YAML como
+# parámetro a los nodos que lo necesiten.
+#
+# IMPORTANTE: si modificas un valor aquí, debes actualizar también:
+#   * ur5_description/urdf/ur5.urdf.xacro (si afecta cinematica)
+#   * ur5_tools/ur5_tools/geometry_constants.py (mirror Python)
+#   * tests asociados (test_geometry_yaml_consistency.py)
+
+geometry:
+  # ---------------------------------------------------------------------
+  # Origen del UR5 en el mundo.
+  # ---------------------------------------------------------------------
+  # Coincide con `<origin xyz="-0.85 0 0.850" rpy="0 0 0"/>` del joint
+  # implícito world→base_link en ur5.urdf.xacro:47.
+  ur5_base_in_world:
+    x: -0.85
+    y: 0.0
+    z: 0.850
+    rpy: [0.0, 0.0, 0.0]
+
+  # ---------------------------------------------------------------------
+  # TCP semántico del gripper RG2.
+  # ---------------------------------------------------------------------
+  # Coincide con `rg2_contact_tcp_xyz` (URDF: 0 0 0.175) — offset desde
+  # tool0 hasta el centro físico de cierre del RG2.
+  # Aplicado a `rg2_tcp_joint` y `rg2_pinch_center_joint` (idénticos).
+  rg2_tcp_offset:
+    x: 0.0
+    y: 0.0
+    z: 0.175
+
+  # ---------------------------------------------------------------------
+  # Workspace UR5+RG2.
+  # ---------------------------------------------------------------------
+  ur5_reach:
+    radius_max_m: 0.85
+    radius_min_m: 0.20
+
+  # ---------------------------------------------------------------------
+  # Pose HOME canónica (rad). Coincide con
+  # tfm_orchestrator.home_initial.UR5_HOME_POSITIONS_RAD y con los
+  # initial_value de cada joint en URDF línea 167-208.
+  # ---------------------------------------------------------------------
+  ur5_home_positions_rad:
+    shoulder_pan: 0.0
+    shoulder_lift: -1.5707963267948966   # -pi/2
+    elbow: 0.0
+    wrist_1: -1.5707963267948966         # -pi/2
+    wrist_2: 0.0
+    wrist_3: 0.0
+
+  # ---------------------------------------------------------------------
+  # Drop default para place sin destino explícito.
+  # ---------------------------------------------------------------------
+  basket_drop_world:
+    x: -1.30
+    y: 0.0
+    z: 0.82
+
+  # ---------------------------------------------------------------------
+  # Frames operativos.
+  # ---------------------------------------------------------------------
+  frames:
+    world: world
+    base_link: base_link
+    ur5_tool0: tool0
+    rg2_base_link: rg2_base_link
+    rg2_tcp: rg2_tcp                     # tip_link MoveIt (autoridad)
+    rg2_pinch_center: rg2_pinch_center   # alias semántico (idéntico)
+
+  # ---------------------------------------------------------------------
+  # Limits del gripper RG2 (prismático esquemático).
+  # ---------------------------------------------------------------------
+  rg2_gripper:
+    finger_lower_m: 0.0
+    finger_upper_m: 0.0425
+    open_full_m: 0.0425
+    open_default_m: 0.025      # apertura mínima validada por RELEASE gate
+    close_full_m: 0.0

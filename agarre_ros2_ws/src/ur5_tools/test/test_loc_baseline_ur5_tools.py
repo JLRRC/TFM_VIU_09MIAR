@@ -30,7 +30,7 @@ LOC_BASELINE = {
     "plan_to_pose_server.py": 1476,  # F1.24-refactor T15 (2026-05-09): _execute_fjt_direct + _execute_moveit_direct splits (10 sub-helpers, +154 LOC). Fix bug latente seed_positions. T15 cumplido.
     "gripper_attach_backend.py": 1207,
     "release_objects_service.py": 1178,
-    "system_state_manager.py": 952,
+    "system_state_manager.py": 953,  # F2 audit (2026-05-10): preexistente +1 LOC.
     "world_tf_publisher.py": 599,
 }
 

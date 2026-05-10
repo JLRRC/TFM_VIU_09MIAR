@@ -56,6 +56,7 @@ ALLOWED_DEBUG_ONLY: Set[str] = {
     "PATH",
     "WS_DIR",
     "PANEL_PYTHON",
+    "PANEL_QT_PLATFORM",  # F2 (2026-05-10): override Qt platform (xcb/wayland/offscreen)
     "GZ_RENDER_ENGINE",
     "PANEL_DIRECT_DEBUG_ROOT",
     "PANEL_KEEP_CAMERAS",

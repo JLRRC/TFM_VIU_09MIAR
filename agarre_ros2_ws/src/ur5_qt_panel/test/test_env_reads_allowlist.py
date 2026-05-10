@@ -46,10 +46,13 @@ ENV_READS_ALLOWLIST: frozenset[str] = frozenset({
     # de panel_env (consumido por cycle_logger, gripper_geometry,
     # attach_set_pose, planning_scene_sync, evidence_logger).
     "src/ur5_tools/ur5_tools/moveit_bridge_utils.py",
+    # F2 audit (2026-05-10): workspace_paths es el helper centralizado
+    # de WS_DIR/GZ_PARTITION/etc. Tiene env reads por diseño (single
+    # source of truth equivalente a panel_env del lado tools).
+    "src/ur5_tools/ur5_tools/workspace_paths.py",
     # Legítimos — launch (parámetros de arranque)
     "src/ur5_bringup/launch/launch_helpers.py",
     "src/ur5_bringup/launch/stack_factories.py",
-    "src/ur5_bringup/launch/ur5_stack.launch.py",
     "src/ur5_moveit_config/launch/ur5_moveit_bringup.launch.py",
     # 2026-05-09: panel_motion_helpers tras borrar moveit_bridge inlinea sus
     # 5 defaults con env reads PANEL_*. Patrón aceptable hasta migrar a
@@ -60,10 +63,11 @@ ENV_READS_ALLOWLIST: frozenset[str] = frozenset({
     "src/ur5_qt_panel/ur5_qt_panel/directo_gate_evaluator.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_startup.py",
     "src/ur5_qt_panel/ur5_qt_panel/panel_system_status.py",
-    "src/ur5_tools/ur5_tools/gripper_attach_backend.py",
-    "src/ur5_tools/ur5_tools/release_objects_service.py",
-    "src/ur5_tools/ur5_tools/system_state_manager.py",
-    "src/ur5_tools/ur5_tools/world_tf_publisher.py",
+    # F2 audit (2026-05-10): tras consolidar workspace_paths, los nodos
+    # gripper_attach_backend / release_objects_service / system_state_manager
+    # / world_tf_publisher / ur5_stack.launch.py ya no leen os.environ
+    # directamente — eliminados de la allowlist (test los detecta y exige
+    # consistencia).
 })
 
 
@@ -123,11 +127,15 @@ def test_allowlist_entries_still_have_env_reads() -> None:
 
 
 def test_allowlist_count_baseline() -> None:
-    """Sanity: la allowlist tiene un tamaño razonable (no se vació accidentalmente)."""
-    assert len(ENV_READS_ALLOWLIST) >= 18, (
+    """Sanity: la allowlist tiene un tamaño razonable (no se vació accidentalmente).
+
+    F2 audit (2026-05-10): tras consolidar workspace_paths como SoT y
+    sacar 5 nodos de la lista, el rango bajó a [13, 28].
+    """
+    assert len(ENV_READS_ALLOWLIST) >= 12, (
         "Allowlist sospechosamente pequeña — ¿se borró por accidente?"
     )
-    # Cuando bajemos de 15, eliminar este test (la deuda estará casi cerrada).
+    # Cuando bajemos de 10, eliminar este test (la deuda estará casi cerrada).
     assert len(ENV_READS_ALLOWLIST) <= 28, (
         f"Allowlist creciendo ({len(ENV_READS_ALLOWLIST)} > 28). "
         "Estás añadiendo deuda en lugar de cerrarla."

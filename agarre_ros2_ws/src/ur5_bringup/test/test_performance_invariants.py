@@ -181,6 +181,9 @@ def test_t41_heavy_imports_only_lazy() -> None:
         "ur5_tools/ur5_tools/moveit_bridge/geometry.py",
         "ur5_tools/ur5_tools/moveit_bridge/goal_validation.py",
         "ur5_qt_panel/ur5_qt_panel/calibration_service.py",
+        # F2 audit (2026-05-10): panel_v2_fk_helpers es puro numpy (FK
+        # matemático), permitido como tfm_grasping y moveit_bridge.
+        "ur5_qt_panel/ur5_qt_panel/panel_v2_fk_helpers.py",
         "ur5_qt_panel/ur5_qt_panel/panel_v2.py",
         "ur5_qt_panel/ur5_qt_panel/ur5_kinematics.py",
     }
