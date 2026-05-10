@@ -106,6 +106,7 @@ class PlanToPoseServer(Node):
         self.declare_parameter("moveit_planning_time_sec", 15.0)
         self.declare_parameter("moveit_position_tol_m", 0.005)
         self.declare_parameter("moveit_orientation_tol_rad", 0.05)
+        self.declare_parameter("moveit_goal_send_timeout_sec", 15.0)
         self.declare_parameter("moveit_result_timeout_sec", 60.0)
         # --- FJT directo (F1.24 H9+H10+H11+H14 LIVE, 2026-05-08) ---
         # bypass MoveIt vía /compute_ik + envío directo a FJT action,
@@ -124,6 +125,8 @@ class PlanToPoseServer(Node):
         # suficiente sin penalizar el caso normal.
         self.declare_parameter("fjt_direct_ik_timeout_sec", 5.0)
         self.declare_parameter("fjt_direct_result_timeout_sec", 30.0)
+        self.declare_parameter("fjt_direct_max_bypass_dist_m", 1.2)
+        self.declare_parameter("fjt_direct_max_joint_delta_rad", 3.5)
         # H14: 0.3 rad ≈ 17° — absorbe tracking errors transitorios sin
         # permitir desviaciones peligrosas. 0.0 = no enviar.
         self.declare_parameter("fjt_direct_path_tolerance_rad", 0.3)
@@ -177,6 +180,9 @@ class PlanToPoseServer(Node):
         self._moveit_orientation_tol = float(
             self.get_parameter("moveit_orientation_tol_rad").value
         )
+        self._moveit_goal_send_timeout = float(
+            self.get_parameter("moveit_goal_send_timeout_sec").value
+        )
         self._moveit_result_timeout = float(
             self.get_parameter("moveit_result_timeout_sec").value
         )
@@ -198,6 +204,12 @@ class PlanToPoseServer(Node):
         )
         self._fjt_direct_result_timeout = float(
             self.get_parameter("fjt_direct_result_timeout_sec").value
+        )
+        self._fjt_direct_max_bypass_dist = float(
+            self.get_parameter("fjt_direct_max_bypass_dist_m").value
+        )
+        self._fjt_direct_max_joint_delta = float(
+            self.get_parameter("fjt_direct_max_joint_delta_rad").value
         )
         self._fjt_direct_path_tolerance_rad = float(
             self.get_parameter("fjt_direct_path_tolerance_rad").value
@@ -303,6 +315,7 @@ class PlanToPoseServer(Node):
                 f"planning_time={self._moveit_planning_time:.1f}s "
                 f"pos_tol={self._moveit_position_tol:.4f}m "
                 f"ori_tol={self._moveit_orientation_tol:.3f}rad "
+                f"goal_send_timeout={self._moveit_goal_send_timeout:.1f}s "
                 f"result_timeout={self._moveit_result_timeout:.1f}s"
             )
 
@@ -725,7 +738,7 @@ class PlanToPoseServer(Node):
         send_future = self._moveit_action_client.send_goal_async(mg_goal)
         send_event = threading.Event()
         send_future.add_done_callback(lambda _f: send_event.set())
-        send_event.wait(timeout=3.0)
+        send_event.wait(timeout=max(3.0, self._moveit_goal_send_timeout))
         if not send_future.done():
             return PlanToPoseResult(
                 success=False,
@@ -842,7 +855,7 @@ class PlanToPoseServer(Node):
         send_future_retry = self._moveit_action_client.send_goal_async(mg_goal)
         retry_send_event = threading.Event()
         send_future_retry.add_done_callback(lambda _f: retry_send_event.set())
-        retry_send_event.wait(timeout=3.0)
+        retry_send_event.wait(timeout=max(3.0, self._moveit_goal_send_timeout))
         if not send_future_retry.done():
             return PlanToPoseResult(
                 success=False,
@@ -1018,13 +1031,31 @@ class PlanToPoseServer(Node):
         )
 
         # 3. Distance-based tuning (TF lookup ee_frame).
-        fjt_duration_eff, fjt_result_timeout_eff, is_long_traj = (
+        fjt_duration_eff, fjt_result_timeout_eff, is_long_traj, dist_to_target = (
             self._fjt_compute_traj_params(goal, ee_frame)
         )
+        if dist_to_target > max(0.0, self._fjt_direct_max_bypass_dist):
+            self.get_logger().info(
+                "[PLAN_TO_POSE][FJT_DIRECT] skip bypass: "
+                f"dist_to_target={dist_to_target:.3f}m > "
+                f"max_bypass={self._fjt_direct_max_bypass_dist:.3f}m"
+            )
+            return None
 
         # 4. IK síncrono → target joints normalizados.
         target_joints = self._fjt_call_compute_ik(goal, ee_frame, seed_positions)
         if target_joints is None:
+            return None
+        max_delta = max(
+            abs(float(t) - float(s))
+            for s, t in zip(seed_positions, target_joints)
+        )
+        if max_delta > max(0.0, self._fjt_direct_max_joint_delta):
+            self.get_logger().warning(
+                "[PLAN_TO_POSE][FJT_DIRECT] IK branch rejected before FJT: "
+                f"max_joint_delta={max_delta:.3f}rad > "
+                f"limit={self._fjt_direct_max_joint_delta:.3f}rad"
+            )
             return None
 
         # 5. Build trajectory (per-distancia: H11 multi-waypoint si is_long_traj).
@@ -1071,8 +1102,8 @@ class PlanToPoseServer(Node):
     def _fjt_compute_traj_params(
         self, goal: PlanToPoseGoal, ee_frame: str
     ) -> tuple:
-        """Calcula (duration_sec, result_timeout_sec, is_long_traj) basado en la
-        distancia TF del ``ee_frame`` actual al target XYZ.
+        """Calcula (duration_sec, result_timeout_sec, is_long_traj, dist)
+        basado en la distancia TF del ``ee_frame`` actual al target XYZ.
 
         - dist > 0.4m (TRANSPORT/destino lejos): duration=max(default, 25s),
           timeout=max(default, 120s), multi_waypoint=True.
@@ -1109,7 +1140,7 @@ class PlanToPoseServer(Node):
             f"duration={duration_eff:.1f}s timeout={timeout_eff:.1f}s "
             f"multi_waypoint={is_long}"
         )
-        return duration_eff, timeout_eff, is_long
+        return duration_eff, timeout_eff, is_long, dist
 
     def _fjt_call_compute_ik(
         self,

@@ -11,10 +11,10 @@
 
 # --- Sistema y paths -----------------------------------------------------------
 WS_DIR: ~/TFM/agarre_ros2_ws
-GZ_RENDER_ENGINE: ogre2
+GZ_RENDER_ENGINE: ogre
 
 # --- Panel: comportamiento básico ---------------------------------------------
-PANEL_CAMERA_REQUIRED: "1"
+PANEL_CAMERA_REQUIRED: "0"
 PANEL_KEEP_CAMERAS: "0"
 PANEL_PYTHON: ""
 

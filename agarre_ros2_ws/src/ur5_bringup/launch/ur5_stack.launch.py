@@ -134,7 +134,7 @@ def _prepare_runtime(context, *_args) -> List[object]:
 
     resource_path = build_gz_resource_path(runtime_models_root, ws_dir)
     plugin_path = build_gz_plugin_path()
-    render_engine = _resolve_runtime("GZ_RENDER_ENGINE", "ogre2").strip() or "ogre2"
+    render_engine = _resolve_runtime("GZ_RENDER_ENGINE", "ogre").strip() or "ogre"
     fastdds_profile = os.path.join(ws_dir, "scripts", "fastdds_no_shm.xml")
     # Prefer the explicit launch argument (camera_required:="0/1") over the env var,
     # because env var propagation via SetEnvironmentVariable is unreliable for
@@ -476,7 +476,10 @@ def generate_launch_description():
     panel = ExecuteProcess(
         cmd=panel_cmd,
         output="screen",
-        additional_env={"PANEL_CAMERA_REQUIRED": LaunchConfiguration("camera_required")},
+        additional_env={
+            "PANEL_CAMERA_REQUIRED": LaunchConfiguration("camera_required"),
+            "QT_QPA_PLATFORM": _resolve_runtime("QT_QPA_PLATFORM", "offscreen"),
+        },
         condition=IfCondition(launch_panel),
     )
 

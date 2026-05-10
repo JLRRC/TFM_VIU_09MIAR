@@ -59,6 +59,7 @@ def build_runtime_environment_actions(
         SetEnvironmentVariable("GZ_SIM_RESOURCE_PATH", resource_path),
         SetEnvironmentVariable("GZ_SIM_SYSTEM_PLUGIN_PATH", plugin_path),
         SetEnvironmentVariable("GZ_RENDER_ENGINE", render_engine),
+        SetEnvironmentVariable("QT_QPA_PLATFORM", os.environ.get("QT_QPA_PLATFORM", "offscreen")),
         SetEnvironmentVariable(
             "__EGL_VENDOR_LIBRARY_FILENAMES",
             "/usr/share/glvnd/egl_vendor.d/10_nvidia.json",
@@ -260,9 +261,12 @@ def build_launch_arguments(
         DeclareLaunchArgument("pick_orchestrator_use_stubs", default_value="false"),
         DeclareLaunchArgument("launch_scene_sync", default_value="true"),
         DeclareLaunchArgument("launch_system_state", default_value="true"),
-        DeclareLaunchArgument("launch_moveit", default_value="false"),
+        DeclareLaunchArgument("launch_moveit", default_value="true"),
         DeclareLaunchArgument("moveit_mode", default_value="auto"),
-        DeclareLaunchArgument("camera_required", default_value="1"),
+        DeclareLaunchArgument(
+            "camera_required",
+            default_value=resolve_runtime_fn("PANEL_CAMERA_REQUIRED", "0"),
+        ),
         DeclareLaunchArgument("moveit_start_ros2_control", default_value="false"),
         DeclareLaunchArgument("bootstrap_controllers", default_value="true"),
         DeclareLaunchArgument("controller_manager", default_value="/controller_manager"),
@@ -270,6 +274,6 @@ def build_launch_arguments(
         DeclareLaunchArgument("panel_auto_bridge_delay_ms", default_value="1200"),
         DeclareLaunchArgument("panel_managed", default_value="1"),
         DeclareLaunchArgument("rmw_implementation", default_value="rmw_fastrtps_cpp"),
-        DeclareLaunchArgument("render_engine", default_value="ogre2"),
+        DeclareLaunchArgument("render_engine", default_value=resolve_runtime_fn("GZ_RENDER_ENGINE", "ogre")),
         DeclareLaunchArgument("gui_config_file", default_value=gui_config_default),
     ]

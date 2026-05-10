@@ -109,6 +109,12 @@ def prepare_runtime_world_sdf(
                 text = re.sub(
                     rf'<model\s+name="{cam}">.*?</model>', "", text, flags=re.DOTALL
                 )
+            text = re.sub(
+                r'\s*<plugin\s+filename="gz-sim-sensors-system"\s+name="gz::sim::systems::Sensors">.*?</plugin>',
+                "",
+                text,
+                flags=re.DOTALL,
+            )
         text = text.replace(
             "<uri>model://ur5_rg2</uri>",
             f"<uri>file://{runtime_ur5_model}</uri>",

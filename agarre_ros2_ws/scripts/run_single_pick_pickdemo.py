@@ -48,12 +48,16 @@ class PickRunner(Node):
 
     def _on_feedback(self, msg):
         fb = msg.feedback
-        # PickPlace.Feedback puede tener: phase, sub_progress, message, etc.
+        # PickPlace.Feedback actual: current_phase, progress, phase_index, detail.
+        phase = getattr(fb, "current_phase", getattr(fb, "phase", ""))
+        progress = getattr(fb, "progress", getattr(fb, "sub_progress", 0.0))
+        detail = getattr(fb, "detail", getattr(fb, "message", ""))
         rec = {
             "ts": time.monotonic(),
-            "phase": getattr(fb, "phase", ""),
-            "sub_progress": getattr(fb, "sub_progress", 0.0),
-            "message": getattr(fb, "message", ""),
+            "phase": phase,
+            "progress": progress,
+            "phase_index": getattr(fb, "phase_index", -1),
+            "detail": detail,
         }
         # capturar métricas si existen como atributos
         for attr in ("best_obj_move", "best_lift_delta", "best_tcp_dist",
@@ -64,7 +68,11 @@ class PickRunner(Node):
         self.feedback_log.append(rec)
         cur = rec["phase"]
         if cur and cur != self.last_phase:
-            print(f"[FB] phase={cur} sub={rec['sub_progress']:.2f} msg={rec['message'][:60]}", flush=True)
+            print(
+                f"[FB] phase={cur} progress={rec['progress']:.2f} "
+                f"idx={rec['phase_index']} detail={rec['detail'][:80]}",
+                flush=True,
+            )
             self.last_phase = cur
 
 
@@ -74,6 +82,12 @@ def main():
     parser.add_argument("--out", default="/tmp/single_pick_result.json")
     parser.add_argument("--timeout", type=float, default=300.0,
                         help="seconds total para el cycle")
+    parser.add_argument("--drop-x", type=float, default=-1.30,
+                        help="drop target X en world")
+    parser.add_argument("--drop-y", type=float, default=0.0,
+                        help="drop target Y en world")
+    parser.add_argument("--drop-z", type=float, default=0.85,
+                        help="drop target Z en world")
     args = parser.parse_args()
 
     rclpy.init()
@@ -98,10 +112,18 @@ def main():
     # 3) Construir goal
     goal = PickPlace.Goal()
     goal.object_name = args.object
-    # Atributos opcionales del goal pueden incluir target_basket etc.
-    # Lo dejamos por defecto.
+    goal.drop_xyz_world.x = float(args.drop_x)
+    goal.drop_xyz_world.y = float(args.drop_y)
+    goal.drop_xyz_world.z = float(args.drop_z)
+    goal.object_pose_world_hint.position = pose_resp.pose_world.position
+    goal.object_pose_world_hint.orientation = pose_resp.pose_world.orientation
 
-    print(f"[SEND_GOAL] goal.object_name={goal.object_name}", flush=True)
+    print(
+        f"[SEND_GOAL] goal.object_name={goal.object_name} "
+        f"drop_world=({goal.drop_xyz_world.x:.3f},"
+        f"{goal.drop_xyz_world.y:.3f},{goal.drop_xyz_world.z:.3f})",
+        flush=True,
+    )
     send_fut = runner.client.send_goal_async(goal, feedback_callback=runner._on_feedback)
     rclpy.spin_until_future_complete(runner, send_fut, timeout_sec=10.0)
     if send_fut.result() is None:
@@ -128,8 +150,8 @@ def main():
         result_obj = res_fut.result().result
         status = res_fut.result().status
         success = getattr(result_obj, "success", False)
-        message = getattr(result_obj, "message", "")
-        print(f"[RESULT] status={status} success={success} message={message} elapsed={elapsed:.1f}s", flush=True)
+        reason = getattr(result_obj, "reason", getattr(result_obj, "message", ""))
+        print(f"[RESULT] status={status} success={success} reason={reason} elapsed={elapsed:.1f}s", flush=True)
         verdict = "SUCCESS" if success else "FAIL"
 
     # 5) Métricas finales
@@ -142,7 +164,7 @@ def main():
         "feedback_log": runner.feedback_log[-50:],  # últimos 50
     }
     if result_obj is not None:
-        for attr in ("success", "message", "best_obj_move", "best_lift_delta",
+        for attr in ("success", "reason", "duration_sec", "cycles_completed", "message", "best_obj_move", "best_lift_delta",
                      "best_tcp_dist", "obj_move", "lift_delta", "tcp_dist",
                      "logical_state", "physical_attached"):
             if hasattr(result_obj, attr):

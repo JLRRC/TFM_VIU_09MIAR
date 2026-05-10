@@ -1,5 +1,10 @@
 BORRAR/
 historico/
+!agarre_ros2_ws/historico/
+agarre_ros2_ws/historico/*
+!agarre_ros2_ws/historico/decisiones_tecnicas/
+agarre_ros2_ws/historico/decisiones_tecnicas/*
+!agarre_ros2_ws/historico/decisiones_tecnicas/2026-05-10_cierre_pick_fisico_regresiones.md
 auditoria/
 
 # Caches y artefactos locales del workspace

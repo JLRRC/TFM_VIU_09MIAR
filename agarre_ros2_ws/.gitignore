@@ -35,6 +35,11 @@ BORRAR/
 bags/
 experiments/
 reports/repro_startup/
+
+# --- Reportes generados de campañas de validacion ---
+reports/geometry_physical_pick_repair_*/
+reports/geometry_physical_pick_repair_cont_*/
+reports/stabilize_geometry_moveit_tests_*/
 .venv*/
 .venv_ai/
 .matplotlib_cache/
