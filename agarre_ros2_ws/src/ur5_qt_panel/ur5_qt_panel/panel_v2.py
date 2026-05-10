@@ -546,6 +546,11 @@ class ControlPanelV2(
         self._robot_test_disabled = True
         self._robot_test_substate = "IDLE"
         self._robot_test_last_failure = ""
+        # F-audit (2026-05-10): flag idempotente para el auto-trigger de
+        # _set_robot_test_done(True) en panel_system_state_helpers.
+        # Evita habilitar botones pick varias veces cuando el system_state
+        # cicla READY→…→READY.
+        self._pick_buttons_auto_enabled = False
         # FASE 3: Mutex para evitar goals MoveIt concurrentes.
         self._motion_in_progress = False
         self._motion_in_progress_lock = threading.Lock()

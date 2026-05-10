@@ -50,6 +50,28 @@ def _on_system_state_update(panel, state: str, reason: str) -> None:
             panel.signal_refresh_controls.emit()
         except RuntimeError:
             pass
+    # F-audit (2026-05-10): hot-fix del cleanup incompleto del botón
+    # "Test Robot" eliminado. Antes, btn_pick_object y btn_pick_demo
+    # quedaban DISABLED para siempre porque _set_robot_test_done(True)
+    # solo se invocaba desde el botón eliminado. Ahora, cuando el stack
+    # llega a READY (system_state externo), disparamos la cascada de
+    # habilitación una sola vez por sesión.
+    if (
+        state == "READY"
+        and not getattr(panel, "_pick_buttons_auto_enabled", False)
+    ):
+        try:
+            panel._set_robot_test_done(True)
+            panel._pick_buttons_auto_enabled = True
+            panel._emit_log(
+                "[STATE] AUTO_TEST_DONE — pick buttons habilitados al llegar READY "
+                "(hot-fix audit 2026-05-10 por cleanup botón Test Robot)"
+            )
+        except Exception as exc:
+            panel._log(
+                f"[STATE] AUTO_TEST_DONE fallo en _set_robot_test_done: "
+                f"{type(exc).__name__}:{exc}"
+            )
 
 
 def _external_state_active(panel) -> bool:
