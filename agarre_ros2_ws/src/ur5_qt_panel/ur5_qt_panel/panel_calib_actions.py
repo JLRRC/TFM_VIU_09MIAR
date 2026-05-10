@@ -270,17 +270,55 @@ def _run_pick_demo(panel):
 
 
 def _run_pick_object(panel):
-    """DEPRECATED 2026-05-09: el path MoveIt-classic fue borrado.
+    """Re-cableado 2026-05-11: ahora dispara el orchestrator canónico.
 
-    El botón "Agarre Objeto (MoveIT)" sigue presente en el panel pero
-    ya no tiene backend. Esta función emite un mensaje y retorna sin
-    efecto. El path canónico es ``dispatch_pick_demo`` (orchestrator
-    → FJT directo, criterio T35 verde).
+    Histórico: este botón ("Agarre Objeto (MoveIT)") usaba el path
+    MoveIt-classic, borrado el 2026-05-09. Quedó como fantasma sólo
+    emitiendo un log [DEPRECATED] hasta que el audit iter 4-fix lo
+    re-cableó al mismo dispatcher que ``_run_pick_demo`` ("Directo"):
+    ``dispatch_pick_demo`` → orchestrator → FJT directo (mode
+    MOVEIT_DIRECT internamente). La etiqueta "(MoveIT)" se mantiene
+    en los logs para trazabilidad del botón pulsado.
     """
+    if panel._direct_waiting_for_approach_confirmation():
+        if panel._step_mode == "STEP_BY_STEP":
+            panel._log_button("Agarre Objeto (MoveIT) [ignorado: authority=step_panel]")
+            panel._emit_log(
+                "[PICK][DIRECT][AUTH] "
+                "action=ignore_main_panel_approach "
+                "authority=step_panel "
+                "reason=step_by_step_single_source_of_truth"
+            )
+            return
+        panel._log_button("Agarre Objeto (MoveIT) [confirmar APPROACH_COARSE]")
+        if panel._direct_release_waiting_for_approach_confirmation():
+            panel._emit_log(
+                "[BOTON] Confirmado: continuar desde MESA hacia APPROACH_COARSE"
+            )
+        return
+    panel._log_button("Agarre Objeto (MoveIT)")
+    panel._step_capture_start_pose("Agarre Objeto (MoveIT)")
+    _op_frame = panel._step_operational_frame_name()
+    _fresh_xyz = panel._step_fetch_live_pose(_op_frame)
+    if _fresh_xyz is not None:
+        _px, _py, _pz = _fresh_xyz
+        _pose_str = f"({_px:.4f}, {_py:.4f}, {_pz:.4f})"
+    else:
+        _pose_str = "no disponible (TF no listo)"
     panel._emit_log(
-        "[BOTON][DEPRECATED] 'Agarre Objeto (MoveIT)' eliminado el 2026-05-09 "
-        "(path MoveIt-classic borrado). Usa 'Pick Demo' (orchestrator → FJT directo)."
+        f"[BOTON] Pulsado: Agarre Objeto (MoveIT) | "
+        f"frame={_op_frame} | Pose pinza ahora: {_pose_str}"
     )
+    if panel._step_mode == "STEP_BY_STEP":
+        panel._step_prepare_pipeline_view("MOVEIT")
+    if not panel._pick_confirm_dialog(panel, "Agarre Objeto (MoveIT)", _op_frame, _pose_str):
+        panel._emit_log("[BOTON] Inicio cancelado por el usuario")
+        if panel._step_mode == "STEP_BY_STEP":
+            panel._step_reset_sequence_view(clear_history=True)
+            panel._step_window_refresh()
+        return
+    from .pick_demo_dispatcher import dispatch_pick_demo
+    dispatch_pick_demo(panel)
 
 def _get_object_world_position(panel, obj_name: str) -> Optional[tuple]:
     """Obtener posición mundial del objeto desde poses actuales."""
