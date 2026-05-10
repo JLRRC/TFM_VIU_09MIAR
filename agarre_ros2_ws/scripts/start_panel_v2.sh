@@ -119,7 +119,12 @@ export WS_DIR
 : "${PANEL_STRICT_PHYSICS_MODE:=0}" # 1 = desactiva attach asistido y usa self-collision mas estricta
 : "${PANEL_STRICT_RUNTIME_SANITY:=1}" # 1 = bloquea arranque si detecta otro stack ROS activo
 : "${PANEL_MOVEIT_MODE:=auto}"        # auto|move_group|bridge
-: "${PANEL_ROS_EXECUTOR_THREADS:=3}"  # executor del RosWorker para no bloquear /clock durante servicios largos
+# iter4-bis audit (2026-05-11): default bajado 3 → 1. Con 3 threads del
+# MultiThreadedExecutor + ~983 msg/s de DDS, había thread contention
+# severa (4 threads RosWorker compitiendo, panel a 107% CPU). Con 1
+# thread SingleThreadedExecutor el panel responde inmediato. Override
+# con PANEL_ROS_EXECUTOR_THREADS=N si necesitas paralelizar callbacks.
+: "${PANEL_ROS_EXECUTOR_THREADS:=1}"
 : "${PANEL_GRIPPER_OPEN_RAD:=0.0425}"  # Gripper prismático: apertura máxima 0.0425 m por dedo
 : "${PANEL_GRIPPER_CLOSED_RAD:=0.0}"  # RG2 prismático: cierre completo en 0.0 m
 : "${RMW_IMPLEMENTATION:=rmw_fastrtps_cpp}"
