@@ -42,6 +42,7 @@ from .panel_tfm_canonical import (
     complete_pending_tfm_infer_request,
 )
 from .panel_tfm_preprocess import (
+    _get_cached_preprocessed_input,  # iter4-bis (2026-05-11): fix bug preexistente NameError en linea 250.
     _resolve_infer_roi,
     build_tfm_preprocessed_input,
     reconcile_inferred_grasp_angle,
