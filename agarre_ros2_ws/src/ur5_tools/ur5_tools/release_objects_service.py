@@ -875,12 +875,11 @@ class ReleaseObjectsService(LifecycleNode):
         return None
 
     def _gz_env_prefix(self) -> str:
+        from ur5_tools.workspace_paths import get_gz_ip, get_gz_partition, get_ws_dir
         exports = []
-        gz_partition = os.environ.get("GZ_PARTITION", "").strip()
+        gz_partition = get_gz_partition()
         if not gz_partition:
-            ws_dir = os.environ.get(
-                "WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws")
-            )
+            ws_dir = get_ws_dir(default="~/TFM/agarre_ros2_ws")
             part_file = os.path.join(ws_dir, "log", "gz_partition.txt")
             try:
                 with open(part_file, "r", encoding="utf-8") as f:
@@ -889,7 +888,7 @@ class ReleaseObjectsService(LifecycleNode):
                 gz_partition = ""
         if gz_partition:
             exports.append(f"export GZ_PARTITION='{gz_partition}'")
-        gz_ip = os.environ.get("GZ_IP", "").strip()
+        gz_ip = get_gz_ip()
         if gz_ip:
             exports.append(f"export GZ_IP='{gz_ip}'")
         if not exports:

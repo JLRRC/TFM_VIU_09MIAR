@@ -357,7 +357,8 @@ class SystemStateManager(LifecycleNode):
             moveit_required=self._moveit_required,
         )
         try:
-            self._gripper_geometry = load_gripper_geometry(os.environ.get("WS_DIR"))
+            from ur5_tools.workspace_paths import get_ws_dir
+            self._gripper_geometry = load_gripper_geometry(get_ws_dir())
         except Exception as exc:
             raise RuntimeError(f"canonical gripper geometry unavailable: {exc}") from exc
         self._geometry_snapshot = self._empty_geometry_snapshot(reason=self._geometry_reason)

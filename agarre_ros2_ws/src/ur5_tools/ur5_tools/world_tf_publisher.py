@@ -322,9 +322,8 @@ class WorldTfPublisher(LifecycleNode):
     ) -> Optional[tuple[float, float, float, float, float, float, float]]:
         world_file = self._world_file
         if not world_file:
-            ws_dir = os.environ.get(
-                "WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws")
-            )
+            from ur5_tools.workspace_paths import get_ws_dir
+            ws_dir = get_ws_dir(default="~/TFM/agarre_ros2_ws")
             world_file = os.path.join(ws_dir, "worlds", f"{self._world_name}.sdf")
         if not os.path.isfile(world_file):
             return None

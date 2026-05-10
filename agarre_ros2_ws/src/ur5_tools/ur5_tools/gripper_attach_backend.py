@@ -279,9 +279,8 @@ class GripperAttachBackend(
         )
         self._ws_dir = str(self.get_parameter("ws_dir").value or "").strip()
         if not self._ws_dir:
-            self._ws_dir = os.environ.get(
-                "WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws")
-            )
+            from ur5_tools.workspace_paths import get_ws_dir
+            self._ws_dir = get_ws_dir(default="~/TFM/agarre_ros2_ws")
         self._startup_detach_tool_anchors = bool(
             self.get_parameter("startup_detach_tool_anchors").value
         )
