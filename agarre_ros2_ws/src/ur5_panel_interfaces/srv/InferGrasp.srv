@@ -1,0 +1,40 @@
+# F8 audit (2026-05-10): interfaz para migrar inferencia TFM al backend.
+#
+# Permite que el panel pida una inferencia de grasp 2D + 3D al backend
+# (tfm_grasping) sin acoplarse a la lógica de inferencia. Hoy el panel
+# implementa la inferencia in-process; F8b cableará un nodo backend
+# (`tfm_inference_node`) que expone este servicio.
+
+# Request --------------------------------------------------------------
+# Selector del objeto sobre el que inferir (vacío = mejor candidato).
+string object_name
+# Profundidad media en metros del frame depth en el centro estimado
+# (0.0 = backend la calcula desde la última imagen depth recibida).
+float64 depth_hint_m
+# Hint para acotar el ROI en pixels (-1 = sin restricción).
+int32 roi_x_min
+int32 roi_y_min
+int32 roi_x_max
+int32 roi_y_max
+---
+# Response -------------------------------------------------------------
+bool success
+string reason
+
+# Grasp 2D en espacio de imagen (cero-padded si success=false).
+float64 grasp_center_x_px
+float64 grasp_center_y_px
+float64 grasp_angle_rad
+float64 grasp_width_px
+float64 grasp_height_px
+float64 grasp_quality
+
+# Grasp 3D proyectado al frame world (cero-padded si success=false).
+geometry_msgs/Pose grasp_pose_world
+
+# Pre-apertura RG2 sugerida en metros y rad (cero-padded si success=false).
+float64 rg2_preopen_width_m
+float64 rg2_finger_cmd_rad
+
+# Identificador único del run de inferencia para correlacionar con logs.
+string inference_id
