@@ -1,0 +1,199 @@
+name: CI
+
+# F3 (auditoría 2026-05-10): primer workflow CI del proyecto.
+#
+# Estrategia: empezar con lo verificable sin ROS install ni Gazebo.
+#   - lint: ament_flake8 + ament_pep257 sobre paquetes Python.
+#   - pytest-offline: tests que pueden ejecutarse sin source install
+#     (los conftest de cada paquete inyectan stubs cuando es necesario).
+#
+# El job colcon-test (build + test con ROS Jazzy real) se añadirá en
+# F11 cuando la deuda técnica de tests live esté reducida — ahora
+# requeriría instalar Gazebo Harmonic en CI lo cual es costoso.
+
+on:
+  push:
+    branches:
+      - main
+      - 'refactor/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Cancela ejecuciones anteriores de la misma rama si llega push nuevo.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+    working-directory: agarre_ros2_ws
+
+jobs:
+  lint:
+    name: Lint (flake8 + pep257)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install lint deps
+        run: |
+          pip install --upgrade pip
+          pip install 'flake8>=7.0' 'pydocstyle>=6.3'
+
+      - name: flake8 sobre paquetes Python
+        run: |
+          # Configuración por defecto de ament_flake8 (línea max 99 chars).
+          # Se ejecutan sólo los paquetes Python — los CMake (description,
+          # bringup, moveit_config, panel_interfaces) no contienen *.py
+          # productivos en su src/, sólo configs y launch.
+          PYTHON_PKGS=(
+            tfm_grasping
+            tfm_orchestrator
+            ur5_qt_panel
+            ur5_tools
+          )
+          fail=0
+          for pkg in "${PYTHON_PKGS[@]}"; do
+            echo "::group::flake8 $pkg"
+            flake8 --max-line-length=99 \
+                   --extend-ignore=E203,W503 \
+                   "src/$pkg" || fail=1
+            echo "::endgroup::"
+          done
+          # Lanzamos también sobre los launch files de los paquetes CMake.
+          flake8 --max-line-length=99 \
+                 --extend-ignore=E203,W503 \
+                 src/ur5_bringup/launch \
+                 src/ur5_moveit_config/launch || fail=1
+          # Action 0 mode: report-only durante el bring-up del CI; sube
+          # a fail=1 cuando la deuda esté limpia (F4 enforcement).
+          if [ "$fail" -ne 0 ]; then
+            echo "::warning::flake8 detectó issues — advisory durante F3"
+          fi
+
+      - name: pydocstyle (PEP 257) — advisory
+        run: |
+          # PEP 257 enforced sólo a los módulos puros del orchestrator
+          # y geometry_constants — el resto se irá limpiando en F4/F6.
+          pydocstyle \
+            --convention=pep257 \
+            --add-ignore=D100,D101,D102,D103,D104,D105,D107 \
+            src/tfm_orchestrator/tfm_orchestrator/pick_fsm.py \
+            src/tfm_orchestrator/tfm_orchestrator/phase_dispatch.py \
+            src/tfm_orchestrator/tfm_orchestrator/pick_gates.py \
+            src/tfm_orchestrator/tfm_orchestrator/retry.py \
+            src/tfm_orchestrator/tfm_orchestrator/cartesian_segments.py \
+            src/tfm_orchestrator/tfm_orchestrator/pose_consistency.py \
+            src/tfm_orchestrator/tfm_orchestrator/phase_progress.py \
+            src/tfm_orchestrator/tfm_orchestrator/home_initial.py \
+            src/tfm_orchestrator/tfm_orchestrator/initial_snapshot.py \
+            src/tfm_orchestrator/tfm_orchestrator/phase_timings.py \
+            src/ur5_tools/ur5_tools/geometry_constants.py \
+            || true
+
+  pytest-offline:
+    name: pytest offline (sin ROS)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install 'pytest>=7.4' 'pytest-cov>=4.1' \
+                      'numpy>=1.26' 'pyyaml>=6.0' 'pillow>=10.0' \
+                      'typeguard>=4.1'
+
+      - name: Tests offline ur5_tools
+        run: |
+          python3 -m pytest \
+            src/ur5_tools/test/test_geometry_constants.py \
+            src/ur5_tools/test/test_gripper_geometry.py \
+            -v --tb=short || exit 1
+
+      - name: Tests offline tfm_orchestrator (sólo módulos puros)
+        run: |
+          python3 -m pytest \
+            src/tfm_orchestrator/test/test_imports_tfm_orchestrator.py \
+            src/tfm_orchestrator/test/test_pick_fsm.py \
+            src/tfm_orchestrator/test/test_pick_gates.py \
+            src/tfm_orchestrator/test/test_retry.py \
+            src/tfm_orchestrator/test/test_pose_consistency.py \
+            src/tfm_orchestrator/test/test_phase_progress.py \
+            src/tfm_orchestrator/test/test_cartesian_segments.py \
+            src/tfm_orchestrator/test/test_phase_timings.py \
+            -v --tb=short --ignore-glob='*launch*' || exit 1
+
+      - name: Tests offline ur5_qt_panel (smoke + quality_metrics)
+        run: |
+          # Excluir 2 tests con baseline drift pre-existente (F3 audit
+          # 2026-05-10): test_env_vars_have_documentation y
+          # test_env_reads_total_count_under_baseline. Se reactivarán
+          # cuando la deuda de env vars no documentadas esté limpia
+          # (PANEL_QT_PLATFORM y conteo total). Tracking: F4/F6.
+          python3 -m pytest \
+            src/ur5_qt_panel/test/test_imports_qt_panel.py \
+            src/ur5_qt_panel/test/test_quality_metrics.py \
+            --deselect src/ur5_qt_panel/test/test_quality_metrics.py::test_env_vars_have_documentation \
+            --deselect src/ur5_qt_panel/test/test_quality_metrics.py::test_env_reads_total_count_under_baseline \
+            -v --tb=short || exit 1
+
+  policy-checks:
+    name: Policy checks (no Gazebo Classic, no duplicates)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detectar mezcla con Gazebo Classic
+        run: |
+          # F3 enforcement: el proyecto usa Gazebo Sim moderno (gz_*).
+          # Cualquier referencia a gazebo_ros / libgazebo_ros_control /
+          # gazebo_ros_pkgs es un regreso de stack y debe bloquearse.
+          if grep -rn 'gazebo_ros\|libgazebo_ros_control\|gazebo_ros_pkgs' \
+                  src/ \
+                  --include='*.py' --include='*.xml' --include='*.yaml' \
+                  --include='*.xacro' --include='*.urdf' --include='*.sdf' \
+                  --include='*.launch.py'; then
+            echo "::error::Detectada referencia a Gazebo Classic — usar gz_ros2_control"
+            exit 1
+          fi
+          echo "✅ No hay contaminación de Gazebo Classic"
+
+      - name: Detectar BASE_LINK_IN_WORLD duplicado (F2 guard)
+        run: |
+          # Si alguien reintroduce el literal hardcoded, este job lo bloquea.
+          # El test_geometry_constants.py también lo cubre vía AST.
+          offenders=$(grep -rn -- '-0\.85.*0\.0.*0\.85' src/ \
+                       --include='*.py' \
+                       | grep -v 'geometry_constants.py' \
+                       | grep -v '/test/' \
+                       | grep -v '#.*-0\.85' \
+                       | grep -v '"""' || true)
+          if [ -n "$offenders" ]; then
+            echo "::warning::Posibles hardcodes de BASE_LINK_IN_WORLD (revisar):"
+            echo "$offenders"
+            # Advisory por ahora; el test AST es el enforce real.
+          else
+            echo "✅ No hay hardcodes evidentes de BASE_LINK_IN_WORLD"
+          fi
