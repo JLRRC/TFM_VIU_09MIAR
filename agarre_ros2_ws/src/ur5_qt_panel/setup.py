@@ -13,7 +13,7 @@ package_name = 'ur5_qt_panel'
 setup(
     name=package_name,
     version='0.1.0',
-    packages=[package_name, package_name + '.pick_demo'],
+    packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
@@ -31,8 +31,9 @@ setup(
     entry_points={
         'console_scripts': [
             'panel_v2 = ur5_qt_panel.panel_v2:main',
-            'main_panel = ur5_qt_panel.main_panel:main',
             # 2026-05-09: test_direct_pick_table entry borrada (path MoveIt-classic eliminado).
+            # 2026-05-10: main_panel entry borrada (su fichero importaba
+            # direct_pick_table que ya no existe — entry roto desde 2026-05-09).
         ],
     },
 )
