@@ -165,5 +165,7 @@ def test_grasp_evidence_object_pose_summary():
         f"  TCP Z: min={min(float(m.group('tz')) for m in locked):.3f}m "
         f"max={max(float(m.group('tz')) for m in locked):.3f}m"
     )
-    # No assert: este test es informativo.
-    assert True
+    # F-iter4 audit (2026-05-10): test informativo — sin assert real
+    # (los datos se imprimen para análisis manual). Mantener vacío
+    # explícitamente con `return` documenta la intención.
+    return
