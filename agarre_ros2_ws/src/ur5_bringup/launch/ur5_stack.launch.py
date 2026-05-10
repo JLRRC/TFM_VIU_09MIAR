@@ -63,38 +63,38 @@ from ur5_tools.gripper_geometry import (
 )
 
 
+from launch_helpers import (  # noqa: E402
+    coerce_env_flag as _pure_coerce_env_flag,
+    coerce_env_float as _pure_coerce_env_float,
+    resolve_config_value as _pure_resolve_config_value,
+    select_qt_platform as _pure_select_qt_platform,
+)
+
+
 def _resolve_runtime(name: str, default: str) -> str:
-    """Env var > runtime_defaults.yaml > literal default. Returns string."""
-    raw = os.environ.get(name)
-    if raw is not None and raw.strip() != "":
-        return raw
-    yaml_val = _RUNTIME_DEFAULTS.get(name)
-    if yaml_val is not None and yaml_val.strip() != "":
-        return yaml_val
-    return default
+    """F14 audit: wrapper sobre helper puro (env > yaml > default)."""
+    return _pure_resolve_config_value(
+        name, default,
+        env=os.environ,
+        runtime_defaults=_RUNTIME_DEFAULTS,
+    )
 
 
 def _env_flag(name: str, default: bool) -> bool:
-    raw = _resolve_runtime(name, "1" if default else "0").strip().lower()
-    return raw in ("1", "true", "yes", "on")
+    """F14 audit: wrapper. coerce a bool con default."""
+    raw = _resolve_runtime(name, "1" if default else "0")
+    return _pure_coerce_env_flag(raw, default)
 
 
-def _env_float(name: str, default: float) -> float:
-    raw = _resolve_runtime(name, str(default)).strip()
-    try:
-        value = float(raw)
-    except Exception:
-        value = float(default)
-    return value
+def _env_float(name: str, default: float) -> bool:
+    """F14 audit: wrapper. coerce a float con default."""
+    raw = _resolve_runtime(name, str(default))
+    return _pure_coerce_env_float(raw, default)
 
 
 def _panel_qt_platform() -> str:
-    explicit = os.environ.get("PANEL_QT_PLATFORM") or os.environ.get("QT_QPA_PLATFORM")
-    if explicit:
-        return explicit
-    if os.environ.get("PANEL_FORCE_OFFSCREEN", "0") == "1" or not os.environ.get("DISPLAY"):
-        return "offscreen"
-    return "xcb"
+    """F14 audit: wrapper sobre helper puro de selección Qt."""
+    return _pure_select_qt_platform(env=os.environ)
 
 
 def _prepare_runtime(context, *_args) -> List[object]:

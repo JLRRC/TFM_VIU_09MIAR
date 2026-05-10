@@ -260,6 +260,93 @@ PANEL_ENV_DEFAULTS: list[tuple[str, str]] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# F14 (auditoría 2026-05-10): helpers de resolución de configuración
+# extraídos de ur5_stack.launch.py para ser testables sin levantar
+# launch context. Política: env var > runtime_defaults.yaml > literal.
+# ---------------------------------------------------------------------------
+
+
+def resolve_config_value(
+    name: str,
+    default: str,
+    *,
+    env: dict | None = None,
+    runtime_defaults: dict | None = None,
+) -> str:
+    """Resuelve un valor de configuración con precedencia env > yaml > default.
+
+    Args:
+        name: nombre de la variable.
+        default: valor literal de fallback.
+        env: dict de env vars. Si None, usa ``os.environ`` (caller real).
+        runtime_defaults: dict ``{name: yaml_value}`` cargado de
+            ``runtime_defaults.yaml``. Si None, sin yaml fallback.
+
+    Returns:
+        String. Espacios al inicio/final NO se strip-an (compat con
+        el comportamiento histórico que conserva whitespace en valores).
+    """
+    if env is None:
+        env = os.environ
+    raw = env.get(name)
+    if raw is not None and raw.strip() != "":
+        return raw
+    if runtime_defaults is not None:
+        yaml_val = runtime_defaults.get(name)
+        if yaml_val is not None and str(yaml_val).strip() != "":
+            return str(yaml_val)
+    return default
+
+
+def coerce_env_flag(raw: str, default: bool) -> bool:
+    """Coerce un string a bool. ``"1"|"true"|"yes"|"on"`` (case-insensitive)."""
+    cleaned = (raw or "").strip().lower()
+    if cleaned in ("1", "true", "yes", "on"):
+        return True
+    if cleaned in ("0", "false", "no", "off"):
+        return False
+    return default
+
+
+def coerce_env_float(raw: str, default: float) -> float:
+    """Coerce un string a float; devuelve ``default`` si fallo."""
+    try:
+        return float((raw or "").strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def select_qt_platform(
+    *,
+    env: dict | None = None,
+    explicit_keys: tuple = ("PANEL_QT_PLATFORM", "QT_QPA_PLATFORM"),
+    force_offscreen_key: str = "PANEL_FORCE_OFFSCREEN",
+    display_key: str = "DISPLAY",
+    default: str = "xcb",
+) -> str:
+    """Decide la plataforma Qt según env vars.
+
+    Política (mantiene comportamiento histórico de ur5_stack.launch):
+      1. Si ``PANEL_QT_PLATFORM`` o ``QT_QPA_PLATFORM`` están set y
+         no vacías → ese valor.
+      2. Si ``PANEL_FORCE_OFFSCREEN=1`` o no hay ``DISPLAY`` →
+         ``"offscreen"``.
+      3. Default ``"xcb"``.
+    """
+    if env is None:
+        env = os.environ
+    for key in explicit_keys:
+        val = env.get(key)
+        if val:
+            return val
+    force_offscreen = (env.get(force_offscreen_key, "0") or "").strip() == "1"
+    no_display = not (env.get(display_key) or "").strip()
+    if force_offscreen or no_display:
+        return "offscreen"
+    return default
+
+
 def env_passthrough_actions(
     defaults: list[tuple[str, str]],
 ) -> list[Any]:
