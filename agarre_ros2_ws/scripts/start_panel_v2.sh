@@ -781,6 +781,19 @@ LAUNCH_MOVEIT="false"
 if [[ "${PANEL_LAUNCH_MOVEIT}" == "1" ]]; then
   LAUNCH_MOVEIT="true"
 fi
+# F-audit (2026-05-10): añadir launch args que faltaban en los 5
+# bloques de `ros2 launch` de este script. Sin ellos, defaultean a
+# true en stack_factories.py y duplican nodos cuando el backend ya
+# los lanzó (síntoma: 3 instancias de controller_bootstrap,
+# planning_scene_sync, etc.).
+LAUNCH_OBJECT_POSE_RESOLVER="false"
+if [[ "${PANEL_LAUNCH_OBJECT_POSE_RESOLVER}" == "1" ]]; then
+  LAUNCH_OBJECT_POSE_RESOLVER="true"
+fi
+BOOTSTRAP_CONTROLLERS="false"
+if [[ "${PANEL_BOOTSTRAP_CONTROLLERS:-1}" == "1" ]]; then
+  BOOTSTRAP_CONTROLLERS="true"
+fi
 
 MOVEIT_MODE="$(echo "${PANEL_MOVEIT_MODE}" | tr '[:upper:]' '[:lower:]' | xargs)"
 case "$MOVEIT_MODE" in
@@ -861,6 +874,8 @@ if [[ "${DEBUG_LOGS_TO_STDOUT}" == "1" ]]; then
     launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
+    launch_object_pose_resolver:="$LAUNCH_OBJECT_POSE_RESOLVER" \
+    bootstrap_controllers:="$BOOTSTRAP_CONTROLLERS" \
     moveit_mode:="$MOVEIT_MODE" \
     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
@@ -914,6 +929,8 @@ if [[ "${PANEL_WRITE_PID}" == "1" ]]; then
     launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
+    launch_object_pose_resolver:="$LAUNCH_OBJECT_POSE_RESOLVER" \
+    bootstrap_controllers:="$BOOTSTRAP_CONTROLLERS" \
     moveit_mode:="$MOVEIT_MODE" \
     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
@@ -951,6 +968,8 @@ if [[ "${PANEL_AUTO_EXIT_ON_PANEL}" == "1" ]]; then
     launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
+    launch_object_pose_resolver:="$LAUNCH_OBJECT_POSE_RESOLVER" \
+    bootstrap_controllers:="$BOOTSTRAP_CONTROLLERS" \
     moveit_mode:="$MOVEIT_MODE" \
     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
@@ -1000,6 +1019,8 @@ if [[ "$PANEL_LOG_FILTER" == "1" ]]; then
     launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
+    launch_object_pose_resolver:="$LAUNCH_OBJECT_POSE_RESOLVER" \
+    bootstrap_controllers:="$BOOTSTRAP_CONTROLLERS" \
     moveit_mode:="$MOVEIT_MODE" \
     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
@@ -1031,6 +1052,8 @@ else
     launch_pick_orchestrator_lifecycle:="$LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE" \
     launch_moveit:="$LAUNCH_MOVEIT" \
     launch_moveit_bridge:="$LAUNCH_MOVEIT_BRIDGE" \
+    launch_object_pose_resolver:="$LAUNCH_OBJECT_POSE_RESOLVER" \
+    bootstrap_controllers:="$BOOTSTRAP_CONTROLLERS" \
     moveit_mode:="$MOVEIT_MODE" \
     strict_physics_mode:="$PANEL_STRICT_PHYSICS_MODE" \
     panel_managed:="$PANEL_MANAGED" \
