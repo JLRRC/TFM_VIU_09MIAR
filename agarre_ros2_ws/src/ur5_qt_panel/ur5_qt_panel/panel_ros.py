@@ -1123,15 +1123,6 @@ class RosWorker(QObject):
     def _on_pose_info(self, msg: "TFMessage") -> None:
         if not ROS_AVAILABLE:
             return
-        # iter4 audit (2026-05-11): throttle a 10 Hz. El callback itera
-        # 74 entidades × ~50 Hz publish_rate = 3700 iter/s + lock take.
-        # Para UI basta con 10 Hz; sólo /world/.../pose/info, NO afecta
-        # a TF chain crítico (que usa /tf con su buffer dedicado).
-        now = _steady_time()
-        last = getattr(self, "_last_pose_info_processed_wall", 0.0)
-        if (now - last) < 0.100:  # 100 ms = 10 Hz
-            return
-        self._last_pose_info_processed_wall = now
         try:
             transforms = getattr(msg, "transforms", [])
         except Exception:
@@ -1813,16 +1804,7 @@ class RosWorker(QObject):
         self._bridge = None
 
     def _update_clock(self, msg: "Clock") -> None:
-        # iter4 audit (2026-05-11): throttle drástico — /clock publica a
-        # 790 Hz en este stack (Gazebo Sim + ros_gz_bridge). El panel sólo
-        # necesita ~20 Hz para detectar drift y avanzar el clock_event.
-        # Procesar 790 cb/s saturaba RosWorker thread (54% CPU) → GUI no
-        # podía pintar a tiempo → 'panel no responde'. 20 Hz = 50ms.
         now = _steady_time()
-        last_processed = getattr(self, "_last_clock_processed_wall", 0.0)
-        if (now - last_processed) < 0.050:  # 50 ms throttle (= 20 Hz)
-            return
-        self._last_clock_processed_wall = now
         try:
             stamp_ns = int(msg.clock.sec) * 1_000_000_000 + int(msg.clock.nanosec)
         except Exception:
