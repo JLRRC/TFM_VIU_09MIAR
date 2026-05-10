@@ -187,7 +187,8 @@ PANEL_ENV_DEFAULTS: list[tuple[str, str]] = [
     ("PANEL_DIRECT_DEBUG_ROOT", "/home/laboratorio/TFM/historico"),
     # GRASP_DOWN segmented IK descent
     ("PANEL_PICK_DEMO_GRASP_DOWN_SEGMENT_Z_STEP_M", "0.005"),
-    ("PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN", "0"),  # Fix 2026-05-04: cartesian devuelve fraction=0 en este setup
+    # Fix 2026-05-04: cartesian devuelve fraction=0 en este setup.
+    ("PANEL_PICK_DEMO_GRASP_DOWN_USE_MOVEIT_CARTESIAN", "0"),
     ("PANEL_PICK_DEMO_GRASP_DOWN_IK_SEED_WEIGHT", "0.035"),
     ("PANEL_PICK_DEMO_GRASP_DOWN_IK_ERR_TOL", "0.200"),
     ("PANEL_PICK_DEMO_GRASP_DOWN_KEEP_XY_TOL_M", "0.005"),

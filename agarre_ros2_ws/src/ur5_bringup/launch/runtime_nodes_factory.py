@@ -194,7 +194,11 @@ def _build_orchestrator_service_nodes(
             {"use_stubs": pick_orchestrator_use_stubs if pick_orchestrator_use_stubs is not None else False},
             {"auto_activate": True},
         ],
-        condition=IfCondition(launch_pick_orchestrator_lifecycle) if launch_pick_orchestrator_lifecycle is not None else None,
+        condition=(
+            IfCondition(launch_pick_orchestrator_lifecycle)
+            if launch_pick_orchestrator_lifecycle is not None
+            else None
+        ),
     )
     return tf_geometry_service, object_pose_resolver, plan_to_pose_server_node, pick_orchestrator_lifecycle_node
 

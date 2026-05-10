@@ -15,6 +15,11 @@ find_package(moveit_msgs REQUIRED)
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_config_integrity test/test_config_integrity.py)
+  # F4 (auditoría 2026-05-10): linters Python.
+  find_package(ament_cmake_flake8 REQUIRED)
+  find_package(ament_cmake_pep257 REQUIRED)
+  ament_flake8(CONFIG_FILE ${CMAKE_CURRENT_SOURCE_DIR}/setup.cfg)
+  ament_pep257()
 endif()
 
 ament_package()

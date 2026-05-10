@@ -22,11 +22,8 @@ en `KNOWN_ALIAS_GROUPS` falla.
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
-
-import pytest
 
 XACRO_PATH = (
     Path(__file__).resolve().parent.parent / "urdf" / "ur5.urdf.xacro"

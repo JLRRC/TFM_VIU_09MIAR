@@ -37,6 +37,9 @@
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>python3-pytest</test_depend>
   <test_depend>python3-yaml</test_depend>
+  <!-- F4 (auditoría 2026-05-10): activación de linters en colcon test. -->
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
