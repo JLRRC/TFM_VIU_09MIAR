@@ -441,95 +441,14 @@ class PlanToPoseServer(Node):
     def _execute_real_bridge(
         self, goal: PlanToPoseGoal, start_mono: float
     ) -> PlanToPoseResult:
-        """Publica el goal al bridge y espera el result correlado por UUID."""
-        from .plan_to_pose_logic import normalize_quat
-        if self._bridge_pose_pub is None:
-            return PlanToPoseResult(
-                success=False,
-                reason="bridge_publisher_not_initialized",
-                final_xyz=goal.target_xyz,
-                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
-                duration_sec=time.monotonic() - start_mono,
-                attempts=0,
-            )
+        """Publica el goal al bridge y espera el result correlado por UUID.
 
-        # Generar UUID único para correlación + frame_id codificado.
-        request_uuid = uuid.uuid4().hex
-        self._next_request_id += 1
-        request_id = int(self._next_request_id)
-        frame_id = encode_request_frame(
-            self._bridge_base_frame,
-            request_id,
-            request_uuid,
-            phase_label="PLAN_TO_POSE",
-        )
-
-        # Construir PoseStamped y publicar.
-        msg = PoseStamped()
-        msg.header.frame_id = frame_id
-        try:
-            msg.header.stamp = self.get_clock().now().to_msg()
-        except Exception:
-            pass
-        msg.pose.position.x = float(goal.target_xyz[0])
-        msg.pose.position.y = float(goal.target_xyz[1])
-        msg.pose.position.z = float(goal.target_xyz[2])
-        msg.pose.orientation.x = float(goal.target_quat_xyzw[0])
-        msg.pose.orientation.y = float(goal.target_quat_xyzw[1])
-        msg.pose.orientation.z = float(goal.target_quat_xyzw[2])
-        msg.pose.orientation.w = float(goal.target_quat_xyzw[3])
-
-        # Armar pending antes de publicar (evita race con result que llega rápido).
-        with self._bridge_result_lock:
-            self._bridge_pending_uuid = request_uuid
-            self._bridge_pending_text = None
-            self._bridge_pending_event.clear()
-
-        try:
-            self._bridge_pose_pub.publish(msg)
-        except Exception as exc:
-            return PlanToPoseResult(
-                success=False,
-                reason=f"bridge_publish_exception:{type(exc).__name__}:{exc}",
-                final_xyz=goal.target_xyz,
-                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
-                duration_sec=time.monotonic() - start_mono,
-                attempts=1,
-            )
-
-        self.get_logger().info(
-            f"[PLAN_TO_POSE][BRIDGE] published rid={request_id} uid={request_uuid} "
-            f"target=({goal.target_xyz[0]:.3f},{goal.target_xyz[1]:.3f},{goal.target_xyz[2]:.3f})"
-        )
-
-        # Esperar result. El callback _on_bridge_result setea
-        # _bridge_pending_event cuando el UUID coincida.
-        timeout = float(max(1.0, self._bridge_result_timeout))
-        ok_wait = self._bridge_pending_event.wait(timeout=timeout)
-        with self._bridge_result_lock:
-            text = self._bridge_pending_text
-            self._bridge_pending_uuid = None  # release slot
-
-        if not ok_wait or text is None:
-            return PlanToPoseResult(
-                success=False,
-                reason=f"bridge_result_timeout:{timeout:.1f}s",
-                final_xyz=goal.target_xyz,
-                final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
-                duration_sec=time.monotonic() - start_mono,
-                attempts=1,
-            )
-
-        success, reason, _uid = parse_bridge_result(text)
-        ok = bool(success) if success is not None else False
-        return PlanToPoseResult(
-            success=ok,
-            reason=reason or ("ok" if ok else "bridge_unknown"),
-            final_xyz=goal.target_xyz,
-            final_quat_xyzw=normalize_quat(goal.target_quat_xyzw),
-            duration_sec=time.monotonic() - start_mono,
-            attempts=1,
-        )
+        Action 12 (audit 2026-05-10): lógica extraída a
+        ``plan_to_pose_real_bridge.execute_real_bridge`` para descongestionar
+        el monolito (1507 LOC). Comportamiento idéntico.
+        """
+        from .plan_to_pose_real_bridge import execute_real_bridge
+        return execute_real_bridge(self, goal, start_mono)
 
     # ------------------------------------------------------------------
     # B-iter3 (2026-05-03) — modo MOVEIT_DIRECT
