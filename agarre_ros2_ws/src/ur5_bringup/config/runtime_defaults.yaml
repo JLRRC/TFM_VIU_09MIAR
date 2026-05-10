@@ -52,7 +52,14 @@ PANEL_MOVEIT_BRIDGE_VELOCITY_SCALE: "0.30"
 PANEL_MOVEIT_BRIDGE_ACCEL_SCALE: "0.30"
 
 # --- Debug / audit root --------------------------------------------------------
-PANEL_DIRECT_DEBUG_ROOT: /home/laboratorio/TFM/historico
+# F-iter2 audit (2026-05-10): valor hardcoded eliminado (no portable).
+# El default ahora viene de launch_helpers.PANEL_ENV_DEFAULTS computado
+# desde WS_DIR (portable). Para override explícito, exportar la env var
+# antes del launch:
+#   export PANEL_DIRECT_DEBUG_ROOT=/ruta/custom
+#   ros2 launch ur5_bringup ur5_stack.launch.py
+# PANEL_DIRECT_DEBUG_ROOT: <removed in F-iter2>
+
 
 # --- pick_demo: GRASP_DOWN segmented IK descent --------------------------------
 # Para historial de tuning ver docs/CHANGELOG_TUNING.md.
