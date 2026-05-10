@@ -23,11 +23,13 @@ LIFECYCLE_NODES = {
     "src/ur5_tools/ur5_tools/tf_geometry_service.py",
     "src/ur5_tools/ur5_tools/object_pose_resolver_service.py",
     "src/ur5_tools/ur5_tools/gz_pose_bridge.py",
+    # F10b (2026-05-10): migrado de Node → LifecycleNode con auto_activate
+    # backward compat. on_configure/activate/deactivate/cleanup/shutdown.
+    "src/ur5_tools/ur5_tools/evidence_logger.py",
 }
 
 PLAIN_NODES = {
     # Pendientes de migrar (riesgo + live test budget):
-    "src/ur5_tools/ur5_tools/evidence_logger.py",
     "src/ur5_tools/ur5_tools/planning_scene_sync.py",
     "src/ur5_tools/ur5_tools/plan_to_pose_server.py",
     # No migran por diseño (one-shots o probes):
@@ -79,17 +81,17 @@ def test_plain_node_inventory_locked() -> None:
 
 
 def test_total_count_matches_doc() -> None:
-    """Total de nodos productivos ≥ 11 (8 LC + 3 pendientes), las 3
-    probe utilities no cuentan como pipeline."""
+    """Total de nodos productivos: 9 LC + 2 pendientes (F10b parcial
+    cerró evidence_logger 2026-05-10)."""
     pipeline_lc_count = len(LIFECYCLE_NODES)
     pipeline_pending_count = len([
         p for p in PLAIN_NODES if any(
-            kw in p for kw in ("evidence_logger", "planning_scene_sync", "plan_to_pose_server")
+            kw in p for kw in ("planning_scene_sync", "plan_to_pose_server")
         )
     ])
-    assert pipeline_lc_count == 8, (
-        f"Esperaba 8 LifecycleNodes en pipeline, hay {pipeline_lc_count}"
+    assert pipeline_lc_count == 9, (
+        f"Esperaba 9 LifecycleNodes en pipeline, hay {pipeline_lc_count}"
     )
-    assert pipeline_pending_count == 3, (
-        f"Esperaba 3 nodos productivos pendientes de LC, hay {pipeline_pending_count}"
+    assert pipeline_pending_count == 2, (
+        f"Esperaba 2 nodos productivos pendientes de LC, hay {pipeline_pending_count}"
     )

@@ -38,7 +38,7 @@ from .moveit_bridge_utils import bridge_env_str
 
 import rclpy
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
-from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -73,8 +73,27 @@ from .evidence_helpers import (
 )
 
 
-class EvidenceLogger(Node):
-    """ROS 2 node that records pick & place events to disk for academic review."""
+class EvidenceLogger(LifecycleNode):
+    """ROS 2 LifecycleNode that records pick & place events to disk.
+
+    F10b audit (2026-05-10): migrado de Node → LifecycleNode. Las
+    transiciones managed permiten arrancar/parar sesiones de evidencia
+    sin reiniciar el proceso (útil cuando se hacen tandas de pick demo
+    para defensa académica).
+
+    * ``on_configure``: declara parámetros (no toca disco).
+    * ``on_activate``: crea directorio de sesión, abre files, crea
+      subscriptions. Emite session_started.
+    * ``on_deactivate``: cierra subscriptions (deja files abiertos para
+      reactivación rápida).
+    * ``on_cleanup``: cierra files, escribe metrics.json.
+    * ``on_shutdown``: idempotente, equivale a cleanup.
+
+    Backward compat: param ``auto_activate`` (default True) hace que
+    main() pase por configure→activate sin necesidad de
+    ``ros2 lifecycle set`` externo. Mantiene el comportamiento de la
+    versión Node anterior.
+    """
 
     def __init__(self) -> None:
         super().__init__("evidence_logger")
@@ -84,30 +103,16 @@ class EvidenceLogger(Node):
         self.declare_parameter("desired_grasp_result_topic", "/desired_grasp/result")
         self.declare_parameter("system_state_topic", "/system_state")
         self.declare_parameter("system_diag_topic", "/system_diag")
+        self.declare_parameter("auto_activate", True)
 
-        output_root_param = str(
-            self.get_parameter("output_root").value or ""
-        ).strip()
-        if output_root_param:
-            root = Path(output_root_param).expanduser().resolve()
-        else:
-            ws_dir = bridge_env_str("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
-            root = Path(ws_dir) / "report" / "runs"
-        root.mkdir(parents=True, exist_ok=True)
-        self._session_dir = _safe_unique_dir(root)
-        self._events_path = self._session_dir / "events.jsonl"
-        self._summary_path = self._session_dir / "summary.csv"
-
-        self._events_fp = self._events_path.open("a", encoding="utf-8")
-        self._summary_fp = self._summary_path.open("a", encoding="utf-8", newline="")
-        self._summary_writer = csv.writer(self._summary_fp)
-        # F5 (auditoría 2026-05-10): pick_run_id propagado a todos los
-        # eventos. Header CSV extendido con la nueva columna.
-        self._summary_writer.writerow(
-            ["ts_iso", "pick_run_id", "kind", "object", "success", "reason"]
-        )
-        # ID activo recibido vía /pick/run_id (latched). Vacío hasta que
-        # el orchestrator publique uno (caso normal: primer goal pick).
+        # State container — poblado por on_activate, vaciado por on_cleanup.
+        self._session_dir: Optional[Path] = None
+        self._events_path: Optional[Path] = None
+        self._summary_path: Optional[Path] = None
+        self._events_fp: Optional[Any] = None
+        self._summary_fp: Optional[Any] = None
+        self._summary_writer: Optional[Any] = None
+        self._subs: List[Any] = []
         self._current_pick_run_id: str = ""
 
         self._reliable_qos = QoSProfile(
@@ -122,28 +127,109 @@ class EvidenceLogger(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
         )
-
-        self._subs: List[Any] = []
-        # F19 (2026-05-02): MutuallyExclusiveCallbackGroup serializa los
-        # callbacks de subscriptions, evitando que dos eventos compitan
-        # por el lock implícito de escritura en events.jsonl + summary.csv.
-        # Reduce contención y elimina race conditions sobre los file
-        # descriptors abiertos.
         self._cb_group = MutuallyExclusiveCallbackGroup()
-        self._setup_subscriptions()
+        self._activated = False
 
-        self._record(
-            kind="session_started",
-            data={
-                "session_dir": str(self._session_dir),
-                "events_path": str(self._events_path),
-                "summary_path": str(self._summary_path),
-            },
+    # ------------------------------------------------------------------
+    # Lifecycle transitions (F10b audit 2026-05-10)
+    # ------------------------------------------------------------------
+    def on_configure(self, _state) -> TransitionCallbackReturn:
+        self.get_logger().info("[LIFECYCLE] EvidenceLogger configured")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, _state) -> TransitionCallbackReturn:
+        if self._activated:
+            return TransitionCallbackReturn.SUCCESS
+        try:
+            self._open_session()
+            self._setup_subscriptions()
+            self._record(
+                kind="session_started",
+                data={
+                    "session_dir": str(self._session_dir),
+                    "events_path": str(self._events_path),
+                    "summary_path": str(self._summary_path),
+                },
+            )
+            self.get_logger().info(
+                f"[EVIDENCE] session={self._session_dir} "
+                f"events={self._events_path.name} "
+                f"summary={self._summary_path.name}"
+            )
+            self._activated = True
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            self.get_logger().error(
+                f"[EVIDENCE] activate_failed err={type(exc).__name__}:{exc}"
+            )
+            return TransitionCallbackReturn.FAILURE
+
+    def on_deactivate(self, _state) -> TransitionCallbackReturn:
+        # Cierra subscriptions; deja archivos abiertos para reactivación.
+        for sub in self._subs:
+            try:
+                self.destroy_subscription(sub)
+            except Exception:
+                pass
+        self._subs = []
+        self._activated = False
+        self.get_logger().info("[LIFECYCLE] EvidenceLogger deactivated")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, _state) -> TransitionCallbackReturn:
+        self._close_session()
+        self.get_logger().info("[LIFECYCLE] EvidenceLogger cleaned up")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, _state) -> TransitionCallbackReturn:
+        self._close_session()
+        return TransitionCallbackReturn.SUCCESS
+
+    def _open_session(self) -> None:
+        """Crea directorio de sesión, abre events.jsonl + summary.csv."""
+        output_root_param = str(
+            self.get_parameter("output_root").value or ""
+        ).strip()
+        if output_root_param:
+            root = Path(output_root_param).expanduser().resolve()
+        else:
+            ws_dir = bridge_env_str("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
+            root = Path(ws_dir) / "report" / "runs"
+        root.mkdir(parents=True, exist_ok=True)
+        self._session_dir = _safe_unique_dir(root)
+        self._events_path = self._session_dir / "events.jsonl"
+        self._summary_path = self._session_dir / "summary.csv"
+        self._events_fp = self._events_path.open("a", encoding="utf-8")
+        self._summary_fp = self._summary_path.open("a", encoding="utf-8", newline="")
+        self._summary_writer = csv.writer(self._summary_fp)
+        # F5 (auditoría 2026-05-10): pick_run_id propagado a todos los
+        # eventos. Header CSV extendido con la nueva columna.
+        self._summary_writer.writerow(
+            ["ts_iso", "pick_run_id", "kind", "object", "success", "reason"]
         )
-        self.get_logger().info(
-            f"[EVIDENCE] session={self._session_dir} events={self._events_path.name} "
-            f"summary={self._summary_path.name}"
-        )
+
+    def _close_session(self) -> None:
+        if not self._events_path:
+            return
+        try:
+            self._record(kind="session_finished", data={})
+        except Exception:
+            pass
+        for fp in (self._events_fp, self._summary_fp):
+            try:
+                if fp:
+                    fp.close()
+            except Exception:
+                pass
+        self._events_fp = None
+        self._summary_fp = None
+        self._summary_writer = None
+        try:
+            self._write_session_metrics()
+        except Exception as exc:
+            self.get_logger().warning(
+                f"[EVIDENCE] metrics_write_failed err={type(exc).__name__}:{exc}"
+            )
 
     def _setup_subscriptions(self) -> None:
         # F5: suscripción al PICK_RUN_ID publicado por el orchestrator.
@@ -321,24 +407,8 @@ class EvidenceLogger(Node):
             )
 
     def shutdown(self) -> None:
-        try:
-            self._record(kind="session_finished", data={})
-        except Exception:
-            pass
-        for fp in (self._events_fp, self._summary_fp):
-            try:
-                fp.close()
-            except Exception:
-                pass
-        # F10: escribir metrics.json con agregados de la sesión leyendo
-        # el JSONL recién cerrado. Si algo falla, se ignora — el JSONL
-        # sigue siendo la fuente canónica.
-        try:
-            self._write_session_metrics()
-        except Exception as exc:
-            self.get_logger().warning(
-                f"[EVIDENCE] metrics_write_failed err={type(exc).__name__}:{exc}"
-            )
+        """Backward-compat shim — delega en on_cleanup."""
+        self._close_session()
 
     def _write_session_metrics(self) -> None:
         """Lee events.jsonl y escribe metrics.json con agregados (F10)."""
@@ -371,12 +441,21 @@ class EvidenceLogger(Node):
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = EvidenceLogger()
+    # Backward compat: auto_activate=True (default) hace configure→activate
+    # automáticamente. Para uso managed externo (ros2 lifecycle set …),
+    # arranca con --ros-args -p auto_activate:=false.
     try:
+        if bool(node.get_parameter("auto_activate").value):
+            node.trigger_configure()
+            node.trigger_activate()
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
-        node.shutdown()
+        try:
+            node.shutdown()
+        except Exception:
+            pass
         try:
             node.destroy_node()
         except Exception:

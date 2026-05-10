@@ -12,7 +12,7 @@
 | `tf_geometry_service` | LC | Services geométricos centralizados | ✓ ya |
 | `object_pose_resolver_service` | LC | Cache de poses, sub TF dinámico | ✓ ya |
 | `gz_pose_bridge` | LC | Subprocess `gz topic` watchdog | ✓ ya |
-| `evidence_logger` | Node | **Pendiente** — observability, baja prioridad LC | F10b |
+| `evidence_logger` | LC | F10b cerrado 2026-05-10: managed con `auto_activate` | ✓ |
 | `planning_scene_sync` | Node | **Pendiente** — sync MoveIt scene, riesgo medio | F10b |
 | `plan_to_pose_server` | Node | **Pendiente** — 1430 LOC, riesgo alto, requiere split previo (F7) | F7+F10b |
 | `controller_bootstrap` | Node | **NO migra** — one-shot bootstrap (load+config+activate). LC añadiría complejidad sin beneficio. | n/a |
@@ -21,10 +21,10 @@
 
 ## Cobertura
 
-* **8/12 nodos productivos** son LifecycleNode (67 %).
-* **3 nodos productivos** quedan como Node: `evidence_logger`,
-  `planning_scene_sync`, `plan_to_pose_server`. Los tres requieren
-  validación live para migrar sin regresión.
+* **9/12 nodos productivos** son LifecycleNode (75 %).
+* **2 nodos productivos** quedan como Node: `planning_scene_sync`
+  y `plan_to_pose_server`. Ambos requieren validación live para
+  migrar sin regresión.
 * **3 utilities/probes** no requieren LC por diseño.
 
 ## Plan de cierre F10b (cuando haya live testing budget)
