@@ -178,15 +178,17 @@ if [[ "${HEADLESS}" == "true" ]]; then
     EXTRA_LAUNCH_ARGS="headless:=true camera_required:=false"
     export PANEL_CAMERA_REQUIRED=0
 else
-    # Por defecto, en sesión local con DISPLAY se lanza la GUI de Gazebo para
-    # poder ver la simulación durante la demo. Si la GUI crashea con
-    # QSGRenderLoop::handleContextCreationFailure (Qt5 Quick sin contexto OpenGL),
-    # forzar PANEL_GZ_HEADLESS=1 ./lanzar_panelc2.sh para volver al modo solo
-    # servidor (la simulación funcional sigue corriendo vía ros_gz_bridge).
-    if [[ "${PANEL_GZ_HEADLESS:-0}" == "1" ]]; then
-        EXTRA_LAUNCH_ARGS="headless:=true"
-    else
+    # Por defecto mantenemos el panel Qt en la sesión gráfica, pero Gazebo arranca
+    # solo como servidor. En esta máquina hay sesiones con DISPLAY válido donde
+    # GLX no puede crear contexto y la GUI de Gazebo derriba todo el stack.
+    # Para forzar GUI de Gazebo explícitamente: PANEL_GZ_HEADLESS=0 ./lanzar_panelc2.sh
+    if [[ "${PANEL_GZ_HEADLESS:-1}" == "0" ]]; then
         EXTRA_LAUNCH_ARGS="headless:=false"
+    else
+        EXTRA_LAUNCH_ARGS="headless:=true camera_required:=false"
+      export PANEL_GZ_HEADLESS=1
+        export PANEL_CAMERA_REQUIRED=0
+        echo "[LAUNCH] Gazebo GUI desactivada por defecto (PANEL_GZ_HEADLESS=${PANEL_GZ_HEADLESS:-1}); panel Qt sigue usando DISPLAY."
     fi
 fi
 
@@ -250,11 +252,23 @@ done
 echo "[LAUNCH] Gazebo pose/info activo ($(( $(date +%s) - GAZEBO_WAIT_START ))s)"
 
 # ── Verificar nodos críticos ──────────────────────────────────────────────────
-NODE_WAIT_SEC=30
+NODE_WAIT_SEC="${PANEL_CRITICAL_NODE_WAIT_SEC:-90}"
 NODE_WAIT_START=$(date +%s)
 echo "[LAUNCH] Verificando nodos críticos..."
+node_process_alive() {
+  case "$1" in
+    /gripper_attach_backend) pgrep -f "gripper_attach_backend" >/dev/null 2>&1 ;;
+    /world_tf_publisher) pgrep -f "world_tf_publisher" >/dev/null 2>&1 ;;
+    /system_state_manager) pgrep -f "system_state_manager" >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
 for NODE in "/gripper_attach_backend" "/world_tf_publisher" "/system_state_manager"; do
     until ros2 node list --no-daemon 2>/dev/null | grep -q "$NODE"; do
+    if node_process_alive "$NODE"; then
+      echo "[WARN]  $NODE no aparece aún en ros2 node list, pero el proceso está vivo; continuo y /system_state validará READY."
+      break
+    fi
         NOW=$(date +%s)
         ELAPSED=$(( NOW - NODE_WAIT_START ))
         if (( ELAPSED >= NODE_WAIT_SEC )); then

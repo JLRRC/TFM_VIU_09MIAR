@@ -102,6 +102,15 @@ def _env_float(name: str, default: float) -> float:
     return value
 
 
+def _panel_qt_platform() -> str:
+    explicit = os.environ.get("PANEL_QT_PLATFORM") or os.environ.get("QT_QPA_PLATFORM")
+    if explicit:
+        return explicit
+    if os.environ.get("PANEL_FORCE_OFFSCREEN", "0") == "1" or not os.environ.get("DISPLAY"):
+        return "offscreen"
+    return "xcb"
+
+
 def _prepare_runtime(context, *_args) -> List[object]:
     logger = get_logger("ur5_stack")
     # F2-step3 (audit-v4): WS_DIR resuelto via launch_helpers.resolve_ws_dir.
@@ -478,7 +487,7 @@ def generate_launch_description():
         output="screen",
         additional_env={
             "PANEL_CAMERA_REQUIRED": LaunchConfiguration("camera_required"),
-            "QT_QPA_PLATFORM": _resolve_runtime("QT_QPA_PLATFORM", "offscreen"),
+            "QT_QPA_PLATFORM": _panel_qt_platform(),
         },
         condition=IfCondition(launch_panel),
     )

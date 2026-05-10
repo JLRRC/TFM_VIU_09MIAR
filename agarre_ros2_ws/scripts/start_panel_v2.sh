@@ -138,6 +138,9 @@ if [[ -z "${PANEL_GZ_GUI+x}" ]]; then
     PANEL_GZ_GUI="0"
   fi
 fi
+if [[ "${PANEL_GZ_HEADLESS:-0}" == "1" ]]; then
+  PANEL_GZ_GUI="0"
+fi
 if [[ "${PANEL_GZ_GUI:-0}" == "1" && -z "${PANEL_QT_PLATFORM:-}" && "${QT_QPA_PLATFORM:-}" == "offscreen" ]]; then
   log "Detectado QT_QPA_PLATFORM=offscreen en terminal grafica; limpiando para permitir GUI local"
   unset QT_QPA_PLATFORM
@@ -700,7 +703,7 @@ if [[ "${PANEL_MODE}" == "manual" ]]; then
   PANEL_MANAGED="0"
 fi
 HEADLESS="true"
-if [[ "${PANEL_GZ_GUI:-0}" == "1" ]]; then
+if [[ "${PANEL_GZ_GUI:-0}" == "1" && "${PANEL_GZ_HEADLESS:-0}" != "1" ]]; then
   HEADLESS="false"
 fi
 
