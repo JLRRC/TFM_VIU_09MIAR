@@ -124,6 +124,11 @@ pkill -TERM -f "pick_orchestrator_node\|tfm_orchestrator/pick_orchestrator\b" 2>
 pkill -TERM -f "plan_to_pose_server"                   2>/dev/null || true
 pkill -TERM -f "object_pose_resolver_service"          2>/dev/null || true
 pkill -TERM -f "tf_geometry_service"                   2>/dev/null || true
+# F6 + F9 (audit 2026-05-10): LifecycleNodes nuevos.
+pkill -TERM -f "panel_launch_control_node"             2>/dev/null || true
+pkill -TERM -f "panel_backend_node"                    2>/dev/null || true
+pkill -TERM -f "controller_health_monitor_node"        2>/dev/null || true
+pkill -TERM -f "simulation_reset_service"              2>/dev/null || true
 # Bridges y publishers
 pkill -TERM -f "gz_pose_bridge|gz_ros_control_guard|world_tf_publisher" 2>/dev/null || true
 pkill -TERM -f "ros_gz_bridge|parameter_bridge"        2>/dev/null || true
@@ -145,7 +150,9 @@ move_group|ur5_moveit_bridge|ur5_moveit_py|\
 planning_scene_sync|gripper_attach_backend|release_objects_service|system_state_manager|\
 panel_v2\.py|ur5_qt_panel|grasp_inference|main_panel|\
 pick_orchestrator|plan_to_pose_server|object_pose_resolver_service|\
-tf_geometry_service|evidence_logger|tf_probe|clock_probe" \
+tf_geometry_service|evidence_logger|tf_probe|clock_probe|\
+panel_launch_control_node|panel_backend_node|\
+controller_health_monitor_node|simulation_reset_service" \
     >/dev/null 2>&1
 }
 
@@ -181,6 +188,11 @@ if _any_running; then
   pkill -KILL -f "plan_to_pose_server"                   2>/dev/null || true
   pkill -KILL -f "object_pose_resolver_service"          2>/dev/null || true
   pkill -KILL -f "tf_geometry_service"                   2>/dev/null || true
+  # F6 + F9 (audit 2026-05-10): LifecycleNodes nuevos.
+  pkill -KILL -f "panel_launch_control_node"             2>/dev/null || true
+  pkill -KILL -f "panel_backend_node"                    2>/dev/null || true
+  pkill -KILL -f "controller_health_monitor_node"        2>/dev/null || true
+  pkill -KILL -f "simulation_reset_service"              2>/dev/null || true
   pkill -KILL -f "gz_pose_bridge|gz_ros_control_guard|world_tf_publisher" 2>/dev/null || true
   pkill -KILL -f "ros_gz_bridge|parameter_bridge"        2>/dev/null || true
   pkill -KILL -f "robot_state_publisher"                 2>/dev/null || true
@@ -239,7 +251,9 @@ move_group|ur5_moveit_bridge|controller_manager|\
 gripper_attach_backend|system_state_manager|\
 panel_v2|main_panel|grasp_inference|\
 pick_orchestrator|plan_to_pose_server|object_pose_resolver_service|\
-tf_geometry_service|evidence_logger" \
+tf_geometry_service|evidence_logger|\
+panel_launch_control_node|panel_backend_node|\
+controller_health_monitor_node|simulation_reset_service" \
   | grep -v grep || true
 log "--- ros2 node list (timeout 5s, --no-daemon) ---"
 # --no-daemon: consulta la red DDS directamente, evita el daemon como proxy.
@@ -247,5 +261,5 @@ log "--- ros2 node list (timeout 5s, --no-daemon) ---"
 timeout 5s ros2 node list --no-daemon 2>/dev/null || log "(sin nodos visibles o timeout — normal si el stack está apagado)"
 log "--- fin verificación ---"
 
-log "OK — stack limpio. Listo para arrancar con ./lanzar_panelc2.sh"
+log "OK — stack limpio. Listo para arrancar con ./scripts/start_panel_v2.sh"
 exit 0
