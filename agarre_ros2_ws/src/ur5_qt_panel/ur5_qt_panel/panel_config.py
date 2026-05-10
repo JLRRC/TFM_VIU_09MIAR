@@ -319,7 +319,8 @@ except Exception as exc:  # pragma: no cover
 CAMERA_TOPIC_PREFIX = "/camera"
 MOVEIT_POSE_TOPIC = "/desired_grasp"
 MOVEIT_CARTESIAN_POSE_TOPIC = "/desired_grasp_cartesian"
-GLOBAL_FRAME_EFFECTIVE = "base_link"
+# F-iter3 audit (2026-05-10): GLOBAL_FRAME_EFFECTIVE eliminada aquí —
+# definida una sola vez arriba (línea 206). Era duplicación silenciosa.
 GRASP_RECT_TOPIC = _get_panel_ui_params().grasp_rect_topic
 TEST_CORNER_OVERLAY = _get_panel_ui_params().test_corner_overlay
 TCP_POSE_OVERLAY = _get_panel_ui_params().tcp_pose_overlay

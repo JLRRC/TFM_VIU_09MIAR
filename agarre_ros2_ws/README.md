@@ -3,6 +3,16 @@
 Workspace ROS 2 del TFM para panel, simulacion y planificacion del UR5 con Gazebo y MoveIt 2.
 Se conserva el nombre `agarre_ros2_ws` por compatibilidad con scripts y rutas absolutas ya validadas.
 
+## Auditorías y refactor profesional (2026-05-10)
+
+El workspace ha pasado por una auditoría profesional completa con plan F0-F10 ejecutado en 3 iteraciones:
+
+- **Iteración 1** (commit `audit-iter1-complete-20260510`): F0-F10 completas — limpieza, geometría centralizada, paquete `ur5_gazebo`, nuevos LifecycleNodes (panel_backend, controller_health_monitor, simulation_reset), workflows CI con coverage, docs/{ARCHITECTURE,PICK_SEQUENCE,FRAMES,HARDWARE_CHECKLIST}.md.
+- **Iteración 2** (`audit-iter2-complete-20260510`): re-audit profesional desde cero (4 agentes paralelos), 3 fixes (PANEL_DIRECT_DEBUG_ROOT portable, ur5_gazebo/launch placeholder, SCRIPTS_INVENTORY.md).
+- **Iteración 3** (commit en cierre): re-audit convergencia — 4 hallazgos micro (constante duplicada, TODO documentado, nota patrón setup.py, este README).
+
+Documento canónico de arquitectura: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Plan refactor por fases: ver `auditoria/`. Estado actual: **profesional para defensa académica + simulación**, pendiente validación HW real (ver [docs/HARDWARE_CHECKLIST.md](docs/HARDWARE_CHECKLIST.md)).
+
 ## Documentación de arquitectura
 
 El documento [ARCHITECTURE.md](ARCHITECTURE.md) describe la arquitectura completa del sistema:

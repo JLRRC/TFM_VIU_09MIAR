@@ -1,8 +1,41 @@
 # v1.0 → v1.1 deferred items
 
-**Fecha**: 2026-05-08
-**Contexto**: cierre del audit-v4. Items que fueron ejecutados parcialmente
-o se difieren explícitamente a v1.1 con plan documentado.
+**Fecha**: 2026-05-08 (creación), 2026-05-10 (auditoría F0-F10 + iter 1-3 actualizado)
+**Contexto**: cierre del audit-v4 + auditoría profesional F0-F10 (2026-05-10).
+Items que fueron ejecutados parcialmente o se difieren explícitamente a
+v1.1 con plan documentado.
+
+---
+
+## F-iter3 audit (2026-05-10): RG2 force sensing real
+
+**Estado**: deferred v1.1 (HW real).
+
+**Path**: `src/ur5_qt_panel/ur5_qt_panel/panel_motion_control.py:225-230`
+
+```python
+# TODO: Integrar con RG2_GRIPPER topic real
+def _estimate_gripper_force(panel) -> float:
+    if hasattr(panel, '_gripper_is_closed'):
+        if panel._gripper_is_closed:
+            return 0.5  # 0.5 N cuando está cerrado (estimación)
+    return 0.0
+```
+
+**Razón**: el RG2 simulado en Gazebo no expone fuerza real. La función
+devuelve un placeholder ficticio. Para producción (HW real OnRobot RG2),
+integrar con:
+
+  * **Topic**: `/onrobot_rg2/state` (o equivalente del driver físico).
+  * **Mensaje**: `onrobot_rg2_msgs/msg/GripperState` con campo `force_n`.
+  * **Nodo**: `gripper_attach_backend` puede subscribirse y republicar
+    como `~/force` (latched).
+
+**Plan v1.1**:
+1. Confirmar nombre del driver al disponer del HW (ver `docs/HARDWARE_CHECKLIST.md`).
+2. Añadir subscriber en `gripper_attach_backend.on_configure`.
+3. Sustituir `_estimate_gripper_force` por lectura del topic.
+4. Test live `test_gripper_force_real.py` con cubo medido.
 
 ---
 
