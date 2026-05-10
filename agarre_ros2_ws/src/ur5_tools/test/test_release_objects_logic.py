@@ -4,9 +4,75 @@ from __future__ import annotations
 
 from ur5_tools.release_objects_logic import (
     compute_missing_required,
+    drop_anchor_cleanup_targets,
     find_drop_anchor_duplicates,
     parse_world_name_from_sdf,
+    pick_gz_service,
 )
+
+
+# ---- drop_anchor_cleanup_targets (F8 audit 2026-05-10) -----------------------
+
+
+def test_cleanup_targets_with_primary() -> None:
+    out = drop_anchor_cleanup_targets("drop_anchor", include_primary=True)
+    assert len(out) == 9  # 3 model_names * 3 entries
+    assert ("drop_anchor", "MODEL") in out
+    assert ("drop_anchor::link", "LINK") in out
+    assert ("drop_anchor/link", "LINK") in out
+    assert ("drop_anchor(1)", "MODEL") in out
+    assert ("drop_anchor(2)", "MODEL") in out
+
+
+def test_cleanup_targets_without_primary() -> None:
+    out = drop_anchor_cleanup_targets("drop_anchor", include_primary=False)
+    assert len(out) == 6  # 2 model_names (1)+(2) * 3 entries
+    assert ("drop_anchor", "MODEL") not in out
+    assert ("drop_anchor(1)", "MODEL") in out
+
+
+def test_cleanup_targets_custom_anchor() -> None:
+    out = drop_anchor_cleanup_targets("foo_anchor", include_primary=True)
+    assert ("foo_anchor", "MODEL") in out
+    assert ("foo_anchor(2)::link", "LINK") in out
+
+
+# ---- pick_gz_service (F8 audit 2026-05-10) -----------------------------------
+
+
+def test_pick_gz_service_exact_suffix_match() -> None:
+    services = [
+        "/world/empty/clock",
+        "/world/myworld/create/blocking",
+        "/world/myworld/spawn",
+    ]
+    out = pick_gz_service(services, "myworld", ("create/blocking", "spawn"))
+    assert out == "/world/myworld/create/blocking"
+
+
+def test_pick_gz_service_falls_back_to_no_slash_suffix() -> None:
+    services = ["/world/myworld/foo_create"]
+    out = pick_gz_service(services, "myworld", ("create",))
+    assert out == "/world/myworld/foo_create"
+
+
+def test_pick_gz_service_returns_none_if_no_scoped() -> None:
+    services = ["/world/otra/spawn"]
+    out = pick_gz_service(services, "myworld", ("spawn",))
+    assert out is None
+
+
+def test_pick_gz_service_empty_services() -> None:
+    assert pick_gz_service([], "myworld", ("spawn",)) is None
+
+
+def test_pick_gz_service_respects_suffix_priority() -> None:
+    services = [
+        "/world/myworld/spawn",
+        "/world/myworld/create/blocking",
+    ]
+    out = pick_gz_service(services, "myworld", ("create/blocking", "spawn"))
+    assert out == "/world/myworld/create/blocking"
 
 
 # ---- compute_missing_required -----------------------------------------------

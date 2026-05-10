@@ -15,9 +15,28 @@ if PKG_ROOT not in sys.path:
 
 
 def _inject_ur5_tools_stub() -> None:
-    """Inject a minimal ur5_tools stub so panel_config is importable without ROS install."""
+    """Inject a minimal ur5_tools stub so panel_config is importable without ROS install.
+
+    F8 (auditoría 2026-05-10): si el paquete real ur5_tools es importable
+    (caso típico cuando los tests del qt_panel se ejecutan junto con los
+    de ur5_tools en la misma sesión pytest), NO inyectar stubs — el real
+    es preferible. Si NO es importable, inyectar el stub completo.
+    """
     if "ur5_tools" in sys.modules:
         return
+    # Probar a añadir ur5_tools/ del workspace al sys.path y luego
+    # importar el real. Si funciona, dejarlo y no hacer nada.
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    ws_src = os.path.abspath(os.path.join(test_dir, "..", ".."))
+    ur5_tools_root = os.path.join(ws_src, "ur5_tools")
+    if os.path.isdir(ur5_tools_root) and ur5_tools_root not in sys.path:
+        sys.path.insert(0, ur5_tools_root)
+    try:
+        import ur5_tools  # noqa: F401
+        # Real disponible — no inyectar stub.
+        return
+    except ImportError:
+        pass
 
     stub = types.ModuleType("ur5_tools")
     sys.modules["ur5_tools"] = stub
@@ -39,6 +58,17 @@ def _inject_ur5_tools_stub() -> None:
     )
     stub.geometry_constants = gc_mod
     sys.modules["ur5_tools.geometry_constants"] = gc_mod
+
+    # F8 (auditoría 2026-05-10): stubs vacíos de los módulos puros
+    # release_objects_*. Tests del qt_panel no los necesitan
+    # funcionalmente pero la importabilidad debe estar garantizada
+    # cuando se mezcla con tests del propio ur5_tools.
+    rol_mod = types.ModuleType("ur5_tools.release_objects_logic")
+    stub.release_objects_logic = rol_mod
+    sys.modules["ur5_tools.release_objects_logic"] = rol_mod
+    rog_mod = types.ModuleType("ur5_tools.release_objects_geometry")
+    stub.release_objects_geometry = rog_mod
+    sys.modules["ur5_tools.release_objects_geometry"] = rog_mod
 
     gg = types.ModuleType("ur5_tools.gripper_geometry")
     gg.RG2_PINCH_CENTER_FRAME = "rg2_pinch_center"

@@ -14,7 +14,7 @@ Sin dependencias ROS. Tests offline puros.
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 
 def compute_missing_required(
@@ -44,6 +44,66 @@ def find_drop_anchor_duplicates(
     """
     prefix = f"{anchor_name}("
     return [n for n in pose_names if n.startswith(prefix)]
+
+
+def drop_anchor_cleanup_targets(
+    anchor_name: str,
+    *,
+    include_primary: bool,
+) -> List[Tuple[str, str]]:
+    """Genera la lista de targets a limpiar para el drop_anchor.
+
+    F8 (auditoría 2026-05-10): extraído de ``ReleaseObjectsService.
+    _drop_anchor_cleanup_targets``. Para cada model_name considerado
+    (primary opcional + ``anchor_name(1)`` y ``anchor_name(2)``) se
+    devuelven 3 entries: el modelo en sí (``MODEL``) y dos formas de
+    su link (``LINK``, separador ``::`` y ``/``).
+
+    Returns:
+        Lista de tuplas ``(target_name, target_type)`` donde
+        ``target_type`` es ``"MODEL"`` o ``"LINK"``.
+    """
+    model_names: List[str] = []
+    if include_primary:
+        model_names.append(anchor_name)
+    for idx in (1, 2):
+        model_names.append(f"{anchor_name}({idx})")
+    targets: List[Tuple[str, str]] = []
+    for model_name in model_names:
+        targets.append((model_name, "MODEL"))
+        targets.append((f"{model_name}::link", "LINK"))
+        targets.append((f"{model_name}/link", "LINK"))
+    return targets
+
+
+def pick_gz_service(
+    services: Sequence[str],
+    world_name: str,
+    suffixes: Tuple[str, ...],
+) -> Optional[str]:
+    """Selecciona un nombre de servicio Gazebo de la lista por sufijo.
+
+    F8 (auditoría 2026-05-10): extraído de ``ReleaseObjectsService.
+    _pick_gz_service``. Reglas:
+
+      1. Filtra ``services`` por los que contienen ``/world/{world_name}/``.
+      2. Para cada ``suffix`` en orden, devuelve el primer scoped que
+         termina exactamente con ``/{suffix}``.
+      3. Si ninguno cumple (2), devuelve el primer scoped que termina
+         con cualquiera de los suffixes (sin barra).
+      4. Si no hay scoped, devuelve None.
+    """
+    scoped = [s for s in services if f"/world/{world_name}/" in s]
+    for suffix in suffixes:
+        for name in scoped:
+            if name.endswith(f"/{suffix}"):
+                return name
+    if scoped:
+        for name in scoped:
+            for suffix in suffixes:
+                if name.endswith(suffix):
+                    return name
+    return None
 
 
 def parse_world_name_from_sdf(sdf_text: str) -> str:

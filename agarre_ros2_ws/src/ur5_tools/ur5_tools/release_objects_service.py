@@ -30,6 +30,16 @@ from .param_utils import (
     read_str_list_param,
     read_str_param,
 )
+from .release_objects_geometry import (
+    is_pose_on_table as _pure_is_pose_on_table,
+    parse_table_geometry_from_sdf as _pure_parse_table_geometry,
+    pose_tuple_from_text as _pure_pose_tuple_from_text,
+    quat_from_rpy as _pure_quat_from_rpy,
+)
+from .release_objects_logic import (
+    drop_anchor_cleanup_targets as _pure_drop_anchor_cleanup_targets,
+    pick_gz_service as _pure_pick_gz_service,
+)
 
 DROP_OBJECTS = [
     "box_blue",
@@ -390,18 +400,11 @@ class ReleaseObjectsService(LifecycleNode):
         *,
         include_primary: bool,
     ) -> List[Tuple[str, str]]:
-        anchor_name = self._drop_anchor_name
-        model_names: List[str] = []
-        if include_primary:
-            model_names.append(anchor_name)
-        for idx in (1, 2):
-            model_names.append(f"{anchor_name}({idx})")
-        targets: List[Tuple[str, str]] = []
-        for model_name in model_names:
-            targets.append((model_name, "MODEL"))
-            targets.append((f"{model_name}::link", "LINK"))
-            targets.append((f"{model_name}/link", "LINK"))
-        return targets
+        """Wrapper sobre helper puro (F8 audit 2026-05-10)."""
+        return _pure_drop_anchor_cleanup_targets(
+            self._drop_anchor_name,
+            include_primary=include_primary,
+        )
 
     def _reset_drop_anchor_ros(self, timeout: float) -> bool:
         anchor_name = self._drop_anchor_name
@@ -633,60 +636,25 @@ class ReleaseObjectsService(LifecycleNode):
         return ready, published
 
     def _load_table_geometry(self) -> Optional[Tuple[float, float, float, float, float]]:
+        """Wrapper con cache + log sobre el helper puro (F8 audit 2026-05-10)."""
         if self._table_geom_cache is not None:
             return self._table_geom_cache
         world_sdf = read_str_param(self, "world_sdf", "").strip()
-        if not world_sdf or not os.path.exists(world_sdf):
-            return None
         try:
-            tree = ET.parse(world_sdf)
-            root = tree.getroot()
-            world_elem = root.find("world")
-            if world_elem is None:
-                return None
-            table_model = None
-            for model in world_elem.findall("model"):
-                if model.get("name", "") == "mesa_pro":
-                    table_model = model
-                    break
-            if table_model is None:
-                return None
-            model_pose = self._pose_from_text(table_model.findtext("pose", default="0 0 0 0 0 0"))
-            link = table_model.find("link")
-            if link is None:
-                return None
-            collision = link.find("collision[@name='tablero_collision']") or link.find("collision")
-            if collision is None:
-                return None
-            coll_pose = self._pose_from_text(collision.findtext("pose", default="0 0 0 0 0 0"))
-            size_text = collision.findtext("geometry/box/size", default="0.768 0.80 0.05")
-            vals = [float(v) for v in size_text.split()]
-            if len(vals) < 3:
-                return None
-            size_x, size_y, size_z = vals[:3]
-            center_x = float(model_pose.position.x + coll_pose.position.x)
-            center_y = float(model_pose.position.y + coll_pose.position.y)
-            table_z = float(model_pose.position.z + coll_pose.position.z + (size_z / 2.0))
-            self._table_geom_cache = (center_x, center_y, float(size_x), float(size_y), table_z)
-            return self._table_geom_cache
+            geom = _pure_parse_table_geometry(world_sdf)
         except Exception as exc:
             self.get_logger().warn(f"[PHYSICS][DROP] table geometry unavailable: {exc}")
             return None
+        if geom is not None:
+            self._table_geom_cache = geom
+        return geom
 
     def _is_pose_on_table(self, pose: Tuple[float, float, float]) -> bool:
+        """Wrapper sobre el helper puro (F8 audit 2026-05-10)."""
         geom = self._load_table_geometry()
         if geom is None:
             return False
-        center_x, center_y, size_x, size_y, table_z = geom
-        x, y, z = pose
-        half_x = (size_x / 2.0) + 0.09
-        half_y = (size_y / 2.0) + 0.09
-        dz = z - table_z
-        return (
-            abs(x - center_x) <= half_x
-            and abs(y - center_y) <= half_y
-            and 0.0 <= dz <= 0.08
-        )
+        return _pure_is_pose_on_table(pose, geom)
 
     def _wait_release_settled(self, env_prefix: str, world_name: str, names: List[str]) -> bool:
         # If table geometry isn't configured (no world_sdf param), skip the "on table"
@@ -968,17 +936,8 @@ class ReleaseObjectsService(LifecycleNode):
         world_name: str,
         suffixes: Tuple[str, ...],
     ) -> Optional[str]:
-        scoped = [s for s in services if f"/world/{world_name}/" in s]
-        for suffix in suffixes:
-            for name in scoped:
-                if name.endswith(f"/{suffix}"):
-                    return name
-        if scoped:
-            for name in scoped:
-                for suffix in suffixes:
-                    if name.endswith(suffix):
-                        return name
-        return None
+        """Wrapper sobre helper puro (F8 audit 2026-05-10)."""
+        return _pure_pick_gz_service(services, world_name, suffixes)
 
     def _gz_delete_entity(
         self,
@@ -1091,16 +1050,12 @@ class ReleaseObjectsService(LifecycleNode):
         return candidates[0]
 
     def _pose_from_text(self, text: str) -> Pose:
+        """Wrapper sobre helper puro: tuple → geometry_msgs/Pose."""
+        x, y, z, qx, qy, qz, qw = _pure_pose_tuple_from_text(text)
         pose = Pose()
-        parts = [p for p in text.strip().split() if p]
-        values = [float(p) for p in parts[:6]]
-        while len(values) < 6:
-            values.append(0.0)
-        x, y, z, roll, pitch, yaw = values
         pose.position.x = x
         pose.position.y = y
         pose.position.z = z
-        qx, qy, qz, qw = self._quat_from_rpy(roll, pitch, yaw)
         pose.orientation.x = qx
         pose.orientation.y = qy
         pose.orientation.z = qz
@@ -1113,17 +1068,8 @@ class ReleaseObjectsService(LifecycleNode):
         pitch: float,
         yaw: float,
     ) -> Tuple[float, float, float, float]:
-        cr = math.cos(roll * 0.5)
-        sr = math.sin(roll * 0.5)
-        cp = math.cos(pitch * 0.5)
-        sp = math.sin(pitch * 0.5)
-        cy = math.cos(yaw * 0.5)
-        sy = math.sin(yaw * 0.5)
-        qw = cr * cp * cy + sr * sp * sy
-        qx = sr * cp * cy - cr * sp * sy
-        qy = cr * sp * cy + sr * cp * sy
-        qz = cr * cp * sy - sr * sp * cy
-        return qx, qy, qz, qw
+        """Wrapper sobre helper puro (F8 audit 2026-05-10)."""
+        return _pure_quat_from_rpy(roll, pitch, yaw)
 
 
     # ------------------------------------------------------------------
