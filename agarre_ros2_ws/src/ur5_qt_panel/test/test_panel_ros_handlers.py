@@ -9,12 +9,144 @@ import json
 
 import pytest
 
+from types import SimpleNamespace
+
 from ur5_qt_panel.panel_ros_handlers import (
     SubscriptionDecision,
     classify_subscription_action,
+    format_qos,
     format_rx_result_log,
     parse_moveit_result_payload,
+    qos_durability_name,
+    qos_history_name,
+    qos_reliability_name,
+    validate_joint_state_payload,
 )
+
+
+# ---------------------------------------------------------------------------
+# F9 (auditoría 2026-05-10): QoS name helpers
+# ---------------------------------------------------------------------------
+
+
+# Mock de las policies de rclpy (enums int) sin importar rclpy.
+_RELIABILITY = SimpleNamespace(RELIABLE=1, BEST_EFFORT=2)
+_DURABILITY = SimpleNamespace(VOLATILE=1, TRANSIENT_LOCAL=2)
+_HISTORY = SimpleNamespace(KEEP_LAST=1, KEEP_ALL=2)
+
+
+def test_qos_reliability_name_known_values():
+    assert qos_reliability_name(1, _RELIABILITY) == "RELIABLE"
+    assert qos_reliability_name(2, _RELIABILITY) == "BEST_EFFORT"
+
+
+def test_qos_reliability_name_unknown_value_returns_str():
+    assert qos_reliability_name(99, _RELIABILITY) == "99"
+
+
+def test_qos_reliability_name_none_value():
+    assert qos_reliability_name(None, _RELIABILITY) == "reliability=?"
+
+
+def test_qos_reliability_name_no_policy_class():
+    """Sin la clase policy debería caer al fallback str(value)."""
+    assert qos_reliability_name(1, None) == "1"
+
+
+def test_qos_durability_name_known():
+    assert qos_durability_name(1, _DURABILITY) == "VOLATILE"
+    assert qos_durability_name(2, _DURABILITY) == "TRANSIENT_LOCAL"
+
+
+def test_qos_durability_name_none():
+    assert qos_durability_name(None) == "durability=?"
+
+
+def test_qos_history_name_known():
+    assert qos_history_name(1, _HISTORY) == "KEEP_LAST"
+    assert qos_history_name(2, _HISTORY) == "KEEP_ALL"
+
+
+def test_qos_history_name_none():
+    assert qos_history_name(None) == "history=?"
+
+
+def test_format_qos_none_profile():
+    assert format_qos(None) == "QoS=default"
+
+
+def test_format_qos_full_profile():
+    profile = SimpleNamespace(reliability=1, durability=2, history=1, depth=10)
+    out = format_qos(
+        profile,
+        reliability_policy=_RELIABILITY,
+        durability_policy=_DURABILITY,
+        history_policy=_HISTORY,
+    )
+    assert out == "RELIABLE/TRANSIENT_LOCAL/KEEP_LAST@depth=10"
+
+
+def test_format_qos_missing_depth():
+    profile = SimpleNamespace(reliability=1, durability=1, history=1)
+    out = format_qos(
+        profile,
+        reliability_policy=_RELIABILITY,
+        durability_policy=_DURABILITY,
+        history_policy=_HISTORY,
+    )
+    assert "depth=?" in out
+
+
+# ---------------------------------------------------------------------------
+# F9 (auditoría 2026-05-10): validate_joint_state_payload
+# ---------------------------------------------------------------------------
+
+
+def test_joint_state_valid_happy_path():
+    payload = {
+        "name": ["a", "b", "c"],
+        "position": [0.1, 0.2, 0.3],
+    }
+    ok, reason = validate_joint_state_payload(payload, wall_ts=10.0, now_ts=10.5, timeout_sec=2.0)
+    assert ok is True
+    assert reason == "ok"
+
+
+def test_joint_state_valid_none_payload():
+    ok, reason = validate_joint_state_payload(None, 0.0, 0.0, 1.0)
+    assert ok is False
+    assert reason == "no_joint_state_received"
+
+
+def test_joint_state_valid_empty_names():
+    payload = {"name": [], "position": []}
+    ok, reason = validate_joint_state_payload(payload, 0.0, 0.0, 1.0)
+    assert ok is False
+    assert reason == "empty_joint_names"
+
+
+def test_joint_state_valid_position_mismatch():
+    payload = {"name": ["a", "b"], "position": [0.1]}
+    ok, reason = validate_joint_state_payload(payload, 0.0, 0.0, 1.0)
+    assert ok is False
+    assert "position_mismatch" in reason
+    assert "names=2" in reason
+    assert "pos=1" in reason
+
+
+def test_joint_state_valid_stale():
+    payload = {"name": ["a"], "position": [0.0]}
+    ok, reason = validate_joint_state_payload(payload, wall_ts=10.0, now_ts=20.0, timeout_sec=2.0)
+    assert ok is False
+    assert "stale_joint_state" in reason
+    assert "age=10.00" in reason
+
+
+def test_joint_state_valid_at_threshold():
+    """Edad exactamente igual al timeout NO debe fallar (<= no <)."""
+    payload = {"name": ["a"], "position": [0.0]}
+    ok, _reason = validate_joint_state_payload(payload, wall_ts=10.0, now_ts=12.0, timeout_sec=2.0)
+    assert ok is True
 
 
 # ---------------------------------------------------------------------------

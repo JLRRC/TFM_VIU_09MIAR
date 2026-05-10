@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 
 def parse_moveit_result_payload(
@@ -130,3 +130,119 @@ def classify_subscription_action(
     if current_sub_present:
         return SubscriptionDecision(action="destroy_then_create")
     return SubscriptionDecision(action="create")
+
+
+# ---------------------------------------------------------------------------
+# F9 (auditoría 2026-05-10): QoS name helpers + joint state validator
+# extraídos de RosWorker.
+# ---------------------------------------------------------------------------
+
+
+def qos_reliability_name(value: Optional[int], reliability_policy: Any = None) -> str:
+    """Convierte un ``rclpy.qos.ReliabilityPolicy`` int a string legible.
+
+    Args:
+        value: int del enum o None.
+        reliability_policy: clase ``rclpy.qos.ReliabilityPolicy`` (se pasa
+            para evitar import en este módulo y mantenerlo testable
+            offline). None → fallback a ``str(value)``.
+    """
+    if value is None:
+        return "reliability=?"
+    if reliability_policy is not None:
+        if value == reliability_policy.RELIABLE:
+            return "RELIABLE"
+        if value == reliability_policy.BEST_EFFORT:
+            return "BEST_EFFORT"
+    return str(value)
+
+
+def qos_durability_name(value: Optional[int], durability_policy: Any = None) -> str:
+    """Convierte un ``rclpy.qos.DurabilityPolicy`` int a string legible."""
+    if value is None:
+        return "durability=?"
+    if durability_policy is not None:
+        if value == durability_policy.VOLATILE:
+            return "VOLATILE"
+        if value == durability_policy.TRANSIENT_LOCAL:
+            return "TRANSIENT_LOCAL"
+    return str(value)
+
+
+def qos_history_name(value: Optional[int], history_policy: Any = None) -> str:
+    """Convierte un ``rclpy.qos.HistoryPolicy`` int a string legible."""
+    if value is None:
+        return "history=?"
+    if history_policy is not None:
+        if value == history_policy.KEEP_LAST:
+            return "KEEP_LAST"
+        if value == history_policy.KEEP_ALL:
+            return "KEEP_ALL"
+    return str(value)
+
+
+def format_qos(
+    profile: Any,
+    *,
+    reliability_policy: Any = None,
+    durability_policy: Any = None,
+    history_policy: Any = None,
+) -> str:
+    """Describe un perfil QoS para logging.
+
+    Acepta cualquier objeto con atributos ``reliability``, ``durability``,
+    ``history``, ``depth`` (típicamente ``rclpy.qos.QoSProfile``).
+    """
+    if profile is None:
+        return "QoS=default"
+    reliability = qos_reliability_name(
+        getattr(profile, "reliability", None), reliability_policy
+    )
+    durability = qos_durability_name(
+        getattr(profile, "durability", None), durability_policy
+    )
+    history = qos_history_name(
+        getattr(profile, "history", None), history_policy
+    )
+    depth = getattr(profile, "depth", None)
+    depth_txt = f"depth={depth}" if depth is not None else "depth=?"
+    return f"{reliability}/{durability}/{history}@{depth_txt}"
+
+
+def validate_joint_state_payload(
+    payload: Optional[dict],
+    wall_ts: float,
+    now_ts: float,
+    timeout_sec: float,
+) -> Tuple[bool, str]:
+    """Valida un payload cacheado de ``sensor_msgs/JointState``.
+
+    Reglas (extraídas de ``RosWorker.joint_state_valid``):
+      * payload None → ``(False, "no_joint_state_received")``
+      * names vacío → ``(False, "empty_joint_names")``
+      * len(positions) != len(names) → ``(False, "position_mismatch:...")``
+      * age > timeout_sec → ``(False, "stale_joint_state:age=...s")``
+      * else → ``(True, "ok")``
+
+    Args:
+        payload: dict con keys ``"name"`` (list[str]) y ``"position"``
+            (list[float]). None si nunca se recibió.
+        wall_ts: timestamp wall-clock cuando se cacheó el payload.
+        now_ts: timestamp wall-clock actual (caller pasa ``time.monotonic()``
+            o equivalente).
+        timeout_sec: edad máxima permitida.
+    """
+    if payload is None:
+        return False, "no_joint_state_received"
+    joint_names = payload.get("name", [])
+    positions = payload.get("position", [])
+    if not joint_names or len(joint_names) == 0:
+        return False, "empty_joint_names"
+    if not positions or len(positions) != len(joint_names):
+        return False, (
+            f"position_mismatch:names={len(joint_names)},pos={len(positions)}"
+        )
+    age = now_ts - wall_ts
+    if age > timeout_sec:
+        return False, f"stale_joint_state:age={age:.2f}s"
+    return True, "ok"

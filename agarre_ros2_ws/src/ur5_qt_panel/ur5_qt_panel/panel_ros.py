@@ -32,8 +32,18 @@ from .panel_ros_msg_helpers import (
 )
 from .panel_ros_params import get_panel_ros_params as _get_panel_ros_params
 from .panel_ros_handlers import (
+    format_qos as _pure_format_qos,
     format_rx_result_log as _fmt_rx_result_log,
     parse_moveit_result_payload as _parse_moveit_result_payload,
+    qos_durability_name as _pure_qos_durability_name,
+    qos_history_name as _pure_qos_history_name,
+    qos_reliability_name as _pure_qos_reliability_name,
+    validate_joint_state_payload as _pure_validate_joint_state,
+)
+from .panel_image_helpers import (
+    colorize_depth_bgr as _pure_colorize_depth_bgr,
+    compute_depth_normalization_range as _pure_compute_depth_range,
+    resize_image_max_dim as _pure_resize_image_max_dim,
 )
 
 CLOCK_MAX_AGE_SEC = 8.0
@@ -1196,31 +1206,16 @@ class RosWorker(QObject):
             return self._last_joint_payload, self._last_joint_wall
 
     def joint_state_valid(self, timeout_sec: float = 2.0) -> Tuple[bool, str]:
-        """
-        FASE 2: Validar que tenemos JointState válido antes de enviar a MoveIt.
-        Evita "Found empty JointState message" al inicio.
+        """Valida que el último JointState cacheado es usable antes de MoveIt.
+
+        F9 (auditoría 2026-05-10): la lógica pura vive en
+        ``panel_ros_handlers.validate_joint_state_payload``; aquí solo
+        leemos el cache y pasamos el reloj.
         """
         payload, wall = self.get_last_joint_state()
-        if payload is None:
-            return False, "no_joint_state_received"
-
-        joint_names = payload.get("name", [])
-        positions = payload.get("position", [])
-
-        # Validar que joint_names no esté vacío
-        if not joint_names or len(joint_names) == 0:
-            return False, "empty_joint_names"
-
-        # Validar que positions tenga el mismo tamaño que joint_names
-        if not positions or len(positions) != len(joint_names):
-            return False, f"position_mismatch:names={len(joint_names)},pos={len(positions)}"
-
-        # Validar que el mensaje no sea muy antiguo
-        age = _steady_time() - wall
-        if age > timeout_sec:
-            return False, f"stale_joint_state:age={age:.2f}s"
-
-        return True, "ok"
+        return _pure_validate_joint_state(
+            payload, wall, _steady_time(), timeout_sec
+        )
 
     def subscribe_image(self, topic: str, msg_type: str = "image") -> bool:
         if not ROS_AVAILABLE:
@@ -1332,45 +1327,25 @@ class RosWorker(QObject):
                 self._safe_log("[ROS] Unsubscribe joint_states")
 
     def _format_qos(self, profile: Optional["QoSProfile"]) -> str:
-        """Describe un perfil QoS para logging."""
-        if profile is None:
-            return "QoS=default"
-        reliability = self._reliability_name(getattr(profile, "reliability", None))
-        durability = self._durability_name(getattr(profile, "durability", None))
-        history = self._history_name(getattr(profile, "history", None))
-        depth = getattr(profile, "depth", None)
-        depth_txt = f"depth={depth}" if depth is not None else "depth=?"
-        return f"{reliability}/{durability}/{history}@{depth_txt}"
+        """Wrapper sobre helper puro (F9 audit 2026-05-10)."""
+        return _pure_format_qos(
+            profile,
+            reliability_policy=ReliabilityPolicy,
+            durability_policy=DurabilityPolicy,
+            history_policy=HistoryPolicy,
+        )
 
     def _reliability_name(self, value: Optional[int]) -> str:
-        if value is None:
-            return "reliability=?"
-        if ReliabilityPolicy is not None:
-            if value == ReliabilityPolicy.RELIABLE:
-                return "RELIABLE"
-            if value == ReliabilityPolicy.BEST_EFFORT:
-                return "BEST_EFFORT"
-        return str(value)
+        """Wrapper sobre helper puro (F9 audit 2026-05-10)."""
+        return _pure_qos_reliability_name(value, ReliabilityPolicy)
 
     def _durability_name(self, value: Optional[int]) -> str:
-        if value is None:
-            return "durability=?"
-        if DurabilityPolicy is not None:
-            if value == DurabilityPolicy.VOLATILE:
-                return "VOLATILE"
-            if value == DurabilityPolicy.TRANSIENT_LOCAL:
-                return "TRANSIENT_LOCAL"
-        return str(value)
+        """Wrapper sobre helper puro (F9 audit 2026-05-10)."""
+        return _pure_qos_durability_name(value, DurabilityPolicy)
 
     def _history_name(self, value: Optional[int]) -> str:
-        if value is None:
-            return "history=?"
-        if HistoryPolicy is not None:
-            if value == HistoryPolicy.KEEP_LAST:
-                return "KEEP_LAST"
-            if value == HistoryPolicy.KEEP_ALL:
-                return "KEEP_ALL"
-        return str(value)
+        """Wrapper sobre helper puro (F9 audit 2026-05-10)."""
+        return _pure_qos_history_name(value, HistoryPolicy)
 
     def _thread_main(self):
         if self._force_realtime:
@@ -1966,8 +1941,15 @@ class RosWorker(QObject):
             pass
 
     def _decode_depth_to_bgr(self, cv_depth, topic: str):
+        """Decodifica depth → BGR (TURBO colormap) con cache de rango por topic.
+
+        F9 (auditoría 2026-05-10): la matemática pura (cómputo de
+        rango percentil/min-max + normalización + colormap) vive en
+        ``panel_image_helpers``. Aquí solo se gestiona el cache por
+        topic y la decisión de cuándo refrescar el rango.
+        """
         import numpy as np
-        import cv2
+
         arr = cv_depth.astype("float32")
         arr[~np.isfinite(arr)] = 0.0
         cache = self._depth_cache.get(topic)
@@ -1980,29 +1962,20 @@ class RosWorker(QObject):
             frame_idx % DEPTH_PCTL_REFRESH_FRAMES == 0
         )
         if refresh:
-            stride = max(1, int(DEPTH_PCTL_STRIDE))
-            sample = arr[::stride, ::stride]
-            sample = sample[sample > 0.0]
-            if sample.size:
-                if DEPTH_FAST:
-                    lo = float(sample.min())
-                    hi = float(sample.max())
-                else:
-                    lo = float(np.percentile(sample, 1.0))
-                    hi = float(np.percentile(sample, 99.0))
+            new_range = _pure_compute_depth_range(
+                arr,
+                fast=bool(DEPTH_FAST),
+                stride=max(1, int(DEPTH_PCTL_STRIDE)),
+            )
+            if new_range is None:
+                lo, hi = 0.0, 1.0
             else:
-                lo = 0.0
-                hi = 1.0
+                lo, hi = new_range
         if lo is None or hi is None:
             lo = 0.0
             hi = 1.0
         self._depth_cache[topic] = (lo, hi, frame_idx)
-        if hi <= lo:
-            hi = lo + 1e-3
-        arr = (arr - lo) / (hi - lo)
-        arr = np.clip(arr, 0.0, 1.0)
-        u8 = (arr * 255.0).astype("uint8")
-        return cv2.applyColorMap(u8, cv2.COLORMAP_TURBO)
+        return _pure_colorize_depth_bgr(arr, lo, hi)
 
     def _on_image(self, msg: "Image", topic: str):
         if not ROS_AVAILABLE or not self._bridge:
@@ -2072,14 +2045,12 @@ class RosWorker(QObject):
             import cv2
             import numpy as np
 
-            h, w = bgr.shape[:2]
+            # F9 (auditoría 2026-05-10): resize delegado a helper puro
+            # (panel_image_helpers.resize_image_max_dim) — mismo
+            # comportamiento (no-op si dentro del cap).
             max_size = int(CAMERA_MAX_SIZE) if CAMERA_MAX_SIZE is not None else 0
-            if max_size > 0 and max(h, w) > max_size:
-                scale = max_size / float(max(h, w))
-                new_w = max(1, int(w * scale))
-                new_h = max(1, int(h * scale))
-                bgr = cv2.resize(bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
-                h, w = bgr.shape[:2]
+            bgr = _pure_resize_image_max_dim(bgr, max_size)
+            h, w = bgr.shape[:2]
             rec = self._fps.get(topic, [0.0, _steady_time(), 0.0])
             rec[0] += 1.0
             dt = max(1e-6, _steady_time() - rec[1])
