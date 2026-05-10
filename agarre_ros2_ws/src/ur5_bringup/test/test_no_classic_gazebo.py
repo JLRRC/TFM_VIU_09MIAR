@@ -81,7 +81,8 @@ def test_no_gazebo_classic_reference(pattern: re.Pattern) -> None:
 def test_gz_ros2_control_plugin_is_modern() -> None:
     """gz_ros2_control (no gazebo_ros2_control) en URDF/SDF."""
     urdf = WS / "src" / "ur5_description" / "urdf" / "ur5.urdf.xacro"
-    sdf = WS / "models" / "ur5_rg2" / "model.sdf"
+    # F5 audit (2026-05-10): models en src/ur5_gazebo/models.
+    sdf = WS / "src" / "ur5_gazebo" / "models" / "ur5_rg2" / "model.sdf"
     txt_urdf = urdf.read_text(encoding="utf-8")
     txt_sdf = sdf.read_text(encoding="utf-8")
     assert "gz_ros2_control" in txt_urdf, "URDF no usa plugin gz_ros2_control"

@@ -322,9 +322,18 @@ class WorldTfPublisher(LifecycleNode):
     ) -> Optional[tuple[float, float, float, float, float, float, float]]:
         world_file = self._world_file
         if not world_file:
-            from ur5_tools.workspace_paths import get_ws_dir
-            ws_dir = get_ws_dir(default="~/TFM/agarre_ros2_ws")
-            world_file = os.path.join(ws_dir, "worlds", f"{self._world_name}.sdf")
+            # F5 audit (2026-05-10): resuelve desde share/ur5_gazebo (instalado)
+            # o source tree (dev). Fallback a path legacy ws_dir/worlds.
+            from ur5_tools.workspace_paths import (
+                get_ws_dir,
+                resolve_world_file,
+            )
+            world_file = resolve_world_file(self._world_name)
+            if not world_file:
+                ws_dir = get_ws_dir(default="~/TFM/agarre_ros2_ws")
+                world_file = os.path.join(
+                    ws_dir, "src", "ur5_gazebo", "worlds", f"{self._world_name}.sdf"
+                )
         if not os.path.isfile(world_file):
             return None
         try:

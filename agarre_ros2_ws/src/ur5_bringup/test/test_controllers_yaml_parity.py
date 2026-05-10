@@ -22,7 +22,7 @@ import yaml
 
 WS = Path(__file__).resolve().parents[3]
 URDF_YAML = WS / "src" / "ur5_description" / "config" / "ur5_controllers.yaml"
-SDF_RUNTIME_YAML = WS / "models" / "ur5_rg2" / "ur5_controllers.yaml"
+SDF_RUNTIME_YAML = WS / "src" / "ur5_gazebo" / "models" / "ur5_rg2" / "ur5_controllers.yaml"
 
 
 def _load(p: Path) -> dict:

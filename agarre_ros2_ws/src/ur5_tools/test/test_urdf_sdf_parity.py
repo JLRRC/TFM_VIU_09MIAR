@@ -23,7 +23,8 @@ from typing import Dict, Tuple
 
 ROOT = Path(__file__).resolve().parents[3]
 URDF_PATH = ROOT / "src" / "ur5_description" / "urdf" / "ur5.urdf.xacro"
-SDF_PATH = ROOT / "models" / "ur5_rg2" / "model.sdf"
+# F5 audit (2026-05-10): models en src/ur5_gazebo/models.
+SDF_PATH = ROOT / "src" / "ur5_gazebo" / "models" / "ur5_rg2" / "model.sdf"
 
 PARITY_TOL_M = 1e-6
 

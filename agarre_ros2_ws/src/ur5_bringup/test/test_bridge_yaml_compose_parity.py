@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """F9 audit (2026-05-10): parity entre fragmentos bridges/ y archivo compuesto.
 
-El runtime consume ``scripts/ros_gz_bridge.yaml`` (compuesto). Los
-fragmentos en ``scripts/bridges/[0-9]*.yaml`` son la fuente editable.
-Cualquier divergencia entre ambos es un drift (alguien editó el
-compuesto en lugar de los fragmentos): este test lo detecta.
+F5 audit (2026-05-10): paths actualizados — fragments y target viven
+en ``src/ur5_gazebo/config/`` (antes en ``scripts/`` fuera de paquete).
+
+El runtime consume ``src/ur5_gazebo/config/ros_gz_bridge.yaml`` (compuesto).
+Los fragmentos en ``src/ur5_gazebo/config/bridges/[0-9]*.yaml`` son la
+fuente editable. Cualquier divergencia entre ambos es un drift.
 """
 from __future__ import annotations
 
@@ -15,8 +17,8 @@ import pytest
 import yaml
 
 WS = Path(__file__).resolve().parents[3]
-COMPOSED = WS / "scripts" / "ros_gz_bridge.yaml"
-FRAGMENTS_DIR = WS / "scripts" / "bridges"
+COMPOSED = WS / "src" / "ur5_gazebo" / "config" / "ros_gz_bridge.yaml"
+FRAGMENTS_DIR = WS / "src" / "ur5_gazebo" / "config" / "bridges"
 
 
 def _load_yaml_list(path: Path) -> list:
@@ -50,7 +52,7 @@ def test_composed_total_matches_fragments_concat() -> None:
         expected.extend(_load_yaml_list(path))
     assert len(composed) == len(expected), (
         f"Compuesto tiene {len(composed)} entries, fragmentos suman "
-        f"{len(expected)} — corre `python3 scripts/bridges/compose.py`"
+        f"{len(expected)} — corre `python3 src/ur5_gazebo/config/bridges/compose.py`"
     )
 
 
@@ -68,7 +70,7 @@ def test_compose_script_reproduces_composed_file() -> None:
     on_disk = COMPOSED.read_text(encoding="utf-8")
     assert generated == on_disk, (
         "El archivo ros_gz_bridge.yaml no coincide con la composición de "
-        "fragmentos. Ejecuta `python3 scripts/bridges/compose.py` y "
+        "fragmentos. Ejecuta `python3 src/ur5_gazebo/config/bridges/compose.py` y "
         "vuelve a comitear."
     )
 

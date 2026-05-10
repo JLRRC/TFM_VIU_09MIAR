@@ -44,7 +44,8 @@ def test_load_gripper_geometry_matches_validated_tcp_fix() -> None:
 
 def test_model_anchor_matches_canonical_geometry() -> None:
     ok, reason = validate_pick_demo_anchor(
-        str(ROOT / 'models' / 'ur5_rg2' / 'model.sdf'),
+        # F5 audit (2026-05-10): models en src/ur5_gazebo/models.
+        str(ROOT / 'src' / 'ur5_gazebo' / 'models' / 'ur5_rg2' / 'model.sdf'),
         geometry=load_gripper_geometry(str(ROOT)),
         tolerance_m=1e-6,
     )

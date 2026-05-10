@@ -158,7 +158,8 @@ def test_workspace_packages_existen():
 def test_critical_models_exist():
     """Los modelos URDF + SDF del UR5+RG2 deben existir."""
     assert (WS_DIR / "src" / "ur5_description" / "urdf" / "ur5.urdf.xacro").is_file()
-    assert (WS_DIR / "models" / "ur5_rg2" / "model.sdf").is_file()
+    # F5 audit (2026-05-10): models movidos a src/ur5_gazebo/models.
+    assert (WS_DIR / "src" / "ur5_gazebo" / "models" / "ur5_rg2" / "model.sdf").is_file()
 
 
 # ---------------------------------------------------------------------------

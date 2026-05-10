@@ -77,3 +77,39 @@ def get_strict_self_collision(default: bool = False) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+# ---------------------------------------------------------------------
+# F5 audit (2026-05-10): resolución de assets Gazebo Harmonic empaquetados.
+# ---------------------------------------------------------------------
+
+
+def resolve_ur5_gazebo_share() -> Optional[str]:
+    """Devuelve la ruta a ``share/ur5_gazebo/`` instalado (None si no hay).
+
+    Intenta ament_index primero (post colcon install) y cae a un path
+    relativo en el source tree (dev sin install).
+    """
+    try:  # pragma: no cover - depende del install ROS
+        from ament_index_python.packages import get_package_share_directory
+
+        return get_package_share_directory("ur5_gazebo")
+    except Exception:
+        pass
+    src_path = os.path.join(get_ws_dir(), "src", "ur5_gazebo")
+    return src_path if os.path.isdir(src_path) else None
+
+
+def resolve_world_file(world_name: str = "ur5_mesa_objetos") -> Optional[str]:
+    """Devuelve la ruta al ``<world_name>.sdf`` empaquetado en ur5_gazebo."""
+    share = resolve_ur5_gazebo_share()
+    if not share:
+        return None
+    candidate = os.path.join(share, "worlds", f"{world_name}.sdf")
+    return candidate if os.path.isfile(candidate) else None
+
+
+def resolve_gazebo_models_root() -> Optional[str]:
+    """Devuelve la ruta a ``share/ur5_gazebo/models/`` (None si no se instala)."""
+    share = resolve_ur5_gazebo_share()
+    return os.path.join(share, "models") if share else None

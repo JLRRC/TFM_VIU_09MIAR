@@ -28,10 +28,10 @@ LOC_BASELINE = {
     # 2026-05-09: ur5_moveit_bridge.py + moveit_bridge/* BORRADOS
     # (path MoveIt-classic eliminado).
     "plan_to_pose_server.py": 1476,  # F1.24-refactor T15 (2026-05-09): _execute_fjt_direct + _execute_moveit_direct splits (10 sub-helpers, +154 LOC). Fix bug latente seed_positions. T15 cumplido.
-    "gripper_attach_backend.py": 1220,  # F3.3 audit (2026-05-10): NOTE bloque de plan refactor F9 (+13 LOC).
+    "gripper_attach_backend.py": 1229,  # F5 audit (2026-05-10): resolución share/ur5_gazebo +9 LOC.
     "release_objects_service.py": 1178,
     "system_state_manager.py": 953,  # F2 audit (2026-05-10): preexistente +1 LOC.
-    "world_tf_publisher.py": 599,
+    "world_tf_publisher.py": 607,  # F5 audit (2026-05-10): resolve_world_file +8 LOC.
 }
 
 

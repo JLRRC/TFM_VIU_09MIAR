@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ur5_gazebo</name>
+  <version>0.0.0</version>
+  <description>
+    Assets de simulación Gazebo Harmonic para el stack UR5+RG2:
+    worlds (mesa, debug), modelos (ur5_rg2 SDF + objetos), bridges YAML.
+    F5 audit (2026-05-10) — paquete creado para empaquetar los assets
+    que vivían en agarre_ros2_ws/{worlds,models} fuera de cualquier
+    paquete ROS, lo que rompía la instalación reproducible vía
+    `colcon install`.
+  </description>
+  <maintainer email="jesus.lozano.rodriguez@gmail.com">laboratorio</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

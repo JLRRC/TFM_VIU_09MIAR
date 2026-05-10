@@ -261,8 +261,19 @@ class PanelSettings:
         os.environ.setdefault("GZ_SIM_SYSTEM_PLUGIN_PATH", "/opt/ros/jazzy/lib")
 
         scripts_dir = os.path.join(ws_dir, "scripts")
-        worlds_dir = os.path.join(ws_dir, "worlds")
-        models_dir = os.path.join(ws_dir, "models")
+        # F5 audit (2026-05-10): worlds/models se resuelven desde
+        # share/ur5_gazebo si está instalado; fallback al source tree.
+        try:  # pragma: no cover
+            from ur5_tools.workspace_paths import resolve_ur5_gazebo_share
+            _share = resolve_ur5_gazebo_share()
+        except Exception:
+            _share = None
+        if _share:
+            worlds_dir = os.path.join(_share, "worlds")
+            models_dir = os.path.join(_share, "models")
+        else:
+            worlds_dir = os.path.join(ws_dir, "src", "ur5_gazebo", "worlds")
+            models_dir = os.path.join(ws_dir, "src", "ur5_gazebo", "models")
         log_dir = os.path.join(ws_dir, "log")
         bags_dir = os.path.join(ws_dir, "bags")
         fig_dir = os.path.join(ws_dir, "experiments", "figures_memoria")

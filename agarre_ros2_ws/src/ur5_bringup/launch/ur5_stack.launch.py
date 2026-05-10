@@ -115,7 +115,20 @@ def _prepare_runtime(context, *_args) -> List[object]:
 
     gz_partition = resolve_gz_partition(log_dir)
 
-    base_yaml = os.path.join(ws_dir, "scripts", "ros_gz_bridge.yaml")
+    # F5 audit (2026-05-10): paths via get_package_share_directory(ur5_gazebo).
+    # Antes: scripts/ros_gz_bridge.yaml + models/ur5_rg2 + worlds/ vivían en
+    # WS_DIR (fuera de cualquier paquete ROS); ahora son artifacts instalables.
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        ur5_gazebo_share = get_package_share_directory("ur5_gazebo")
+        base_yaml = os.path.join(ur5_gazebo_share, "config", "ros_gz_bridge.yaml")
+        gazebo_models_root = os.path.join(ur5_gazebo_share, "models")
+        gazebo_worlds_root = os.path.join(ur5_gazebo_share, "worlds")
+    except Exception:
+        # Fallback dev (sin colcon install): leer del source tree.
+        base_yaml = os.path.join(ws_dir, "src", "ur5_gazebo", "config", "ros_gz_bridge.yaml")
+        gazebo_models_root = os.path.join(ws_dir, "src", "ur5_gazebo", "models")
+        gazebo_worlds_root = os.path.join(ws_dir, "src", "ur5_gazebo", "worlds")
     panel_settings_yaml = os.path.join(
         ws_dir, "src", "ur5_qt_panel", "config", "panel_settings.yaml"
     )
@@ -125,9 +138,12 @@ def _prepare_runtime(context, *_args) -> List[object]:
 
     runtime_models_root = os.path.join(log_dir, "gz_models")
     runtime_ur5_model = os.path.join(runtime_models_root, "ur5_rg2")
-    copy_runtime_model(os.path.join(ws_dir, "models", "ur5_rg2"), runtime_ur5_model)
+    copy_runtime_model(os.path.join(gazebo_models_root, "ur5_rg2"), runtime_ur5_model)
 
-    resource_path = build_gz_resource_path(runtime_models_root, ws_dir)
+    resource_path = build_gz_resource_path(
+        runtime_models_root, ws_dir,
+        extra_paths=[gazebo_models_root, gazebo_worlds_root],
+    )
     plugin_path = build_gz_plugin_path()
     render_engine = _resolve_runtime("GZ_RENDER_ENGINE", "ogre").strip() or "ogre"
     fastdds_profile = os.path.join(ws_dir, "scripts", "fastdds_no_shm.xml")
@@ -322,7 +338,19 @@ def _maybe_moveit(context, *_args) -> List[object]:
 def generate_launch_description():
     # F2-step3 (audit-v4): WS_DIR centralizado en launch_helpers.resolve_ws_dir.
     ws_dir = resolve_ws_dir()
-    world_default = os.path.join(ws_dir, "worlds", "ur5_mesa_objetos.sdf")
+    # F5 audit (2026-05-10): default world ahora desde share/ur5_gazebo si
+    # está instalado (post `colcon install`); fallback al source tree para dev.
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        world_default = os.path.join(
+            get_package_share_directory("ur5_gazebo"),
+            "worlds",
+            "ur5_mesa_objetos.sdf",
+        )
+    except Exception:
+        world_default = os.path.join(
+            ws_dir, "src", "ur5_gazebo", "worlds", "ur5_mesa_objetos.sdf"
+        )
     gui_config_default = (
         "/opt/ros/jazzy/opt/gz_sim_vendor/share/gz/gz-sim8/gui/gui.config"
     )

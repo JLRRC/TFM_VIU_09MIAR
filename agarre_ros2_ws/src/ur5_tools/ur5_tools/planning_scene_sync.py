@@ -99,8 +99,13 @@ def _tuple_to_pose(values: Tuple[float, float, float, float, float, float, float
 
 
 def _world_file_default(world_name: str) -> str:
+    """F5 audit (2026-05-10): resuelve world SDF desde share/ur5_gazebo."""
+    from .workspace_paths import resolve_world_file
+    resolved = resolve_world_file(world_name)
+    if resolved:
+        return resolved
     ws_dir = bridge_env_str("WS_DIR", os.path.expanduser("~/TFM/agarre_ros2_ws"))
-    return os.path.join(ws_dir, "worlds", f"{world_name}.sdf")
+    return os.path.join(ws_dir, "src", "ur5_gazebo", "worlds", f"{world_name}.sdf")
 
 
 class PlanningSceneSync(Node):

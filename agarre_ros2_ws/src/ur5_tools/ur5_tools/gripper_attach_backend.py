@@ -335,8 +335,17 @@ class GripperAttachBackend(
         )
         self._world_sdf = str(self.get_parameter("world_sdf").value or "").strip()
         if not self._world_sdf:
-            candidate = os.path.join(self._ws_dir, "worlds", f"{self._world_name}.sdf")
-            self._world_sdf = candidate if os.path.exists(candidate) else ""
+            # F5 audit (2026-05-10): resolver via share/ur5_gazebo o source tree.
+            from .workspace_paths import resolve_world_file
+            resolved = resolve_world_file(self._world_name)
+            if resolved:
+                self._world_sdf = resolved
+            else:
+                candidate = os.path.join(
+                    self._ws_dir, "src", "ur5_gazebo", "worlds",
+                    f"{self._world_name}.sdf",
+                )
+                self._world_sdf = candidate if os.path.exists(candidate) else ""
 
     def _init_state_pubs_subs_timers(self) -> None:
         """F3-step27c: state init + qos + pubs/subs/timers (~135 LOC)."""

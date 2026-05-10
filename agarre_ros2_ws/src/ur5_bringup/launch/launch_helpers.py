@@ -69,9 +69,25 @@ def copy_runtime_model(src: str, dst: str) -> None:
         pass
 
 
-def build_gz_resource_path(runtime_models_root: str, ws_dir: str) -> str:
-    """Return a colon-joined GZ_SIM_RESOURCE_PATH including existing env value."""
-    base = f"{runtime_models_root}:{ws_dir}/models:{ws_dir}/worlds:{ws_dir}/install"
+def build_gz_resource_path(
+    runtime_models_root: str,
+    ws_dir: str,
+    *,
+    extra_paths: "list[str] | None" = None,
+) -> str:
+    """Return a colon-joined GZ_SIM_RESOURCE_PATH including existing env value.
+
+    F5 audit (2026-05-10): ``extra_paths`` permite inyectar
+    ``share/ur5_gazebo/models`` y ``share/ur5_gazebo/worlds`` cuando el
+    paquete está instalado vía ``colcon install``. Los paths legacy
+    ``ws_dir/models`` y ``ws_dir/worlds`` se mantienen como fallback
+    para compat con dev sin install.
+    """
+    parts = [runtime_models_root]
+    if extra_paths:
+        parts.extend(p for p in extra_paths if p)
+    parts.extend([f"{ws_dir}/models", f"{ws_dir}/worlds", f"{ws_dir}/install"])
+    base = ":".join(parts)
     existing = os.environ.get("GZ_SIM_RESOURCE_PATH", "")
     return f"{base}:{existing}" if existing else base
 

@@ -165,7 +165,10 @@ def test_ur5_description_controllers_has_constraints_with_goal_time():
 
 
 def test_models_ur5_rg2_controllers_yaml_parseable():
-    """Copia del controllers.yaml en models/ (Gazebo lo carga vía SDF plugin)."""
-    data = _load_yaml("models/ur5_rg2/ur5_controllers.yaml")
+    """Copia del controllers.yaml en models/ (Gazebo lo carga vía SDF plugin).
+
+    F5 audit (2026-05-10): models movidos a src/ur5_gazebo/models.
+    """
+    data = _load_yaml("src/ur5_gazebo/models/ur5_rg2/ur5_controllers.yaml")
     assert "controller_manager" in data
     assert "joint_trajectory_controller" in data

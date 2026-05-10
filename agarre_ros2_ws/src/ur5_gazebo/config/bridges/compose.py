@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """F9 audit (2026-05-10): compose ros_gz_bridge.yaml from per-domain fragments.
 
-Lee todos los ``scripts/bridges/[0-9]*.yaml`` por orden alfabético y
-escribe la concatenación canónica en ``scripts/ros_gz_bridge.yaml``.
+F5 audit (2026-05-10): paths actualizados — fragments y target ahora
+viven dentro del paquete ``ur5_gazebo/config/`` (antes en
+``scripts/`` fuera de paquete).
+
+Lee todos los ``src/ur5_gazebo/config/bridges/[0-9]*.yaml`` por orden
+alfabético y escribe la concatenación canónica en
+``src/ur5_gazebo/config/ros_gz_bridge.yaml``.
 
 Sustituye los antiguos comentarios por uno generado automáticamente.
 El runtime sigue consumiendo ``ros_gz_bridge.yaml`` vía
@@ -10,8 +15,8 @@ El runtime sigue consumiendo ``ros_gz_bridge.yaml`` vía
 
 Uso::
 
-    python3 scripts/bridges/compose.py        # actualiza ros_gz_bridge.yaml
-    python3 scripts/bridges/compose.py --dry  # imprime sin escribir
+    python3 src/ur5_gazebo/config/bridges/compose.py        # actualiza
+    python3 src/ur5_gazebo/config/bridges/compose.py --dry  # dry-run
 
 Test ``test_bridge_yaml_compose_parity`` en ``ur5_bringup/test`` valida
 que la composición coincide con el archivo en disco.
@@ -25,16 +30,16 @@ from typing import List
 
 import yaml
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent
-TARGET = ROOT / "scripts" / "ros_gz_bridge.yaml"
+HERE = Path(__file__).resolve().parent              # src/ur5_gazebo/config/bridges
+PKG_CONFIG = HERE.parent                             # src/ur5_gazebo/config
+TARGET = PKG_CONFIG / "ros_gz_bridge.yaml"
 
 HEADER = """\
-# Ruta/archivo: agarre_ros2_ws/scripts/ros_gz_bridge.yaml
-# AUTO-GENERADO por scripts/bridges/compose.py — NO EDITAR a mano.
-# Editar los fragmentos en scripts/bridges/*.yaml y volver a ejecutar:
+# Ruta/archivo: src/ur5_gazebo/config/ros_gz_bridge.yaml
+# AUTO-GENERADO por src/ur5_gazebo/config/bridges/compose.py — NO EDITAR a mano.
+# Editar los fragmentos en src/ur5_gazebo/config/bridges/*.yaml y volver a ejecutar:
 #
-#     python3 scripts/bridges/compose.py
+#     python3 src/ur5_gazebo/config/bridges/compose.py
 #
 # patch_bridge_yaml() en launch_helpers.py copia este archivo al
 # log/ de runtime sustituyendo el world_name dinámicamente.

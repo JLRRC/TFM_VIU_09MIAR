@@ -1,8 +1,8 @@
-# Ruta/archivo: agarre_ros2_ws/scripts/ros_gz_bridge.yaml
-# AUTO-GENERADO por scripts/bridges/compose.py — NO EDITAR a mano.
-# Editar los fragmentos en scripts/bridges/*.yaml y volver a ejecutar:
+# Ruta/archivo: src/ur5_gazebo/config/ros_gz_bridge.yaml
+# AUTO-GENERADO por src/ur5_gazebo/config/bridges/compose.py — NO EDITAR a mano.
+# Editar los fragmentos en src/ur5_gazebo/config/bridges/*.yaml y volver a ejecutar:
 #
-#     python3 scripts/bridges/compose.py
+#     python3 src/ur5_gazebo/config/bridges/compose.py
 #
 # patch_bridge_yaml() en launch_helpers.py copia este archivo al
 # log/ de runtime sustituyendo el world_name dinámicamente.
