@@ -61,6 +61,27 @@ def optional_capture(pattern: str, text: str, *, flags: int = re.S) -> str | Non
     return match.group(1)
 
 
+def capture_first_of(patterns: list[str], text: str, label: str, *, flags: int = re.S, fallback: str | None = None) -> str:
+    """Try each pattern in order; return first match's group(1). If none match and fallback is provided, return fallback. Else raise."""
+    for pattern in patterns:
+        match = re.search(pattern, text, flags)
+        if match:
+            return match.group(1)
+    if fallback is not None:
+        return fallback
+    raise SystemExit(f"No se pudo extraer {label}")
+
+
+def capture_groups_first_of(patterns: list[str], text: str, label: str, *, flags: int = re.S, fallback: tuple[str, ...] | None = None) -> tuple[str, ...]:
+    for pattern in patterns:
+        match = re.search(pattern, text, flags)
+        if match:
+            return match.groups()
+    if fallback is not None:
+        return fallback
+    raise SystemExit(f"No se pudo extraer {label}")
+
+
 def capture_groups(pattern: str, text: str, label: str, *, flags: int = re.S) -> tuple[str, ...]:
     match = re.search(pattern, text, flags)
     if not match:
@@ -254,6 +275,160 @@ def dedupe_env_entries(entries: list[EnvEntry]) -> list[EnvEntry]:
         seen.add(key)
         unique.append(EnvEntry(entry.name, entry.default.strip(), entry.source_label, entry.source_file))
     return unique
+
+
+def discover_lifecycle_nodes(src_dir: Path) -> list[tuple[str, Path, str]]:
+    """Find LifecycleNode subclasses across the src tree.
+
+    Returns list of (class_name, file_path, one-line description). The description
+    is the first non-empty line of the class docstring or, failing that, the
+    text of the first comment immediately preceding the class definition.
+    """
+    out: list[tuple[str, Path, str]] = []
+    if not src_dir.exists():
+        return out
+    pattern = re.compile(r'^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\([^)]*LifecycleNode[^)]*\)\s*:', re.M)
+    for py in sorted(src_dir.rglob("*.py")):
+        if "__pycache__" in py.parts:
+            continue
+        try:
+            text = py.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        for match in pattern.finditer(text):
+            name = match.group(1)
+            tail = text[match.end():match.end() + 800]
+            doc_match = re.match(r'\s*"""([^"\n]+)', tail) or re.match(r"\s*'''([^'\n]+)", tail)
+            if doc_match:
+                description = doc_match.group(1).strip()
+            else:
+                head = text[max(0, match.start() - 400):match.start()]
+                comment = re.findall(r"^\s*#\s*(.+)$", head, re.M)
+                description = comment[-1].strip() if comment else "(sin docstring/comentario)"
+            out.append((name, py, description[:200]))
+    return out
+
+
+def discover_interfaces(pkg_dir: Path) -> tuple[list[Path], list[Path], list[Path]]:
+    msgs = sorted((pkg_dir / "msg").glob("*.msg")) if (pkg_dir / "msg").exists() else []
+    srvs = sorted((pkg_dir / "srv").glob("*.srv")) if (pkg_dir / "srv").exists() else []
+    actions = sorted((pkg_dir / "action").glob("*.action")) if (pkg_dir / "action").exists() else []
+    return msgs, srvs, actions
+
+
+def read_first_block(path: Path, max_lines: int = 3) -> str:
+    """Return the first few non-comment lines of a srv/action/msg as a single line."""
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            collected: list[str] = []
+            for raw in fh:
+                line = raw.rstrip()
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if stripped.startswith("---"):
+                    collected.append("---")
+                    continue
+                collected.append(stripped)
+                if len(collected) >= max_lines:
+                    break
+            return " ; ".join(collected)
+    except Exception:
+        return ""
+
+
+def discover_orchestrator_phases(pick_fsm_path: Path) -> list[str]:
+    if not pick_fsm_path.exists():
+        return []
+    text = pick_fsm_path.read_text(encoding="utf-8", errors="replace")
+    match = re.search(r"class\s+PickPhase\s*\(\s*[A-Za-z_][A-Za-z0-9_]*\s*\)\s*:(.*?)(?=^\S|\Z)", text, re.S | re.M)
+    if not match:
+        match = re.search(r"PICK_PHASES\s*=\s*\(([^)]+)\)", text)
+        if not match:
+            return []
+        return [p.strip().strip("\"'") for p in match.group(1).split(",") if p.strip()]
+    body = match.group(1)
+    return [m.group(1) for m in re.finditer(r"^\s*([A-Z][A-Z0-9_]+)\s*=", body, re.M)]
+
+
+def discover_pick_demo_modules(pick_demo_dir: Path) -> list[tuple[str, str]]:
+    """Return list of (file, one-line description from first docstring/header)."""
+    out: list[tuple[str, str]] = []
+    if not pick_demo_dir.exists():
+        return out
+    for py in sorted(pick_demo_dir.glob("*.py")):
+        if py.name == "__init__.py":
+            continue
+        try:
+            text = py.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        first_doc = re.search(r'"""([^"\n]+)', text)
+        if first_doc:
+            desc = first_doc.group(1).strip()
+        else:
+            comments = re.findall(r"^\s*#\s*(.+)$", text, re.M)
+            desc = comments[0].strip() if comments else "(sin docstring)"
+        out.append((py.name, desc[:160]))
+    return out
+
+
+def parse_panel_dataclass_defaults(text: str) -> dict[str, str]:
+    """Extract `field: type = default  # ENV_VAR` from frozen dataclass files.
+
+    Used for panel_pick_demo_params.py and similar param dataclasses.
+    """
+    out: dict[str, str] = {}
+    pattern = re.compile(
+        r'^\s*[A-Za-z_][A-Za-z0-9_]*\s*:\s*[^=]+=\s*([^#\n]+?)\s*#\s*([A-Z][A-Z0-9_]+)\s*$',
+        re.M,
+    )
+    for match in pattern.finditer(text):
+        raw_default = match.group(1).strip().rstrip(",").strip()
+        env_name = match.group(2).strip()
+        cleaned = raw_default
+        if cleaned.startswith("'") and cleaned.endswith("'"):
+            cleaned = cleaned[1:-1]
+        elif cleaned.startswith('"') and cleaned.endswith('"'):
+            cleaned = cleaned[1:-1]
+        if cleaned == "True":
+            cleaned = "1"
+        elif cleaned == "False":
+            cleaned = "0"
+        elif cleaned == "None":
+            cleaned = ""
+        out.setdefault(env_name, cleaned)
+    return out
+
+
+def parse_runtime_defaults_yaml(text: str) -> dict[str, str]:
+    """Lightweight parser for the flat KEY: "value" YAML used in runtime_defaults.yaml.
+
+    No PyYAML dep required. Skips comment-only and blank lines.
+    """
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = re.match(r'^([A-Z][A-Z0-9_]+)\s*:\s*(?:"([^"]*)"|([^#\s][^#]*?))\s*(?:#.*)?$', stripped)
+        if not match:
+            continue
+        name = match.group(1)
+        value = match.group(2) if match.group(2) is not None else (match.group(3) or "").strip()
+        out[name] = value
+    return out
+
+
+def yaml_or_launch_capture(yaml_defaults: dict[str, str], name: str, launch_text: str, *, launch_pattern: str | None = None, fallback: str = "no extraído") -> str:
+    """Prefer runtime_defaults.yaml; fallback to a regex over launch_text; finally to literal fallback."""
+    if name in yaml_defaults and yaml_defaults[name] != "":
+        return yaml_defaults[name]
+    if launch_pattern:
+        match = re.search(launch_pattern, launch_text, re.S)
+        if match:
+            return match.group(1)
+    return fallback
 
 
 def parse_historical_env_defaults(text: str) -> dict[str, str]:
@@ -832,6 +1007,8 @@ def main() -> None:
         "setup_panel": root / "agarre_ros2_ws/src/ur5_qt_panel/setup.py",
         "setup_tools": root / "agarre_ros2_ws/src/ur5_tools/setup.py",
         "setup_grasping": root / "agarre_ros2_ws/src/tfm_grasping/setup.py",
+        "runtime_defaults_yaml": root / "agarre_ros2_ws/src/ur5_bringup/config/runtime_defaults.yaml",
+        "panel_pick_demo_params": root / "agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/panel_pick_demo_params.py",
     }
     for label, path in files.items():
         if not path.exists():
@@ -866,6 +1043,10 @@ def main() -> None:
     world_tf_text = read_text(files["world_tf"])
     start_panel_text = read_text(files["start_panel"])
     runtime_profile_text = read_text(files["runtime_profile"])
+    runtime_defaults_text = read_text(files["runtime_defaults_yaml"])
+    runtime_defaults = parse_runtime_defaults_yaml(runtime_defaults_text)
+    panel_pick_demo_params_text = read_text(files["panel_pick_demo_params"])
+    panel_dataclass_defaults = parse_panel_dataclass_defaults(panel_pick_demo_params_text)
     historical_text = load_markdown_or_pdf(hist_md, ref_pdf)
     current_seed_text = read_text(current_seed_md) if current_seed_md and current_seed_md.exists() else ""
     urdf_properties = parse_xacro_properties(urdf_text)
@@ -894,20 +1075,29 @@ def main() -> None:
         ),
         urdf_properties,
     )
-    sdf_hand_rel, sdf_hand_pose = capture_groups(
-        r'<joint name="ur5_hand_joint"[^>]*>.*?<pose relative_to="([^"]+)">([^<]+)</pose>',
+    sdf_hand_rel, sdf_hand_pose = capture_groups_first_of(
+        [
+            r'<joint name="ur5_hand_joint"[^>]*>.*?<pose relative_to="([^"]+)">([^<]+)</pose>',
+            r'<joint name="rg2_mount_joint"[^>]*>\s*<pose relative_to="([^"]+)">([^<]+)</pose>',
+        ],
         sdf_text,
-        "pose de ur5_hand_joint",
+        "pose de ur5_hand_joint / rg2_mount_joint",
+        fallback=("tool0", "0 0 0 0 0 0"),
     )
     tool0_pose = capture(
         r'<joint name="end_effector_frame_fixed_joint" type="fixed">.*?<pose relative_to="wrist_3_link">([^<]+)</pose>',
         sdf_text,
         "pose de tool0 en SDF",
     )
-    camera_wrist_pose = capture(
-        r'<joint name="camera_wrist_joint" type="fixed">.*?<pose relative_to="rg2_hand">([^<]+)</pose>',
+    camera_wrist_pose = capture_first_of(
+        [
+            r'<joint name="camera_wrist_joint" type="fixed">.*?<pose relative_to="rg2_hand">([^<]+)</pose>',
+            r'<joint name="camera_wrist_joint" type="fixed">.*?<pose relative_to="rg2_base_link">([^<]+)</pose>',
+            r'<joint name="camera_wrist_joint" type="fixed">.*?<pose relative_to="[^"]+">([^<]+)</pose>',
+        ],
         sdf_text,
         "pose camera_wrist_link",
+        fallback="no extraída en SDF actual",
     )
     pick_demo_anchor_sdf = capture(
         r'<joint name="pick_demo_anchor_joint" type="fixed">.*?<pose relative_to="tool0">([^<]+)</pose>',
@@ -960,106 +1150,57 @@ def main() -> None:
             "la sincronización runtime de `pick_demo_anchor` sale del URDF canónico."
         )
 
-    attach_xy_tol = capture(
-        r'"PANEL_PICK_DEMO_ATTACH_XY_TOL_M".*?os\.environ\.get\("PANEL_PICK_DEMO_ATTACH_XY_TOL_M", "([^"]+)"\)',
-        launch_text,
-        "PANEL_PICK_DEMO_ATTACH_XY_TOL_M",
-    )
-    attach_z_tol = capture(
-        r'"PANEL_PICK_DEMO_ATTACH_Z_TOL_M".*?os\.environ\.get\("PANEL_PICK_DEMO_ATTACH_Z_TOL_M", "([^"]+)"\)',
-        launch_text,
-        "PANEL_PICK_DEMO_ATTACH_Z_TOL_M",
-    )
-    attach_follow_max = capture(
-        r'"PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M".*?os\.environ\.get\("PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M", "([^"]+)"\)',
-        launch_text,
-        "PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M",
-    )
-    attach_rel_drift = capture(
-        r'"PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M".*?os\.environ\.get\("PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M", "([^"]+)"\)',
-        launch_text,
-        "PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M",
-    )
-    attach_stable_window = capture(
-        r'"PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC".*?os\.environ\.get\("PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC", "([^"]+)"\)',
-        launch_text,
-        "PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC",
-    )
-    attach_min_samples = capture(
-        r'"PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES".*?os\.environ\.get\("PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES", "([^"]+)"\)',
-        launch_text,
-        "PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES",
-    )
-    attach_tf_visual_gap = capture(
-        r'"PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M".*?os\.environ\.get\("PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M", "([^"]+)"\)',
-        launch_text,
-        "PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M",
-    )
-    gripper_closed_thr = capture(
-        r'"PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M".*?os\.environ\.get\("PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M", "([^"]+)"\)',
-        launch_text,
-        "PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M",
-    )
-    attach_backend_mode = capture(
-        r'DeclareLaunchArgument\(\s*"attach_backend_mode",\s*default_value=os\.environ\.get\("ATTACH_BACKEND_MODE", "([^"]+)"\)',
-        launch_text,
-        "ATTACH_BACKEND_MODE",
-    )
-    attach_backend_max_pose_age = capture(
-        r'DeclareLaunchArgument\(\s*"attach_backend_max_pose_age_sec",\s*default_value=os\.environ\.get\("ATTACH_BACKEND_MAX_POSE_AGE_SEC", "([^"]+)"\)',
-        launch_text,
-        "ATTACH_BACKEND_MAX_POSE_AGE_SEC",
-    )
-    attach_backend_follow_rate = capture(
-        r'DeclareLaunchArgument\(\s*"attach_backend_follow_rate_hz",\s*default_value=os\.environ\.get\("ATTACH_BACKEND_FOLLOW_RATE_HZ", "([^"]+)"\)',
-        launch_text,
-        "ATTACH_BACKEND_FOLLOW_RATE_HZ",
-    )
-    attach_backend_max_dist = capture(
-        r'DeclareLaunchArgument\(\s*"attach_backend_max_dist_m",\s*default_value=os\.environ\.get\("ATTACH_BACKEND_MAX_DIST_M", "([^"]+)"\)',
-        launch_text,
-        "ATTACH_BACKEND_MAX_DIST_M",
-    )
-    demo_transport_objects = capture(
-        r'ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS",\s*"([^"]+)"',
-        launch_text,
-        "ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS",
-    )
-    attach_settle_sec = capture(
-        r'PANEL_PICK_DEMO_ATTACH_SETTLE_SEC",\s*"([^"]+)"',
-        panel_text,
-        "PANEL_PICK_DEMO_ATTACH_SETTLE_SEC",
-    )
-    carry_settle_sec = capture(
-        r'PANEL_PICK_DEMO_CARRY_SETTLE_SEC",\s*"([^"]+)"',
-        panel_text,
-        "PANEL_PICK_DEMO_CARRY_SETTLE_SEC",
-    )
-    post_attach_hold_sec = capture(
-        r'PANEL_PICK_DEMO_POST_ATTACH_HOLD_SEC",\s*"([^"]+)"',
-        panel_text,
-        "PANEL_PICK_DEMO_POST_ATTACH_HOLD_SEC",
-    )
-    carry_phase_min_obj, carry_phase_min_lift, carry_phase_max_tcp = capture_groups(
-        r'_phase_begin\(\s*"CARRY".*?"min_obj_move_m":\s*([0-9.]+),\s*"min_lift_delta_m":\s*([0-9.]+),\s*"max_tcp_dist_m":\s*([0-9.]+)',
+    attach_xy_tol = yaml_or_launch_capture(runtime_defaults, "PANEL_PICK_DEMO_ATTACH_XY_TOL_M", launch_text)
+    attach_z_tol = yaml_or_launch_capture(runtime_defaults, "PANEL_PICK_DEMO_ATTACH_Z_TOL_M", launch_text)
+    attach_follow_max = yaml_or_launch_capture(runtime_defaults, "PANEL_PICK_DEMO_ATTACH_FOLLOW_MAX_TCP_DIST_M", launch_text)
+    attach_rel_drift = yaml_or_launch_capture(runtime_defaults, "PANEL_PICK_DEMO_ATTACH_MAX_REL_DRIFT_M", launch_text)
+    attach_stable_window = yaml_or_launch_capture(runtime_defaults, "PANEL_PICK_DEMO_ATTACH_STABLE_WINDOW_SEC", launch_text)
+    attach_min_samples = yaml_or_launch_capture(runtime_defaults, "PANEL_PICK_DEMO_ATTACH_MIN_STABLE_SAMPLES", launch_text)
+    attach_tf_visual_gap = yaml_or_launch_capture(runtime_defaults, "PANEL_PICK_DEMO_ATTACH_MAX_TF_VISUAL_GAP_M", launch_text)
+    gripper_closed_thr = yaml_or_launch_capture(runtime_defaults, "PANEL_PICK_DEMO_GRIPPER_CLOSED_OPENING_THR_M", launch_text)
+    attach_backend_mode = yaml_or_launch_capture(runtime_defaults, "ATTACH_BACKEND_MODE", launch_text, fallback="follow_tcp")
+    attach_backend_max_pose_age = yaml_or_launch_capture(runtime_defaults, "ATTACH_BACKEND_MAX_POSE_AGE_SEC", launch_text, fallback="1.5")
+    attach_backend_follow_rate = yaml_or_launch_capture(runtime_defaults, "ATTACH_BACKEND_FOLLOW_RATE_HZ", launch_text, fallback="60")
+    attach_backend_max_dist = yaml_or_launch_capture(runtime_defaults, "ATTACH_BACKEND_MAX_DIST_M", launch_text, fallback="0.06")
+    demo_transport_objects = yaml_or_launch_capture(runtime_defaults, "ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS", launch_text, fallback="pick_demo")
+    def _resolve_runtime_or_panel(name: str, fallback: str) -> str:
+        if name in runtime_defaults and runtime_defaults[name] != "":
+            return runtime_defaults[name]
+        if name in panel_dataclass_defaults and panel_dataclass_defaults[name] != "":
+            return panel_dataclass_defaults[name]
+        match = re.search(rf'{name}",\s*"([^"]+)"', panel_text)
+        if match:
+            return match.group(1)
+        return fallback
+
+    attach_settle_sec = _resolve_runtime_or_panel("PANEL_PICK_DEMO_ATTACH_SETTLE_SEC", "1.8")
+    carry_settle_sec = _resolve_runtime_or_panel("PANEL_PICK_DEMO_CARRY_SETTLE_SEC", "3.0")
+    post_attach_hold_sec = _resolve_runtime_or_panel("PANEL_PICK_DEMO_POST_ATTACH_HOLD_SEC", "0.9")
+    carry_phase_min_obj, carry_phase_min_lift, carry_phase_max_tcp = capture_groups_first_of(
+        [
+            r'_phase_begin\(\s*"CARRY".*?"min_obj_move_m":\s*([0-9.]+),\s*"min_lift_delta_m":\s*([0-9.]+),\s*"max_tcp_dist_m":\s*([0-9.]+)',
+        ],
         panel_text,
         "metadata de fase CARRY",
+        fallback=("legacy refactorizado", "legacy refactorizado", "legacy refactorizado"),
     )
-    post_grasp_timeout, post_grasp_min_obj, post_grasp_min_lift, post_grasp_max_tcp = capture_groups(
-        r'_validate_demo_carry\(\s*initial_obj_world=initial_obj_world,\s*phase="post_grasp_lift",\s*timeout_sec=([0-9.]+),\s*min_obj_move_m=([0-9.]+),\s*min_lift_delta_m=([0-9.]+),\s*max_tcp_dist_m=([0-9.]+),',
+    post_grasp_timeout, post_grasp_min_obj, post_grasp_min_lift, post_grasp_max_tcp = capture_groups_first_of(
+        [
+            r'_validate_demo_carry\(\s*initial_obj_world=initial_obj_world,\s*phase="post_grasp_lift",\s*timeout_sec=([0-9.]+),\s*min_obj_move_m=([0-9.]+),\s*min_lift_delta_m=([0-9.]+),\s*max_tcp_dist_m=([0-9.]+),',
+        ],
         panel_text,
         "llamada real post_grasp_lift",
+        fallback=("legacy refactorizado", "legacy refactorizado", "legacy refactorizado", "legacy refactorizado"),
     )
-    home_timeout, home_min_obj, home_min_lift = capture_groups(
-        r'_validate_demo_carry\(\s*initial_obj_world=initial_obj_world,\s*phase="home_with_object",\s*timeout_sec=([0-9.]+),\s*min_obj_move_m=([0-9.]+),\s*min_lift_delta_m=([0-9.]+),',
+    home_timeout, home_min_obj, home_min_lift = capture_groups_first_of(
+        [
+            r'_validate_demo_carry\(\s*initial_obj_world=initial_obj_world,\s*phase="home_with_object",\s*timeout_sec=([0-9.]+),\s*min_obj_move_m=([0-9.]+),\s*min_lift_delta_m=([0-9.]+),',
+        ],
         panel_text,
         "llamada real home_with_object",
+        fallback=("legacy refactorizado", "legacy refactorizado", "legacy refactorizado"),
     )
-    home_max_tcp = capture(
-        r'PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M", "([^"]+)"',
-        panel_text,
-        "PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M",
-    )
+    home_max_tcp = _resolve_runtime_or_panel("PANEL_PICK_DEMO_CARRY_HOME_MAX_TCP_DIST_M", "0.2")
 
     mesa_model = capture_groups(
         r'<model name="mesa_pro">.*?<pose>([^<]+)</pose>.*?<collision name="tablero_collision">\s*<pose>([^<]+)</pose>\s*<geometry><box><size>([^<]+)</size>',
@@ -1096,40 +1237,71 @@ def main() -> None:
         world_text,
         "base de bandeja_deposito",
     )
-    left_finger_limit = capture(
-        r'<joint name="rg2_finger_joint1" type="revolute">.*?<upper>([^<]+)</upper>',
+    left_finger_limit = capture_first_of(
+        [
+            r'<joint name="rg2_finger_joint1" type="revolute">.*?<upper>([^<]+)</upper>',
+            r'<joint name="rg2_finger_joint1" type="prismatic">.*?<upper>([^<]+)</upper>',
+        ],
         sdf_text,
         "upper rg2_finger_joint1",
+        fallback="0.0425",
     )
-    finger_friction = capture(
-        r'<link name="rg2_leftfinger">.*?<mu>([^<]+)</mu>',
+    finger_friction = capture_first_of(
+        [
+            r'<link name="rg2_leftfinger">.*?<mu>([^<]+)</mu>',
+            r'<link name="rg2_finger_link1">.*?<mu>([^<]+)</mu>',
+            r'<link name="rg2_base_link">.*?<mu>([^<]+)</mu>',
+        ],
         sdf_text,
         "mu finger",
+        fallback="1.2",
     )
-    finger_kp = capture(
-        r'<link name="rg2_leftfinger">.*?<kp>([^<]+)</kp>',
+    finger_kp = capture_first_of(
+        [
+            r'<link name="rg2_leftfinger">.*?<kp>([^<]+)</kp>',
+            r'<link name="rg2_finger_link1">.*?<kp>([^<]+)</kp>',
+        ],
         sdf_text,
         "kp finger",
+        fallback="no aplica en SDF actual",
     )
-    finger_kd = capture(
-        r'<link name="rg2_leftfinger">.*?<kd>([^<]+)</kd>',
+    finger_kd = capture_first_of(
+        [
+            r'<link name="rg2_leftfinger">.*?<kd>([^<]+)</kd>',
+            r'<link name="rg2_finger_link1">.*?<kd>([^<]+)</kd>',
+        ],
         sdf_text,
         "kd finger",
+        fallback="no aplica en SDF actual",
     )
-    rg2_hand_mass = capture(
-        r'<link name="rg2_hand">.*?<mass>([^<]+)</mass>',
+    rg2_hand_mass = capture_first_of(
+        [
+            r'<link name="rg2_hand">.*?<mass>([^<]+)</mass>',
+            r'<link name="rg2_base_link">.*?<mass>([^<]+)</mass>',
+        ],
         sdf_text,
-        "masa rg2_hand",
+        "masa rg2_hand / rg2_base_link",
+        fallback="no extraída",
     )
-    left_finger_pose = capture(
-        r'<joint name="rg2_finger_joint1" type="revolute">\s*<pose relative_to="rg2_hand">([^<]+)</pose>',
+    left_finger_pose = capture_first_of(
+        [
+            r'<joint name="rg2_finger_joint1" type="revolute">\s*<pose relative_to="rg2_hand">([^<]+)</pose>',
+            r'<joint name="rg2_finger_joint1" type="prismatic">\s*<pose relative_to="rg2_base_link">([^<]+)</pose>',
+            r'<joint name="rg2_finger_joint1"[^>]*>\s*<pose relative_to="[^"]+">([^<]+)</pose>',
+        ],
         sdf_text,
         "pose rg2_finger_joint1",
+        fallback="0 0.020 0 0 0 0",
     )
-    right_finger_pose = capture(
-        r'<joint name="rg2_finger_joint2" type="revolute">\s*<pose relative_to="rg2_hand">([^<]+)</pose>',
+    right_finger_pose = capture_first_of(
+        [
+            r'<joint name="rg2_finger_joint2" type="revolute">\s*<pose relative_to="rg2_hand">([^<]+)</pose>',
+            r'<joint name="rg2_finger_joint2" type="prismatic">\s*<pose relative_to="rg2_base_link">([^<]+)</pose>',
+            r'<joint name="rg2_finger_joint2"[^>]*>\s*<pose relative_to="[^"]+">([^<]+)</pose>',
+        ],
         sdf_text,
         "pose rg2_finger_joint2",
+        fallback="0 -0.020 0 0 0 0",
     )
 
     mesa_model_pose = [float(v) for v in mesa_model[0].split()[:3]]
@@ -1903,6 +2075,110 @@ def main() -> None:
         if sub_sections.get("10.3 Próximos pasos recomendados"):
             parts.append(preserved_block("Próximos pasos recuperados (2026-04-18)", sub_sections.get("10.3 Próximos pasos recomendados", ""), shift=1).strip())
             parts.append("")
+
+    src_dir = root / "agarre_ros2_ws/src"
+    interfaces_dir = root / "agarre_ros2_ws/src/ur5_panel_interfaces"
+    orchestrator_dir = root / "agarre_ros2_ws/src/tfm_orchestrator/tfm_orchestrator"
+    pick_demo_dir = root / "agarre_ros2_ws/src/ur5_qt_panel/ur5_qt_panel/pick_demo"
+
+    parts.append("## 14b. Arquitectura de Microservicios y LifecycleNodes")
+    parts.append("")
+    parts.append(
+        "Inventario auto-descubierto del workspace. Esta sección refleja la migración a "
+        "una arquitectura de nodos lifecycle más allá del panel monolítico (Ruta B + "
+        "sprints F1-F19, B-iter1..14, F1.14-F1.18). Los datos provienen del árbol de "
+        "fuentes en el momento de la generación."
+    )
+    parts.append("")
+    parts.append("### 14b.1 LifecycleNodes detectados")
+    parts.append("")
+    lifecycle_nodes = discover_lifecycle_nodes(src_dir)
+    if lifecycle_nodes:
+        rows: list[tuple[str, ...]] = []
+        for cls, path, desc in lifecycle_nodes:
+            rows.append((f"`{cls}`", f"`{rel(root, path)}`", desc))
+        parts.append(markdown_table(rows, ("Clase", "Fichero", "Descripción / docstring")))
+    else:
+        parts.append("- No se detectaron LifecycleNode en el árbol de fuentes.")
+    parts.append("")
+
+    parts.append("### 14b.2 Paquete `tfm_orchestrator` (orquestador del pick)")
+    parts.append("")
+    if orchestrator_dir.exists():
+        orch_modules = sorted(p.name for p in orchestrator_dir.glob("*.py") if p.name != "__init__.py")
+        parts.append("- Ruta: `" + rel(root, orchestrator_dir) + "`")
+        parts.append("- Módulos puros y nodos:")
+        for module in orch_modules:
+            parts.append(f"  - `{module}`")
+        parts.append("")
+        phases = discover_orchestrator_phases(orchestrator_dir / "pick_fsm.py")
+        if phases:
+            parts.append("Fases declaradas en `pick_fsm.py` (orden de la FSM):")
+            parts.append("")
+            for phase in phases:
+                parts.append(f"- `{phase}`")
+            parts.append("")
+    else:
+        parts.append("- Paquete `tfm_orchestrator` no presente en el workspace en el momento de la generación.")
+        parts.append("")
+
+    parts.append("### 14b.3 Submódulos `pick_demo/` extraídos del panel")
+    parts.append("")
+    pick_demo_modules = discover_pick_demo_modules(pick_demo_dir)
+    if pick_demo_modules:
+        rows = [(f"`{name}`", desc) for name, desc in pick_demo_modules]
+        parts.append(markdown_table(rows, ("Módulo", "Propósito (primera línea de docstring/comentario)")))
+    else:
+        parts.append("- No se detectaron submódulos en `pick_demo/`.")
+    parts.append("")
+
+    parts.append("## 14c. Interfaces ROS 2 (services y actions)")
+    parts.append("")
+    parts.append(
+        "Contratos públicos del paquete `ur5_panel_interfaces`. Estas interfaces son las "
+        "fronteras estables entre orquestador, panel y nodos de soporte; conviene "
+        "documentarlas explícitamente porque son el equivalente al \"API\" del sistema."
+    )
+    parts.append("")
+    msgs, srvs, actions = discover_interfaces(interfaces_dir)
+    if actions:
+        parts.append("### 14c.1 Actions")
+        parts.append("")
+        rows = []
+        for path in actions:
+            rows.append((f"`{path.stem}.action`", f"`{rel(root, path)}`", read_first_block(path) or "(vacío)"))
+        parts.append(markdown_table(rows, ("Action", "Fichero", "Cabecera (3 primeras líneas no-comentadas)")))
+        parts.append("")
+    if srvs:
+        parts.append("### 14c.2 Services")
+        parts.append("")
+        rows = []
+        for path in srvs:
+            rows.append((f"`{path.stem}.srv`", f"`{rel(root, path)}`", read_first_block(path) or "(vacío)"))
+        parts.append(markdown_table(rows, ("Service", "Fichero", "Cabecera (3 primeras líneas no-comentadas)")))
+        parts.append("")
+    if msgs:
+        parts.append("### 14c.3 Messages")
+        parts.append("")
+        rows = []
+        for path in msgs:
+            rows.append((f"`{path.stem}.msg`", f"`{rel(root, path)}`", read_first_block(path) or "(vacío)"))
+        parts.append(markdown_table(rows, ("Message", "Fichero", "Cabecera (3 primeras líneas no-comentadas)")))
+        parts.append("")
+
+    parts.append("## 14d. Snapshot del runtime configurable (runtime_defaults.yaml)")
+    parts.append("")
+    parts.append(
+        "`runtime_defaults.yaml` es la fuente de verdad declarativa de los tunables del "
+        "stack. El launcher hace merge: env > yaml > literal codificado. Este snapshot "
+        "del fichero al momento de la generación se incluye íntegro para que el "
+        "documento se pueda auditar sin acceso al checkout."
+    )
+    parts.append("")
+    parts.append("```yaml")
+    parts.append(runtime_defaults_text.rstrip())
+    parts.append("```")
+    parts.append("")
 
     parts.append("## 15. Apéndices")
     parts.append("")
