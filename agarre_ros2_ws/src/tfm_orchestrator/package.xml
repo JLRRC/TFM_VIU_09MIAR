@@ -19,6 +19,8 @@
   <test_depend>ament_flake8</test_depend>
   <test_depend>ament_pep257</test_depend>
   <test_depend>pytest</test_depend>
+  <!-- Action 10 (audit 2026-05-10): cobertura medida en CI. -->
+  <test_depend>python3-pytest-cov</test_depend>
   <!-- F7: launch_testing del pick_orchestrator_lifecycle -->
   <test_depend>launch_testing</test_depend>
   <test_depend>launch_testing_ros</test_depend>
