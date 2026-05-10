@@ -190,35 +190,18 @@ def _move_group_startup_ready(panel) -> bool:
     action_ready = panel._moveit_action_ready()
     ready = status_ready or action_ready
     ros_node_ready = bool(panel.ros_worker and panel.ros_worker.node_ready())
-    # iter4 audit (2026-05-11): silenciar el log STARTUP_GATE cuando el
-    # estado ya es READY estable y NO ha cambiado vs la última muestra.
-    # Antes: 4 logs/s en bucle sostenido → GUI thread saturado, panel
-    # marcado "no responde" por Linux/Qt. Solo emitir si cambia alguno
-    # de los bits relevantes o si todavía no es ready.
-    signature = (
-        bool(ready),
-        bool(status_ready),
-        bool(action_ready),
-        bool(panel._proc_alive(panel.moveit_proc)),
-        bool(panel._ros_worker_started),
-        bool(ros_node_ready),
-        str(panel._moveit_state.value),
+    panel._emit_log_throttled(
+        "MOVEIT:startup_gate",
+        "[MOVEIT2][STARTUP_GATE] "
+        f"ready={str(bool(ready)).lower()} "
+        f"status={str(bool(status_ready)).lower()} "
+        f"action={str(bool(action_ready)).lower()} "
+        f"moveit_proc={str(bool(panel._proc_alive(panel.moveit_proc))).lower()} "
+        f"ros_worker_started={str(bool(panel._ros_worker_started)).lower()} "
+        f"ros_node_ready={str(bool(ros_node_ready)).lower()} "
+        f"moveit_state={panel._moveit_state.value}",
+        min_interval=1.0,
     )
-    last_signature = getattr(panel, "_moveit_startup_gate_last_sig", None)
-    if signature != last_signature or not ready:
-        panel._emit_log_throttled(
-            "MOVEIT:startup_gate",
-            "[MOVEIT2][STARTUP_GATE] "
-            f"ready={str(bool(ready)).lower()} "
-            f"status={str(bool(status_ready)).lower()} "
-            f"action={str(bool(action_ready)).lower()} "
-            f"moveit_proc={str(bool(panel._proc_alive(panel.moveit_proc))).lower()} "
-            f"ros_worker_started={str(bool(panel._ros_worker_started)).lower()} "
-            f"ros_node_ready={str(bool(ros_node_ready)).lower()} "
-            f"moveit_state={panel._moveit_state.value}",
-            min_interval=10.0 if ready else 1.0,
-        )
-        panel._moveit_startup_gate_last_sig = signature
     return ready
 
 
