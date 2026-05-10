@@ -60,15 +60,19 @@ def _inject_ur5_tools_stub() -> None:
     sys.modules["ur5_tools.geometry_constants"] = gc_mod
 
     # F8 (auditoría 2026-05-10): stubs vacíos de los módulos puros
-    # release_objects_*. Tests del qt_panel no los necesitan
-    # funcionalmente pero la importabilidad debe estar garantizada
-    # cuando se mezcla con tests del propio ur5_tools.
+    # release_objects_* / plan_to_pose_helpers. Tests del qt_panel no
+    # los necesitan funcionalmente pero la importabilidad debe estar
+    # garantizada cuando se mezcla con tests del propio ur5_tools.
     rol_mod = types.ModuleType("ur5_tools.release_objects_logic")
     stub.release_objects_logic = rol_mod
     sys.modules["ur5_tools.release_objects_logic"] = rol_mod
     rog_mod = types.ModuleType("ur5_tools.release_objects_geometry")
     stub.release_objects_geometry = rog_mod
     sys.modules["ur5_tools.release_objects_geometry"] = rog_mod
+    # F10 (auditoría 2026-05-10): stub de plan_to_pose_helpers.
+    pph_mod = types.ModuleType("ur5_tools.plan_to_pose_helpers")
+    stub.plan_to_pose_helpers = pph_mod
+    sys.modules["ur5_tools.plan_to_pose_helpers"] = pph_mod
 
     gg = types.ModuleType("ur5_tools.gripper_geometry")
     gg.RG2_PINCH_CENTER_FRAME = "rg2_pinch_center"

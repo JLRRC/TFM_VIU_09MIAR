@@ -48,6 +48,11 @@ except Exception:
 
 from ur5_panel_interfaces.action import PlanToPose
 
+from .plan_to_pose_helpers import (
+    extract_ordered_joint_positions as _pure_extract_ordered_joint_positions,
+    parse_plan_to_pose_request as _pure_parse_plan_to_pose_request,
+    select_traj_duration_and_timeout as _pure_select_traj_duration_and_timeout,
+)
 from .plan_to_pose_logic import (
     PlanToPoseGoal,
     PlanToPoseResult,
@@ -400,21 +405,16 @@ class PlanToPoseServer(Node):
 
     @staticmethod
     def _parse_goal(request) -> PlanToPoseGoal:
+        """Wrapper sobre helper puro (F10 audit 2026-05-10)."""
+        target_xyz, target_quat, ee_frame, cartesian, timeout_sec = (
+            _pure_parse_plan_to_pose_request(request)
+        )
         return PlanToPoseGoal(
-            target_xyz=(
-                float(request.target_pose_base.position.x),
-                float(request.target_pose_base.position.y),
-                float(request.target_pose_base.position.z),
-            ),
-            target_quat_xyzw=(
-                float(request.target_pose_base.orientation.x),
-                float(request.target_pose_base.orientation.y),
-                float(request.target_pose_base.orientation.z),
-                float(request.target_pose_base.orientation.w),
-            ),
-            ee_frame=str(request.ee_frame or "").strip() or "rg2_pinch_center",
-            cartesian=bool(request.cartesian),
-            timeout_sec=float(request.timeout_sec or 0.0),
+            target_xyz=target_xyz,
+            target_quat_xyzw=target_quat,
+            ee_frame=ee_frame,
+            cartesian=cartesian,
+            timeout_sec=timeout_sec,
         )
 
     @staticmethod
@@ -994,41 +994,45 @@ class PlanToPoseServer(Node):
         )
 
     def _fjt_extract_seed_positions(self) -> Optional[list]:
-        """Lee joint_state cacheado y devuelve seed positions ordenadas
-        según ``_UR5_JOINTS``. Devuelve None si falta cualquier joint o
-        no hay joint_state cacheado (caller debe fallback)."""
+        """Lee joint_state cacheado y devuelve seed positions ordenadas.
+
+        F10 (auditoría 2026-05-10): la lógica pura de reordenación vive
+        en ``plan_to_pose_helpers.extract_ordered_joint_positions``.
+        Aquí solo convertimos el msg ROS a payload dict y manejamos el
+        logging cuando falta algo.
+        """
         js = self._get_latest_joint_state()
-        if (
-            js is None
-            or not getattr(js, "name", None)
-            or not getattr(js, "position", None)
-        ):
-            self.get_logger().warning(
-                "[PLAN_TO_POSE][FJT_DIRECT] no joint_state cached — fallback a MoveIt"
-            )
-            return None
-        name_to_pos = {str(n): float(p) for n, p in zip(js.name, js.position)}
-        seed_positions: list = []
-        for jn in self._UR5_JOINTS:
-            if jn not in name_to_pos:
+        payload = None
+        if js is not None:
+            payload = {
+                "name": getattr(js, "name", None) or [],
+                "position": getattr(js, "position", None) or [],
+            }
+        positions, missing = _pure_extract_ordered_joint_positions(
+            payload, self._UR5_JOINTS
+        )
+        if positions is None:
+            if missing == "no_payload":
                 self.get_logger().warning(
-                    f"[PLAN_TO_POSE][FJT_DIRECT] joint {jn} no en /joint_states — fallback"
+                    "[PLAN_TO_POSE][FJT_DIRECT] no joint_state cached — "
+                    "fallback a MoveIt"
                 )
-                return None
-            seed_positions.append(name_to_pos[jn])
-        return seed_positions
+            else:
+                self.get_logger().warning(
+                    f"[PLAN_TO_POSE][FJT_DIRECT] joint {missing} no en "
+                    "/joint_states — fallback"
+                )
+        return positions
 
     def _fjt_compute_traj_params(
         self, goal: PlanToPoseGoal, ee_frame: str
     ) -> tuple:
-        """Calcula (duration_sec, result_timeout_sec, is_long_traj, dist)
-        basado en la distancia TF del ``ee_frame`` actual al target XYZ.
+        """Calcula (duration_sec, result_timeout_sec, is_long_traj, dist).
 
-        - dist > 0.4m (TRANSPORT/destino lejos): duration=max(default, 25s),
-          timeout=max(default, 120s), multi_waypoint=True.
-        - dist <= 0.4m (APPROACH/GRASP_DOWN/LIFT): duration=max(default, 8s),
-          timeout=max(default, 30s), multi_waypoint=False.
-        - TF no disponible: fallback conservador (long_traj=True).
+        F10 (auditoría 2026-05-10): la política de selección
+        duración/timeout vive en ``plan_to_pose_helpers.
+        select_traj_duration_and_timeout``. Aquí solo hacemos el TF
+        lookup y el log.
         """
         import math as _math
 
@@ -1047,13 +1051,13 @@ class PlanToPoseServer(Node):
             dist = _math.sqrt(dx * dx + dy * dy + dz * dz)
         else:
             dist = 0.5  # conservador → ruta larga
-        is_long = dist > 0.4
-        if is_long:
-            duration_eff = max(float(self._fjt_direct_duration), 25.0)
-            timeout_eff = max(float(self._fjt_direct_result_timeout), 120.0)
-        else:
-            duration_eff = max(float(self._fjt_direct_duration), 8.0)
-            timeout_eff = max(float(self._fjt_direct_result_timeout), 30.0)
+        duration_eff, timeout_eff, is_long = (
+            _pure_select_traj_duration_and_timeout(
+                dist_m=dist,
+                default_duration_sec=self._fjt_direct_duration,
+                default_timeout_sec=self._fjt_direct_result_timeout,
+            )
+        )
         self.get_logger().info(
             f"[PLAN_TO_POSE][FJT_DIRECT] dist_to_target={dist:.3f}m "
             f"duration={duration_eff:.1f}s timeout={timeout_eff:.1f}s "
