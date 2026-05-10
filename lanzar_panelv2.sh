@@ -105,39 +105,26 @@ export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export RMW_FASTRTPS_USE_SHM=0
 
 # ── Limpiar procesos residuales ───────────────────────────────────────────────
-echo "[LAUNCH] Limpiando procesos residuales..."
-# SIGTERM primero
-pkill -f "gz sim"              2>/dev/null || true
-pkill -f "gz_server"           2>/dev/null || true
-pkill -f "ros_gz_bridge"       2>/dev/null || true
-pkill -f "parameter_bridge"    2>/dev/null || true
-pkill -f "ros2_control_node"   2>/dev/null || true
-pkill -f "controller_manager"  2>/dev/null || true
-pkill -f "spawner"             2>/dev/null || true
-pkill -f "robot_state_publisher" 2>/dev/null || true
-pkill -f "gripper_attach_backend" 2>/dev/null || true
-pkill -f "move_group"          2>/dev/null || true
-pkill -f "world_tf_publisher"  2>/dev/null || true
-pkill -f "system_state_manager" 2>/dev/null || true
-pkill -f "ur5_moveit_bridge"   2>/dev/null || true
-pkill -f "start_panel_v2"      2>/dev/null || true
-pkill -f "pick_demo_panel"     2>/dev/null || true
-pkill -f "ur5_stack"           2>/dev/null || true
-pkill -f "run_directo_button_offscreen" 2>/dev/null || true
-pkill -f "pick_demo_panel"     2>/dev/null || true
-sleep 3
-# SIGKILL para procesos que sobrevivan (incluidos los suspendidos con Ctrl+Z)
-pkill -9 -f "gz sim"           2>/dev/null || true
-pkill -9 -f "gz_server"        2>/dev/null || true
-pkill -9 -f "move_group"       2>/dev/null || true
-pkill -9 -f "gripper_attach_backend" 2>/dev/null || true
-pkill -9 -f "world_tf_publisher" 2>/dev/null || true
-pkill -9 -f "system_state_manager" 2>/dev/null || true
-pkill -9 -f "ur5_moveit_bridge" 2>/dev/null || true
-pkill -9 -f "ros_gz_bridge"    2>/dev/null || true
+echo "[LAUNCH] Limpiando procesos residuales (cleanup agresivo)..."
+# F-audit (2026-05-10): cleanup unificado en un solo regex con SIGKILL
+# directo. Cubre TODOS los nodos del stack para evitar zombies que
+# bloqueen el siguiente arranque. El antiguo cleanup en dos rondas
+# (SIGTERM 3s + SIGKILL) dejaba procesos pegados si SIGTERM no se
+# atendía en 3s.
+STACK_REGEX="gz sim|gz-sim|gz_server|gzserver|gzclient|ign gazebo|ros_gz_bridge|parameter_bridge|gz_pose_bridge|ros2_control_node|controller_manager|controller_bootstrap|spawner|robot_state_publisher|gripper_attach_backend|move_group|moveit_ros_move_group|world_tf_publisher|system_state_manager|ur5_moveit_bridge|release_objects_service|tf_geometry_service|object_pose_resolver|pick_orchestrator|plan_to_pose_server|planning_scene_sync|joint_state_broadcaster|joint_trajectory_controller|gripper_controller|gz_ros_control_guard|evidence_logger|ur5_stack.launch.py|ros2 launch ur5_bringup|start_panel_v2|start_panel_gui|panel_v2.py|ur5_qt_panel|pick_demo_panel|run_directo_button_offscreen"
+pkill -KILL -f "$STACK_REGEX" 2>/dev/null || true
 sleep 2
+# Doble pasada por si quedó algo
+pkill -KILL -f "$STACK_REGEX" 2>/dev/null || true
+sleep 1
+# Shared memory de FastDDS (sesiones rotas pueden dejar segmentos)
 rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
-echo "[LAUNCH] Limpieza completada"
+LIVE=$(pgrep -f "$STACK_REGEX" 2>/dev/null | wc -l)
+echo "[LAUNCH] Limpieza completada (procesos sobrevivientes: $LIVE)"
+if [[ "$LIVE" -gt 0 ]]; then
+    echo "[WARN] Quedan $LIVE procesos del stack vivos:"
+    pgrep -af "$STACK_REGEX" 2>/dev/null | head -10
+fi
 
 # ── GZ_PARTITION único para esta sesión ──────────────────────────────────────
 export GZ_PARTITION="ur5pro_manual_$(date +%s)"
@@ -155,9 +142,29 @@ export PANEL_MOVEIT_MODE=move_group
 export PANEL_SKIP_CLEANUP=1
 export PANEL_COLD_BOOT=0          # el stack ya está arriba: no matar al abrir panel
 export PANEL_DIRECT_DEBUG_ROOT="$LOG_DIR"
-# El stack lanza world_tf y system_state: no duplicar en el panel.
+# El stack lanza TODOS los nodos backend: no duplicar en el panel.
+# F-audit (2026-05-10): antes solo se setean WORLD_TF y SYSTEM_STATE a 0,
+# pero el resto (SCENE_SYNC, PLAN_TO_POSE, ORCHESTRATOR, etc.) heredaba
+# default $PANEL_START_STACK=0 que NO funcionaba si estaban exportadas
+# en el environment del usuario o por otro path. Resultado: 2 instancias
+# de controller_bootstrap, planning_scene_sync, object_pose_resolver
+# corriendo en paralelo → bloqueo del panel + CPU saturada al pulsar
+# "Pick MoveIt".
 export PANEL_LAUNCH_WORLD_TF=0
 export PANEL_LAUNCH_SYSTEM_STATE=0
+export PANEL_LAUNCH_BRIDGE=0
+export PANEL_LAUNCH_RELEASE_SERVICE=0
+export PANEL_LAUNCH_ATTACH_BACKEND=0
+export PANEL_LAUNCH_SCENE_SYNC=0
+export PANEL_LAUNCH_TF_GEOMETRY_SERVICE=0
+export PANEL_LAUNCH_PLAN_TO_POSE_SERVER=0
+export PANEL_LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE=0
+export PANEL_LAUNCH_OBJECT_POSE_RESOLVER=0
+export PANEL_LAUNCH_MOVEIT=0
+export PANEL_LAUNCH_MOVEIT_BRIDGE=0
+# controller_bootstrap también lo lanza el backend; bloquearlo aquí.
+export PANEL_LAUNCH_CONTROLLER_BOOTSTRAP=0
+export PANEL_BOOTSTRAP_CONTROLLERS=0
 
 if [[ ! -f "$RUNTIME_PROFILE" ]]; then
   echo "[ERROR] Falta el perfil runtime validado: $RUNTIME_PROFILE"
