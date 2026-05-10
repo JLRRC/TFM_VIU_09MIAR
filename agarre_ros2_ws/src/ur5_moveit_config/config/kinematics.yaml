@@ -21,4 +21,8 @@ manipulator:
     max_cache_size: 5000
     min_pose_distance: 0.005
     min_joint_config_distance: 0.05
-    cached_ik_path: ""
+    # F12 audit (2026-05-10): caché persistente entre runs. La ruta es
+    # relativa al WS_DIR si arranca con "log/" (resuelto por MoveIt vs
+    # rutas absolutas). Acelera ciclos repetitivos pick/place reusando
+    # IK solutions previas.
+    cached_ik_path: "log/cached_ik.bin"
