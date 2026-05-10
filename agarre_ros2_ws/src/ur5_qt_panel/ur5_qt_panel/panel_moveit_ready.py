@@ -7,12 +7,21 @@ from __future__ import annotations
 
 
 def _emit_moveit_ready_diag(panel, stage: str, detail: str) -> None:
+    # iter4 audit (2026-05-11): silenciar log si el detail no cambió desde
+    # la última emisión de este stage. Antes: 4 logs READY_DIAG cada 1-3s
+    # en bucle sostenido cuando MoveIt ya está READY → GUI thread saturado
+    # → panel marcado "no responde" por Linux/Qt.
+    last_detail_attr = f"_moveit_ready_diag_last_{stage}"
+    last_detail = getattr(panel, last_detail_attr, None)
+    if detail == last_detail:
+        return
+    setattr(panel, last_detail_attr, detail)
     emit_throttled = getattr(panel, "_emit_log_throttled", None)
     if callable(emit_throttled):
         emit_throttled(
             f"MOVEIT:READY:{stage}",
             f"[MOVEIT2][READY_DIAG] stage={stage} {detail}",
-            min_interval=1.0,
+            min_interval=10.0,
         )
         return
     emit_log = getattr(panel, "_emit_log", None)
