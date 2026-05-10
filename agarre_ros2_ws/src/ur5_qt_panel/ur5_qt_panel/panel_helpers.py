@@ -793,182 +793,65 @@ def _step_cart_debug_step_m(panel) -> float:
     except Exception:
         return 0.002
 
-def _direct_clear_waiting_for_approach_confirmation(panel, *args, **kwargs):
-    _sc._direct_clear_waiting_for_approach_confirmation(panel, *args, **kwargs)
-
-def _direct_enter_waiting_for_approach_confirmation(panel, *args, **kwargs):
-    _sc._direct_enter_waiting_for_approach_confirmation(panel, *args, **kwargs)
-
-def _direct_release_waiting_for_approach_confirmation(panel, *args, **kwargs):
-    return _sc._direct_release_waiting_for_approach_confirmation(panel, *args, **kwargs)
-
-def _direct_waiting_for_approach_confirmation(panel, *args, **kwargs):
-    return _sc._direct_waiting_for_approach_confirmation(panel, *args, **kwargs)
-
-def _ensure_step_cart_debug_window(panel, *args, **kwargs):
-    _sc._ensure_step_cart_debug_window(panel, *args, **kwargs)
-
-def _on_step_continue_clicked(panel, *args, **kwargs):
-    _sc._on_step_continue_clicked(panel, *args, **kwargs)
-
-def _on_step_phase_start_clicked(panel, *args, **kwargs):
-    _sc._on_step_phase_start_clicked(panel, *args, **kwargs)
-
-def _on_step_window_finished(panel, *args, **kwargs):
-    _sc._on_step_window_finished(panel, *args, **kwargs)
-
-def _read_gripper_feedback_state(panel, *args, **kwargs):
-    return _sc._read_gripper_feedback_state(panel, *args, **kwargs)
-
-def _show_step_cart_debug_window(panel, *args, **kwargs):
-    _sc._show_step_cart_debug_window(panel, *args, **kwargs)
-
-def _step_assess_target_reached(panel, *args, **kwargs):
-    return _sc._step_assess_target_reached(panel, *args, **kwargs)
-
-def _step_capture_start_pose(panel, *args, **kwargs):
-    _sc._step_capture_start_pose(panel, *args, **kwargs)
-
-def _step_cart_debug_handle_axis(panel, *args, **kwargs):
-    _sc._step_cart_debug_handle_axis(panel, *args, **kwargs)
-
-def _step_cart_debug_move_delta(panel, *args, **kwargs):
-    _sc._step_cart_debug_move_delta(panel, *args, **kwargs)
-
-def _step_cart_debug_run_validation_xyz(panel, *args, **kwargs):
-    _sc._step_cart_debug_run_validation_xyz(panel, *args, **kwargs)
-
-def _step_cartesian_move_runtime_target(panel, *args, **kwargs):
-    return _sc._step_cartesian_move_runtime_target(panel, *args, **kwargs)
-
-def _step_display_position(panel, *args, **kwargs):
-    return _sc._step_display_position(panel, *args, **kwargs)
-
-def _step_effective_flow(panel, *args, **kwargs):
-    return _sc._step_effective_flow(panel, *args, **kwargs)
-
-def _step_fetch_live_pose(panel, *args, **kwargs):
-    return _sc._step_fetch_live_pose(panel, *args, **kwargs)
-
-def _step_fetch_object_world(panel, *args, **kwargs):
-    return _sc._step_fetch_object_world(panel, *args, **kwargs)
-
-def _step_find_history_row(panel, *args, **kwargs):
-    return _sc._step_find_history_row(panel, *args, **kwargs)
-
-def _step_format_inline_rpy(panel, *args, **kwargs):
-    return _sc._step_format_inline_rpy(panel, *args, **kwargs)
-
-def _step_format_inline_xyz(panel, *args, **kwargs):
-    return _sc._step_format_inline_xyz(panel, *args, **kwargs)
-
-def _step_format_xyz(panel, *args, **kwargs):
-    return _sc._step_format_xyz(panel, *args, **kwargs)
-
-def _step_live_gripper_state(panel, *args, **kwargs):
-    return _sc._step_live_gripper_state(panel, *args, **kwargs)
-
-def _step_live_pose_text(panel, *args, **kwargs):
-    return _sc._step_live_pose_text(panel, *args, **kwargs)
-
-def _step_operational_frame_name(panel, *args, **kwargs):
-    return _sc._step_operational_frame_name(panel, *args, **kwargs)
-
-def _step_phase_action_text(panel, *args, **kwargs):
-    return _sc._step_phase_action_text(panel, *args, **kwargs)
-
-def _step_phase_completed(panel, *args, **kwargs):
-    return _sc._step_phase_completed(panel, *args, **kwargs)
-
-def _step_phase_gate_already_owned(panel, *args, **kwargs):
-    return _sc._step_phase_gate_already_owned(panel, *args, **kwargs)
-
-def _step_phase_gripper_state(panel, *args, **kwargs):
-    return _sc._step_phase_gripper_state(panel, *args, **kwargs)
-
-def _step_phase_intent(panel, *args, **kwargs):
-    return _sc._step_phase_intent(panel, *args, **kwargs)
-
-def _step_phase_sequence(panel, *args, **kwargs):
-    return _sc._step_phase_sequence(panel, *args, **kwargs)
-
-def _step_pipeline_phase_state(panel, *args, **kwargs):
-    return _sc._step_pipeline_phase_state(panel, *args, **kwargs)
-
-def _step_pipeline_rebuild(panel, *args, **kwargs):
-    _sc._step_pipeline_rebuild(panel, *args, **kwargs)
-
-def _step_pre_insert_inicio_row(panel, *args, **kwargs):
-    _sc._step_pre_insert_inicio_row(panel, *args, **kwargs)
-
-def _step_predict_next_phase(panel, *args, **kwargs):
-    return _sc._step_predict_next_phase(panel, *args, **kwargs)
-
-def _step_prepare_pipeline_view(panel, *args, **kwargs):
-    _sc._step_prepare_pipeline_view(panel, *args, **kwargs)
-
-def _step_present_flow_name(panel, *args, **kwargs):
-    return _sc._step_present_flow_name(panel, *args, **kwargs)
-
-def _step_record_current_phase_actual(panel, *args, **kwargs):
-    _sc._step_record_current_phase_actual(panel, *args, **kwargs)
-
-def _step_record_direct_event_snapshot(panel, *args, **kwargs):
-    _sc._step_record_direct_event_snapshot(panel, *args, **kwargs)
-
-def _step_record_direct_home_initial(panel, *args, **kwargs):
-    _sc._step_record_direct_home_initial(panel, *args, **kwargs)
-
-def _step_record_direct_initial_snapshot(panel, *args, **kwargs):
-    _sc._step_record_direct_initial_snapshot(panel, *args, **kwargs)
-
-def _step_record_direct_mesa_ready(panel, *args, **kwargs):
-    _sc._step_record_direct_mesa_ready(panel, *args, **kwargs)
-
-def _step_record_history(panel, *args, **kwargs):
-    _sc._step_record_history(panel, *args, **kwargs)
-
-def _step_refresh_pipeline_table(panel, *args, **kwargs):
-    _sc._step_refresh_pipeline_table(panel, *args, **kwargs)
-
-def _step_reset_sequence_view(panel, *args, **kwargs):
-    _sc._step_reset_sequence_view(panel, *args, **kwargs)
-
-def _step_runtime_refresh(panel, *args, **kwargs):
-    _sc._step_runtime_refresh(panel, *args, **kwargs)
-
-def _step_selected_object_name(panel, *args, **kwargs):
-    return _sc._step_selected_object_name(panel, *args, **kwargs)
-
-def _step_set_exec_target(panel, *args, **kwargs):
-    _sc._step_set_exec_target(panel, *args, **kwargs)
-
-def _step_status_item(panel, *args, **kwargs):
-    return _sc._step_status_item(panel, *args, **kwargs)
-
-def _step_update_phase_result(panel, *args, **kwargs):
-    _sc._step_update_phase_result(panel, *args, **kwargs)
-
-def _step_update_row_object_metrics(panel, *args, **kwargs):
-    _sc._step_update_row_object_metrics(panel, *args, **kwargs)
-
-def _step_upsert_history_row_ordered(panel, *args, **kwargs):
-    _sc._step_upsert_history_row_ordered(panel, *args, **kwargs)
-
-def _step_wait_for_phase(panel, *args, **kwargs):
-    _sc._step_wait_for_phase(panel, *args, **kwargs)
-
-def _step_window_hide(panel, *args, **kwargs):
-    _sc._step_window_hide(panel, *args, **kwargs)
-
-def _step_window_maybe_refresh(panel, *args, **kwargs):
-    _sc._step_window_maybe_refresh(panel, *args, **kwargs)
-
-def _step_window_refresh(panel, *args, **kwargs):
-    _sc._step_window_refresh(panel, *args, **kwargs)
-
-def _step_window_set_waiting(panel, *args, **kwargs):
-    _sc._step_window_set_waiting(panel, *args, **kwargs)
+_direct_clear_waiting_for_approach_confirmation = _sc._direct_clear_waiting_for_approach_confirmation
+_direct_enter_waiting_for_approach_confirmation = _sc._direct_enter_waiting_for_approach_confirmation
+_direct_release_waiting_for_approach_confirmation = _sc._direct_release_waiting_for_approach_confirmation
+_direct_waiting_for_approach_confirmation = _sc._direct_waiting_for_approach_confirmation
+_ensure_step_cart_debug_window = _sc._ensure_step_cart_debug_window
+_on_step_continue_clicked = _sc._on_step_continue_clicked
+_on_step_phase_start_clicked = _sc._on_step_phase_start_clicked
+_on_step_window_finished = _sc._on_step_window_finished
+_read_gripper_feedback_state = _sc._read_gripper_feedback_state
+_show_step_cart_debug_window = _sc._show_step_cart_debug_window
+_step_assess_target_reached = _sc._step_assess_target_reached
+_step_capture_start_pose = _sc._step_capture_start_pose
+_step_cart_debug_handle_axis = _sc._step_cart_debug_handle_axis
+_step_cart_debug_move_delta = _sc._step_cart_debug_move_delta
+_step_cart_debug_run_validation_xyz = _sc._step_cart_debug_run_validation_xyz
+_step_cartesian_move_runtime_target = _sc._step_cartesian_move_runtime_target
+_step_display_position = _sc._step_display_position
+_step_effective_flow = _sc._step_effective_flow
+_step_fetch_live_pose = _sc._step_fetch_live_pose
+_step_fetch_object_world = _sc._step_fetch_object_world
+_step_find_history_row = _sc._step_find_history_row
+_step_format_inline_rpy = _sc._step_format_inline_rpy
+_step_format_inline_xyz = _sc._step_format_inline_xyz
+_step_format_xyz = _sc._step_format_xyz
+_step_live_gripper_state = _sc._step_live_gripper_state
+_step_live_pose_text = _sc._step_live_pose_text
+_step_operational_frame_name = _sc._step_operational_frame_name
+_step_phase_action_text = _sc._step_phase_action_text
+_step_phase_completed = _sc._step_phase_completed
+_step_phase_gate_already_owned = _sc._step_phase_gate_already_owned
+_step_phase_gripper_state = _sc._step_phase_gripper_state
+_step_phase_intent = _sc._step_phase_intent
+_step_phase_sequence = _sc._step_phase_sequence
+_step_pipeline_phase_state = _sc._step_pipeline_phase_state
+_step_pipeline_rebuild = _sc._step_pipeline_rebuild
+_step_pre_insert_inicio_row = _sc._step_pre_insert_inicio_row
+_step_predict_next_phase = _sc._step_predict_next_phase
+_step_prepare_pipeline_view = _sc._step_prepare_pipeline_view
+_step_present_flow_name = _sc._step_present_flow_name
+_step_record_current_phase_actual = _sc._step_record_current_phase_actual
+_step_record_direct_event_snapshot = _sc._step_record_direct_event_snapshot
+_step_record_direct_home_initial = _sc._step_record_direct_home_initial
+_step_record_direct_initial_snapshot = _sc._step_record_direct_initial_snapshot
+_step_record_direct_mesa_ready = _sc._step_record_direct_mesa_ready
+_step_record_history = _sc._step_record_history
+_step_refresh_pipeline_table = _sc._step_refresh_pipeline_table
+_step_reset_sequence_view = _sc._step_reset_sequence_view
+_step_runtime_refresh = _sc._step_runtime_refresh
+_step_selected_object_name = _sc._step_selected_object_name
+_step_set_exec_target = _sc._step_set_exec_target
+_step_status_item = _sc._step_status_item
+_step_update_phase_result = _sc._step_update_phase_result
+_step_update_row_object_metrics = _sc._step_update_row_object_metrics
+_step_upsert_history_row_ordered = _sc._step_upsert_history_row_ordered
+_step_wait_for_phase = _sc._step_wait_for_phase
+_step_window_hide = _sc._step_window_hide
+_step_window_maybe_refresh = _sc._step_window_maybe_refresh
+_step_window_refresh = _sc._step_window_refresh
+_step_window_set_waiting = _sc._step_window_set_waiting
 
 
 def _on_debug_motion_button(panel) -> None:
@@ -1047,386 +930,32 @@ def _run_async(panel, fn, *, name: str = "", on_done=None) -> QThread:
     thread.start()
     return thread
 
-def _log_ros_message(panel, msg: str):
-    """Mostrar siempre los mensajes provenientes del RosWorker, pero solo cuando el bridge esté activo."""
-    # Los errores de inicialización ROS son siempre visibles (no esperar al bridge).
-    if "[ROS] ERROR rclpy" in msg:
-        panel._emit_log(msg)
-        return
-    if not panel._bridge_running:
-        return
-    panel._emit_log(msg)
+# F6 (auditoría 2026-05-10): system_state + camera diagnostics helpers
+# extraídos a módulo cohesivo (re-export para mantener API de los mixins).
+from .panel_system_state_helpers import (  # noqa: E402,I100
+    _apply_external_system_state,
+    _external_state_active,
+    _log_camera_diagnostics,
+    _log_ros_message,
+    _on_system_state_update,
+    _resolve_external_state,
+    _sync_moveit_from_system_state,
+)
 
-def _on_system_state_update(panel, state: str, reason: str) -> None:
-    state = (state or "").strip().upper()
-    if not state:
-        return
-    prev = panel._external_state
-    panel._external_state = state
-    panel._external_state_reason = reason or ""
-    panel._external_state_last = time.time()
-    # Trigger a state resolution pass so _system_state reflects the
-    # external state immediately (without waiting for the next
-    # _refresh_controls call, which may only fire on demand).
-    if prev != state or panel._system_state in (SystemState.BOOT, SystemState.WAITING_GAZEBO):
-        try:
-            panel.signal_refresh_controls.emit()
-        except RuntimeError:
-            pass
-
-def _external_state_active(panel) -> bool:
-    return external_state_active(panel)
-
-def _resolve_external_state(panel) -> Tuple[Optional[SystemState], str]:
-    return resolve_external_state(panel)
-
-def _apply_external_system_state(panel) -> None:
-    apply_external_system_state(panel)
-
-def _log_camera_diagnostics(panel, reason: str):
-    """Emitir detalles adicionales para debugging cuando hay fallos de cámara."""
-    if not panel._camera_required:
-        return
-    if not panel._debug_logs_enabled:
-        return
-    node_ready = panel.ros_worker.node_ready()
-    ctrl_ok = panel._ros2_control_available()
-    clock_ok, clock_age = panel._clock_status()
-    bridge_ok = panel._bridge_running
-    last_age = "n/a"
-    if panel._last_camera_frame_ts:
-        last_age = f"{_runtime_time() - panel._last_camera_frame_ts:.1f}s"
-    topics = []
-    if node_ready:
-        try:
-            topics = panel.ros_worker.list_topic_names()
-        except Exception as exc:
-            panel._log(f"[CAMERA-DIAG] fallo listando topics: {exc}")
-    camera_topics = [t for t in topics if t.startswith(CAMERA_TOPIC_PREFIX)]
-    diag = (
-        f"[CAMERA-DIAG] {reason} node_ready={node_ready} ros2_ctrl={ctrl_ok} "
-        f"clock={clock_ok}:{clock_age} bridge={bridge_ok} "
-        f"last_frame_age={last_age} camera_topics={len(camera_topics)}/{len(topics)}"
-    )
-    panel._log(diag)
-    if camera_topics:
-        preview = ", ".join(camera_topics[:4])
-        suffix = "..." if len(camera_topics) > 4 else ""
-        panel._log(f"[CAMERA-DIAG] camera topics sample: {preview}{suffix}")
-
-def _sync_moveit_from_system_state(panel) -> None:
-    if not panel._moveit_required:
-        moveit_detected = bool(
-            panel._moveit_running or panel._moveit_bridge_detected() or panel._moveit_status_ready()
-        )
-        if moveit_detected:
-            panel._moveit_required = True
-            if panel._moveit_state != MoveItState.READY:
-                panel._moveit_state = MoveItState.READY
-                panel._moveit_state_reason = "move_group detectado"
-            panel._emit_log("[MOVEIT] move_group detectado; saliendo de modo manual automáticamente")
-            return
-        panel._moveit_state = MoveItState.OFF
-        panel._moveit_state_reason = "manual"
-        return
-    if not panel._external_state_active():
-        return
-    if panel._system_state == SystemState.READY_MOVEIT:
-        if panel._moveit_state != MoveItState.READY:
-            panel._moveit_state = MoveItState.READY
-            panel._moveit_state_reason = "move_group listo (externo)"
-        return
-    if panel._system_state == SystemState.READY_VISION:
-        panel._moveit_state = MoveItState.WAITING_MOVEIT_READY
-        panel._moveit_state_reason = panel._system_state_reason or "move_group no listo"
-
-def _clock_status(panel) -> Tuple[bool, str]:
-    if not panel._ros_worker_started or not panel.ros_worker.node_ready():
-        return False, "node_off"
-    ok, age = panel.ros_worker.clock_alive()
-    if ok:
-        return True, f"age={age:.2f}s"
-    return False, f"age={age:.2f}s"
-
-def _joint_states_status(panel) -> Tuple[bool, str]:
-    if not panel._ros_worker_started or not panel.ros_worker.node_ready():
-        return False, "node_off"
-    topic = (panel._joint_current_topic or panel.joint_topic or "/joint_states").strip() or "/joint_states"
-    has_pub = panel.ros_worker.topic_has_publishers(topic)
-    if not has_pub:
-        return False, f"{topic}:no_publishers"
-    payload, ts = panel.ros_worker.get_last_joint_state()
-    if payload is None:
-        return False, f"{topic}:no_msgs"
-    names = payload.get("name", []) or []
-    if len(names) == 0:
-        return False, f"{topic}:empty"
-    strict_identity = _get_panel_ui_params().strict_joint_identity
-    if strict_identity:
-        normalized = {_normalize_joint_name(str(n)) for n in names if str(n).strip()}
-        missing = [jn for jn in UR5_JOINT_NAMES if jn not in normalized]
-        if missing:
-            sample = ", ".join(sorted(list(normalized))[:8])
-            return False, f"{topic}:joint_identity_mismatch missing={','.join(missing)} sample={sample}"
-    age = float("inf")
-    if ts:
-        age = max(0.0, _runtime_time() - ts)
-    if age > 2.0:
-        return False, f"{topic}:stale age={age:.2f}s"
-    return True, f"topic={topic} age={age:.2f}s names={len(names)}"
-
-def _bridge_transport_detected(panel) -> bool:
-    # A pose-only bridge (gz_pose_bridge) is not enough for DIRECTO; require
-    # joint_states as well before treating the full ROS bridge as active.
-    if panel._proc_alive(panel.bridge_proc):
-        return True
-    if not panel._pose_info_active():
-        return False
-    js_ok, _js_reason = panel._joint_states_status()
-    return bool(js_ok)
-
-def _bridge_ready_status(panel) -> Tuple[bool, str]:
-    if not panel._bridge_running:
-        return False, "bridge_process_off"
-    clock_ok, clock_reason = panel._clock_status()
-    if not clock_ok:
-        return False, f"clock_not_ready ({clock_reason})"
-    if not panel._pose_info_active():
-        return False, "pose_info_no_publishers"
-    js_ok, js_reason = panel._joint_states_status()
-    if not js_ok:
-        return False, js_reason
-    helper = get_tf_helper()
-    if helper is None:
-        return False, "tf_helper_off"
-    tf_stats = helper.tf_listener_stats()
-    if tf_stats[0] <= 0:
-        return False, f"tf_msgs={tf_stats[0]}"
-    return True, f"clock+pose+joint_states+tf ok (tf_msgs={tf_stats[0]})"
-
-def _tf_chain_ready_status(panel) -> Tuple[bool, str]:
-    helper = get_tf_helper()
-    if helper is None:
-        return False, "tf_helper_off"
-    base_frame = panel._business_base_frame()
-    ee_frame = str(getattr(panel, "_required_ee_frame", "") or "rg2_pinch_center").strip() or "rg2_pinch_center"
-    if not _can_transform_between(helper, base_frame, ee_frame, timeout_sec=0.2):
-        return False, f"{base_frame}<->{ee_frame} missing"
-    return True, f"{base_frame}->{ee_frame}"
-
-def _camera_depth_expectation(panel) -> Tuple[bool, str]:
-    topic = str(panel.camera_topic or "").strip()
-    if topic.endswith("/depth_image"):
-        return False, topic
-    if topic.endswith("/image"):
-        depth_topic = topic[: -len("/image")] + "/depth_image"
-    elif topic.endswith("/rgb"):
-        depth_topic = topic[: -len("/rgb")] + "/depth_image"
-    else:
-        depth_topic = "/camera_overhead/depth_image"
-    # The runtime camera gate must follow the active TFM model modality.
-    # Recent RGB checkpoints were being blocked by stale depth even though
-    # preprocessing only consumes depth when in_channels == 4.
-    depth_required = bool(panel._camera_depth_required_env)
-    if not depth_required:
-        in_channels = 0
-        try:
-            model_info = panel.tfm_module.model_info() if panel.tfm_module else {}
-            in_channels = int((model_info or {}).get("in_channels", 0) or 0)
-        except Exception:
-            in_channels = 0
-        if in_channels <= 0:
-            try:
-                modality = str(getattr(panel, "_exp_info", {}).get("modality", "") or "").strip().lower()
-            except Exception:
-                modality = ""
-            if modality in ("rgbd", "rgb-d"):
-                in_channels = 4
-            elif modality == "rgb":
-                in_channels = 3
-        if in_channels > 0:
-            depth_required = in_channels >= 4
-        elif hasattr(panel, "chk_tfm_use_depth") and panel.chk_tfm_use_depth is not None:
-            try:
-                depth_required = bool(panel.chk_tfm_use_depth.isChecked())
-            except Exception:
-                pass
-    return depth_required, depth_topic
-
-def _camera_runtime_flags(panel, now: Optional[float] = None) -> Tuple[bool, bool, bool, float, bool]:
-    """Return camera_ready, camera_fault, camera_source_down, frame_age, warmup_grace."""
-    if now is None:
-        now = _runtime_time()
-    age = now - panel._last_camera_frame_ts if panel._last_camera_frame_ts else float("inf")
-    gz_state = panel._gazebo_state()
-    gazebo_ready = gz_state == "GAZEBO_READY"
-    bridge_ready = bool(panel._bridge_running)
-    source_down = (not gazebo_ready) or (not bridge_ready)
-    has_frames = panel._camera_frame_count > 0
-    depth_required, _depth_topic = panel._camera_depth_expectation()
-    depth_age = (
-        now - panel._last_camera_depth_frame_ts
-        if panel._last_camera_depth_frame_ts
-        else float("inf")
-    )
-    depth_ready = (
-        (not depth_required)
-        or (
-            panel._camera_depth_frame_count > 0
-            and depth_age < CAMERA_READY_MAX_AGE_SEC
-            and gazebo_ready
-            and bridge_ready
-        )
-    )
-    grace_anchor = 0.0
-    if panel._camera_subscribe_ts > 0.0:
-        grace_anchor = panel._camera_subscribe_ts
-    elif panel._camera_init_start > 0.0:
-        grace_anchor = panel._camera_init_start
-    elif panel._bridge_start_ts > 0.0:
-        grace_anchor = panel._bridge_start_ts
-    in_grace = grace_anchor > 0.0 and (now - grace_anchor) < panel._camera_warmup_grace_sec
-    camera_ready = has_frames and age < CAMERA_READY_MAX_AGE_SEC and depth_ready and gazebo_ready and bridge_ready
-    camera_fault = has_frames and age > panel._camera_fault_age_sec and gazebo_ready and bridge_ready and (not in_grace)
-    if depth_required:
-        camera_fault = camera_fault or (
-            panel._camera_depth_frame_count > 0
-            and depth_age > panel._camera_fault_age_sec
-            and gazebo_ready
-            and bridge_ready
-            and (not in_grace)
-        )
-    return camera_ready, camera_fault, source_down, age, in_grace
-
-def _sync_external_release_state(panel) -> bool:
-    if panel._objects_release_done and panel._objects_settled:
-        return True
-    if not panel._pose_info_ok:
-        return False
-    positions = get_object_positions() or {}
-    live_positions = {}
-    if getattr(panel, "_ros_worker_started", False) and getattr(panel, "ros_worker", None) is not None:
-        try:
-            pose_map, _pose_ts = panel.ros_worker.pose_snapshot()
-        except Exception:
-            pose_map = {}
-        for name in DROP_OBJECT_NAMES:
-            pos = pose_map.get(name)
-            if pos is None or len(pos) < 3:
-                continue
-            try:
-                live_positions[name] = (float(pos[0]), float(pos[1]), float(pos[2]))
-            except Exception:
-                continue
-        if live_positions:
-            bulk_update_object_positions(
-                live_positions,
-                source="external_release_reconciled_live",
-                objects_stable=True,
-            )
-            recalc_object_states(reason="external_release_reconciled_live")
-            positions = get_object_positions() or {}
-    if not DROP_OBJECT_NAMES:
-        return False
-    for name in DROP_OBJECT_NAMES:
-        pos = positions.get(name)
-        if pos is None or len(pos) < 3:
-            return False
-        try:
-            xyz = (float(pos[0]), float(pos[1]), float(pos[2]))
-        except Exception:
-            return False
-        if not is_on_table(xyz):
-            return False
-    if not panel._objects_release_done or not panel._objects_settled:
-        panel._objects_release_done = True
-        panel._objects_settled = True
-        panel._emit_log(
-            "[PHYSICS][DROP] external release reconciled scene=on_table_all "
-            f"count={len(DROP_OBJECT_NAMES)}"
-        )
-        recalc_object_states(reason="external_release_reconciled")
-        panel.signal_refresh_controls.emit()
-    return True
-
-def _pose_info_topic(panel) -> str:
-    world_name = panel._gz_world_name or panel._detect_world_name() or GZ_WORLD
-    return f"/world/{world_name}/pose/info"
-
-def _pose_info_active(panel) -> bool:
-    if not panel._ros_worker_started or not panel.ros_worker.node_ready():
-        return False
-    now = time.monotonic()
-    if (
-        STATUS_TOPIC_CACHE_SEC > 0.0
-        and (now - panel._pose_info_active_ts) < STATUS_TOPIC_CACHE_SEC
-    ):
-        return panel._pose_info_active_cache
-    active = panel.ros_worker.topic_has_publishers(panel._pose_info_topic())
-    panel._pose_info_active_cache = bool(active)
-    panel._pose_info_active_ts = now
-    return active
-
-def _pose_info_ready(panel) -> bool:
-    if not panel._ros_worker_started or not panel.ros_worker.node_ready():
-        return False
-    if not panel._pose_info_active():
-        return False
-    poses, ts = panel.ros_worker.pose_snapshot()
-    if not poses:
-        return False
-    if ts:
-        age = _runtime_time() - ts
-        if age > POSE_INFO_MAX_AGE_SEC:
-            return False
-    return True
-
-def _gazebo_process_signal(panel) -> Tuple[bool, str]:
-    """Signal S1: determine if Gazebo process is alive using PID/PGID + fallback scan."""
-    if panel._proc_alive(panel.gz_proc):
-        pid = int(getattr(panel.gz_proc, "pid", 0) or 0)
-        if pid > 0:
-            panel._gz_real_pid = pid
-            if panel._gz_root_pid <= 0:
-                panel._gz_root_pid = pid
-            if panel._gz_pgid <= 0:
-                try:
-                    panel._gz_pgid = int(os.getpgid(pid))
-                except Exception:
-                    panel._gz_pgid = 0
-        return True, "popen"
-    if panel._gz_pgid > 0 and psutil is not None:
-        try:
-            for proc in psutil.process_iter(attrs=["pid", "cmdline", "status"]):
-                info = proc.info
-                pid = int(info.get("pid") or 0)
-                if pid <= 0:
-                    continue
-                if info.get("status") == psutil.STATUS_ZOMBIE:
-                    continue
-                try:
-                    if int(os.getpgid(pid)) != panel._gz_pgid:
-                        continue
-                except Exception:
-                    continue
-                cmdline = info.get("cmdline") or []
-                if not cmdline:
-                    continue
-                joined = " ".join(cmdline).lower()
-                if any(token in joined for token in ("gz sim", "gz-sim", "gzserver", "ign gazebo")):
-                    panel._gz_real_pid = pid
-                    return True, "pgid"
-        except Exception as exc:
-            _log_exception("gazebo process signal pgid", exc)
-    proc_ok, proc_reason = gz_sim_status()
-    if proc_ok:
-        return True, f"fallback_{proc_reason}"
-    return False, proc_reason
-
-def _normalize_joint_name(name) -> str:
-    text = str(name).strip()
-    if "::" in text:
-        text = text.split("::")[-1]
-    if "/" in text:
-        text = text.split("/")[-1]
-    return text.strip()
+# F6 (auditoría 2026-05-10): runtime status helpers extraídos a módulo
+# cohesivo. Se re-exportan aquí para preservar la API que usan los mixins.
+from .panel_runtime_status_helpers import (  # noqa: E402,I100
+    _bridge_ready_status,
+    _bridge_transport_detected,
+    _camera_depth_expectation,
+    _camera_runtime_flags,
+    _clock_status,
+    _gazebo_process_signal,
+    _joint_states_status,
+    _normalize_joint_name,
+    _pose_info_active,
+    _pose_info_ready,
+    _pose_info_topic,
+    _sync_external_release_state,
+    _tf_chain_ready_status,
+)

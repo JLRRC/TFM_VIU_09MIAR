@@ -4,7 +4,11 @@
 Congela las signaturas de funciones top-level para que el split iter2
 (deferred v1.1) no rompa consumers accidentalmente.
 
-Replica el patrón exitoso del snapshot de panel_pick_demo y panel_pick_object.
+NOTA (F6 audit 2026-05-10): el módulo ``pick_demo/internal_helpers.py`` fue
+borrado en B4 cleanup junto con todo el directorio ``pick_demo/`` (ver
+git log b4-lot1/lot2). Este snapshot ya no aplica — se salta a nivel
+de módulo si el archivo no existe. Se mantiene por si la auditoría de
+re-introducción del split lo recupera.
 """
 from __future__ import annotations
 
@@ -16,6 +20,11 @@ import pytest
 
 PKG = Path(__file__).resolve().parent.parent / "ur5_qt_panel"
 MODULE_FILE = PKG / "pick_demo" / "internal_helpers.py"
+
+pytestmark = pytest.mark.skipif(
+    not MODULE_FILE.is_file(),
+    reason="pick_demo/internal_helpers.py fue borrado en B4 cleanup",
+)
 
 
 # Funciones públicas (que pueden ser importadas desde fuera) — congeladas
