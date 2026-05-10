@@ -119,11 +119,18 @@ pkill -KILL -f "$STACK_REGEX" 2>/dev/null || true
 sleep 1
 # Shared memory de FastDDS (sesiones rotas pueden dejar segmentos)
 rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null || true
-LIVE=$(pgrep -f "$STACK_REGEX" 2>/dev/null | wc -l)
-echo "[LAUNCH] Limpieza completada (procesos sobrevivientes: $LIVE)"
-if [[ "$LIVE" -gt 0 ]]; then
-    echo "[WARN] Quedan $LIVE procesos del stack vivos:"
+# F-audit: con `set -eo pipefail`, `pgrep | wc -l` aborta el script si
+# pgrep no encuentra nada (exit 1). Usar `set +e` puntualmente.
+set +e
+LIVE_PIDS=$(pgrep -f "$STACK_REGEX" 2>/dev/null)
+LIVE_COUNT=$(echo "$LIVE_PIDS" | grep -c .)
+set -e
+echo "[LAUNCH] Limpieza completada (procesos sobrevivientes: $LIVE_COUNT)"
+if [[ "$LIVE_COUNT" -gt 0 ]]; then
+    echo "[WARN] Quedan $LIVE_COUNT procesos del stack vivos:"
+    set +e
     pgrep -af "$STACK_REGEX" 2>/dev/null | head -10
+    set -e
 fi
 
 # ── GZ_PARTITION único para esta sesión ──────────────────────────────────────
