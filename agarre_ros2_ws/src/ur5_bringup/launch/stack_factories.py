@@ -59,7 +59,17 @@ def build_runtime_environment_actions(
         SetEnvironmentVariable("GZ_SIM_RESOURCE_PATH", resource_path),
         SetEnvironmentVariable("GZ_SIM_SYSTEM_PLUGIN_PATH", plugin_path),
         SetEnvironmentVariable("GZ_RENDER_ENGINE", render_engine),
-        SetEnvironmentVariable("QT_QPA_PLATFORM", os.environ.get("QT_QPA_PLATFORM", "offscreen")),
+        # F-audit (2026-05-10): default a "xcb" (X11 nativo) si DISPLAY está
+        # set; sólo offscreen si literalmente no hay sesión gráfica. Antes
+        # forzaba offscreen por default, lo que rendía Qt sin ventana en
+        # gz sim -g (Gazebo invisible).
+        SetEnvironmentVariable(
+            "QT_QPA_PLATFORM",
+            os.environ.get(
+                "QT_QPA_PLATFORM",
+                "xcb" if os.environ.get("DISPLAY", "").strip() else "offscreen",
+            ),
+        ),
         SetEnvironmentVariable(
             "__EGL_VENDOR_LIBRARY_FILENAMES",
             "/usr/share/glvnd/egl_vendor.d/10_nvidia.json",

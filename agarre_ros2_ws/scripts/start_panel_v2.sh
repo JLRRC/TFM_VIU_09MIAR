@@ -702,16 +702,28 @@ if [[ "${PANEL_MODE}" == "manual" ]]; then
   PANEL_LAUNCH_PICK_ORCHESTRATOR_LIFECYCLE="0"
   PANEL_MANAGED="0"
 fi
-HEADLESS="true"
-if [[ "${PANEL_GZ_GUI:-0}" == "1" && "${PANEL_GZ_HEADLESS:-0}" != "1" ]]; then
-  HEADLESS="false"
+# F-audit (2026-05-10): default a HEADLESS=false (Gazebo con GUI visible).
+# El usuario solo entra en headless si:
+#   - exporta PANEL_GZ_HEADLESS=1, o
+#   - PANEL_FORCE_OFFSCREEN=1, o
+#   - PANEL_GZ_GUI=0 explícitamente.
+# Antes el default era headless=true y solo se desactivaba con PANEL_GZ_GUI=1
+# explícito, lo cual hacía que SSH sin GUI auto-detectado terminara en
+# headless silenciosamente.
+HEADLESS="false"
+if [[ "${PANEL_GZ_HEADLESS:-0}" == "1" ]] \
+   || [[ "${PANEL_FORCE_OFFSCREEN:-0}" == "1" ]] \
+   || [[ "${PANEL_GZ_GUI:-1}" == "0" ]]; then
+  HEADLESS="true"
 fi
 
 if [[ -z "${GZ_RENDER_ENGINE:-}" ]]; then
-  # ogre2 mantiene coherentes el servidor, la GUI y la escena 3D en este equipo.
-  export GZ_RENDER_ENGINE="ogre2"
+  # F-audit (2026-05-10): default OGRE clásico. OGRE2 segfaultea en
+  # `gz sim -g` (libOgreNextMain 2.3.3 + Hlms::createDatablock) en este
+  # equipo. Si tu PC sí soporta OGRE2, exporta GZ_RENDER_ENGINE=ogre2.
+  export GZ_RENDER_ENGINE="ogre"
 fi
-log "PANEL_GZ_GUI=${PANEL_GZ_GUI} HEADLESS=${HEADLESS}"
+log "PANEL_GZ_GUI=${PANEL_GZ_GUI} HEADLESS=${HEADLESS} GZ_RENDER_ENGINE=${GZ_RENDER_ENGINE}"
 
 LAUNCH_GZ="false"
 LAUNCH_RSP="false"

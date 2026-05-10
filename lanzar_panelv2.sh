@@ -178,17 +178,20 @@ if [[ "${HEADLESS}" == "true" ]]; then
     EXTRA_LAUNCH_ARGS="headless:=true camera_required:=false"
     export PANEL_CAMERA_REQUIRED=0
 else
-    # Por defecto mantenemos el panel Qt en la sesión gráfica, pero Gazebo arranca
-    # solo como servidor. En esta máquina hay sesiones con DISPLAY válido donde
-    # GLX no puede crear contexto y la GUI de Gazebo derriba todo el stack.
-    # Para forzar GUI de Gazebo explícitamente: PANEL_GZ_HEADLESS=0 ./lanzar_panelc2.sh
-    if [[ "${PANEL_GZ_HEADLESS:-1}" == "0" ]]; then
-        EXTRA_LAUNCH_ARGS="headless:=false"
-    else
+    # F-audit (2026-05-10): default a GUI visible (PANEL_GZ_HEADLESS=0).
+    # El segfault GLX antiguo se debía a que `gz sim -g` arrancaba con
+    # OGRE2 (libOgreNextMain 2.3.3 + Hlms::createDatablock SIGSEGV).
+    # gz_factory.py ahora pasa --render-engine $GZ_RENDER_ENGINE (ogre)
+    # al cliente GUI, lo que evita el crash en este equipo.
+    # Para volver a headless explícitamente: PANEL_GZ_HEADLESS=1 ./lanzar_panelv2.sh.
+    if [[ "${PANEL_GZ_HEADLESS:-0}" == "1" ]]; then
         EXTRA_LAUNCH_ARGS="headless:=true camera_required:=false"
-      export PANEL_GZ_HEADLESS=1
+        export PANEL_GZ_HEADLESS=1
         export PANEL_CAMERA_REQUIRED=0
-        echo "[LAUNCH] Gazebo GUI desactivada por defecto (PANEL_GZ_HEADLESS=${PANEL_GZ_HEADLESS:-1}); panel Qt sigue usando DISPLAY."
+        echo "[LAUNCH] Gazebo GUI desactivada por PANEL_GZ_HEADLESS=1; panel Qt sigue usando DISPLAY."
+    else
+        EXTRA_LAUNCH_ARGS="headless:=false"
+        echo "[LAUNCH] Gazebo GUI visible (default). Para headless: PANEL_GZ_HEADLESS=1 ./lanzar_panelv2.sh"
     fi
 fi
 

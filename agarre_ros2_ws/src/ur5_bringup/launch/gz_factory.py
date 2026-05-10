@@ -90,8 +90,16 @@ def build_gz_actions(
         output="screen",
         condition=UnlessCondition(headless),
     )
+    # F-audit (2026-05-10): forzar `--render-engine` también en el cliente
+    # GUI. Algunos sistemas (Mesa + libOgreNextMain.so 2.3.3) segfaultean
+    # con el default OGRE2; respetar la elección del usuario via
+    # GZ_RENDER_ENGINE evita SIGSEGV reproducible en arranques con GUI.
     gz_gui = ExecuteProcess(
-        cmd=["gz", "sim", "-g", "--gui-config", gui_config_file],
+        cmd=[
+            "gz", "sim", "-g",
+            "--render-engine", render_engine,
+            "--gui-config", gui_config_file,
+        ],
         output="screen",
         condition=UnlessCondition(headless),
     )
