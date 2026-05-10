@@ -1,0 +1,93 @@
+# Ruta/archivo: agarre_ros2_ws/src/ur5_description/config/ur5_controllers_real.yaml
+# F14 audit (2026-05-10): perfil de controllers para hardware real UR5+RG2.
+#
+# DIFERENCIAS vs ur5_controllers.yaml (sim):
+#
+# * interpolate_from_desired_state: false
+#     En sim se usa true para evitar discrepancias measured vs desired
+#     (ver docs/CHANGELOG_TUNING.md / F1.11). En hardware real el
+#     measured state es el feedback canónico del controlador UR.
+#
+# * stopped_velocity_tolerance: 0.05 (sim usa 0.50)
+#     Hardware real tiene jitter ~0.01 rad/s; 0.05 es seguro. Sim
+#     necesita 0.50 por physics drift en Gazebo.
+#
+# * goal_time: 30.0 (sim usa 300.0)
+#     Sim usa 300s porque sim_per_wall ≈ 0.58 alarga goals; real-time
+#     factor = 1.0 reduce a margen razonable. Si un goal real tarda
+#     > 30s, hay un problema (joint stuck, e-stop).
+#
+# * Tolerancias por joint mantenidas conservadoras (RG2 + payload).
+#
+# Uso:
+#     ros2 launch ur5_bringup ur5_real.launch.py \
+#         controllers_yaml:=ur5_controllers_real.yaml
+#
+# Validación previa al primer arranque hardware:
+#     1. ros2 control list_hardware_interfaces — verificar todos
+#        los joints expuestos por ur_robot_driver.
+#     2. ros2 control list_controllers — esperado:
+#        joint_state_broadcaster active, joint_trajectory_controller
+#        active, gripper_controller active.
+#     3. Test con goal pequeño (joint2 -10°) antes de pick completo.
+controller_manager:
+  ros__parameters:
+    update_rate: 125  # UR5 CB-series nominal (no e-series)
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    gripper_controller:
+      type: forward_command_controller/ForwardCommandController
+
+joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: false
+    # F14: hardware real usa measured state (false). Sim usa true.
+    interpolate_from_desired_state: false
+    set_last_command_interface_value_as_state_on_activation: true
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 30.0
+      shoulder_pan_joint:
+        trajectory: 0.50
+        goal: 0.05
+      shoulder_lift_joint:
+        trajectory: 0.50
+        goal: 0.05
+      elbow_joint:
+        trajectory: 0.50
+        goal: 0.05
+      wrist_1_joint:
+        trajectory: 0.50
+        goal: 0.05
+      wrist_2_joint:
+        trajectory: 0.50
+        goal: 0.05
+      wrist_3_joint:
+        trajectory: 0.50
+        goal: 0.05
+
+
+gripper_controller:
+  ros__parameters:
+    joints:
+      - rg2_finger_joint1
+      - rg2_finger_joint2
+    interface_name: position
