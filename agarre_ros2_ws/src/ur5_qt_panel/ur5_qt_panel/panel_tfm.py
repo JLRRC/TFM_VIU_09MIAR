@@ -67,8 +67,83 @@ def execute_tfm_world_grasp(panel, *args, **kwargs) -> bool:
 
 
 def tfm_visualize_grasp(panel, *args, **kwargs) -> None:
-    """DEPRECATED 2026-05-09: stub no-op (la visualización dependía del
-    pipeline TFM execute → MoveIt borrado)."""
+    """Alterna comparación visual P (predicción) ↔ R (referencia Cornell).
+
+    Reescrito 2026-05-11 (sustituye stub deprecated 2026-05-09): el botón
+    "Comparar grasp/ref" hace toggle de ``panel._tfm_visual_compare_enabled``;
+    el siguiente frame de cámara overhead repintará añadiendo el rectángulo
+    verde discontinuo de la referencia Cornell sobre el rojo de la predicción
+    (la lógica de dibujo ya existía en panel_draw_overlays._draw_grasp_overlay).
+
+    Si no hay grasp inferido (``_last_grasp_px``) el toggle se permite pero se
+    avisa por log; si la referencia está disponible se loguea IoU + diff de
+    centro/ángulo para feedback inmediato.
+    """
+    try:
+        new_state = not bool(getattr(panel, "_tfm_visual_compare_enabled", False))
+        panel._tfm_visual_compare_enabled = new_state
+    except Exception as exc:  # pragma: no cover - defensivo
+        panel._emit_log(f"[TFM_COMPARE] toggle_err={exc}")
+        return None
+
+    has_pred = bool(getattr(panel, "_last_grasp_px", None))
+    state_tag = "ON" if new_state else "OFF"
+    if not has_pred:
+        panel._emit_log(
+            f"[TFM_COMPARE] state={state_tag} sin predicción "
+            "(_last_grasp_px=None); ejecuta 'Inferir agarre' antes."
+        )
+        return None
+
+    if not new_state:
+        panel._emit_log(f"[TFM_COMPARE] state={state_tag}")
+        return None
+
+    # ON + hay predicción → intentar loguear métricas vs referencia.
+    try:
+        frame = getattr(panel, "_last_camera_frame", None)
+        fw = int(frame.get("w", 0)) if isinstance(frame, dict) else 0
+        fh = int(frame.get("h", 0)) if isinstance(frame, dict) else 0
+        ref = panel._build_reference_grasp(fw, fh) if fw > 0 and fh > 0 else None
+    except Exception as exc:
+        panel._emit_log(f"[TFM_COMPARE] state={state_tag} ref_err={exc}")
+        return None
+
+    if not ref:
+        panel._emit_log(
+            f"[TFM_COMPARE] state={state_tag} sin referencia Cornell "
+            "para el objeto seleccionado."
+        )
+        return None
+
+    pred = panel._last_grasp_px
+    try:
+        from .panel_v2 import grasp_iou  # type: ignore
+    except Exception:
+        grasp_iou = None  # type: ignore
+
+    iou_str = "n/a"
+    if grasp_iou is not None:
+        try:
+            iou_str = f"{float(grasp_iou(pred, ref)):.3f}"
+        except Exception as exc:
+            iou_str = f"err:{exc}"
+
+    try:
+        dcx = float(pred.get("cx", 0.0)) - float(ref.get("cx", 0.0))
+        dcy = float(pred.get("cy", 0.0)) - float(ref.get("cy", 0.0))
+        d_ang = float(pred.get("angle_deg", 0.0)) - float(ref.get("angle_deg", 0.0))
+        # normalizar a [-90, 90] (rectángulo simétrico π)
+        while d_ang > 90.0:
+            d_ang -= 180.0
+        while d_ang <= -90.0:
+            d_ang += 180.0
+        panel._emit_log(
+            f"[TFM_COMPARE] state={state_tag} iou={iou_str} "
+            f"d_center_px=({dcx:+.1f},{dcy:+.1f}) d_angle_deg={d_ang:+.1f}"
+        )
+    except Exception as exc:
+        panel._emit_log(f"[TFM_COMPARE] state={state_tag} iou={iou_str} metrics_err={exc}")
     return None
 
 

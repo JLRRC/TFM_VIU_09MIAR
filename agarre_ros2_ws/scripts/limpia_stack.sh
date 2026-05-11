@@ -96,6 +96,23 @@ fi
 
 # ── 3. Barrido TERM de todos los patrones conocidos del stack ────────────────
 log "barrido TERM del stack..."
+# Wrappers de lanzamiento (script bash y scripts auxiliares).
+# CRITICO: si quedan vivos relanzan el stack tras matarlo o ejecutan
+# cleanup agresivo en paralelo y se matan entre si (visto 2026-05-11:
+# 4 instancias paralelas de lanzar_panelv2.sh causaban kill mutuo).
+# Excluir el PID actual y su shell padre para no auto-matarse si esta
+# limpieza se ejecuta DESDE uno de esos wrappers.
+_self_pid=$$
+_parent_pid=${PPID:-0}
+for _wrapper_pat in "lanzar_panelv2\.sh" "lanzar_panelc2\.sh" "start_panel_v2\.sh" "start_panel_c2\.sh"; do
+  while IFS= read -r _wp; do
+    [[ -z "$_wp" ]] && continue
+    if [[ "$_wp" == "$_self_pid" || "$_wp" == "$_parent_pid" ]]; then
+      continue
+    fi
+    kill -TERM "$_wp" 2>/dev/null || true
+  done < <(pgrep -f "$_wrapper_pat" 2>/dev/null || true)
+done
 # Launches (por nombre de paquete y por ruta directa al fichero)
 pkill -TERM -f "ros2 launch ur5_bringup"               2>/dev/null || true
 pkill -TERM -f "ur5_stack.launch.py"                   2>/dev/null || true
@@ -104,6 +121,10 @@ pkill -TERM -f "ur5_moveit_bringup"                    2>/dev/null || true
 pkill -TERM -f "ur5_qt_panel.*panel_v2|panel_v2\.py"   2>/dev/null || true
 pkill -TERM -f "ur5_qt_panel.*main_panel|main_panel\.py" 2>/dev/null || true
 pkill -TERM -f "grasp_inference"                       2>/dev/null || true
+# Aux nodos F4/F5 (contact monitor + static aux joint state) — vistos
+# como zombis tras barrido 2026-05-11 (no estaban listados aqui).
+pkill -TERM -f "contact_monitor_node|contact_monitor\b" 2>/dev/null || true
+pkill -TERM -f "static_aux_joint_state_publisher"      2>/dev/null || true
 # MoveIt 2
 pkill -TERM -f "move_group"                            2>/dev/null || true
 pkill -TERM -f "ur5_moveit_bridge"                     2>/dev/null || true
@@ -141,6 +162,10 @@ pkill -TERM -f "Xvfb"                                  2>/dev/null || true
 
 # Comprobación de procesos residuales usando pgrep (sin ros2, no puede bloquearse)
 _any_running() {
+  # NOTA: los wrappers (lanzar_panelv2.sh, start_panel_v2.sh) NO se incluyen
+  # aqui porque la limpieza puede invocarse desde dentro de uno y dispararia
+  # falsos positivos infinitos. Su muerte se comprueba indirectamente al
+  # verificar que no relancen procesos del stack.
   pgrep -af "gz sim|gz-sim|gzserver|gzclient|ign gazebo|\
 ros_gz_bridge|parameter_bridge|robot_state_publisher|world_tf_publisher|\
 gz_pose_bridge|gz_ros_control_guard|\
@@ -152,7 +177,8 @@ panel_v2\.py|ur5_qt_panel|grasp_inference|main_panel|\
 pick_orchestrator|plan_to_pose_server|object_pose_resolver_service|\
 tf_geometry_service|evidence_logger|tf_probe|clock_probe|\
 panel_launch_control_node|panel_backend_node|\
-controller_health_monitor_node|simulation_reset_service" \
+controller_health_monitor_node|simulation_reset_service|\
+contact_monitor_node|static_aux_joint_state_publisher" \
     >/dev/null 2>&1
 }
 
@@ -165,12 +191,24 @@ done
 # ── 4. Barrido KILL si aún quedan procesos resistentes ───────────────────────
 if _any_running; then
   log "procesos resistentes — barrido KILL..."
+  # Wrappers (excluyendo este script y su padre)
+  for _wrapper_pat in "lanzar_panelv2\.sh" "lanzar_panelc2\.sh" "start_panel_v2\.sh" "start_panel_c2\.sh"; do
+    while IFS= read -r _wp; do
+      [[ -z "$_wp" ]] && continue
+      if [[ "$_wp" == "$_self_pid" || "$_wp" == "$_parent_pid" ]]; then
+        continue
+      fi
+      kill -KILL "$_wp" 2>/dev/null || true
+    done < <(pgrep -f "$_wrapper_pat" 2>/dev/null || true)
+  done
   pkill -KILL -f "ros2 launch ur5_bringup"               2>/dev/null || true
   pkill -KILL -f "ur5_stack.launch.py"                   2>/dev/null || true
   pkill -KILL -f "ur5_moveit_bringup"                    2>/dev/null || true
   pkill -KILL -f "ur5_qt_panel.*panel_v2|panel_v2\.py"   2>/dev/null || true
   pkill -KILL -f "ur5_qt_panel.*main_panel|main_panel\.py" 2>/dev/null || true
   pkill -KILL -f "grasp_inference"                       2>/dev/null || true
+  pkill -KILL -f "contact_monitor_node|contact_monitor\b" 2>/dev/null || true
+  pkill -KILL -f "static_aux_joint_state_publisher"      2>/dev/null || true
   pkill -KILL -f "move_group"                            2>/dev/null || true
   pkill -KILL -f "ur5_moveit_bridge"                     2>/dev/null || true
   pkill -KILL -f "ur5_moveit_py"                         2>/dev/null || true
@@ -253,8 +291,15 @@ panel_v2|main_panel|grasp_inference|\
 pick_orchestrator|plan_to_pose_server|object_pose_resolver_service|\
 tf_geometry_service|evidence_logger|\
 panel_launch_control_node|panel_backend_node|\
-controller_health_monitor_node|simulation_reset_service" \
+controller_health_monitor_node|simulation_reset_service|\
+contact_monitor_node|static_aux_joint_state_publisher|\
+lanzar_panelv2|lanzar_panelc2|start_panel_v2|start_panel_c2" \
   | grep -v grep || true
+# Reaper de zombis: si el shell padre del stack ya murió, los hijos quedan
+# como <defunct>. Forzamos un wait sobre cualquier hijo del PID 1 con
+# nombre conocido (no se pueden "matar" pero se loguean para diagnostico).
+log "--- procesos zombi (<defunct>) ---"
+ps -eo pid,ppid,stat,comm | awk '$3 ~ /Z/ {print}' | head -20 || true
 log "--- ros2 node list (timeout 5s, --no-daemon) ---"
 # --no-daemon: consulta la red DDS directamente, evita el daemon como proxy.
 # timeout 5s: garantiza que no se bloquea aunque DDS no responda.
