@@ -5,8 +5,13 @@
 """TFM inference helpers for the panel."""
 from __future__ import annotations
 
+import os
+import math
+import subprocess
+import time
 
 from .panel_utils import pixel_to_table_xy
+from .panel_robot_presets import JOINT_TABLE_POSE_RAD
 from .panel_tfm_preprocess import (  # noqa: F401
     _clip_roi,
     _get_cached_preprocessed_input,
@@ -358,202 +363,158 @@ def _tfm_grasp_run_pre_checks(panel, *, source: str):
     }
 
 
-def on_tfm_grasp_object_clicked(panel) -> None:
-    """Botón 'Agarre objeto': ejecuta agarre MoveIt usando inferencia del rectángulo rojo.
+def _agarre_moveit_simple_spawn_backend(panel) -> subprocess.Popen | None:
+    """Arranca el backend en modo servicio si no existe ya.
 
-    Flujo trazable:
-      experiment_check → inference_check → rect_validate → minor_axis →
-      preopen_compute → base_link_pose → moveit_execute
-      mode=moveit_sequence  source=infer_model  grasp_source=red_inference_rect
-      tcp=rg2_pinch_center  frame=base_link
+    El proceso se termina al acabar la llamada para evitar zombies. Si el
+    servicio ya existia, devuelve None y no toca el proceso externo.
     """
-    panel._log_button("TFM Agarre objeto")
-    source = str(getattr(panel, "_last_grasp_source", "") or "unknown")
-    experiment_applied = bool(getattr(panel, "_tfm_experiment_applied", False))
-    has_grasp = bool(getattr(panel, "_last_grasp_px", None))
-    selected = str(
-        getattr(panel, "_selected_object", "")
-        or getattr(panel, "_last_grasp_selection_name", "")
-        or "none"
-    )
-
-    panel._emit_log(
-        "[TFM_GRASP][BUTTON] clicked button=agarre_objeto mode=moveit_sequence "
-        "source=infer_model grasp_source=red_inference_rect "
-        f"experiment_applied={str(experiment_applied).lower()} "
-        f"has_grasp={str(has_grasp).lower()} selected={selected}"
-    )
-
-    pre_check = _tfm_grasp_run_pre_checks(panel, source=source)
-    if pre_check is None:
-        return
-    grasp_base = pre_check["grasp_base"]
-    cx_px = pre_check["cx_px"]
-    cy_px = pre_check["cy_px"]
-    w_px = pre_check["w_px"]
-    h_px = pre_check["h_px"]
-    angle_deg = pre_check["angle_deg"]
-    theta_img = pre_check["theta_img"]
-
-    # AXIS: calcular eje fino del rectángulo rojo
-    minor_px, opening_axis_theta_img = _compute_minor_axis_from_grasp_rect(
-        w_px, h_px, theta_img
-    )
-    panel._emit_log(
-        f"[TFM_GRASP][AXIS] minor_px={minor_px:.1f} "
-        f"opening_axis_theta_img={math.degrees(opening_axis_theta_img):.2f}deg"
-    )
-
-    if minor_px <= 0:
-        panel._set_status("TFM: eje fino del rectángulo inválido.", error=True)
-        panel._audit_append(
-            "logs/execute.log",
-            f"[TFM_GRASP] execute FAIL mode=moveit_sequence source={source} "
-            "reason=minor_axis_invalid",
+    env = os.environ.copy()
+    cmd = [
+        "ros2",
+        "run",
+        "ur5_tools",
+        "physical_grasp_demo",
+        "--ros-args",
+        "-p",
+        "autostart:=false",
+        "-p",
+        "keep_alive:=true",
+    ]
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
         )
-        return
+    except Exception as exc:
+        panel._emit_log(
+            f"[AGARRE_MOVEIT_SIMPLE][FAIL] phase=BACKEND_START reason={exc}"
+        )
+        return None
+    panel._emit_log(
+        "[AGARRE_MOVEIT_SIMPLE][BACKEND] spawned "
+        "cmd='ros2 run ur5_tools physical_grasp_demo --ros-args -p autostart:=false -p keep_alive:=true'"
+    )
+    return proc
 
-    # Obtener dimensiones del frame para conversión pixel → metro
-    fw = fh = 0
-    frame_snap = getattr(panel, "_last_camera_frame", None)
-    if frame_snap:
+
+def _agarre_moveit_simple_wait_service(panel, service: str, timeout_sec: float) -> bool:
+    deadline = time.time() + max(0.1, float(timeout_sec))
+    while time.time() < deadline:
         try:
-            _qimg, fw, fh, _fts = frame_snap
+            if panel.ros_worker.has_service(service):
+                return True
         except Exception:
-            fw = fh = 0
-    proj_z = float((panel._last_grasp_world or {}).get("proj_z_target", 0.0))
+            pass
+        time.sleep(0.2)
+    return False
 
-    minor_width_m, pre_open_width_m, finger_cmd_rad, _width_ok = (
-        _tfm_grasp_compute_width_and_preopen(
-            panel,
-            cx_px=cx_px,
-            cy_px=cy_px,
-            minor_px=minor_px,
-            fw=fw,
-            fh=fh,
-            proj_z=proj_z,
-        )
-    )
 
-    # Validar apertura RG2
-    if not (0.015 <= pre_open_width_m <= 0.110):
-        panel._set_status("TFM: apertura RG2 fuera de rango válido.", error=True)
-        panel._audit_append(
-            "logs/execute.log",
-            f"[TFM_GRASP] execute FAIL mode=moveit_sequence source={source} "
-            f"reason=preopen_out_of_range pre_open_width_m={pre_open_width_m:.4f}",
-        )
+def _agarre_moveit_simple_stop_backend(proc: subprocess.Popen | None) -> None:
+    if proc is None:
         return
+    try:
+        proc.terminate()
+        proc.wait(timeout=3.0)
+    except Exception:
+        try:
+            proc.kill()
+            proc.wait(timeout=2.0)
+        except Exception:
+            pass
 
-    if not (0.0 <= finger_cmd_rad <= 1.18):
-        panel._set_status("TFM: ángulo RG2 fuera de rango.", error=True)
-        panel._audit_append(
-            "logs/execute.log",
-            f"[TFM_GRASP] execute FAIL mode=moveit_sequence source={source} "
-            f"reason=finger_rad_out_of_range finger_cmd_rad={finger_cmd_rad:.4f}",
+
+def _agarre_moveit_simple_run_worker(panel) -> None:
+    service = "/physical_grasp_demo/run"
+    spawned_proc: subprocess.Popen | None = None
+    try:
+        panel._set_motion_lock(True)
+        panel._baseline_busy = True
+        panel._emit_log("[AGARRE_MOVEIT_SIMPLE][MESA][START]")
+        panel._ui_set_status("Agarre MoveIt simple: moviendo a Mesa")
+        move_sec = float(panel.joint_time.value()) if panel.joint_time else 3.0
+        ok, info = panel._publish_joint_trajectory(list(JOINT_TABLE_POSE_RAD), move_sec)
+        if not ok:
+            panel._emit_log(f"[AGARRE_MOVEIT_SIMPLE][MESA][FAIL] reason={info}")
+            panel._ui_set_status(f"Agarre MoveIt: Mesa fallo: {info}", error=True)
+            return
+        converged, reason = panel._wait_for_joint_convergence(
+            list(JOINT_TABLE_POSE_RAD),
+            timeout_sec=move_sec + 2.0,
+            tolerance_rad=0.03,
+            label="AGARRE_MOVEIT_SIMPLE_MESA",
         )
+        if not converged:
+            panel._emit_log(f"[AGARRE_MOVEIT_SIMPLE][MESA][FAIL] reason={reason}")
+            panel._ui_set_status(
+                f"Agarre MoveIt: Mesa no confirmada: {reason}", error=True
+            )
+            return
+        panel._emit_log("[AGARRE_MOVEIT_SIMPLE][MESA][OK]")
+
+        if not getattr(panel, "_ros_worker_started", False):
+            panel._ensure_ros_worker_started()
+        if not panel.ros_worker.node_ready():
+            panel._emit_log(
+                "[AGARRE_MOVEIT_SIMPLE][FAIL] phase=SERVICE reason=ros_worker_not_ready"
+            )
+            panel._ui_set_status("Agarre MoveIt: nodo ROS del panel no listo", error=True)
+            return
+
+        if not panel.ros_worker.has_service(service):
+            spawned_proc = _agarre_moveit_simple_spawn_backend(panel)
+            if spawned_proc is None:
+                panel._ui_set_status("Agarre MoveIt: no se pudo arrancar backend", error=True)
+                return
+            if not _agarre_moveit_simple_wait_service(panel, service, 15.0):
+                panel._emit_log(
+                    "[AGARRE_MOVEIT_SIMPLE][FAIL] phase=SERVICE "
+                    f"reason=timeout_waiting_{service}"
+                )
+                panel._ui_set_status("Agarre MoveIt: servicio backend no aparece", error=True)
+                return
+
+        panel._emit_log(f"[AGARRE_MOVEIT_SIMPLE][SERVICE][START] name={service}")
+        ok, message = panel.ros_worker.call_trigger_detail(service, timeout_sec=300.0)
+        for line in str(message or "").splitlines():
+            if line.strip():
+                panel._emit_log(line.strip())
+        if ok:
+            panel._emit_log("[AGARRE_MOVEIT_SIMPLE][DONE]")
+            panel._ui_set_status("Agarre MoveIt simple finalizado", error=False)
+        else:
+            panel._emit_log(
+                f"[AGARRE_MOVEIT_SIMPLE][FAIL] phase=SERVICE reason={message}"
+            )
+            panel._ui_set_status(f"Agarre MoveIt simple fallo: {message}", error=True)
+    except Exception as exc:
+        panel._emit_log(f"[AGARRE_MOVEIT_SIMPLE][FAIL] phase=EXCEPTION reason={exc}")
+        panel._ui_set_status(f"Agarre MoveIt simple excepcion: {exc}", error=True)
+    finally:
+        _agarre_moveit_simple_stop_backend(spawned_proc)
+        panel._baseline_busy = False
+        panel._set_motion_lock(False)
+
+
+def on_tfm_grasp_object_clicked(panel) -> None:
+    """Boton 'Agarre objeto': Mesa -> demo fisica MoveIt sobre pick_demo."""
+    if getattr(panel, "_agarre_moveit_simple_busy", False):
+        panel._emit_log("[AGARRE_MOVEIT_SIMPLE][BUTTON] ignored reason=busy")
         return
+    panel._log_button("TFM Agarre objeto")
+    panel._emit_log("[AGARRE_MOVEIT_SIMPLE][BUTTON] clicked")
+    panel._agarre_moveit_simple_busy = True
 
-    # GRIPPER log
-    panel._emit_log(
-        f"[TFM_GRASP][GRIPPER] pre_open_cmd_rad={finger_cmd_rad:.4f}"
+    def _done() -> None:
+        panel._agarre_moveit_simple_busy = False
+
+    panel._run_async(
+        lambda: _agarre_moveit_simple_run_worker(panel),
+        name="agarre_moveit_simple",
+        on_done=_done,
     )
-
-    grasp_base_d = dict(grasp_base)
-    minor_axis_yaw_deg, yaw_conversion_ok = _tfm_grasp_compute_yaw_from_minor_axis(
-        panel,
-        cx_px=cx_px,
-        cy_px=cy_px,
-        fw=fw,
-        fh=fh,
-        proj_z=proj_z,
-        opening_axis_theta_img=opening_axis_theta_img,
-        grasp_base_d=grasp_base_d,
-    )
-
-    if not yaw_conversion_ok:
-        panel._set_status(
-            "TFM: No se pudo convertir la inferencia a pose base_link.", error=True
-        )
-        panel._audit_append(
-            "logs/execute.log",
-            f"[TFM_GRASP] execute FAIL mode=moveit_sequence source={source} "
-            "reason=yaw_base_link_conversion_failed",
-        )
-        return
-
-    # POSE log
-    panel._emit_log(
-        f"[TFM_GRASP][POSE] frame=base_link tcp=rg2_pinch_center "
-        f"x={grasp_base_d.get('x', 0.0):.3f} y={grasp_base_d.get('y', 0.0):.3f} "
-        f"z={grasp_base_d.get('z', 0.0):.3f} yaw_base={minor_axis_yaw_deg:.2f}deg"
-    )
-
-    # Almacenar overrides para _execute_tfm_world_grasp
-    panel._tfm_grasp_minor_yaw_deg = minor_axis_yaw_deg
-    panel._tfm_grasp_preopen_rad = finger_cmd_rad
-
-    # TARGET: registra el objeto y la hipótesis de agarre
-    object_id = str(
-        getattr(panel, "_selected_object", "")
-        or getattr(panel, "_last_grasp_selection_name", "")
-        or "unknown"
-    ).strip()
-    panel._emit_log(
-        "[TFM_GRASP][TARGET] "
-        f"object_id={object_id} "
-        f"grasp_rect=cx={cx_px:.1f},"
-        f"cy={cy_px:.1f},"
-        f"w={w_px:.1f},"
-        f"h={h_px:.1f},"
-        f"angle={angle_deg:.1f}deg "
-        f"base=({grasp_base_d.get('x', 0.0):.3f},"
-        f"{grasp_base_d.get('y', 0.0):.3f},"
-        f"{grasp_base_d.get('z', 0.0):.3f}) "
-        f"source=infer_model mode=moveit_sequence"
-    )
-    panel._audit_append(
-        "logs/execute.log",
-        "[TFM_GRASP] execute TARGET "
-        f"object_id={object_id} source=infer_model mode=moveit_sequence "
-        f"grasp_px=({cx_px:.1f},{cy_px:.1f},"
-        f"w={w_px:.1f},h={h_px:.1f},"
-        f"angle={angle_deg:.1f}deg) "
-        f"minor_px={minor_px:.1f} "
-        f"opening_axis_theta_img={math.degrees(opening_axis_theta_img):.2f}deg "
-        f"minor_width_m={minor_width_m:.4f} "
-        f"pre_open_width_m={pre_open_width_m:.4f} "
-        f"finger_cmd_rad={finger_cmd_rad:.4f} "
-        f"base=({grasp_base_d.get('x', 0.0):.3f},{grasp_base_d.get('y', 0.0):.3f},"
-        f"{grasp_base_d.get('z', 0.0):.3f}) yaw_base={minor_axis_yaw_deg:.1f}",
-    )
-
-    # 2026-05-09: path MoveIt-classic borrado. La inferencia TFM termina
-    # logueando el target — la ejecución se desactiva (execute_tfm_world_grasp
-    # ahora devuelve False con [DEPRECATED]).
-    panel._emit_log(
-        "[TFM_GRASP][DEPRECATED] inferencia OK pero path execute MoveIt-classic "
-        f"fue borrado el 2026-05-09. object_id={object_id} "
-        f"yaw_base={minor_axis_yaw_deg:.2f}deg — para ejecutar el grasp use "
-        "el botón Pick Demo (orchestrator → FJT directo)."
-    )
-
-    handled = execute_tfm_world_grasp(panel)
-    if not handled:
-        panel._emit_log(
-            "[TFM_GRASP][MOVEIT] result=FAIL mode=moveit_sequence source=infer_model "
-            f"object_id={object_id} reason=execute_not_started"
-        )
-        panel._emit_log(
-            "[TFM_GRASP][EXECUTE] status=FAIL mode=moveit_sequence source=infer_model "
-            "grasp_orientation=minor_axis reason=execute_not_started"
-        )
-        panel._audit_append(
-            "logs/execute.log",
-            "[TFM_GRASP] execute FAIL mode=moveit_sequence source=infer_model "
-            f"object_id={object_id} reason=execute_not_started",
-        )
-    # El resultado final (OK/FAIL) lo registra _execute_tfm_world_grasp vía [TFM_GRASP][EXECUTE]
 
 def tfm_publish_grasp(panel):
     on_tfm_grasp_object_clicked(panel)

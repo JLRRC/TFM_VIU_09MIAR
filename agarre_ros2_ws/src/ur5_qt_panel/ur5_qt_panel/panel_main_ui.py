@@ -712,8 +712,8 @@ def _build_main_ui_robot_baseline_and_tfm(panel):
     panel.btn_tfm_reset = QPushButton("Reset TFM")
     panel.btn_tfm_grasp_object = QPushButton("Agarre objeto")
     panel.btn_tfm_grasp_object.setToolTip(
-        "Ejecutar agarre MoveIt usando el objeto señalado por la inferencia del experimento aplicado\n"
-        "mode=moveit  source=infer_model  tcp=rg2_pinch_center  frame=base_link"
+        "Ejecutar agarre fisico simple: Mesa -> MoveIt a pick_demo -> cerrar RG2 -> lift\n"
+        "mode=moveit_simple  object=pick_demo  tcp=rg2_pinch_center"
     )
     for b in (
         panel.btn_tfm_memoria_case,
@@ -745,9 +745,9 @@ def _build_main_ui_robot_baseline_and_tfm(panel):
         panel.btn_tfm_infer.setEnabled(False)
         panel.btn_tfm_visualize.setEnabled(False)
         panel.btn_tfm_reset.setEnabled(False)
-        panel.btn_tfm_grasp_object.setEnabled(False)
-    # "Agarre objeto" solo se habilita tras inferencia OK (independientemente del módulo)
-    panel.btn_tfm_grasp_object.setEnabled(False)
+    # "Agarre objeto" ya no depende de inferencia/CNN: lanza la demo fisica
+    # simple sobre pick_demo desde pose conocida.
+    panel.btn_tfm_grasp_object.setEnabled(True)
 
     baseline_title = QLabel("Baseline (UR5 / Demo)")
     baseline_title.setStyleSheet("font-weight:700;")
@@ -844,4 +844,3 @@ def build_main_ui(panel) -> None:
     panel.setCentralWidget(root)
     panel._start_trace_timer()
     panel._apply_status(False, False, False, False, False, False, False)
-

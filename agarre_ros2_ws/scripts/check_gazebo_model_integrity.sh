@@ -118,9 +118,22 @@ fi
 # (7) TF base_link -> {tool0, rg2_base_link, rg2_pinch_center, rg2_finger_*}
 # ----------------------------------------------------------------------------
 tf_xyz() {
+    # Parsea la primera linea "- Translation: [x, y, z]" del output de tf2_echo
+    # y devuelve "x y z" (tres numeros). Devuelve cadena vacia si no aparece.
     local parent="$1" child="$2"
     timeout 4 ros2 run tf2_ros tf2_echo "${parent}" "${child}" 2>/dev/null \
-        | awk '/Translation:/ {gsub(/[][,]/, ""); print $2, $3, $4; exit}'
+        | awk '
+            /Translation:[[:space:]]*\[/ {
+                line=$0
+                sub(/.*Translation:[[:space:]]*\[/, "", line)
+                sub(/\].*/, "", line)
+                gsub(/,/, " ", line)
+                n=split(line, a, " ")
+                # Compacta tokens no vacios
+                m=0; for(i=1;i<=n;i++) if(a[i]!="") b[++m]=a[i]
+                if (m>=3) { print b[1], b[2], b[3]; exit }
+            }
+        '
 }
 
 dist3d() {

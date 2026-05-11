@@ -43,9 +43,14 @@ from .service_clients import (
 # F5-step2: clearance Z por defecto sobre la pose del objeto para approach.
 # El cliente puede sobreescribir vía PhaseDispatchContext si fuese necesario.
 _APPROACH_Z_CLEARANCE_M_DEFAULT = 0.10
-# Keep a small positive clearance so GRASP_DOWN ends with bilateral contact
-# potential without forcing immediate table/object penetration.
-_GRASP_DOWN_Z_M = 0.020
+# Rescate contactos 2026-05-11: el TCP rg2_pinch_center coincide con la
+# punta de los dedos (entre ellos). Si lo dejamos 2cm sobre el centro del
+# objeto, las paredes laterales internas de los dedos solo se solapan en
+# altura ~5mm con un cilindro de 5cm, resultando en cierre por encima del
+# objeto y contact_gate left=false right=false. Bajamos a 0.0 para que el
+# pinch_center coincida con la altura media del objeto y los dedos
+# abracen su mitad lateral, generando contacto bilateral real.
+_GRASP_DOWN_Z_M = 0.0
 _GRASP_CLOSE_SETTLE_SEC = 0.35
 _GRASP_ATTACH_RETRIES = 10
 _GRASP_ATTACH_RETRY_SLEEP_SEC = 0.15

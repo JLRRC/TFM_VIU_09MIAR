@@ -30,9 +30,36 @@ ambos extensamente testeados offline.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+import os
+from typing import Any, Callable, Optional, Tuple
 
 from .panel_env import env_optional_str
+
+
+_GAZEBO_INTEGRITY_FLAG_DEFAULT = "/tmp/gazebo_model_integrity_ok"
+_GAZEBO_INTEGRITY_TRUTHY = ("1", "true", "yes", "on", "True", "TRUE")
+
+
+def _gazebo_integrity_status(
+    *,
+    env: Optional[dict] = None,
+    flag_path: Optional[str] = None,
+) -> Tuple[bool, str]:
+    """Mirror cliente del gate del orchestrator.
+
+    Devuelve (ok, reason). Permite al panel detectar la causa más común
+    de rechazo del goal ANTES de enviarlo y mostrar mensaje accionable al
+    usuario. La fuente de verdad sigue siendo el orchestrator
+    (_check_gazebo_integrity_gate). Si la lógica se desincroniza, gana
+    siempre el server: rechazará y se logueará la causa real.
+    """
+    env_map = env if env is not None else os.environ
+    if str(env_map.get("ALLOW_PICK_WITHOUT_GAZEBO_INTEGRITY", "")).strip() in _GAZEBO_INTEGRITY_TRUTHY:
+        return True, "override(ALLOW_PICK_WITHOUT_GAZEBO_INTEGRITY)"
+    path = flag_path or str(env_map.get("GAZEBO_INTEGRITY_FLAG", "")).strip() or _GAZEBO_INTEGRITY_FLAG_DEFAULT
+    if os.path.isfile(path):
+        return True, f"flag({path})"
+    return False, f"missing_flag({path})"
 
 
 def _legacy_dispatch(panel: Any) -> None:
@@ -214,6 +241,33 @@ def dispatch_pick_demo(
         legacy(panel)
         return "orchestrator_fallback_no_object"
 
+    # Pre-check del gate Gazebo (espejo cliente del gate del orchestrator).
+    # Evita "boton muerto" cuando el orchestrator rechaza por missing_flag:
+    # el usuario ve aqui un mensaje accionable con el comando exacto.
+    integrity_ok, integrity_reason = _gazebo_integrity_status()
+    if not integrity_ok:
+        try:
+            panel._emit_log(
+                "[PICK_DEMO][GAZEBO_INTEGRITY] PICK BLOQUEADO: "
+                f"{integrity_reason}. El orchestrator rechazara el goal. "
+                "Para desbloquear: ejecuta "
+                "./scripts/check_gazebo_model_integrity.sh con el stack vivo. "
+                "Si pasa, escribira /tmp/gazebo_model_integrity_ok. "
+                "Para saltarlo solo en debug: "
+                "ALLOW_PICK_WITHOUT_GAZEBO_INTEGRITY=1"
+            )
+        except Exception:
+            pass
+        try:
+            panel._set_status(
+                "PICK BLOQUEADO: integridad Gazebo no validada. "
+                "Ver log del panel para el comando exacto.",
+                error=True,
+            )
+        except Exception:
+            pass
+        return "orchestrator_blocked_by_gazebo_integrity"
+
     drop_xyz = _drop_xyz_from_panel(panel)
     object_pose_hint = _object_pose_world_from_panel(panel, object_name)
 
@@ -241,8 +295,32 @@ def dispatch_pick_demo(
             pass
 
     def _on_rejected() -> None:
+        # Re-evalua el gate por si la causa fue la integridad Gazebo:
+        # el server no expone la razon a traves del protocolo de action,
+        # asi que el cliente debe inferirla por contexto. Si el flag
+        # sigue faltando aqui es probable que esa sea la causa.
+        ok_now, reason_now = _gazebo_integrity_status()
         try:
-            panel._emit_log("[PICK_DEMO][ORCH] goal rejected by orchestrator")
+            if not ok_now:
+                panel._emit_log(
+                    "[PICK_DEMO][ORCH] goal rejected by orchestrator — "
+                    f"causa probable: {reason_now}. "
+                    "Ejecuta ./scripts/check_gazebo_model_integrity.sh con "
+                    "el stack vivo para desbloquear."
+                )
+            else:
+                panel._emit_log(
+                    "[PICK_DEMO][ORCH] goal rejected by orchestrator "
+                    f"(gate ok={reason_now}). Revisar log del nodo "
+                    "/pick_orchestrator_lifecycle para causa exacta."
+                )
+        except Exception:
+            pass
+        try:
+            panel._set_status(
+                "Pick rechazado por el orchestrator. Ver log del panel.",
+                error=True,
+            )
         except Exception:
             pass
 

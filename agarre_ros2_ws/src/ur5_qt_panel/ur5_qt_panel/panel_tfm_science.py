@@ -318,7 +318,7 @@ def _tfm_reset_grasp(panel) -> None:
     if panel.tfm_module:
         panel.tfm_module.reset()
     if hasattr(panel, "btn_tfm_grasp_object"):
-        panel.btn_tfm_grasp_object.setEnabled(False)
+        panel.btn_tfm_grasp_object.setEnabled(True)
     panel._refresh_science_ui()
     panel._refresh_controls()
     panel._refresh_camera_display()
@@ -1028,4 +1028,3 @@ def _tfm_select_seed_from_summary(panel, exp_name: str, summary_path: Path) -> T
 
 def _save_episode(panel) -> None:
     pass  # placeholder — episode saving not yet implemented
-

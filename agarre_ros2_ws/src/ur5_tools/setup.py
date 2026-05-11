@@ -66,6 +66,7 @@ setup(
             # F9 audit (2026-05-10): microservicio maduro.
             "controller_health_monitor_node = ur5_tools.controller_health_monitor_node:main",
             "simulation_reset_service = ur5_tools.simulation_reset_service:main",
+            "physical_grasp_demo = ur5_tools.physical_grasp_demo:main",
         ],
     },
 )

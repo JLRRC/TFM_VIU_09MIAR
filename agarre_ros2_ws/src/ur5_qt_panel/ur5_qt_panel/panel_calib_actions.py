@@ -270,17 +270,12 @@ def _run_pick_demo(panel):
 
 
 def _run_pick_object(panel):
-    """DEPRECATED 2026-05-09: el path MoveIt-classic fue borrado.
-
-    El botón "Agarre Objeto (MoveIT)" sigue presente en el panel pero
-    ya no tiene backend. Esta función emite un mensaje y retorna sin
-    efecto. El path canónico es ``dispatch_pick_demo`` (orchestrator
-    → FJT directo, criterio T35 verde).
-    """
+    """Boton 'Agarre Objeto (MoveIT)': redirige al agarre fisico simple."""
     panel._emit_log(
-        "[BOTON][DEPRECATED] 'Agarre Objeto (MoveIT)' eliminado el 2026-05-09 "
-        "(path MoveIt-classic borrado). Usa 'Pick Demo' (orchestrator → FJT directo)."
+        "[AGARRE_MOVEIT_SIMPLE][BUTTON] source=baseline_moveit redirected=true"
     )
+    from .panel_tfm import on_tfm_grasp_object_clicked
+    on_tfm_grasp_object_clicked(panel)
 
 def _get_object_world_position(panel, obj_name: str) -> Optional[tuple]:
     """Obtener posición mundial del objeto desde poses actuales."""

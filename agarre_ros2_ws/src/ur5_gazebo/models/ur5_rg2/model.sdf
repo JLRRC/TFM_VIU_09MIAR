@@ -475,9 +475,25 @@
                             <kp>200000</kp><kd>30.0</kd>
                             <max_vel>0.1</max_vel><min_depth>0.001</min_depth>
                         </ode>
+                        <!-- Rescate contactos 2026-05-11: bitmask 0x10->0x01 para
+                             casar con pick_demo (0x01). Sin overlap los dedos no
+                             colisionaban con el objeto en el filtro de Gazebo. -->
+                        <collide_bitmask>0x01</collide_bitmask>
                     </contact>
                 </surface>
-            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
+            </collision>
+            <!-- Rescate contactos 2026-05-11: sensor de contacto del dedo
+                 izquierdo. Sin esto, el sistema gz-sim-contact-system no emite
+                 nada para esta colision y /rg2/left_contact queda sin
+                 publisher en ROS (gripper_attach_backend ve left=false). -->
+            <sensor name="rg2_left_contact_sensor" type="contact">
+                <always_on>true</always_on>
+                <update_rate>250</update_rate>
+                <topic>/rg2/left_contact</topic>
+                <contact>
+                    <collision>rg2_finger_link1_collision</collision>
+                </contact>
+            </sensor>
             <inertial>
                 <pose>0 0 0.0875 0 0 0</pose>
                 <mass>0.05</mass>
@@ -518,9 +534,20 @@
                             <kp>200000</kp><kd>30.0</kd>
                             <max_vel>0.1</max_vel><min_depth>0.001</min_depth>
                         </ode>
+                        <!-- Rescate contactos 2026-05-11: bitmask 0x10->0x01. -->
+                        <collide_bitmask>0x01</collide_bitmask>
                     </contact>
                 </surface>
-            <surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
+            </collision>
+            <!-- Rescate contactos 2026-05-11: sensor de contacto del dedo derecho. -->
+            <sensor name="rg2_right_contact_sensor" type="contact">
+                <always_on>true</always_on>
+                <update_rate>250</update_rate>
+                <topic>/rg2/right_contact</topic>
+                <contact>
+                    <collision>rg2_finger_link2_collision</collision>
+                </contact>
+            </sensor>
             <inertial>
                 <pose>0 0 0.0875 0 0 0</pose>
                 <mass>0.05</mass>

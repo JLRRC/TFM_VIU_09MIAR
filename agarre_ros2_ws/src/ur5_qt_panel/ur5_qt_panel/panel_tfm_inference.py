@@ -664,7 +664,7 @@ def handle_infer_result(panel, result: Dict[str, object]) -> None:
             f"infer_ms={infer_ms:.2f} total_ms={total_ms:.2f} err={err}",
         )
         if hasattr(panel, "btn_tfm_grasp_object"):
-            panel.btn_tfm_grasp_object.setEnabled(False)
+            panel.btn_tfm_grasp_object.setEnabled(True)
         complete_pending_tfm_infer_request(panel, False, f"inferencia fallida ({err})")
         return
     pred = result.get("pred") if isinstance(result.get("pred"), dict) else None
@@ -672,7 +672,7 @@ def handle_infer_result(panel, result: Dict[str, object]) -> None:
         panel._set_status("TFM: salida inválida", error=True)
         panel._audit_append("logs/infer.log", "[TFM] infer_end status=FAIL err=salida_invalida")
         if hasattr(panel, "btn_tfm_grasp_object"):
-            panel.btn_tfm_grasp_object.setEnabled(False)
+            panel.btn_tfm_grasp_object.setEnabled(True)
         complete_pending_tfm_infer_request(panel, False, "salida inválida")
         return
     raw_pred = dict(pred)
@@ -827,4 +827,3 @@ def sync_tfm_module_grasp_state(panel) -> None:
             panel.tfm_module._last_grasp = grasp  # type: ignore[attr-defined]
     except Exception as exc:
         panel._log_warning(f"[TFM] set_last_grasp error: {exc}")
-
