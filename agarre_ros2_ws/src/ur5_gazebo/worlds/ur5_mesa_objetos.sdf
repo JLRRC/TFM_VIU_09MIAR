@@ -4,6 +4,7 @@
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics" />
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands" />
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster" />
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact" />
     
     <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
       <render_engine>ogre</render_engine>
@@ -211,6 +212,7 @@
                 <max_vel>0.1</max_vel>
                 <min_depth>0.001</min_depth>
               </ode>
+              <collide_bitmask>0x01</collide_bitmask>
             </contact>
           </surface>
         </collision>

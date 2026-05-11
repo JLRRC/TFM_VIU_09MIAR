@@ -26,11 +26,12 @@ SYSTEM_STATE_STARTUP_TIMEOUT_SEC: "15.0"
 # --- attach_backend: timeouts y modo follow ------------------------------------
 ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS: "2000"
 ATTACH_BACKEND_GZ_CMD_TIMEOUT_SEC: "3.0"
-ATTACH_BACKEND_MODE: follow_tcp
+ATTACH_BACKEND_MODE: detachable_joint
 ATTACH_BACKEND_MAX_POSE_AGE_SEC: "1.5"
 ATTACH_BACKEND_FOLLOW_RATE_HZ: "20.0"
 ATTACH_BACKEND_FOLLOW_BREAK_DIST_M: "0.18"
-ATTACH_BACKEND_MAX_DIST_M: "0.08"
+ATTACH_BACKEND_MAX_DIST_M: "0.05"
+ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS: ""
 STRICT_PHYSICS_MODE: "false"
 
 # --- moveit_bridge: timeouts y scales ------------------------------------------

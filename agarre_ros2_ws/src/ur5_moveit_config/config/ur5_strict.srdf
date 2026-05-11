@@ -8,7 +8,7 @@
   <virtual_joint name="world_joint" parent_frame="world" child_link="base_link" type="fixed" />
 
   <group name="manipulator">
-    <chain base_link="base_link" tip_link="rg2_tcp" />
+    <chain base_link="base_link" tip_link="rg2_pinch_center" />
     <joint name="shoulder_pan_joint" />
     <joint name="shoulder_lift_joint" />
     <joint name="elbow_joint" />
@@ -16,6 +16,13 @@
     <joint name="wrist_2_joint" />
     <joint name="wrist_3_joint" />
   </group>
+
+  <group name="gripper">
+    <joint name="rg2_finger_joint1" />
+    <joint name="rg2_finger_joint2" />
+  </group>
+
+  <end_effector name="rg2_ee" parent_link="tool0" group="gripper" parent_group="manipulator" />
 
   <!-- Solo pares adyacentes o fijos inevitables por diseño del útil. -->
   <disable_collisions link1="base_link_inertia" link2="shoulder_link" reason="Adjacent"/>

@@ -43,6 +43,9 @@ DEFAULT_OBJECTS = [
 DEFAULT_TOUCH_LINKS = [
     "rg2_tcp",
     "tool0",
+    "rg2_base_link",
+    "rg2_finger_link1",
+    "rg2_finger_link2",
     "flange",
     "wrist_3_link",
 ]

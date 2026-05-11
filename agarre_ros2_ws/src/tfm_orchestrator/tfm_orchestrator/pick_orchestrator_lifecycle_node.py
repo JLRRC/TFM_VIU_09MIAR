@@ -32,8 +32,9 @@ nodo F5/F6 — sólo cambia el lifecycle del nodo.
 
 from __future__ import annotations
 
+import os
 import time
-from typing import Optional
+from typing import Optional, Tuple
 
 import rclpy
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
@@ -102,7 +103,7 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
         self._joint_state_cache = None
         self._joint_state_sub = None
         self._snapshot_base_frame: str = "base_link"
-        self._snapshot_tcp_frame: str = "rg2_tcp"
+        self._snapshot_tcp_frame: str = "rg2_pinch_center"
         self._snapshot_tf_timeout: float = 0.5
         self._snapshot_require_object_pose: bool = True
         # B-iter6 (2026-05-03): ActionClient FollowJointTrajectory para HOME_INITIAL real.
@@ -173,7 +174,7 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             self.declare_parameter("service_call_timeout_sec", 10.0)
             # B-iter5: params del INITIAL_SNAPSHOT real.
             self.declare_parameter("snapshot_base_frame", "base_link")
-            self.declare_parameter("snapshot_tcp_frame", "rg2_tcp")
+            self.declare_parameter("snapshot_tcp_frame", "rg2_pinch_center")
             self.declare_parameter("snapshot_tf_timeout_sec", 0.5)
             self.declare_parameter("snapshot_require_object_pose", True)
             # B-iter6: params del HOME_INITIAL real.
@@ -198,7 +199,7 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             self.get_parameter("snapshot_base_frame").value or "base_link"
         )
         self._snapshot_tcp_frame = str(
-            self.get_parameter("snapshot_tcp_frame").value or "rg2_tcp"
+            self.get_parameter("snapshot_tcp_frame").value or "rg2_pinch_center"
         )
         self._snapshot_tf_timeout = float(
             self.get_parameter("snapshot_tf_timeout_sec").value
@@ -410,6 +411,18 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
                 f"[ORCHESTRATOR_LC] goal rejected: {reason}"
             )
             return GoalResponse.REJECT
+        # Rescate Gazebo 2026-05-11: bloquear pick si la integridad del modelo
+        # Gazebo no ha sido validada. El flag lo escribe
+        # scripts/check_gazebo_model_integrity.sh tras pasar todos los chequeos.
+        # Override solo para debug con ALLOW_PICK_WITHOUT_GAZEBO_INTEGRITY=1.
+        ok, gate_reason = _check_gazebo_integrity_gate()
+        if not ok:
+            self.get_logger().error(
+                "PICK BLOQUEADO: Gazebo model integrity no validada. "
+                "Ejecuta ./scripts/check_gazebo_model_integrity.sh y corrige Gazebo "
+                f"antes de pick. ({gate_reason})"
+            )
+            return GoalResponse.REJECT
         obj = str(getattr(goal_request, "object_name", "") or "").strip()
         if not obj:
             self.get_logger().warning("[ORCHESTRATOR_LC] goal rejected: object_name vacío")
@@ -418,7 +431,8 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             f"[ORCHESTRATOR_LC] goal accepted: object={obj} "
             f"drop=({goal_request.drop_xyz_world.x:.3f}, "
             f"{goal_request.drop_xyz_world.y:.3f}, "
-            f"{goal_request.drop_xyz_world.z:.3f})"
+            f"{goal_request.drop_xyz_world.z:.3f}) "
+            f"gazebo_integrity={gate_reason}"
         )
         return GoalResponse.ACCEPT
 
@@ -865,6 +879,36 @@ class PickOrchestratorLifecycleNode(LifecycleNode):
             self.get_logger().warning(
                 f"[ORCHESTRATOR_LC] feedback publish failed: {exc}"
             )
+
+
+_DEFAULT_INTEGRITY_FLAG = "/tmp/gazebo_model_integrity_ok"
+_TRUTHY = ("1", "true", "yes", "on", "True", "TRUE")
+
+
+def _check_gazebo_integrity_gate(
+    *,
+    env: Optional[dict] = None,
+    flag_path: Optional[str] = None,
+) -> Tuple[bool, str]:
+    """Gate puro: ¿se permite aceptar un goal de pick?
+
+    Reglas:
+      1. Si ``ALLOW_PICK_WITHOUT_GAZEBO_INTEGRITY=1`` → permitido (debug override).
+      2. Si existe el flag escrito por ``check_gazebo_model_integrity.sh``
+         (``/tmp/gazebo_model_integrity_ok`` por defecto, override con
+         ``GAZEBO_INTEGRITY_FLAG``) → permitido.
+      3. En cualquier otro caso → bloqueado.
+
+    Devuelve ``(ok, reason)``. La razón se loguea (passthrough en accept y
+    diagnóstico en reject).
+    """
+    env_map = env if env is not None else os.environ
+    if str(env_map.get("ALLOW_PICK_WITHOUT_GAZEBO_INTEGRITY", "")).strip() in _TRUTHY:
+        return True, "override(ALLOW_PICK_WITHOUT_GAZEBO_INTEGRITY)"
+    path = flag_path or str(env_map.get("GAZEBO_INTEGRITY_FLAG", "")).strip() or _DEFAULT_INTEGRITY_FLAG
+    if os.path.isfile(path):
+        return True, f"flag({path})"
+    return False, f"missing_flag({path})"
 
 
 def main(args: Optional[list] = None) -> None:

@@ -239,9 +239,11 @@ class PoseLookupMixin:
             diag[f"{name}_ok"] = pose is not None
             diag[f"{name}_age"] = float("inf") if pose is None else float(self._pose_age_sec(pose))
         self._last_tcp_pose_diag = diag
+        # Priorizamos TF world->tcp directo cuando está fresco. En este stack
+        # es la referencia más confiable para coherencia física con Gazebo.
         priority_order = {
-            "joint_state_chain": 0,
-            "world_tcp": 1,
+            "world_tcp": 0,
+            "joint_state_chain": 1,
             "tool_fallback": 2,
             "base_chain": 3,
         }
@@ -263,10 +265,10 @@ class PoseLookupMixin:
         # relativa a base sigue siendo coherente durante el carry aunque la muestra
         # directa world->tcp vaya con varios segundos de retraso.
         stale_priority_order = {
-            "joint_state_chain": 0,
-            "base_chain": 1,
-            "tool_fallback": 2,
-            "world_tcp": 3,
+            "world_tcp": 0,
+            "joint_state_chain": 1,
+            "base_chain": 2,
+            "tool_fallback": 3,
         }
         stale_candidates = [
             (stale_priority_order.get(name, 99), name, pose)

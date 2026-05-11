@@ -206,7 +206,8 @@ def build_system_state_and_attach_extras(resolve_runtime_fn):
         {"geometry_pair_tol_m": float(resolve_runtime_fn("SYSTEM_STATE_GEOMETRY_PAIR_TOL_M", "0.001"))},
         {"startup_timeout_sec": float(resolve_runtime_fn("SYSTEM_STATE_STARTUP_TIMEOUT_SEC", "15.0"))},
     ]
-    demo_transport_objects_env = os.environ.get("ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS", "pick_demo")
+    # Default físico: sin demo_transport para evitar "carry" por teletransporte.
+    demo_transport_objects_env = os.environ.get("ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS", "")
     demo_transport_objects = [v.strip() for v in demo_transport_objects_env.split(",") if v.strip()]
     attach_extras = [
         {"gz_service_timeout_ms": int(resolve_runtime_fn("ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS", "2000"))},
@@ -241,7 +242,7 @@ def build_launch_arguments(
         DeclareLaunchArgument("launch_attach_backend", default_value="true"),
         DeclareLaunchArgument(
             "attach_backend_mode",
-            default_value=resolve_runtime_fn("ATTACH_BACKEND_MODE", "follow_tcp"),
+            default_value=resolve_runtime_fn("ATTACH_BACKEND_MODE", "detachable_joint"),
         ),
         DeclareLaunchArgument(
             "strict_physics_mode",
@@ -261,7 +262,7 @@ def build_launch_arguments(
         ),
         DeclareLaunchArgument(
             "attach_backend_max_dist_m",
-            default_value=resolve_runtime_fn("ATTACH_BACKEND_MAX_DIST_M", "0.08"),
+            default_value=resolve_runtime_fn("ATTACH_BACKEND_MAX_DIST_M", "0.05"),
         ),
         DeclareLaunchArgument("launch_tf_geometry_service", default_value="true"),
         DeclareLaunchArgument("launch_object_pose_resolver", default_value="true"),

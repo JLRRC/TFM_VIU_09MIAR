@@ -150,19 +150,18 @@ def _build_orchestrator_service_nodes(
             {"mode": "MOVEIT_DIRECT"},
             {"moveit_action_name": "/move_action"},
             {"moveit_group_name": "manipulator"},
-            # B-iter14 (2026-05-03): tip_link del SRDF UR5+RG2 = rg2_tcp.
-            # El ee_frame del goal puede ser distinto (rg2_pinch_center
-            # semántico) pero las constraints de MoveIt deben apuntar al
-            # tip del kinematic chain del group.
-            {"moveit_tip_link_override": "rg2_tcp"},
+            # Coherencia de frames: el group `manipulator` del SRDF usa
+            # `rg2_pinch_center` como tip del chain.
+            {"moveit_tip_link_override": "rg2_pinch_center"},
             # 2026-05-07: subido planning_time 10→25 + relajadas tolerancias.
             # Validación live ronda 10 mostró APPROACH timeout sistemático
             # con 10s y pos_tol=0.02. El sesgo determinista FK panel↔TF live
             # (~10mm pose pre-grasp) hace que MoveIt no encuentre solución
             # dentro de 10s con tolerancia 20mm. 25s + tol 0.05 da margen.
             {"moveit_planning_time_sec": 25.0},
-            {"moveit_position_tol_m": 0.05},
-            {"moveit_orientation_tol_rad": 0.50},
+            {"moveit_position_tol_m": 0.012},
+            {"moveit_orientation_tol_rad": 0.20},
+            {"moveit_tf_recovery_tol_m": 0.020},
             # 2026-05-07: subido a 400s. Con scaling=30 el upper bound de
             # MoveIt es ~315s; el orchestrator necesita esperar más allá
             # para no cortar antes de tiempo.
@@ -176,6 +175,9 @@ def _build_orchestrator_service_nodes(
             # y siempre funciona — extender ese patrón a APPROACH/LIFT/TRANSPORT.
             # Si IK falla o controller no responde, falls back a MoveIt path.
             {"bypass_moveit_for_short_paths": True},
+            {"fjt_direct_allow_cartesian_bypass": False},
+            {"fjt_direct_postcheck_tol_m": 0.015},
+            {"fjt_direct_postcheck_timeout_sec": 0.35},
         ],
         condition=IfCondition(launch_plan_to_pose_server),
     )
@@ -192,6 +194,7 @@ def _build_orchestrator_service_nodes(
         parameters=[
             {"use_sim_time": use_sim_time},
             {"use_stubs": pick_orchestrator_use_stubs if pick_orchestrator_use_stubs is not None else False},
+            {"snapshot_tcp_frame": "rg2_pinch_center"},
             {"auto_activate": True},
         ],
         condition=(

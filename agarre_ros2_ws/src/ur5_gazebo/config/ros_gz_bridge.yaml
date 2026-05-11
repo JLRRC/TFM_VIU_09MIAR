@@ -21,6 +21,16 @@
   ros_type_name: geometry_msgs/msg/PoseArray
   gz_type_name: gz.msgs.Pose_V
   direction: GZ_TO_ROS
+- ros_topic_name: /world/ur5_mesa_objetos/model/ur5_rg2/link/rg2_finger_link1/sensor/rg2_left_contact_sensor/contact
+  gz_topic_name: /world/ur5_mesa_objetos/model/ur5_rg2/link/rg2_finger_link1/sensor/rg2_left_contact_sensor/contact
+  ros_type_name: ros_gz_interfaces/msg/Contacts
+  gz_type_name: gz.msgs.Contacts
+  direction: GZ_TO_ROS
+- ros_topic_name: /world/ur5_mesa_objetos/model/ur5_rg2/link/rg2_finger_link2/sensor/rg2_right_contact_sensor/contact
+  gz_topic_name: /world/ur5_mesa_objetos/model/ur5_rg2/link/rg2_finger_link2/sensor/rg2_right_contact_sensor/contact
+  ros_type_name: ros_gz_interfaces/msg/Contacts
+  gz_type_name: gz.msgs.Contacts
+  direction: GZ_TO_ROS
 - ros_topic_name: /camera_overhead/image
   gz_topic_name: /camera_overhead/image
   ros_type_name: sensor_msgs/msg/Image

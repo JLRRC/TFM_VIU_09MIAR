@@ -100,6 +100,18 @@ class PoseSubscriberMixin:
             stamp_ns = int(self.get_clock().now().nanoseconds)
         self._joint_state_positions = ordered
         self._joint_state_stamp_ns = int(stamp_ns)
+        idx_f1 = index.get("rg2_finger_joint1")
+        idx_f2 = index.get("rg2_finger_joint2")
+        if idx_f1 is not None and idx_f2 is not None:
+            try:
+                f1 = abs(float(positions[idx_f1]))
+                f2 = abs(float(positions[idx_f2]))
+                self._gripper_opening_joint1 = f1
+                self._gripper_opening_joint2 = f2
+                self._gripper_opening_sum = float(f1 + f2)
+                self._gripper_opening_stamp_ns = int(stamp_ns)
+            except Exception:
+                pass
 
     def _joint_state_tcp_base_pose(self) -> Optional[PoseSample]:
         UR5_ARM_JOINT_ORDER, _UR5_DH_A, _UR5_DH_ALPHA, _UR5_DH_D, _BASE_LINK_FIX_R, _GRIPPER_GEOMETRY = _get_dh_constants()

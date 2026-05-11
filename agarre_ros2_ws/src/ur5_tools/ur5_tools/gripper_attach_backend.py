@@ -47,13 +47,16 @@ from ur5_panel_interfaces.srv import (
 )
 
 try:
+    from ros_gz_interfaces.msg import Contacts as GzContacts
     from ros_gz_interfaces.msg import Entity as GzEntity
     from ros_gz_interfaces.srv import SetEntityPose
 except Exception:  # pragma: no cover - optional at runtime
+    GzContacts = None
     GzEntity = None
     SetEntityPose = None
 
 from .attach_anchor import AnchorMixin
+from .attach_contact_gate import ContactGateMixin
 from .attach_demo_transport import DemoTransportMixin
 from .attach_gz_cli import GzCliMixin
 from .attach_pose_lookup import PoseLookupMixin
@@ -151,6 +154,7 @@ class GripperAttachBackend(
     PoseLookupMixin,
     PoseSubscriberMixin,
     SetPoseMixin,
+    ContactGateMixin,
     LifecycleNode,
 ):
     """Backend que mantiene los objetos adheridos siguiendo fisicamente el TCP.
@@ -196,7 +200,16 @@ class GripperAttachBackend(
         self.declare_parameter("gz_cmd_timeout_sec", 0.9)
         self.declare_parameter("attach_initial_queue_retries", 4)
         self.declare_parameter("attach_retry_sleep_sec", 0.06)
-        self.declare_parameter("attach_max_dist_m", 0.15)
+        self.declare_parameter("attach_max_dist_m", 0.05)
+        self.declare_parameter("require_contact_before_attach", True)
+        self.declare_parameter("require_bilateral_contact", True)
+        self.declare_parameter("contact_max_age_sec", 0.25)
+        self.declare_parameter("left_contact_topic", "")
+        self.declare_parameter("right_contact_topic", "")
+        self.declare_parameter("equivalent_grasp_enable", True)
+        self.declare_parameter("equivalent_grasp_max_opening_sum", 0.003)
+        self.declare_parameter("equivalent_grasp_max_dist_m", 0.004)
+        self.declare_parameter("equivalent_grasp_opening_max_age_sec", 0.50)
         self.declare_parameter("follow_break_dist_m", 0.18)
         self.declare_parameter("follow_break_consecutive", 3)
         self.declare_parameter("ws_dir", "")
@@ -216,6 +229,8 @@ class GripperAttachBackend(
         self.declare_parameter("gripper_open_rad", 0.0425)
         self.declare_parameter("gripper_closed_rad", 0.0)
         self.declare_parameter("gripper_joint2_sign", 1.0)
+        self.declare_parameter("gripper_cmd_repeats", 6)
+        self.declare_parameter("gripper_cmd_period_sec", 0.03)
         self.declare_parameter("orchestrator_attach_service", "/orchestrator/attach")
         self.declare_parameter("orchestrator_detach_service", "/orchestrator/detach")
         self.declare_parameter("gripper_open_service", "/gripper/open")
@@ -236,7 +251,7 @@ class GripperAttachBackend(
         object_names = [str(v).strip() for v in (names_raw or []) if str(v).strip()]
         self._object_names = sorted(set(object_names))
         self._attach_mode = str(
-            self.get_parameter("attach_mode").value or "follow_tcp"
+            self.get_parameter("attach_mode").value or "detachable_joint"
         ).strip()
         self._world_name = str(
             self.get_parameter("world_name").value or "ur5_mesa_objetos"
@@ -283,7 +298,52 @@ class GripperAttachBackend(
             0.01, float(self.get_parameter("attach_retry_sleep_sec").value or 0.06)
         )
         self._attach_max_dist_m = max(
-            0.01, float(self.get_parameter("attach_max_dist_m").value or 0.15)
+            0.01, float(self.get_parameter("attach_max_dist_m").value or 0.05)
+        )
+        self._require_contact_before_attach = bool(
+            self.get_parameter("require_contact_before_attach").value
+        )
+        self._require_bilateral_contact = bool(
+            self.get_parameter("require_bilateral_contact").value
+        )
+        self._contact_max_age_sec = max(
+            0.01, float(self.get_parameter("contact_max_age_sec").value or 0.25)
+        )
+        self._left_contact_topic = str(
+            self.get_parameter("left_contact_topic").value or ""
+        ).strip()
+        self._right_contact_topic = str(
+            self.get_parameter("right_contact_topic").value or ""
+        ).strip()
+        if not self._left_contact_topic:
+            self._left_contact_topic = (
+                f"/world/{self._world_name}/model/ur5_rg2/link/"
+                "rg2_finger_link1/sensor/rg2_left_contact_sensor/contact"
+            )
+        if not self._right_contact_topic:
+            self._right_contact_topic = (
+                f"/world/{self._world_name}/model/ur5_rg2/link/"
+                "rg2_finger_link2/sensor/rg2_right_contact_sensor/contact"
+            )
+        self._equivalent_grasp_enable = bool(
+            self.get_parameter("equivalent_grasp_enable").value
+        )
+        self._equivalent_grasp_max_opening_sum = max(
+            0.0,
+            float(
+                self.get_parameter("equivalent_grasp_max_opening_sum").value or 0.003
+            ),
+        )
+        self._equivalent_grasp_max_dist_m = max(
+            0.0,
+            float(self.get_parameter("equivalent_grasp_max_dist_m").value or 0.004),
+        )
+        self._equivalent_grasp_opening_max_age_sec = max(
+            0.01,
+            float(
+                self.get_parameter("equivalent_grasp_opening_max_age_sec").value
+                or 0.50
+            ),
         )
         self._follow_break_dist_m = max(
             self._attach_max_dist_m,
@@ -376,6 +436,12 @@ class GripperAttachBackend(
         self._gripper_joint2_sign = float(
             self.get_parameter("gripper_joint2_sign").value
         )
+        self._gripper_cmd_repeats = max(
+            1, int(self.get_parameter("gripper_cmd_repeats").value or 6)
+        )
+        self._gripper_cmd_period_sec = max(
+            0.0, float(self.get_parameter("gripper_cmd_period_sec").value or 0.03)
+        )
         self._gripper_cmd_pub = None
         # F5-step6b: handles a los 4 services creados en on_activate.
         self._attach_srv = None
@@ -464,6 +530,39 @@ class GripperAttachBackend(
         self._set_pose_future = None
         self._set_pose_pending: Optional[Tuple[str, PoseSample]] = None
         self._set_pose_future_start_ts = 0.0
+        self._contact_last_ns: Dict[Tuple[str, str], int] = {}
+        self._last_contact_update_ns = 0
+        self._left_contact_sub = None
+        self._right_contact_sub = None
+        self._contact_gate_enabled = False
+        self._contacts_msg_type = GzContacts
+        if self._require_contact_before_attach:
+            if self._contacts_msg_type is None:
+                self.get_logger().warning(
+                    "[ATTACH_BACKEND] contact_gate_disabled detail=ros_gz_interfaces_missing"
+                )
+            else:
+                try:
+                    self._left_contact_sub = self.create_subscription(
+                        self._contacts_msg_type,
+                        self._left_contact_topic,
+                        partial(self._on_contact_msg, topic=self._left_contact_topic),
+                        self._qos,
+                    )
+                    self._right_contact_sub = self.create_subscription(
+                        self._contacts_msg_type,
+                        self._right_contact_topic,
+                        partial(self._on_contact_msg, topic=self._right_contact_topic),
+                        self._qos,
+                    )
+                    self._subs.append(self._left_contact_sub)
+                    self._subs.append(self._right_contact_sub)
+                    self._contact_gate_enabled = True
+                except Exception as exc:
+                    self.get_logger().warning(
+                        "[ATTACH_BACKEND] contact_gate_disabled "
+                        f"detail=create_subscription_failed:{type(exc).__name__}:{exc}"
+                    )
         self._last_apply_log_ts = 0.0
         self._last_exception_log_ts = 0.0
         self._last_stale_warn_ts = 0.0
@@ -481,6 +580,10 @@ class GripperAttachBackend(
         self._stable_world_base_pose: Optional[PoseSample] = None
         self._joint_state_positions: Optional[Tuple[float, float, float, float, float, float]] = None
         self._joint_state_stamp_ns = 0
+        self._gripper_opening_joint1: Optional[float] = None
+        self._gripper_opening_joint2: Optional[float] = None
+        self._gripper_opening_sum: Optional[float] = None
+        self._gripper_opening_stamp_ns = 0
         self._startup_detach_attempts_left = int(self._startup_detach_max_attempts)
         self._startup_detach_sent = 0
         self._demo_transport_active: Dict[str, DemoTransportState] = {}
@@ -507,7 +610,14 @@ class GripperAttachBackend(
             f"prefer_tool_anchor={','.join(sorted(self._prefer_tool_anchor_objects)) or 'none'} "
             f"demo_transport={','.join(sorted(self._demo_transport_objects)) or 'none'} "
             f"pose_topic={self._pose_topic} joint_states_topic={self._joint_states_topic} "
-            f"base_frame={self._base_frame} tcp_frame={self._tcp_frame}"
+            f"base_frame={self._base_frame} tcp_frame={self._tcp_frame} "
+            f"contact_gate={'on' if self._require_contact_before_attach else 'off'} "
+            f"contact_mode={'bilateral' if self._require_bilateral_contact else 'unilateral'} "
+            f"contact_topics={self._left_contact_topic},{self._right_contact_topic} "
+            f"equivalent_grasp={'on' if self._equivalent_grasp_enable else 'off'} "
+            f"eq_max_opening_sum={self._equivalent_grasp_max_opening_sum:.4f} "
+            f"eq_max_dist={self._equivalent_grasp_max_dist_m:.4f}m "
+            f"eq_opening_max_age={self._equivalent_grasp_opening_max_age_sec:.3f}s"
         )
 
     def __init__(self) -> None:
@@ -845,7 +955,7 @@ class GripperAttachBackend(
             )
         return True
 
-    def _on_gripper_attach(self, _msg: Empty, *, name: str, src_topic: str) -> None:
+    def _on_gripper_attach(self, _msg: Empty, *, name: str, src_topic: str) -> bool:
         self.get_logger().info(
             f"[ATTACH_BACKEND] attach_request_received object={name} src={src_topic} mode={self._attach_mode}"
         )
@@ -863,6 +973,7 @@ class GripperAttachBackend(
             _ta_route = (
                 "demo_transport" if name in self._demo_transport_objects
                 else "tool_anchor" if name in self._prefer_tool_anchor_objects
+                else "tool_anchor_relay" if self._attach_mode != "follow_tcp"
                 else "follow_tcp"
             )
             _ta_will_pass = _ta_dist <= self._attach_max_dist_m
@@ -881,6 +992,8 @@ class GripperAttachBackend(
                     f"route={_ta_route} "
                     f"detail=distance_too_large dist={_ta_dist:.4f}m max={self._attach_max_dist_m:.4f}m"
                 )
+                self._publish_state(name, False)
+                return False
         else:
             self.get_logger().warning(
                 f"[ATTACH_BACKEND] attach_route_decision object={name} "
@@ -888,6 +1001,17 @@ class GripperAttachBackend(
                 f"obj_available={str(_ta_obj is not None).lower()} "
                 f"tcp_available={str(_ta_tcp is not None).lower()}"
             )
+            self._publish_state(name, False)
+            return False
+        _contact_ok, _contact_detail = self._validate_contact_gate(name)
+        if not _contact_ok:
+            self.get_logger().warning(
+                f"[ATTACH_BACKEND] attach_blocked object={name} "
+                "route=contact_gate "
+                f"detail={_contact_detail}"
+            )
+            self._publish_state(name, False)
+            return False
         if name in self._demo_transport_objects:
             self._force_drop_anchor_detach(name)
             self._relay_tool_anchor_detach(
@@ -901,14 +1025,16 @@ class GripperAttachBackend(
                 self.get_logger().error(
                     f"[ATTACH_BACKEND] demo_transport_attach_failed object={name}"
                 )
-            return
+                self._publish_state(name, False)
+                return False
+            return True
         if name in self._prefer_tool_anchor_objects:
             relayed = self._relay_tool_anchor_attach(
                 name,
                 detail="prefer_tool_anchor_object",
             )
             if (not relayed) or (not self._detachable_shadow_follow):
-                return
+                return bool(relayed)
             self.get_logger().info(
                 f"[ATTACH_BACKEND] tool_anchor relay object={name} detail=starting_shadow_follow"
             )
@@ -917,7 +1043,8 @@ class GripperAttachBackend(
                     name,
                     detail="shadow_follow_activation_failed",
                 )
-            return
+                return False
+            return True
         if self._attach_mode != "follow_tcp":
             self._force_drop_anchor_detach(name)
             pub = self._tool_attach_pubs.get(name)
@@ -926,7 +1053,7 @@ class GripperAttachBackend(
                     f"[ATTACH_BACKEND] missing tool_attach publisher object={name}"
                 )
                 self._publish_state(name, False)
-                return
+                return False
             pub.publish(Empty())
             self.get_logger().info(
                 f"[ATTACH_BACKEND] relay attach object={name} "
@@ -937,15 +1064,19 @@ class GripperAttachBackend(
                     f"[ATTACH_BACKEND] tool_anchor relay object={name} "
                     "detail=starting_shadow_follow"
                 )
-                self._activate_follow_attachment(name, method="detachable_joint_shadow_follow")
+                return bool(
+                    self._activate_follow_attachment(
+                        name, method="detachable_joint_shadow_follow",
+                    )
+                )
             else:
                 self._publish_state(name, True)
-            return
+            return True
 
         # El drop anchor puede seguir fisicamente unido aunque su topic ya reporte
         # false. Lo liberamos de forma proactiva antes del follow attach.
         self._force_drop_anchor_detach(name)
-        self._activate_follow_attachment(name, method="follow_tcp")
+        return bool(self._activate_follow_attachment(name, method="follow_tcp"))
 
     def _on_gripper_detach(self, _msg: Empty, *, name: str, src_topic: str) -> None:
         self.get_logger().info(
@@ -1014,7 +1145,18 @@ class GripperAttachBackend(
         msg = Float64MultiArray()
         msg.data = [float(target_rad), float(target_rad) * self._gripper_joint2_sign]
         try:
-            self._gripper_cmd_pub.publish(msg)
+            try:
+                repeats = max(1, int(getattr(self, "_gripper_cmd_repeats", 1)))
+            except Exception:
+                repeats = 1
+            try:
+                period = max(0.0, float(getattr(self, "_gripper_cmd_period_sec", 0.0)))
+            except Exception:
+                period = 0.0
+            for idx in range(repeats):
+                self._gripper_cmd_pub.publish(msg)
+                if idx + 1 < repeats and period > 0.0:
+                    time.sleep(period)
         except Exception as exc:
             err = f"publish_failed:{type(exc).__name__}:{exc}"
             self.get_logger().error(
@@ -1023,7 +1165,8 @@ class GripperAttachBackend(
             return False, err
         detail = (
             f"target_rad={target_rad:.4f} joint2_sign={self._gripper_joint2_sign:.2f} "
-            f"topic={self._gripper_cmd_topic}"
+            f"topic={self._gripper_cmd_topic} repeats={int(repeats)} "
+            f"period={float(period):.3f}s"
         )
         self.get_logger().info(f"[GRIPPER_SVC] {label} ok {detail}")
         return True, detail
@@ -1081,11 +1224,13 @@ class GripperAttachBackend(
         else:
             method = "follow_tcp" if self._attach_mode == "follow_tcp" else "tool_anchor_relay"
         try:
-            self._on_gripper_attach(
+            attached_ok = bool(
+                self._on_gripper_attach(
                 Empty(), name=name, src_topic="/orchestrator/attach",
+                )
             )
-            response.success = True
-            response.message = "attach_dispatched"
+            response.success = attached_ok
+            response.message = "attach_applied" if attached_ok else "attach_rejected"
             response.method = method
             response.tcp_obj_dist_m = float(tcp_obj_dist)
             return response

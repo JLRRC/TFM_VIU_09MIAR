@@ -44,8 +44,8 @@ class LaunchersParams:
     use_sim_time: bool = True  # USE_SIM_TIME
 
     # F2-step2: backend de attach.
-    attach_backend_max_dist_m: float = 0.06           # ATTACH_BACKEND_MAX_DIST_M
-    attach_backend_demo_transport_objects: str = "pick_demo"  # ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS
+    attach_backend_max_dist_m: float = 0.05           # ATTACH_BACKEND_MAX_DIST_M
+    attach_backend_demo_transport_objects: str = ""  # ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS
 
     # F2-step2: configuración Gazebo.
     gz_render_engine: str = "ogre2"  # GZ_RENDER_ENGINE

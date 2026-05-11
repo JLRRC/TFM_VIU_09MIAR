@@ -43,6 +43,12 @@ from .service_clients import (
 # F5-step2: clearance Z por defecto sobre la pose del objeto para approach.
 # El cliente puede sobreescribir vía PhaseDispatchContext si fuese necesario.
 _APPROACH_Z_CLEARANCE_M_DEFAULT = 0.10
+# Keep a small positive clearance so GRASP_DOWN ends with bilateral contact
+# potential without forcing immediate table/object penetration.
+_GRASP_DOWN_Z_M = 0.020
+_GRASP_CLOSE_SETTLE_SEC = 0.35
+_GRASP_ATTACH_RETRIES = 10
+_GRASP_ATTACH_RETRY_SLEEP_SEC = 0.15
 
 
 def pose_msg_to_tuple7(pose_msg: Any) -> Optional[tuple]:
@@ -227,15 +233,13 @@ def build_plan_to_pose_goal_for_grasp_down(ctx: PickContext) -> Any:
     GRASP cierra el gripper a ~12cm del objeto y el attach es "fantasma"
     visualmente.
 
-    Target: objeto + Z 0.020m (2cm sobre el centro del objeto). Asume
-    objeto cúbico de ~5cm; el rg2_pinch_center llega justo encima de la
-    cara superior del objeto, las pinzas físicas RG2 (tip a 17.5cm de
-    tool0) bajan a tocarlo cuando el flange queda a esa altura.
+    Target: centro del objeto (Z offset = 0.0m).
+    Esto incrementa el solape vertical efectivo entre las caras internas
+    de los dedos RG2 y el objeto antes del cierre, mejorando la probabilidad
+    de contacto bilateral real previo al attach.
     """
     from geometry_msgs.msg import Pose, Point, Quaternion
     from ur5_panel_interfaces.action import PlanToPose
-
-    _GRASP_DOWN_Z_M = 0.020  # 2 cm sobre el centro del objeto.
 
     goal = PlanToPose.Goal()
     if not is_no_hint(ctx.object_pose_world_hint):
@@ -447,9 +451,21 @@ def dispatch_phase(
                 )
         goal = build_plan_to_pose_goal_for_grasp_down(ctx_with_pose)
         r = _call_plan_to_pose(dispatch_ctx, goal)
-        return r.success, f"grasp_down:{r.reason}"
+        if r.success:
+            return True, f"grasp_down:{r.reason}"
+        # Fallback robusto: en escenarios cercanos a contacto/mesa, el path
+        # cartesiano puede fallar con INVALID_MOTION_PLAN aunque la IK directa
+        # sea válida. Reintentamos no-cartesiano manteniendo mismo target.
+        goal.cartesian = False
+        r_fallback = _call_plan_to_pose(dispatch_ctx, goal)
+        if r_fallback.success:
+            return True, f"grasp_down:{r.reason}|fallback_noncart:{r_fallback.reason}"
+        return False, (
+            f"grasp_down:{r.reason}|fallback_noncart:{r_fallback.reason}"
+        )
 
     if phase == PickPhase.GRASP:
+        import time
         # 1) Cerrar gripper.
         r_close = dispatch_ctx.service_caller(
             dispatch_ctx.node,
@@ -460,18 +476,32 @@ def dispatch_phase(
         )
         if not r_close.success:
             return False, f"grasp_close:{r_close.reason}"
-        # 2) Attach lógico al objeto seleccionado.
+        # Dar tiempo a que el cierre físico llegue a contacto antes del gate.
+        time.sleep(_GRASP_CLOSE_SETTLE_SEC)
+        # 2) Attach lógico al objeto seleccionado (con reintentos breves):
+        # evita falsos negativos cuando el contacto bilateral aparece unos
+        # cientos de ms después del comando CLOSE.
         req_attach = AttachSrv.Request()
         req_attach.object_name = ctx.object_name
-        r_att = dispatch_ctx.service_caller(
-            dispatch_ctx.node,
-            AttachSrv,
-            dispatch_ctx.service_map.attach,
-            req_attach,
-            **common,
-        )
+        r_att = None
+        for attempt in range(max(1, int(_GRASP_ATTACH_RETRIES))):
+            r_att = dispatch_ctx.service_caller(
+                dispatch_ctx.node,
+                AttachSrv,
+                dispatch_ctx.service_map.attach,
+                req_attach,
+                **common,
+            )
+            if r_att.success:
+                break
+            if attempt + 1 < int(_GRASP_ATTACH_RETRIES):
+                time.sleep(_GRASP_ATTACH_RETRY_SLEEP_SEC)
+        if r_att is None:
+            return False, "grasp_attach:internal_no_response"
         if not r_att.success:
-            return False, f"grasp_attach:{r_att.reason}"
+            return False, (
+                f"grasp_attach:{r_att.reason}|attempts={int(_GRASP_ATTACH_RETRIES)}"
+            )
         # 3) B-iter8: gate de distancia. Detecta el bug "drop_anchor placebo"
         # donde el backend retorna success=True pero el TCP estaba a >1m del
         # objeto (visto live: tcp_obj_dist_m=1.093). Sin este gate, el FSM

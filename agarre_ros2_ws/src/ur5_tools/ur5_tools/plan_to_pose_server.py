@@ -110,6 +110,7 @@ class PlanToPoseServer(Node):
         self.declare_parameter("moveit_planning_time_sec", 15.0)
         self.declare_parameter("moveit_position_tol_m", 0.005)
         self.declare_parameter("moveit_orientation_tol_rad", 0.05)
+        self.declare_parameter("moveit_tf_recovery_tol_m", 0.015)
         self.declare_parameter("moveit_goal_send_timeout_sec", 15.0)
         self.declare_parameter("moveit_result_timeout_sec", 60.0)
         # --- FJT directo (F1.24 H9+H10+H11+H14 LIVE, 2026-05-08) ---
@@ -131,6 +132,9 @@ class PlanToPoseServer(Node):
         self.declare_parameter("fjt_direct_result_timeout_sec", 30.0)
         self.declare_parameter("fjt_direct_max_bypass_dist_m", 1.2)
         self.declare_parameter("fjt_direct_max_joint_delta_rad", 3.5)
+        self.declare_parameter("fjt_direct_allow_cartesian_bypass", False)
+        self.declare_parameter("fjt_direct_postcheck_tol_m", 0.015)
+        self.declare_parameter("fjt_direct_postcheck_timeout_sec", 0.35)
         # H14: 0.3 rad ≈ 17° — absorbe tracking errors transitorios sin
         # permitir desviaciones peligrosas. 0.0 = no enviar.
         self.declare_parameter("fjt_direct_path_tolerance_rad", 0.3)
@@ -193,6 +197,9 @@ class PlanToPoseServer(Node):
         self._moveit_orientation_tol = float(
             self.get_parameter("moveit_orientation_tol_rad").value
         )
+        self._moveit_tf_recovery_tol = float(
+            self.get_parameter("moveit_tf_recovery_tol_m").value
+        )
         self._moveit_goal_send_timeout = float(
             self.get_parameter("moveit_goal_send_timeout_sec").value
         )
@@ -223,6 +230,15 @@ class PlanToPoseServer(Node):
         )
         self._fjt_direct_max_joint_delta = float(
             self.get_parameter("fjt_direct_max_joint_delta_rad").value
+        )
+        self._fjt_direct_allow_cartesian_bypass = bool(
+            self.get_parameter("fjt_direct_allow_cartesian_bypass").value
+        )
+        self._fjt_direct_postcheck_tol_m = float(
+            self.get_parameter("fjt_direct_postcheck_tol_m").value
+        )
+        self._fjt_direct_postcheck_timeout_sec = float(
+            self.get_parameter("fjt_direct_postcheck_timeout_sec").value
         )
         self._fjt_direct_path_tolerance_rad = float(
             self.get_parameter("fjt_direct_path_tolerance_rad").value
@@ -591,6 +607,11 @@ class PlanToPoseServer(Node):
         """
         if not self._bypass_moveit_for_short_paths:
             return None
+        if goal.cartesian and not self._fjt_direct_allow_cartesian_bypass:
+            self.get_logger().info(
+                "[PLAN_TO_POSE][FJT_DIRECT] skip bypass: cartesian=true"
+            )
+            return None
         self.get_logger().info(
             "[PLAN_TO_POSE][FJT_DIRECT] intento prioritario "
             "(bypass_moveit_for_short_paths=true)"
@@ -718,7 +739,10 @@ class PlanToPoseServer(Node):
             return None
         if tf_target_pos is None:
             return None
-        tf_check_tol = max(0.05, self._moveit_position_tol * 5.0)
+        tf_check_tol = max(
+            0.005,
+            min(0.05, float(self._moveit_tf_recovery_tol)),
+        )
         dx = float(tf_target_pos[0]) - float(goal.target_xyz[0])
         dy = float(tf_target_pos[1]) - float(goal.target_xyz[1])
         dz = float(tf_target_pos[2]) - float(goal.target_xyz[2])
@@ -871,7 +895,10 @@ class PlanToPoseServer(Node):
             return None
         if final_tf is None:
             return None
-        final_tol = max(0.05, self._moveit_position_tol * 5.0)
+        final_tol = max(
+            0.005,
+            min(0.05, float(self._moveit_tf_recovery_tol)),
+        )
         fdx = float(final_tf[0]) - float(goal.target_xyz[0])
         fdy = float(final_tf[1]) - float(goal.target_xyz[1])
         fdz = float(final_tf[2]) - float(goal.target_xyz[2])
@@ -997,6 +1024,7 @@ class PlanToPoseServer(Node):
         return self._fjt_send_and_wait_result(
             jt=jt,
             goal=goal,
+            ee_frame=ee_frame,
             start_mono=start_mono,
             result_timeout_sec=fjt_result_timeout_eff,
         )
@@ -1174,6 +1202,7 @@ class PlanToPoseServer(Node):
         *,
         jt,
         goal: PlanToPoseGoal,
+        ee_frame: str,
         start_mono: float,
         result_timeout_sec: float,
     ) -> Optional["PlanToPoseResult"]:
@@ -1254,8 +1283,33 @@ class PlanToPoseServer(Node):
         else:
             ec_val = 0
         if ec_val == 0:
+            try:
+                tf_pos = self._lookup_ee_position_in_base(
+                    ee_frame=ee_frame,
+                    base_frame=self._bridge_base_frame,
+                    timeout_sec=max(0.05, float(self._fjt_direct_postcheck_timeout_sec)),
+                )
+            except Exception:
+                tf_pos = None
+            if tf_pos is None:
+                self.get_logger().warning(
+                    "[PLAN_TO_POSE][FJT_DIRECT] postcheck TF unavailable — fallback a MoveIt"
+                )
+                return None
+            dx = float(tf_pos[0]) - float(goal.target_xyz[0])
+            dy = float(tf_pos[1]) - float(goal.target_xyz[1])
+            dz = float(tf_pos[2]) - float(goal.target_xyz[2])
+            dist = (dx * dx + dy * dy + dz * dz) ** 0.5
+            post_tol = max(0.003, float(self._fjt_direct_postcheck_tol_m))
+            if dist > post_tol:
+                self.get_logger().warning(
+                    "[PLAN_TO_POSE][FJT_DIRECT] postcheck fail — fallback a MoveIt "
+                    f"dist={dist:.4f}m tol={post_tol:.4f}m"
+                )
+                return None
             self.get_logger().info(
-                "[PLAN_TO_POSE][FJT_DIRECT] success (bypass MoveIt OK)"
+                "[PLAN_TO_POSE][FJT_DIRECT] success (bypass MoveIt OK) "
+                f"postcheck_dist={dist:.4f}m tol={post_tol:.4f}m"
             )
             return PlanToPoseResult(
                 success=True,
