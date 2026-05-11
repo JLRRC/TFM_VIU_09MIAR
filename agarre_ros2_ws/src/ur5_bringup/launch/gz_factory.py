@@ -36,6 +36,7 @@ from launch.actions import (
     ExecuteProcess,
     GroupAction,
     RegisterEventHandler,
+    TimerAction,
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
@@ -160,6 +161,64 @@ def build_gz_actions(
         condition=IfCondition(launch_gazebo),
     )
 
+    # Fix 2026-05-11: spawn UR5+RG2 desde /robot_description (URDF).
+    # El SDF custom (`models/ur5_rg2/model.sdf`) tenía convención cinemática
+    # distinta a la URDF y causaba ~1.3m de desfase entre tool0 TF (panel)
+    # y tool0 físico (Gazebo). Ahora la URDF es la única fuente de verdad
+    # cinemática para Gazebo, RSP y MoveIt.
+    #
+    # El `world` link del URDF se mapea automáticamente al world frame
+    # de Gazebo (convención gz-sim). La URDF spawnea base_link a
+    # (-0.85, 0, 0.85) vía el `base_joint` del macro ur_robot.
+    #
+    # TimerAction 5s: damos margen para que `gz sim` esté listo y RSP
+    # haya publicado /robot_description antes de invocar `create`.
+    spawn_robot_create = Node(
+        package="ros_gz_sim",
+        executable="create",
+        name="ur5_rg2_spawner",
+        output="screen",
+        arguments=[
+            "-name", "ur5_rg2",
+            "-topic", "robot_description",
+            "-allow_renaming", "false",
+            "-x", "-0.85",
+            "-y", "0.0",
+            "-z", "0.85",
+        ],
+        condition=IfCondition(launch_gazebo),
+    )
+    spawn_robot = TimerAction(
+        period=5.0,
+        actions=[spawn_robot_create],
+        condition=IfCondition(launch_gazebo),
+    )
+    # Anchor attach se dispara DESPUÉS de que el spawner termine, no por
+    # timer ciego (que disparaba ANTES de que el modelo existiera).
+    anchor_attach_on_spawn = RegisterEventHandler(
+        OnProcessExit(
+            target_action=spawn_robot_create,
+            on_exit=[
+                # Esperamos 3s adicionales para que gz_ros2_control cargue
+                # los controllers; luego attach world_anchor.
+                TimerAction(
+                    period=3.0,
+                    actions=[
+                        ExecuteProcess(
+                            cmd=[
+                                "ros2", "topic", "pub", "--once",
+                                "/world_anchor/attach",
+                                "std_msgs/msg/Empty", "{}",
+                            ],
+                            output="screen",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        condition=IfCondition(launch_gazebo),
+    )
+
     return [
         gz_group,
         gz_shutdown_server,
@@ -168,4 +227,6 @@ def build_gz_actions(
         gz_control_guard,
         gz_pose_bridge,
         gz_pose_guard,
+        spawn_robot,
+        anchor_attach_on_spawn,
     ]

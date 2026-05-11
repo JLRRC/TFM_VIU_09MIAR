@@ -416,18 +416,43 @@
 
     
 
-    <include>
-      <uri>model://ur5_rg2</uri>
-      <name>ur5_rg2</name>
+    <!-- Fix 2026-05-11: el robot UR5+RG2 se spawnea ahora desde
+         /robot_description (URDF de ur5_description) mediante
+         `ros_gz_sim create -topic robot_description` en el launch
+         (gz_factory.py). El modelo SDF antiguo
+         (src/ur5_gazebo/models/ur5_rg2/model.sdf) ya no se incluye
+         aquí — tenía convención cinemática distinta a la URDF y causaba
+         ~1.3m de desfase entre tool0 TF (panel) y tool0 físico (Gazebo). -->
 
-      <pose>-0.85 0.00 0.850 0 0 0</pose>
+    <!-- world_anchor: modelo estático con DetachableJoint que ancla
+         ur5_rg2::base_link_world post-spawn. Esto evita el static-chain
+         de sdformat-urdf (que ocurre cuando <link name="world"/> es el
+         parent de base_joint en URDF: congela todos los joints). El
+         attach se dispara desde el launch tras un TimerAction de 8s
+         (gz_factory.py). -->
+    <model name="world_anchor">
+      <static>true</static>
+      <pose>-0.85 0 0.85 0 0 0</pose>
+      <link name="anchor_link">
+        <inertial>
+          <mass>1e-6</mass>
+          <inertia>
+            <ixx>1e-9</ixx><iyy>1e-9</iyy><izz>1e-9</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+      </link>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>anchor_link</parent_link>
+        <child_model>ur5_rg2</child_model>
+        <child_link>base_link_world</child_link>
+        <attach_topic>/world_anchor/attach</attach_topic>
+        <detach_topic>/world_anchor/detach</detach_topic>
+        <output_topic>/world_anchor/state</output_topic>
+      </plugin>
+    </model>
 
-    </include>
-    <joint name="ur5_rg2_fixed_to_world" type="fixed">
-      <parent>world</parent>
-      <pose>-0.85 0.00 0.850 0 0 0</pose>
-      <child>ur5_rg2::base_link</child>
-    </joint>
 
     
 
