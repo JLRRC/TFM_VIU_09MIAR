@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<!-- VARIANT B: same joint/links as minimal_revolute.urdf.xacro BUT with
+     the exact gz_ros2_control plugin block from UR5+RG2 (robot_param,
+     hold_joints, position_proportional_gain, etc.).
+     Purpose: isolate if those plugin params/flags are the bug. -->
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="minimal_revolute_ur5plugin">
+
+  <xacro:property name="base_h" value="0.10"/>
+  <xacro:property name="link_l" value="0.50"/>
+  <xacro:property name="link_w" value="0.05"/>
+
+  <link name="world"/>
+
+  <joint name="world_to_base" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${base_h/2}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="base_link">
+    <inertial>
+      <mass value="2.0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="0.05" ixy="0" ixz="0" iyy="0.05" iyz="0" izz="0.05"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${link_w} ${link_w} ${base_h}"/></geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="${link_w} ${link_w} ${base_h}"/></geometry>
+    </collision>
+  </link>
+
+  <joint name="joint1" type="revolute">
+    <parent link="base_link"/>
+    <child link="link1"/>
+    <origin xyz="0 0 ${base_h/2}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.14" upper="3.14" effort="50" velocity="3.0"/>
+    <dynamics damping="0.1" friction="0.0"/>
+  </joint>
+
+  <link name="link1">
+    <inertial>
+      <origin xyz="0 0 ${link_l/2}" rpy="0 0 0"/>
+      <mass value="0.5"/>
+      <inertia
+        ixx="${0.5/12.0*(link_w*link_w + link_l*link_l)}" ixy="0" ixz="0"
+        iyy="${0.5/12.0*(link_w*link_w + link_l*link_l)}" iyz="0"
+        izz="${0.5/12.0*(link_w*link_w + link_w*link_w)}"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 ${link_l/2}" rpy="0 0 0"/>
+      <geometry><box size="${link_w} ${link_w} ${link_l}"/></geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${link_l/2}" rpy="0 0 0"/>
+      <geometry><box size="${link_w} ${link_w} ${link_l}"/></geometry>
+    </collision>
+  </link>
+
+  <ros2_control name="MinimalRevoluteSystem" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+    <joint name="joint1">
+      <command_interface name="position"/>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <!-- ============================================================
+       PLUGIN BLOCK COPIADO 1:1 DEL UR5+RG2 URDF.
+       Diferencias respecto del minimal vanilla:
+       - <robot_param> y <robot_param_node>
+       - <use_sim_time>, <hold_joints>
+       - <position_proportional_gain>1000.0</position_proportional_gain>
+       - <ros> nested block
+       - <parameters> apuntando a YAML
+       Si joint1 NO se mueve con este bloque → el bug está aquí.
+       Si joint1 SÍ se mueve → bug no es del plugin, es del modelo UR5.
+       ============================================================ -->
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <robot_param>robot_description</robot_param>
+      <robot_param_node>robot_state_publisher</robot_param_node>
+      <use_sim_time>true</use_sim_time>
+      <hold_joints>false</hold_joints>
+      <position_proportional_gain>1000.0</position_proportional_gain>
+      <ros>
+        <param name="use_sim_time">true</param>
+        <param name="hold_joints">false</param>
+      </ros>
+      <parameters>$(find gz_ros2_control_minimal_probe)/config/controllers.yaml</parameters>
+    </plugin>
+  </gazebo>
+
+</robot>
