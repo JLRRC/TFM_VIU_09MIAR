@@ -25,12 +25,63 @@
 
   <xacro:include filename="${ur_pkg_share}/urdf/ur_macro.xacro"/>
 
+  <!-- Fix 2026-05-11 (iter18): URDF requiere árbol único (no dos roots).
+       Conectamos `world` → `base_link_world` con joint type=continuous para
+       evitar que sdformat-urdf marque static-chain (que ocurre si type=fixed
+       con parent=world: lumpea todos los joints en world, perdiendo
+       articulación).
+       Fix 2026-05-15 (effort_jtc): los `<limit effort="0" velocity="0">` y
+       `<dynamics damping="1e10" friction="1e10">` previos causaban que el
+       solver de física propagara la restricción Z al `shoulder_pan_joint`
+       (ambos comparten eje Z), bloqueándolo incluso con +100 N·m
+       sostenidos. El anclaje real lo provee la DetachableJoint del
+       `world_anchor` definida en `ur5_mesa_objetos.sdf` (attach_topic
+       /world_anchor/attach disparado tras 8s en gz_factory.py). Por tanto
+       este joint puede tener limits no bloqueantes y dynamics neutros: la
+       cinemática efectiva la fija el DetachableJoint externamente. -->
   <link name="world"/>
+
+  <!-- 2026-05-15 (β1.4 revert): VOLVER a continuous. type=fixed (β1.2) parecía
+       cargar joints OK pero EN PRÁCTICA gz physics no propagaba effort a los
+       arm joints (probable lumping silencioso). Continuous con limits 1e6 +
+       state initial_value en arm joints (definido más abajo) es la combinación
+       que funciona: spawn at HOME, motion propaga. -->
+  <joint name="world_to_base_link_world" type="fixed">
+    <parent link="world"/>
+    <child link="base_link_world"/>
+    <!-- 2026-05-15 (scene_align): base Z 0.85 (validated). El arm en q=0
+         tiene tool0 a Z=0.85 = nivel del tablero pero NO en colisión
+         porque mesa_pro X-range no incluye tool0 X@q=0 (tool0 X≈0.15,
+         mesa_pro east edge=0.084 con nuevo center=-0.30). γ3 HOLD-at-spawn
+         garantiza no caída. APPROACH_SAFE pose lleva TCP a Z=0.99 (>0.85). -->
+    <origin xyz="-0.85 0 0.85" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="1000000.0" velocity="1000000.0"/>
+    <!-- 2026-05-15 (final_demo): damping/friction altos para impedir
+         spin del base por reacciones del arm. type=revolute con limit
+         (0,0) causaba HOLD inestable (γ3 falló: arm drift @ t=4s con MoveIt
+         activo). MoveIt warn "Missing world_to_base_link_world" es NO
+         fatal (action /move_action sigue OK). -->
+    <dynamics damping="10000.0" friction="500.0"/>
+  </joint>
+
+  <!-- 2026-05-15 (β1.1): bajado mass 1000→100 (10×) e inertias 100→10 para
+       reducir la inercia rotacional artificial que se sospechaba causaba el
+       equilibrio compuesto en HOME/MESA/POSE_A/POSE_B. La masa sigue siendo
+       lo suficientemente grande para que las reacciones del brazo no muevan
+       perceptiblemente la base. Si HOME no converge tras esto → β1.2 (fixed). -->
+  <link name="base_link_world">
+    <inertial>
+      <mass value="100.0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="10.0" ixy="0" ixz="0" iyy="10.0" iyz="0" izz="10.0"/>
+    </inertial>
+  </link>
 
   <xacro:ur_robot
     name="${robot_name}"
     tf_prefix="${tf_prefix_value}"
-    parent="world"
+    parent="base_link_world"
     joint_limits_parameters_file="${joint_limits_file}"
     kinematics_parameters_file="${kinematics_file}"
     physical_parameters_file="${physical_file}"
@@ -40,11 +91,7 @@
     safety_k_position="${safety_k_position}"
     force_abs_paths="${force_abs_paths}"
     >
-    <!-- Keep the URDF world origin aligned with the Gazebo world include pose.
-         If these diverge, robot_state_publisher TF and the rendered Gazebo model
-         disagree in Z, which makes the panel report a different TCP height than
-         the one visible in the simulator. -->
-    <origin xyz="-0.85 0 0.850" rpy="0 0 0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
   </xacro:ur_robot>
 
   <!-- RG2 gripper: simplified prismatic box geometry, coherent with SDF/TF/ros2_control. -->
@@ -60,8 +107,13 @@
       <material name="rg2_gray"><color rgba="0.4 0.4 0.4 1"/></material>
     </visual>
     <collision>
+      <!-- Fix 2026-05-11: reduce Y extent from 0.080 to 0.028 (was ±0.040)
+           para evitar auto-colisión con finger boxes (que tienen origen
+           en ±0.020 con grosor 0.010, → caras internas en ±0.015). Con
+           Y=0.028 (±0.014) el base está dentro del gap entre fingers
+           sin overlap. Visual sigue 0.080 para apariencia correcta. -->
       <origin xyz="0 0 0.010" rpy="0 0 0"/>
-      <geometry><box size="0.060 0.080 0.020"/></geometry>
+      <geometry><box size="0.060 0.028 0.020"/></geometry>
     </collision>
   </link>
 
@@ -164,62 +216,343 @@
       <plugin>gz_ros2_control/GazeboSimSystem</plugin>
     </hardware>
 
+    <!-- Fix 2026-05-11: <param initial_value> en command_interface (position)
+         evita gz_ros2_control command=NaN al arranque.
+         2026-05-14 effort probe (B-1): añadidas <command_interface name="effort"/>
+         y <state_interface name="effort"/> a los 6 joints del brazo para
+         diagnóstico de propagación de fuerza en gz_ros2_control GazeboSimSystem
+         URDF-driven. Position/velocity command interfaces no propagaron motion
+         a deltas grandes (ver /tmp/arm_control_fix/REPORT.md y
+         /tmp/arm_velocity_control_fix/REPORT.md). Position interface se
+         mantiene para que controller_bootstrap pueda fijar pose inicial. -->
+    <!-- 2026-05-15 (β1.4): RE-añadir <param initial_value> SOLO en state_interface
+         para fijar la pose de SPAWN en HOME (vertical UP). Sin esto el robot
+         spawnea en q=0 (horizontal) y CAE bajo gravedad sobre mesa_pro tablero
+         (gripper Z=0.82 dentro de Z∈[0.80,0.85] de mesa_pro), creando un
+         equilibrio compuesto del que ningún controlador effort puede liberarlo.
+         Lo CRÍTICO es NO añadir initial_value en command_interface — eso
+         causaba el snap-back continuo (bug confirmado en sesión effort_probe).
+         NOTA: gz_ros2_control aplica state_interface initial_value SÓLO en spawn,
+         no continuamente, mientras command_interface initial_value se reaplica
+         cada step (de ahí el snap-back). -->
     <joint name="shoulder_pan_joint">
       <command_interface name="position"/>
-      <state_interface name="position">
-        <param name="initial_value">0.0</param>
-      </state_interface>
+      <command_interface name="effort"/>
+      <state_interface name="position"/>
       <state_interface name="velocity"/>
+      <state_interface name="effort"/>
     </joint>
     <joint name="shoulder_lift_joint">
       <command_interface name="position"/>
-      <state_interface name="position">
-        <param name="initial_value">-1.5707963267948966</param>
-      </state_interface>
+      <command_interface name="effort"/>
+      <state_interface name="position"/>
       <state_interface name="velocity"/>
+      <state_interface name="effort"/>
     </joint>
     <joint name="elbow_joint">
       <command_interface name="position"/>
-      <state_interface name="position">
-        <param name="initial_value">0.0</param>
-      </state_interface>
+      <command_interface name="effort"/>
+      <state_interface name="position"/>
       <state_interface name="velocity"/>
+      <state_interface name="effort"/>
     </joint>
     <joint name="wrist_1_joint">
       <command_interface name="position"/>
-      <state_interface name="position">
-        <param name="initial_value">-1.5707963267948966</param>
-      </state_interface>
+      <command_interface name="effort"/>
+      <state_interface name="position"/>
       <state_interface name="velocity"/>
+      <state_interface name="effort"/>
     </joint>
     <joint name="wrist_2_joint">
       <command_interface name="position"/>
-      <state_interface name="position">
-        <param name="initial_value">0.0</param>
-      </state_interface>
+      <command_interface name="effort"/>
+      <state_interface name="position"/>
       <state_interface name="velocity"/>
+      <state_interface name="effort"/>
     </joint>
     <joint name="wrist_3_joint">
       <command_interface name="position"/>
-      <state_interface name="position">
-        <param name="initial_value">0.0</param>
-      </state_interface>
+      <command_interface name="effort"/>
+      <state_interface name="position"/>
       <state_interface name="velocity"/>
+      <state_interface name="effort"/>
     </joint>
 
     <joint name="rg2_finger_joint1">
-      <command_interface name="position"/>
+      <command_interface name="position">
+        <param name="initial_value">0.0</param>
+      </command_interface>
+      <!-- 2026-05-15 (final_demo): añadido effort command_interface para
+           que gripper_effort_controller pueda reclamar effort en RG2.
+           physical_grasp_demo usa esto para CIERRE FÍSICO REAL. -->
+      <command_interface name="effort"/>
       <state_interface name="position">
         <param name="initial_value">0.0</param>
       </state_interface>
       <state_interface name="velocity"/>
+      <state_interface name="effort"/>
     </joint>
     <joint name="rg2_finger_joint2">
-      <command_interface name="position"/>
+      <command_interface name="position">
+        <param name="initial_value">0.0</param>
+      </command_interface>
+      <command_interface name="effort"/>
       <state_interface name="position">
         <param name="initial_value">0.0</param>
       </state_interface>
       <state_interface name="velocity"/>
+      <state_interface name="effort"/>
     </joint>
   </ros2_control>
+
+  <!-- ================================================================
+       Gazebo extension tags (consumed when spawning URDF in gz-sim).
+
+       Fix 2026-05-11: el SDF custom (`models/ur5_rg2/model.sdf`) tenía
+       convención cinemática DISTINTA al URDF de ur_description (axes
+       0,1,0 vs 0,0,1, rpy(0,0,0) vs rpy(π/2,0,0) en varios joints) y
+       generaba ~1.3 m de diferencia entre tool0 TF (panel) y tool0
+       físico (Gazebo) para los mismos joint values. Ahora el robot se
+       spawnea desde /robot_description y la URDF es la única fuente
+       de verdad cinemática para Gazebo, RSP y MoveIt.
+       ================================================================ -->
+
+  <!-- Path al YAML de controllers (pasado como xacro arg desde el launch).
+       Cae a un default razonable para builds locales sin sourcear. -->
+  <xacro:arg name="controllers_yaml" default="$(find ur5_gazebo)/models/ur5_rg2/ur5_controllers.yaml"/>
+
+  <!-- Per-link properties (gravity off para todo el brazo + bitmask) -->
+  <!-- preserveFixedJoint: evita que el converter sdformat-urdf colapse links
+       con joints fijos (lumping). Necesario para que tool0, rg2_base_link,
+       rg2_pinch_center, pick_demo_anchor, camera_wrist_link existan en
+       Gazebo (los usan DetachableJoint, panel y attach backend). -->
+
+  <gazebo reference="base_link_world">
+    <gravity>false</gravity>
+    <!-- β1.3 (2026-05-17): preserveFixedJoint impide que sdformat-urdf
+         colapse base_link_world en la cadena static-world generada por
+         el joint `world_to_base_link_world type="fixed"`. Sin esto el
+         lumping silencioso fold el axis Z del shoulder_pan_joint en la
+         dirección rígida world-weld y los efforts publicados por
+         arm_effort_probe no se aplican (test 2026-05-17 FASE9: 11.72 N·m
+         sostenidos durante 12 s sin movimiento de shoulder_pan). -->
+    <preserveFixedJoint>true</preserveFixedJoint>
+  </gazebo>
+  <gazebo reference="base_link">
+    <gravity>false</gravity>
+    <preserveFixedJoint>true</preserveFixedJoint>
+    <collision><surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
+  </gazebo>
+  <gazebo reference="base_link_inertia"><gravity>false</gravity></gazebo>
+  <gazebo reference="shoulder_link">
+    <gravity>false</gravity>
+    <mu1>1.2</mu1><mu2>1.2</mu2>
+    <collision><surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
+  </gazebo>
+  <gazebo reference="upper_arm_link">
+    <gravity>false</gravity>
+    <mu1>1.2</mu1><mu2>1.2</mu2>
+    <collision><surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
+  </gazebo>
+  <gazebo reference="forearm_link">
+    <gravity>false</gravity>
+    <mu1>1.2</mu1><mu2>1.2</mu2>
+    <collision><surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
+  </gazebo>
+  <gazebo reference="wrist_1_link">
+    <gravity>false</gravity>
+    <mu1>1.2</mu1><mu2>1.2</mu2>
+    <collision><surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
+  </gazebo>
+  <gazebo reference="wrist_2_link">
+    <gravity>false</gravity>
+    <mu1>1.2</mu1><mu2>1.2</mu2>
+    <collision><surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
+  </gazebo>
+  <gazebo reference="wrist_3_link">
+    <gravity>false</gravity>
+    <mu1>1.2</mu1><mu2>1.2</mu2>
+    <collision><surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
+  </gazebo>
+  <gazebo reference="tool0">
+    <gravity>false</gravity>
+    <preserveFixedJoint>true</preserveFixedJoint>
+  </gazebo>
+  <gazebo reference="rg2_tcp">
+    <gravity>false</gravity>
+    <preserveFixedJoint>true</preserveFixedJoint>
+  </gazebo>
+  <gazebo reference="rg2_pinch_center">
+    <gravity>false</gravity>
+    <preserveFixedJoint>true</preserveFixedJoint>
+  </gazebo>
+  <gazebo reference="rg2_base_link">
+    <gravity>false</gravity>
+    <preserveFixedJoint>true</preserveFixedJoint>
+    <mu1>1.2</mu1><mu2>1.2</mu2>
+    <collision><surface><contact><collide_bitmask>0x10</collide_bitmask></contact></surface></collision>
+  </gazebo>
+
+  <!-- Finger contact tuning: alta fricción + rigidez para agarre estable.
+       Valores portados de SDF anterior (kp=200k, kd=30, min_depth=1mm). -->
+  <gazebo reference="rg2_finger_link1">
+    <gravity>false</gravity>
+    <mu1>2.15</mu1>
+    <mu2>2.15</mu2>
+    <kp>200000.0</kp>
+    <kd>30.0</kd>
+    <maxVel>0.1</maxVel>
+    <minDepth>0.001</minDepth>
+    <collision>
+      <surface>
+        <friction><ode><mu>2.15</mu><mu2>2.15</mu2></ode></friction>
+        <bounce><restitution_coefficient>0.0</restitution_coefficient><threshold>100000</threshold></bounce>
+        <contact><ode><kp>200000</kp><kd>30.0</kd><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+        <contact><collide_bitmask>0x10</collide_bitmask></contact>
+      </surface>
+    </collision>
+  </gazebo>
+  <gazebo reference="rg2_finger_link2">
+    <gravity>false</gravity>
+    <mu1>2.15</mu1>
+    <mu2>2.15</mu2>
+    <kp>200000.0</kp>
+    <kd>30.0</kd>
+    <maxVel>0.1</maxVel>
+    <minDepth>0.001</minDepth>
+    <collision>
+      <surface>
+        <friction><ode><mu>2.15</mu><mu2>2.15</mu2></ode></friction>
+        <bounce><restitution_coefficient>0.0</restitution_coefficient><threshold>100000</threshold></bounce>
+        <contact><ode><kp>200000</kp><kd>30.0</kd><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+        <contact><collide_bitmask>0x10</collide_bitmask></contact>
+      </surface>
+    </collision>
+  </gazebo>
+
+  <!-- Anclas semánticas para el attach service: aliasing por joint fijo. -->
+  <link name="pick_demo_anchor">
+    <inertial>
+      <mass value="0.001"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+    </inertial>
+  </link>
+  <joint name="pick_demo_anchor_joint" type="fixed">
+    <parent link="tool0"/>
+    <child link="pick_demo_anchor"/>
+    <origin xyz="0 0 0.175" rpy="0 0 0"/>
+  </joint>
+  <gazebo reference="pick_demo_anchor">
+    <gravity>false</gravity>
+    <preserveFixedJoint>true</preserveFixedJoint>
+  </gazebo>
+
+  <!-- Wrist camera mounted on rg2_base_link (mirrors SDF camera_wrist). -->
+  <link name="camera_wrist_link">
+    <inertial>
+      <mass value="0.001"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+    </inertial>
+  </link>
+  <joint name="camera_wrist_joint" type="fixed">
+    <parent link="rg2_base_link"/>
+    <child link="camera_wrist_link"/>
+    <origin xyz="0 0.04 0.01" rpy="0 0 0"/>
+  </joint>
+  <gazebo reference="camera_wrist_link">
+    <gravity>false</gravity>
+    <preserveFixedJoint>true</preserveFixedJoint>
+    <sensor name="camera_wrist_rgb" type="camera">
+      <always_on>true</always_on>
+      <update_rate>15</update_rate>
+      <topic>/camera_wrist/image</topic>
+      <camera>
+        <horizontal_fov>1.05</horizontal_fov>
+        <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+        <clip><near>0.02</near><far>1.5</far></clip>
+      </camera>
+    </sensor>
+  </gazebo>
+
+  <!-- Modelo-level Gazebo plugins: controller bridge + pose/joint publishers. -->
+  <!-- position_proportional_gain default 0.1 es insuficiente para mover el UR5;
+       con el SDF previo nada lo seteaba pero funcionaba porque el gz-sim
+       lo aplicaba como setpoint directo. Con URDF-spawn vía
+       sdformat-urdf en gz-sim Harmonic, el controlador usa PID y necesita
+       una P más alta para tracking razonable. 100 da respuesta nominal
+       sin oscilación en este robot. -->
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <robot_param>robot_description</robot_param>
+      <robot_param_node>robot_state_publisher</robot_param_node>
+      <use_sim_time>true</use_sim_time>
+      <hold_joints>false</hold_joints>
+      <position_proportional_gain>1000.0</position_proportional_gain>
+      <ros>
+        <param name="use_sim_time">true</param>
+        <param name="hold_joints">false</param>
+      </ros>
+      <parameters>$(arg controllers_yaml)</parameters>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin filename="gz-sim-pose-publisher-system" name="gz::sim::systems::PosePublisher">
+      <publish_pose>true</publish_pose>
+      <publish_link_pose>true</publish_link_pose>
+      <publish_visual_pose>false</publish_visual_pose>
+      <publish_collision_pose>false</publish_collision_pose>
+      <static_publisher>false</static_publisher>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher"/>
+  </gazebo>
+
+  <!-- Detachable joints (uno por objeto pickable) — portados del SDF. -->
+  <xacro:macro name="detachable_joint" params="obj parent_link">
+    <gazebo>
+      <plugin filename="gz-sim-detachable-joint-system"
+              name="gz::sim::systems::DetachableJoint">
+        <parent_link>${parent_link}</parent_link>
+        <child_model>${obj}</child_model>
+        <child_link>link</child_link>
+        <attach_topic>/gripper_anchor/${obj}/attach</attach_topic>
+        <detach_topic>/gripper_anchor/${obj}/detach</detach_topic>
+        <output_topic>/gripper_anchor/${obj}/state</output_topic>
+      </plugin>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- H1 BISECTION 2026-05-17: las 11 instancias de DetachableJoint plugin
+       ancladas a wrist_3_link generan en gz Harmonic warnings repetidas
+       "duplicate name [drop_anchor/link_welded_mirror_0]" y se sospecha que
+       saturan el constraint solver de DART impidiendo actuación de joints
+       del brazo. Envueltas en xacro:if controlado por arg enable_detachable_joints
+       (default true). Para test bisección: pasar enable_detachable_joints:=false
+       al xacro. Si motion física aparece → confirmado #1.
+       Evidencia: comparativa_gz_ros2_control_minimal_20260517_140752. -->
+  <xacro:arg name="enable_detachable_joints" default="false"/>
+  <xacro:if value="$(arg enable_detachable_joints)">
+    <xacro:detachable_joint obj="box_red" parent_link="wrist_3_link"/>
+    <xacro:detachable_joint obj="box_blue" parent_link="wrist_3_link"/>
+    <xacro:detachable_joint obj="box_green" parent_link="wrist_3_link"/>
+    <xacro:detachable_joint obj="box_lightblue" parent_link="wrist_3_link"/>
+    <xacro:detachable_joint obj="box_yellow" parent_link="wrist_3_link"/>
+    <xacro:detachable_joint obj="cross_cyan" parent_link="wrist_3_link"/>
+    <xacro:detachable_joint obj="cyl_gray" parent_link="wrist_3_link"/>
+    <xacro:detachable_joint obj="cyl_green" parent_link="wrist_3_link"/>
+    <xacro:detachable_joint obj="cyl_orange" parent_link="wrist_3_link"/>
+    <xacro:detachable_joint obj="cyl_purple" parent_link="wrist_3_link"/>
+    <!-- pick_demo: la URDF colapsa pick_demo_anchor (fixed joint lumping de
+         sdformat-urdf en Gazebo Harmonic ignora preserveFixedJoint). Como el
+         DetachableJoint crea la unión en la pose física actual (no usa offset
+         del parent_link), usar wrist_3_link funciona igual: el objeto se
+         fija donde esté físicamente cuando se llama attach. -->
+    <xacro:detachable_joint obj="pick_demo" parent_link="wrist_3_link"/>
+  </xacro:if>
 </robot>
