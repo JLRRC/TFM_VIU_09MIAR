@@ -189,7 +189,7 @@ class GripperAttachBackend(
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("pose_topic", "")
         self.declare_parameter("joint_states_topic", "/joint_states")
-        self.declare_parameter("tcp_frame", "rg2_pinch_center")
+        self.declare_parameter("tcp_frame", "rg2_tcp")
         self.declare_parameter("set_pose_service", "")
         self.declare_parameter("follow_rate_hz", 20.0)
         self.declare_parameter("max_pose_age_sec", 1.5)
@@ -198,6 +198,14 @@ class GripperAttachBackend(
         self.declare_parameter("gz_cli_fallback", True)
         self.declare_parameter("gz_service_timeout_ms", 400)
         self.declare_parameter("gz_cmd_timeout_sec", 0.9)
+        # 2026-05-17 fix_follow_tcp_rate_20260517_163003:
+        # set_pose_async_cli=True usa subprocess.Popen fire-and-forget para
+        # invocar gz CLI sin bloquear el timer follow_tcp. Latencia perceptible
+        # del timer pasa de ~310ms+spikes a ~5ms (solo coste de Popen spawn).
+        # Trade-off: no se conoce el éxito de cada llamada individual; se
+        # confía en que el siguiente tick del follow loop reemplazará la pose.
+        # Mantener False para tests síncronos o debug con confirmación.
+        self.declare_parameter("set_pose_async_cli", True)
         self.declare_parameter("attach_initial_queue_retries", 4)
         self.declare_parameter("attach_retry_sleep_sec", 0.06)
         self.declare_parameter("attach_max_dist_m", 0.05)
@@ -262,7 +270,7 @@ class GripperAttachBackend(
         self._base_frame = str(
             self.get_parameter("base_frame").value or "base_link"
         ).strip() or "base_link"
-        self._tcp_frame = str(self.get_parameter("tcp_frame").value or "rg2_pinch_center").strip()
+        self._tcp_frame = str(self.get_parameter("tcp_frame").value or "rg2_tcp").strip()
         self._pose_topic = str(self.get_parameter("pose_topic").value or "").strip()
         self._joint_states_topic = str(
             self.get_parameter("joint_states_topic").value or "/joint_states"
@@ -285,6 +293,11 @@ class GripperAttachBackend(
             0.2, float(self.get_parameter("set_pose_future_timeout_sec").value or 1.0)
         )
         self._gz_cli_fallback = bool(self.get_parameter("gz_cli_fallback").value)
+        # 2026-05-17 fix_follow_tcp_rate_20260517_163003: flag para Popen async
+        self._set_pose_async_cli = bool(
+            self.get_parameter("set_pose_async_cli").value
+        )
+        self._async_set_pose_procs: list = []
         self._gz_service_timeout_ms = max(
             100, int(self.get_parameter("gz_service_timeout_ms").value or 400)
         )

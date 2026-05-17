@@ -87,7 +87,92 @@ class SetPoseMixin:
             return ""
         return " ; ".join(exports) + " ; "
 
+    # 2026-05-17 fix_follow_tcp_rate_20260517_163003:
+    # _set_pose_via_gz_cli es BLOCKING (subprocess.run espera respuesta del
+    # gz service ~310 ms por llamada → rate efectivo ~3 Hz). Para follow_tcp
+    # rápido se usa el método async _set_pose_via_gz_cli_async (Popen
+    # fire-and-forget) cuando el flag self._set_pose_async_cli está activo.
+    # El método async NO espera respuesta, solo descarta el subprocess. Si
+    # gz no procesa la pose, el siguiente tick del follow loop la reemplaza
+    # (last-pose-wins semantics natural a follow_tcp).
+    def _reap_async_set_pose_procs(self) -> int:
+        """Limpia procesos zombies de Popen async previos. Devuelve cuántos."""
+        try:
+            procs: List[subprocess.Popen] = getattr(self, "_async_set_pose_procs", []) or []
+        except Exception:
+            procs = []
+        alive: List[subprocess.Popen] = []
+        reaped = 0
+        for p in procs:
+            try:
+                if p.poll() is None:
+                    alive.append(p)
+                else:
+                    reaped += 1
+            except Exception:
+                reaped += 1
+        try:
+            self._async_set_pose_procs = alive
+        except Exception:
+            pass
+        return reaped
+
+    def _set_pose_via_gz_cli_async(self, name: str, pose: PoseSample) -> Tuple[bool, str]:
+        """Async variant: Popen fire-and-forget. NO espera la respuesta del
+        gz service. Cualquier fallo silenciado intencionalmente (se confía
+        en que el siguiente tick del follow_tcp loop reemplazará la pose
+        objetivo). El método usa `/set_pose` (no `/set_pose/blocking`) en
+        prioridad porque el non-blocking endpoint tiene latencia más
+        consistente (sin spikes 2s) y devuelve antes."""
+        if not hasattr(self, "_async_set_pose_procs"):
+            self._async_set_pose_procs = []
+        # Cap número de procesos pendientes para evitar fork bomb si
+        # gz cuelga; descartamos el más antiguo si excedemos el cap.
+        if len(self._async_set_pose_procs) >= 8:
+            try:
+                stale = self._async_set_pose_procs.pop(0)
+                stale.terminate()
+            except Exception:
+                pass
+        req = (
+            f'name: "{name}" '
+            f"position {{x: {float(pose.x)} y: {float(pose.y)} z: {float(pose.z)}}} "
+            f"orientation {{x: {float(pose.qx)} y: {float(pose.qy)} z: {float(pose.qz)} w: {float(pose.qw)}}}"
+        )
+        env_prefix = self._gz_env_prefix()
+        world_scope = f"/world/{self._world_name}"
+        # Async prefiere /set_pose (non-blocking) sobre /set_pose/blocking
+        # para minimizar latencia y consistencia (benchmark: 0.31s vs spikes 2s).
+        svc = (self._gz_set_pose_service or "").strip()
+        if not svc.endswith("/set_pose") or svc.endswith("/set_pose/blocking"):
+            svc = f"{world_scope}/set_pose"
+        cmd = (
+            f"{env_prefix}gz service -s {svc} "
+            "--reqtype gz.msgs.Pose --reptype gz.msgs.Boolean "
+            f"--timeout {int(self._gz_service_timeout_ms)} --req '{req}'"
+        )
+        try:
+            proc = subprocess.Popen(
+                ["bash", "-lc", cmd],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            self._async_set_pose_procs.append(proc)
+            # Reap periódico cada N llamadas (ligero)
+            if len(self._async_set_pose_procs) >= 4:
+                self._reap_async_set_pose_procs()
+            return True, "gz_async_dispatched"
+        except Exception as exc:
+            return False, f"async_popen_failed:{type(exc).__name__}:{exc}"
+
     def _set_pose_via_gz_cli(self, name: str, pose: PoseSample) -> Tuple[bool, str]:
+        # 2026-05-17 fix_follow_tcp_rate: si el flag async está activo, delega
+        # al método Popen non-blocking. Mantiene el camino síncrono original
+        # para tests / debug / casos donde se necesita confirmación.
+        if bool(getattr(self, "_set_pose_async_cli", False)):
+            return self._set_pose_via_gz_cli_async(name, pose)
         req = (
             f'name: "{name}" '
             f"position {{x: {float(pose.x)} y: {float(pose.y)} z: {float(pose.z)}}} "
@@ -147,6 +232,26 @@ class SetPoseMixin:
         return False, last_detail
 
     def _queue_set_pose(self, name: str, pose: PoseSample) -> bool:
+        # 2026-05-17 fix_follow_tcp_ros_set_entity_pose_20260517_165033:
+        # Si _set_pose_async_cli=True (default) preferimos el path Popen
+        # fire-and-forget directamente. El ROS service bridge se serializa
+        # (1 pending future, ~101 ms/call → ~10 Hz efectivo), mientras que
+        # Popen permite hasta 8 procesos paralelos → gz procesa pose updates
+        # en paralelo y se obtiene rate efectivo mayor.
+        # Empíricamente medido (FASE 7/8 de esta sesión):
+        #   ros_service: mean diff 3.8 cm, max 15 cm (serializado 10 Hz)
+        #   async_cli:   mean diff 2.2 cm, max  3.6 cm (parallel)
+        # Para forzar el path ROS service, poner set_pose_async_cli=False.
+        if bool(getattr(self, "_set_pose_async_cli", False)):
+            ok, detail = self._set_pose_via_gz_cli(name, pose)
+            now = time.time()
+            if (now - self._last_apply_log_ts) >= 0.8:
+                self.get_logger().info(
+                    f"[ATTACH_BACKEND] gazebo_attach_applied={str(ok).lower()} "
+                    f"object={name} method={self._attach_mode} detail={detail}"
+                )
+                self._last_apply_log_ts = now
+            return ok
         if self._ensure_set_pose_client():
             if self._set_pose_future is not None and not self._set_pose_future.done():
                 age = 0.0
