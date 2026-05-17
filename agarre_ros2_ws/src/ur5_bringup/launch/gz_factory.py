@@ -36,6 +36,7 @@ from launch.actions import (
     ExecuteProcess,
     GroupAction,
     RegisterEventHandler,
+    TimerAction,
 )
 from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
@@ -129,6 +130,35 @@ def build_gz_actions(
         condition=IfCondition(launch_bridge),
     )
 
+    # 2026-05-17 fix_follow_tcp_ros_set_entity_pose_20260517_165033:
+    # Service bridge para SetEntityPose. Expone como ROS service el endpoint
+    # nativo de Gazebo /world/<W>/set_pose (gz.msgs.Pose → gz.msgs.Boolean)
+    # con tipo ROS ros_gz_interfaces/srv/SetEntityPose. Esto permite al
+    # gripper_attach_backend invocar SetEntityPose vía call_async (latencia
+    # medida ~101 ms) en lugar del path subprocess.Popen gz CLI (~310 ms
+    # + overhead bash). El backend ya tiene infraestructura para usar el
+    # servicio ROS si está disponible (`_ensure_set_pose_client` busca en
+    # `/world/<W>/` cualquier service con type SetEntityPose). El path
+    # async_cli queda como fallback.
+    set_entity_pose_bridge = Node(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        name="set_entity_pose_bridge",
+        output="screen",
+        arguments=[
+            ["/world/", world_name, "/set_pose@ros_gz_interfaces/srv/SetEntityPose"],
+            "--ros-args", "-p", "use_sim_time:=true",
+        ],
+        condition=IfCondition(launch_bridge),
+    )
+    set_entity_pose_bridge_guard = RegisterEventHandler(
+        OnProcessExit(
+            target_action=set_entity_pose_bridge,
+            on_exit=[EmitEvent(event=Shutdown(reason="set_entity_pose_bridge exited"))],
+        ),
+        condition=IfCondition(launch_bridge),
+    )
+
     gz_control_guard = Node(
         package="ur5_tools",
         executable="gz_ros_control_guard",
@@ -160,12 +190,74 @@ def build_gz_actions(
         condition=IfCondition(launch_gazebo),
     )
 
+    # Fix 2026-05-11: spawn UR5+RG2 desde /robot_description (URDF).
+    # El SDF custom (`models/ur5_rg2/model.sdf`) tenía convención cinemática
+    # distinta a la URDF y causaba ~1.3m de desfase entre tool0 TF (panel)
+    # y tool0 físico (Gazebo). Ahora la URDF es la única fuente de verdad
+    # cinemática para Gazebo, RSP y MoveIt.
+    #
+    # El `world` link del URDF se mapea automáticamente al world frame
+    # de Gazebo (convención gz-sim). La URDF spawnea base_link a
+    # (-0.85, 0, 0.85) vía el `base_joint` del macro ur_robot.
+    #
+    # TimerAction 5s: damos margen para que `gz sim` esté listo y RSP
+    # haya publicado /robot_description antes de invocar `create`.
+    spawn_robot_create = Node(
+        package="ros_gz_sim",
+        executable="create",
+        name="ur5_rg2_spawner",
+        output="screen",
+        arguments=[
+            "-name", "ur5_rg2",
+            "-topic", "robot_description",
+            "-allow_renaming", "false",
+            "-x", "-0.85",
+            "-y", "0.0",
+            "-z", "0.85",
+        ],
+        condition=IfCondition(launch_gazebo),
+    )
+    spawn_robot = TimerAction(
+        period=5.0,
+        actions=[spawn_robot_create],
+        condition=IfCondition(launch_gazebo),
+    )
+    # Anchor attach se dispara DESPUÉS de que el spawner termine, no por
+    # timer ciego (que disparaba ANTES de que el modelo existiera).
+    anchor_attach_on_spawn = RegisterEventHandler(
+        OnProcessExit(
+            target_action=spawn_robot_create,
+            on_exit=[
+                # Esperamos 3s adicionales para que gz_ros2_control cargue
+                # los controllers; luego attach world_anchor.
+                TimerAction(
+                    period=3.0,
+                    actions=[
+                        ExecuteProcess(
+                            cmd=[
+                                "ros2", "topic", "pub", "--once",
+                                "/world_anchor/attach",
+                                "std_msgs/msg/Empty", "{}",
+                            ],
+                            output="screen",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        condition=IfCondition(launch_gazebo),
+    )
+
     return [
         gz_group,
         gz_shutdown_server,
         bridge,
         bridge_guard,
+        set_entity_pose_bridge,
+        set_entity_pose_bridge_guard,
         gz_control_guard,
         gz_pose_bridge,
         gz_pose_guard,
+        spawn_robot,
+        anchor_attach_on_spawn,
     ]
