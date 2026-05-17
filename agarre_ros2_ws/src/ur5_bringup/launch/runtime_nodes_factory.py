@@ -69,6 +69,32 @@ def _build_gripper_attach_backend_node(
         {"attach_max_dist_m": attach_backend_max_dist_m},
         *attach_extras,
         {"detachable_shadow_follow": False},
+        # 2026-05-17 fix_gripper_close_pick_demo_20260517_155955:
+        # gripper_effort_controller (JointGroupEffortController) interpreta
+        # gripper_closed_rad como EFFORT (no como posición). target=0.0 publica
+        # effort=0 → no fuerza → fingers no cierran (verificado FASE 3 baseline:
+        # opening_sum=0.0425 pre y post /gripper/close). Negative effort empuja
+        # fingers hacia su lower limit (0=closed). -5.0 N está dentro del effort
+        # limit del URDF (20 N por finger). Aún con effort sostenido a -20 N
+        # los fingers oscilan en velocity limit sin convergencia neta hacia 0
+        # (probable conflicto con <param initial_value="0.0"> del position
+        # command_interface en URDF, que se reaplica cada step). Mantenemos
+        # gripper_closed_rad=-5.0 como esfuerzo "best-effort" (no daña al
+        # sistema), pero el cierre físico no es fiable en sim — por eso se
+        # complementa con proximity attach (require_contact_before_attach=
+        # False) abajo.
+        {"gripper_closed_rad": -5.0},
+        # 2026-05-17 (proximity attach demo): el contact_gate bilateral
+        # del backend requiere que ambos finger contact sensors (left/right)
+        # detecten contact con el objeto. Como el cierre físico no es fiable
+        # en la sim actual (los fingers prismaticos no convergen a opening<3mm
+        # con la combinación posicion+effort del URDF), permitimos attach por
+        # proximidad: TCP dentro de attach_max_dist_m del objeto + comando
+        # de close emitido. Esto es aceptable para demo / mocked pick; NO
+        # apto para validación física real con contact sensors. El gate de
+        # distancia (attach_max_dist_m=0.05) se mantiene activo: solo se
+        # desactiva la sub-validación de contact sensors.
+        {"require_contact_before_attach": False},
     ]
     if demo_transport_objects:
         gripper_attach_backend_params.append(

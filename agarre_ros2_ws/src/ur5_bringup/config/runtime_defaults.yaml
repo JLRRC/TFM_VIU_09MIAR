@@ -26,12 +26,24 @@ SYSTEM_STATE_STARTUP_TIMEOUT_SEC: "15.0"
 # --- attach_backend: timeouts y modo follow ------------------------------------
 ATTACH_BACKEND_GZ_SERVICE_TIMEOUT_MS: "2000"
 ATTACH_BACKEND_GZ_CMD_TIMEOUT_SEC: "3.0"
-ATTACH_BACKEND_MODE: detachable_joint
+# 2026-05-17 (fix_pick_attach_external_anchor): follow_tcp en lugar de
+# detachable_joint porque la sesión fix_ur5_rg2_model_bisection_20260517_143423
+# desactivó los 11 xacro:detachable_joint dentro del modelo ur5_rg2 (H1, default
+# false en URDF). Sin esos plugins, el path detachable_joint deja /gripper_anchor/
+# <obj>/attach sin subscriber. follow_tcp delega en el bucle kinematic interno
+# (_follow_attached_objects → SetEntityPose via service o gz CLI) que NO necesita
+# DetachableJoint dentro del robot. Schema runtime_defaults.schema.json acepta
+# {follow_tcp, static}.
+ATTACH_BACKEND_MODE: follow_tcp
 ATTACH_BACKEND_MAX_POSE_AGE_SEC: "1.5"
 ATTACH_BACKEND_FOLLOW_RATE_HZ: "20.0"
 ATTACH_BACKEND_FOLLOW_BREAK_DIST_M: "0.18"
 ATTACH_BACKEND_MAX_DIST_M: "0.05"
-ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS: ""
+# 2026-05-17 (fix_pick_attach_external_anchor): "pick_demo" activado como objeto
+# que usa demo_transport (delete + respawn dynamic, follow TCP). NO escalar a
+# los 11 objetos coloreados (box_*, cyl_*, cross_cyan) sin nueva validación —
+# se mantienen accesibles via /drop_anchor del world SDF (sin cambios).
+ATTACH_BACKEND_DEMO_TRANSPORT_OBJECTS: "pick_demo"
 STRICT_PHYSICS_MODE: "false"
 
 # --- moveit_bridge: timeouts y scales ------------------------------------------
