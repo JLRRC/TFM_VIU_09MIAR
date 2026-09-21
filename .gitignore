@@ -32,3 +32,8 @@ TRACE_PANEL_V2.log
 # Temporales dentro de report
 report/bench/latency_results_*.csv
 report/logs/training/*.pid
+
+# Entornos de compilación y temporales de informes (pueden contener credenciales)
+**/colcon_command_prefix_*.env
+**/BaseDeConocimiento/.tmp_base_*/
+**/BaseDeConocimiento/.tmp_base_conocimiento_*/

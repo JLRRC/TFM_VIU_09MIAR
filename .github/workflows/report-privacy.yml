@@ -1,0 +1,20 @@
+name: Privacidad de informes
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reports:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Comprobar el filtro con datos ficticios
+        run: python3 -m unittest discover -s agarre_ros2_ws/scripts/tests -p 'test_sanitize_report.py' -v
+      - name: Detectar volcados de entorno en informes versionados
+        run: python3 agarre_ros2_ws/scripts/sanitize_report.py --check --tracked-reports

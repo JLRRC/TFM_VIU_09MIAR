@@ -6,8 +6,8 @@
 #
 # Artefactos generados:
 #   report/BaseDeConocimiento/YYYY-MM-DD_base_conocimiento_tecnica_TFM.md
-#   report/BaseDeConocimiento/.tmp_base_YYYY-MM-DD/fuentes_verificadas.txt
-#   report/BaseDeConocimiento/.tmp_base_YYYY-MM-DD/generacion.log
+#   report/BaseDeConocimiento/.tmp_base_YYYY-MM-DD_XXXXXX/fuentes_verificadas.txt
+#   report/BaseDeConocimiento/.tmp_base_YYYY-MM-DD_XXXXXX/generacion.log
 #   report/BaseDeConocimiento/YYYY-MM-DD_Base_de_Conocimiento_Tecnica_TFM.pdf  (si pandoc+latex)
 
 set +e  # no abort on errors — we handle them per-command with || true
@@ -21,21 +21,35 @@ cd "$WS_DIR"
 FECHA="$(date +%Y-%m-%d)"
 HORA="$(date +%H:%M:%S)"
 OUT_DIR="${REPORTS_BASE:-$WS_DIR/report/BaseDeConocimiento}"
-TMP_DIR="$OUT_DIR/.tmp_base_$FECHA"
-MD_OUT="$OUT_DIR/${FECHA}_base_conocimiento_tecnica_TFM.md"
+GEN_PDF=1
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-pdf)   GEN_PDF=0 ;;
+    --out-dir=*) OUT_DIR="${1#--out-dir=}" ;;
+    --out-dir)
+      [[ $# -ge 2 && -n "$2" ]] || { echo "Falta directorio para --out-dir" >&2; exit 2; }
+      OUT_DIR="$2"; shift ;;
+    *) echo "Opción desconocida: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+SANITIZER="$SCRIPT_DIR/sanitize_report.py"
+command -v python3 >/dev/null && [[ -f "$SANITIZER" ]] || {
+  echo "Se requiere python3 y sanitize_report.py para publicar el informe." >&2
+  exit 1
+}
+mkdir -p "$OUT_DIR" || exit 1
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"
+TMP_DIR="$(mktemp -d "$OUT_DIR/.tmp_base_${FECHA}_XXXXXX")" || exit 1
+MD_FINAL="$OUT_DIR/${FECHA}_base_conocimiento_tecnica_TFM.md"
+# El documento sin sanear sólo existe dentro del directorio privado (modo 700).
+MD_OUT="$TMP_DIR/documento_sin_sanear.md"
 PDF_OUT="$OUT_DIR/${FECHA}_Base_de_Conocimiento_Tecnica_TFM.pdf"
 FUENTES_LOG="$TMP_DIR/fuentes_verificadas.txt"
 GEN_LOG="$TMP_DIR/generacion.log"
-GEN_PDF=1
-
-for arg in "$@"; do
-  case "$arg" in
-    --no-pdf)   GEN_PDF=0 ;;
-    --out-dir=*) OUT_DIR="${arg#--out-dir=}" ;;
-  esac
-done
-
-mkdir -p "$OUT_DIR" "$TMP_DIR"
+trap 'rm -f "$TMP_DIR/documento_sin_sanear.md"' EXIT
 exec > >(tee -a "$GEN_LOG") 2>&1
 
 log()  { echo "[GEN][$(date +%H:%M:%S)] $*"; }
@@ -44,7 +58,7 @@ fver() { echo "$1" >> "$FUENTES_LOG"; }   # registrar fuente verificada
 
 log "=== Iniciando generación de Base de Conocimiento TFM ==="
 log "Workspace : $WS_DIR"
-log "Salida MD : $MD_OUT"
+log "Salida MD : $MD_FINAL"
 log "Tmp dir   : $TMP_DIR"
 
 # ---------------------------------------------------------------------------
@@ -60,13 +74,13 @@ CMD() {
   local label="$1"; shift
   MD "**\$ $*"
   BLK_START
-  eval "$@" 2>&1 >> "$MD_OUT" || true
+  eval "$@" >> "$MD_OUT" 2>&1 || true
   BLK_END
   fver "$label"
 }
 CMD_SILENT() {
   local label="$1"; shift
-  eval "$@" 2>&1 >> "$MD_OUT" || true
+  eval "$@" >> "$MD_OUT" 2>&1 || true
   fver "$label"
 }
 SAFE_CAT() {
@@ -812,6 +826,16 @@ H2 "24.4 Comandos ejecutados en esta generación"
 BLK_START
 grep '^\*\*\$ ' "$MD_OUT" | sed 's/^\*\*\$ //' | head -50 >> "$MD_OUT" || true
 BLK_END
+
+# ---------------------------------------------------------------------------
+# Sanear antes de publicar Markdown o convertirlo a PDF.
+# ---------------------------------------------------------------------------
+if ! python3 "$SANITIZER" --in-place "$MD_OUT"; then
+  log "ERROR: no se publica el informe porque no se pudo sanear."
+  exit 1
+fi
+mv -f "$MD_OUT" "$MD_FINAL" || exit 1
+MD_OUT="$MD_FINAL"
 
 # ---------------------------------------------------------------------------
 # Generar PDF (opcional)
